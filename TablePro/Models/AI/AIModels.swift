@@ -45,13 +45,18 @@ enum AIProviderType: String, Codable, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    enum AuthStyle: Sendable { case apiKey, oauth, none }
+    enum AuthStyle: Sendable {
+        case apiKey, optionalApiKey, oauth, none
+
+        var usesAPIKey: Bool { self == .apiKey || self == .optionalApiKey }
+    }
 
     var authStyle: AuthStyle {
         switch self {
-        case .copilot: return .oauth
-        case .ollama:  return .none
-        default:       return .apiKey
+        case .copilot:  return .oauth
+        case .ollama:   return .none
+        case .openCode: return .optionalApiKey
+        default:        return .apiKey
         }
     }
 

@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom and OpenAI-compatible AI providers now work when the base URL already ends in `/v1`, instead of building a doubled `/v1/v1/` path that failed. (#1400)
 ### Added
 
-- OpenCode Zen as an AI provider. Add it like any other provider and paste your OpenCode key; the model list loads from your account, covering the Claude, GPT, Gemini, and open models Zen serves. (#1400)
+- OpenCode Zen as an AI provider. Add it from the provider list and paste an OpenCode key, or leave the key blank to use the free models; the model list loads automatically, covering the Claude, GPT, Gemini, and open models Zen serves. (#1400)
 - Cloudflare Tunnel: connect to a database behind Cloudflare Access by letting TablePro start and stop `cloudflared access tcp` for you, the same way it manages SSH tunnels. Configure it per connection with browser sign-in or a service token. Needs cloudflared installed (`brew install cloudflared`). (#1285)
 - Fill Column: right-click a column header and choose Fill Column to set one value across all loaded rows. The change is staged like a normal edit, so you review it and Save before it applies, and one undo reverts the whole fill. Not available on primary key columns. (#1304)
 - AWS IAM authentication for PostgreSQL and MySQL connections to RDS and Aurora. Pick AWS IAM in the connection's Authentication field and use an access key, a named AWS profile, or SSO. TablePro generates a fresh login token on every connect and reconnect, so you never paste an expiring token, and SSL is required automatically. (#1291)
