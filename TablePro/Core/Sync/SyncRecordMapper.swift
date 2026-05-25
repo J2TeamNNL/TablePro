@@ -18,6 +18,7 @@ enum SyncRecordType: String, CaseIterable {
     case settings = "AppSettings"
     case favorite = "SQLFavorite"
     case favoriteFolder = "SQLFavoriteFolder"
+    case tableFavorite = "FavoriteTable"
     case sshProfile = "SSHProfile"
 }
 
@@ -55,6 +56,7 @@ struct SyncRecordMapper {
         case .settings: recordName = "Settings_\(id)"
         case .favorite: recordName = "Favorite_\(id)"
         case .favoriteFolder: recordName = "FavoriteFolder_\(id)"
+        case .tableFavorite: recordName = "FavoriteTable_\(id)"
         case .sshProfile: recordName = "SSHProfile_\(id)"
         }
         return CKRecord.ID(recordName: recordName, zoneID: zone)
@@ -321,6 +323,28 @@ struct SyncRecordMapper {
 
     static func settingsData(from record: CKRecord) -> Data? {
         record["settingsJson"] as? Data
+    }
+
+    // MARK: - Table Favorite
+
+    static func toCKRecord(favoriteTableName name: String, in zone: CKRecordZone.ID) -> CKRecord {
+        let favoriteId = FavoriteTablesStorage.syncId(for: name)
+        let recordID = recordID(type: .tableFavorite, id: favoriteId, in: zone)
+        let record = CKRecord(recordType: SyncRecordType.tableFavorite.rawValue, recordID: recordID)
+
+        record["favoriteTableId"] = favoriteId as CKRecordValue
+        record["name"] = name as CKRecordValue
+        record["modifiedAtLocal"] = Date() as CKRecordValue
+        record["schemaVersion"] = schemaVersion as CKRecordValue
+
+        return record
+    }
+
+    static func favoriteTableName(from record: CKRecord) throws -> String {
+        guard let name = record["name"] as? String, !name.isEmpty else {
+            throw SyncDecodeError.missingRequiredField("name")
+        }
+        return name
     }
 
     // MARK: - SSH Profile

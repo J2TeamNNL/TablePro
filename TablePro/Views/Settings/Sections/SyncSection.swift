@@ -24,7 +24,7 @@ struct SyncSection: View {
                         syncCoordinator.disableSync()
                     }
                 }
-                .help("Syncs connections, settings, and SSH profiles across your Macs via iCloud.")
+                .help("Syncs connections, table favorites, settings, and SSH profiles across your Macs via iCloud.")
                 .disabled(!isProAvailable)
         } header: {
             HStack(spacing: 6) {
