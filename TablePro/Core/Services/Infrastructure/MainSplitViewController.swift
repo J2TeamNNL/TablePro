@@ -174,10 +174,16 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         } else if let session = currentSession, let coordinator = sessionState?.coordinator {
             sidebarContainer.updateSidebarState(
                 SharedSidebarState.forConnection(session.connection.id),
-                windowState: coordinator.windowSidebarState
+                windowState: coordinator.windowSidebarState,
+                coordinator: coordinator
             )
         }
         inspectorSplitItem.isCollapsed = !inspectorPresented
+    }
+
+    override func splitViewDidResizeSubviews(_ notification: Notification) {
+        super.splitViewDidResizeSubviews(notification)
+        recomputeWindowMinSize()
     }
 
     private func materializeInspectorIfNeeded() {
@@ -204,11 +210,13 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         if let currentSession, let coordinator = sessionState?.coordinator {
             sidebarContainer.updateSidebarState(
                 SharedSidebarState.forConnection(currentSession.connection.id),
-                windowState: coordinator.windowSidebarState
+                windowState: coordinator.windowSidebarState,
+                coordinator: coordinator
             )
         }
 
         installObservers()
+        recomputeWindowMinSize()
     }
 
     override func viewDidDisappear() {
@@ -321,7 +329,8 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         if let currentSession, let coordinator = sessionState?.coordinator {
             sidebarContainer.updateSidebarState(
                 SharedSidebarState.forConnection(currentSession.connection.id),
-                windowState: coordinator.windowSidebarState
+                windowState: coordinator.windowSidebarState,
+                coordinator: coordinator
             )
         }
         detailHosting.rootView = AnyView(buildDetailView())
@@ -469,11 +478,13 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         materializeInspectorIfNeeded()
         inspectorSplitItem?.animator().isCollapsed = false
         UserDefaults.standard.set(true, forKey: Self.inspectorPresentedKey)
+        recomputeWindowMinSize()
     }
 
     func hideInspector() {
         inspectorSplitItem?.animator().isCollapsed = true
         UserDefaults.standard.set(false, forKey: Self.inspectorPresentedKey)
+        recomputeWindowMinSize()
     }
 
     @objc override func toggleInspector(_ sender: Any?) {
@@ -497,6 +508,50 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
             sidebarSplitItem?.animator().isCollapsed = true
         } else {
             sidebarState.selectedSidebarTab = tab
+        }
+    }
+
+    // MARK: - Dynamic Window Minimum Size
+
+    private static let baseWindowMinWidth: CGFloat = 720
+    private static let baseWindowMinHeight: CGFloat = 480
+
+    private func recomputeWindowMinSize() {
+        guard let window = view.window else { return }
+        let sidebarVisible = !(sidebarSplitItem?.isCollapsed ?? true)
+        let inspectorVisible = !(inspectorSplitItem?.isCollapsed ?? true)
+
+        let detailMin: CGFloat = detailSplitItem?.minimumThickness ?? 400
+        let sidebarMin: CGFloat = sidebarSplitItem?.minimumThickness ?? 280
+        let inspectorMin: CGFloat = inspectorSplitItem?.minimumThickness ?? 270
+        let dividerThickness = splitView.dividerThickness
+
+        var width: CGFloat = detailMin
+        if sidebarVisible {
+            width += sidebarMin + dividerThickness
+        }
+        if inspectorVisible {
+            width += inspectorMin + dividerThickness
+        }
+
+        let resolvedWidth = max(Self.baseWindowMinWidth, width)
+        let newMinSize = NSSize(width: resolvedWidth, height: Self.baseWindowMinHeight)
+
+        guard window.minSize != newMinSize else { return }
+        window.minSize = newMinSize
+
+        var frame = window.frame
+        var resized = false
+        if frame.size.width < resolvedWidth {
+            frame.size.width = resolvedWidth
+            resized = true
+        }
+        if frame.size.height < Self.baseWindowMinHeight {
+            frame.size.height = Self.baseWindowMinHeight
+            resized = true
+        }
+        if resized {
+            window.setFrame(frame, display: true, animate: window.isVisible)
         }
     }
 

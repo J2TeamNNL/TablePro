@@ -5,19 +5,22 @@ description: Mark tables as favorites and save frequently used queries with opti
 
 # Favorites
 
-The Favorites tab in the sidebar has two sections: **Tables** for pinned tables and **Queries** for saved SQL. Both appear in the same sidebar tab so you can access them without switching views.
+The Tables sidebar shows a **Recent** section at the top with the last 10 tables you opened in the current connection and database. The Favorites tab has two sections: **Tables** for pinned tables and **Queries** for saved SQL.
 
 ## Table Favorites
 
-Right-click any table in the sidebar and choose **Add to Favorites**. The table:
+Every table row in the sidebar has a star button at the end. Click it to add or remove the table from favorites. A filled yellow star marks a favorite; an outlined star marks a non-favorite. Favorites:
 
-- Gets a star badge (★) in the sidebar table list
-- Moves to the top of its section
-- Appears in the **Tables** group at the top of the Favorites tab
+- Move to the top of their section
+- Appear in the **Tables** group of the Favorites tab
 
 Double-click a table in the Favorites tab to open it. Right-click it to open the table, view its focused ER diagram, or remove it.
 
 Favorites are stored by table name and sync through iCloud. If a favorited table name doesn't exist in the active connection, it is hidden.
+
+## Recent Tables
+
+Each table you open is added to the **Recent** section at the top of the Tables sidebar. The list keeps the 10 most recent tables per connection and database, with the most recent at the top. Click a row to reopen the table. Recents are kept in memory for the session and clear when you quit.
 
 ## SQL Favorites
 

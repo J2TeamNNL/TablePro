@@ -63,6 +63,7 @@ struct TableRow: View {
     let isPendingTruncate: Bool
     let isPendingDelete: Bool
     var isFavorite: Bool = false
+    var onToggleFavorite: (() -> Void)?
 
     private var iconColor: Color {
         TableRowLogic.iconColor(table: table, isPendingDelete: isPendingDelete, isPendingTruncate: isPendingTruncate)
@@ -73,33 +74,49 @@ struct TableRow: View {
     }
 
     var body: some View {
-        Label {
-            Text(table.name)
-                .font(.system(.callout, design: .monospaced))
-                .lineLimit(1)
-                .sidebarTint(textColor)
-        } icon: {
-            ZStack(alignment: .bottomTrailing) {
-                Image(systemName: TableRowLogic.iconName(for: table.type))
-                    .sidebarTint(iconColor)
-                    .frame(width: 14)
+        HStack(spacing: 6) {
+            Label {
+                Text(table.name)
+                    .font(.system(.callout, design: .monospaced))
+                    .lineLimit(1)
+                    .sidebarTint(textColor)
+            } icon: {
+                ZStack(alignment: .bottomTrailing) {
+                    Image(systemName: TableRowLogic.iconName(for: table.type))
+                        .sidebarTint(iconColor)
+                        .frame(width: 14)
 
-                if isPendingDelete {
-                    Image(systemName: "minus.circle.fill")
-                        .font(.caption)
-                        .sidebarTint(.red)
-                        .offset(x: 4, y: 4)
-                } else if isPendingTruncate {
-                    Image(systemName: "exclamationmark.circle.fill")
-                        .font(.caption)
-                        .sidebarTint(.orange)
-                        .offset(x: 4, y: 4)
-                } else if isFavorite {
-                    Image(systemName: "star.fill")
-                        .font(.caption)
-                        .foregroundStyle(.yellow)
-                        .offset(x: 4, y: 4)
+                    if isPendingDelete {
+                        Image(systemName: "minus.circle.fill")
+                            .font(.caption)
+                            .sidebarTint(.red)
+                            .offset(x: 4, y: 4)
+                    } else if isPendingTruncate {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .font(.caption)
+                            .sidebarTint(.orange)
+                            .offset(x: 4, y: 4)
+                    }
                 }
+            }
+
+            Spacer(minLength: 4)
+
+            if let onToggleFavorite {
+                Button(action: onToggleFavorite) {
+                    Image(systemName: isFavorite ? "star.fill" : "star")
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(isFavorite ? Color.yellow : Color.secondary.opacity(0.55))
+                        .contentShape(Rectangle())
+                        .frame(width: 16, height: 16)
+                }
+                .buttonStyle(.plain)
+                .help(isFavorite
+                      ? String(localized: "Remove from Favorites")
+                      : String(localized: "Add to Favorites"))
+                .accessibilityLabel(isFavorite
+                                    ? String(localized: "Remove from Favorites")
+                                    : String(localized: "Add to Favorites"))
             }
         }
         .padding(.vertical, 4)

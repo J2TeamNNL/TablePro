@@ -45,6 +45,17 @@ enum SidebarContextMenuLogic {
         case .table, .none:     return String(localized: "Delete")
         }
     }
+
+    /// True when the Maintenance group has at least one runnable child.
+    /// Disables the parent menu when every child action is unreachable.
+    static func maintenanceGroupEnabled(
+        isReadOnly: Bool,
+        hasSelection: Bool,
+        supportedOperations: [String]
+    ) -> Bool {
+        guard !isReadOnly, hasSelection else { return false }
+        return !supportedOperations.isEmpty
+    }
 }
 
 /// Unified context menu for sidebar — used for both table rows and empty space
@@ -72,11 +83,6 @@ struct SidebarContextMenu: View {
     }
 
     var body: some View {
-        Button("Create New Table...") {
-            coordinator?.createNewTable()
-        }
-        .disabled(isReadOnly)
-
         Button("Create New View...") {
             coordinator?.createView()
         }
@@ -109,19 +115,6 @@ struct SidebarContextMenu: View {
         }
         .disabled(!hasSelection)
 
-        if let table = clickedTable, selectedTables.count <= 1 {
-            let isFav = FavoriteTablesStorage.shared.isFavorite(table.name)
-            let title = isFav ? String(localized: "Remove from Favorites") : String(localized: "Add to Favorites")
-            Button {
-                FavoriteTablesStorage.shared.toggle(table.name)
-            } label: {
-                Label(
-                    title,
-                    systemImage: isFav ? "star.fill" : "star"
-                )
-            }
-        }
-
         Button("Export...") {
             coordinator?.openExportDialog(preselectedTableNames: Set(effectiveTableNames))
         }
@@ -139,9 +132,14 @@ struct SidebarContextMenu: View {
             .disabled(isReadOnly)
         }
 
-        if let ops = coordinator?.supportedMaintenanceOperations(), !ops.isEmpty, hasSelection {
+        let maintenanceOps = coordinator?.supportedMaintenanceOperations() ?? []
+        if SidebarContextMenuLogic.maintenanceGroupEnabled(
+            isReadOnly: isReadOnly,
+            hasSelection: hasSelection,
+            supportedOperations: maintenanceOps
+        ) {
             Menu(String(localized: "Maintenance")) {
-                ForEach(ops, id: \.self) { op in
+                ForEach(maintenanceOps, id: \.self) { op in
                     Button(op) {
                         if let table = clickedTable?.name {
                             coordinator?.showMaintenanceSheet(operation: op, tableName: table)
@@ -149,7 +147,6 @@ struct SidebarContextMenu: View {
                     }
                 }
             }
-            .disabled(isReadOnly)
         }
 
         Divider()

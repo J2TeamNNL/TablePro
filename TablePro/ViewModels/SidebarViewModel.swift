@@ -49,6 +49,7 @@ final class SidebarViewModel {
             )
         }
     }
+    var isRecentsExpanded: Bool = true
     var redisKeyTreeViewModel: RedisKeyTreeViewModel?
     var showOperationDialog = false
     var pendingOperationType: TableOperationType?
