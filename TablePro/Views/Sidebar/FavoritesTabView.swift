@@ -150,7 +150,10 @@ internal struct FavoritesTabView: View {
 
     // MARK: - List
 
-    private func favoritesList(_ items: [FavoriteNode], filteredTables: [TableInfo]) -> some View {
+    private func favoritesList(
+        _ items: [FavoriteNode],
+        filteredTables: [TableInfo]
+    ) -> some View {
         List(selection: $sidebarState.selectedFavoriteNodeId) {
             if !filteredTables.isEmpty {
                 Section(String(localized: "Tables")) {
@@ -158,13 +161,11 @@ internal struct FavoritesTabView: View {
                         favoriteTableRow(table: table)
                     }
                 }
-                if !items.isEmpty {
-                    Section(String(localized: "Queries")) {
-                        nodeRows(items)
-                    }
+            }
+            if !items.isEmpty {
+                Section(String(localized: "Queries")) {
+                    nodeRows(items)
                 }
-            } else {
-                nodeRows(items)
             }
         }
         .listStyle(.sidebar)
