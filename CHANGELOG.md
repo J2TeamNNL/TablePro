@@ -7,9 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- Changing the editor or data grid font size in Appearance settings now applies immediately and persists across relaunch, instead of resetting and leaving orphan custom themes behind (#1381)
 ### Added
 
 - Cloudflare Tunnel: connect to a database behind Cloudflare Access by letting TablePro start and stop `cloudflared access tcp` for you, the same way it manages SSH tunnels. Configure it per connection with browser sign-in or a service token. Needs cloudflared installed (`brew install cloudflared`). (#1285)
@@ -22,8 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - First Page and Last Page keyboard actions, unbound by default and assignable in Settings > Keyboard. (#1364)
 - JSON and JSONB cells now display pretty-printed by default, keeping your original key order and exact numbers. Viewing or reformatting a value no longer marks the row as changed, and saving no longer reorders keys or rounds large integers.
 
+### Changed
+
+- Right-clicking a table and choosing View ER Diagram now opens a focused diagram showing only that table and the tables directly connected to it via foreign keys, instead of the full schema diagram.
+
 ### Fixed
 
+- Changing the editor or data grid font size in Appearance settings now applies immediately and persists across relaunch, instead of resetting and leaving orphan custom themes behind (#1381)
 - Installing or updating a plugin right after updating TablePro now refetches the current plugin list first, so it no longer fails against a stale cached list (the error a restart used to clear). (#1380)
 - Pressing Esc to close the Raw SQL filter suggestions, or to clear a search field, no longer also exits fullscreen. (#1403)
 - Connecting an OAuth-capable MCP client like Claude Code with an invalid or expired token now shows a clear error instead of a confusing "Invalid OAuth error response". (#1409)

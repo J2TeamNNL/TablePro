@@ -11,20 +11,22 @@ extension MainContentCoordinator {
     ///    tabs yet), add the ER Diagram tab locally.
     /// 3. Otherwise open a new native window tab so the current tab's content
     ///    (unsaved queries, filters, etc.) is preserved.
-    func showERDiagram() {
+    func showERDiagram(tableName: String? = nil) {
         let dbName = activeDatabaseName
         let schemaName = DatabaseManager.shared.session(for: connectionId)?.currentSchema
         let schemaKey = "\(dbName).\(schemaName ?? "default")"
 
         if let existing = Self.coordinator(forConnection: connectionId, tabMatching: {
-            $0.tabType == .erDiagram && $0.display.erDiagramSchemaKey == schemaKey
+            $0.tabType == .erDiagram
+                && $0.display.erDiagramSchemaKey == schemaKey
+                && $0.display.erDiagramFocusedTable == tableName
         }) {
             existing.contentWindow?.makeKeyAndOrderFront(nil)
             return
         }
 
         if tabManager.tabs.isEmpty {
-            tabManager.addERDiagramTab(schemaKey: schemaKey, databaseName: dbName)
+            tabManager.addERDiagramTab(schemaKey: schemaKey, databaseName: dbName, focusedTable: tableName)
             return
         }
 
@@ -33,7 +35,8 @@ extension MainContentCoordinator {
             tabType: .erDiagram,
             databaseName: dbName,
             schemaName: schemaName,
-            erDiagramSchemaKey: schemaKey
+            erDiagramSchemaKey: schemaKey,
+            erDiagramFocusedTable: tableName
         )
         WindowManager.shared.openTab(payload: payload)
     }

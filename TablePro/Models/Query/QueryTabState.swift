@@ -32,6 +32,7 @@ struct PersistedTab: Codable {
     var schemaName: String?
     var sourceFileURL: URL?
     var erDiagramSchemaKey: String?
+    var erDiagramFocusedTable: String?
     var queryParameters: [QueryParameter]?
 }
 
@@ -294,6 +295,7 @@ struct TabQueryContent: Equatable {
 struct TabDisplayState: Equatable {
     var resultsViewMode: ResultsViewMode = .data
     var erDiagramSchemaKey: String?
+    var erDiagramFocusedTable: String?
     var explainText: String?
     var explainExecutionTime: TimeInterval?
     var explainPlan: QueryPlan?
@@ -308,6 +310,8 @@ struct TabDisplayState: Equatable {
 
     static func == (lhs: TabDisplayState, rhs: TabDisplayState) -> Bool {
         lhs.resultsViewMode == rhs.resultsViewMode
+            && lhs.erDiagramSchemaKey == rhs.erDiagramSchemaKey
+            && lhs.erDiagramFocusedTable == rhs.erDiagramFocusedTable
             && lhs.isResultsCollapsed == rhs.isResultsCollapsed
             && lhs.resultSets.map(\.id) == rhs.resultSets.map(\.id)
             && lhs.activeResultSetId == rhs.activeResultSetId

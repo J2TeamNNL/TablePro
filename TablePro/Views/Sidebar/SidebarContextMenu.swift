@@ -101,7 +101,7 @@ struct SidebarContextMenu: View {
         .disabled(clickedTable == nil)
 
         Button(String(localized: "View ER Diagram")) {
-            coordinator?.showERDiagram()
+            coordinator?.showERDiagram(tableName: clickedTable?.name)
         }
 
         Button("Copy Name") {

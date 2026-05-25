@@ -49,6 +49,8 @@ internal struct EditorTabPayload: Codable, Hashable {
     internal let sourceFileURL: URL?
     /// Schema key for ER diagram tabs
     internal let erDiagramSchemaKey: String?
+    /// Focused table name for ER diagram tabs (nil = show full diagram)
+    internal let erDiagramFocusedTable: String?
     /// Tab title (for restoring persisted tabs with their original names)
     internal let tabTitle: String?
     /// The intent behind creating this tab
@@ -58,7 +60,7 @@ internal struct EditorTabPayload: Codable, Hashable {
         case id, connectionId, tabType, tableName, databaseName, schemaName
         case initialQuery, isView, showStructure, skipAutoExecute, isPreview
         case tabTitle
-        case initialFilterState, sourceFileURL, erDiagramSchemaKey, intent
+        case initialFilterState, sourceFileURL, erDiagramSchemaKey, erDiagramFocusedTable, intent
         // Legacy key for backward decoding only
         case isNewTab
     }
@@ -78,6 +80,7 @@ internal struct EditorTabPayload: Codable, Hashable {
         initialFilterState: TabFilterState? = nil,
         sourceFileURL: URL? = nil,
         erDiagramSchemaKey: String? = nil,
+        erDiagramFocusedTable: String? = nil,
         tabTitle: String? = nil,
         intent: TabIntent = .openContent
     ) {
@@ -95,6 +98,7 @@ internal struct EditorTabPayload: Codable, Hashable {
         self.initialFilterState = initialFilterState
         self.sourceFileURL = sourceFileURL
         self.erDiagramSchemaKey = erDiagramSchemaKey
+        self.erDiagramFocusedTable = erDiagramFocusedTable
         self.tabTitle = tabTitle
         self.intent = intent
     }
@@ -115,6 +119,7 @@ internal struct EditorTabPayload: Codable, Hashable {
         initialFilterState = try container.decodeIfPresent(TabFilterState.self, forKey: .initialFilterState)
         sourceFileURL = try container.decodeIfPresent(URL.self, forKey: .sourceFileURL)
         erDiagramSchemaKey = try container.decodeIfPresent(String.self, forKey: .erDiagramSchemaKey)
+        erDiagramFocusedTable = try container.decodeIfPresent(String.self, forKey: .erDiagramFocusedTable)
         tabTitle = try container.decodeIfPresent(String.self, forKey: .tabTitle)
         if let decodedIntent = try container.decodeIfPresent(TabIntent.self, forKey: .intent) {
             intent = decodedIntent
@@ -140,6 +145,7 @@ internal struct EditorTabPayload: Codable, Hashable {
         try container.encodeIfPresent(initialFilterState, forKey: .initialFilterState)
         try container.encodeIfPresent(sourceFileURL, forKey: .sourceFileURL)
         try container.encodeIfPresent(erDiagramSchemaKey, forKey: .erDiagramSchemaKey)
+        try container.encodeIfPresent(erDiagramFocusedTable, forKey: .erDiagramFocusedTable)
         try container.encodeIfPresent(tabTitle, forKey: .tabTitle)
         try container.encode(intent, forKey: .intent)
     }
@@ -160,6 +166,7 @@ internal struct EditorTabPayload: Codable, Hashable {
         self.initialFilterState = nil
         self.sourceFileURL = tab.content.sourceFileURL
         self.erDiagramSchemaKey = tab.display.erDiagramSchemaKey
+        self.erDiagramFocusedTable = tab.display.erDiagramFocusedTable
         self.tabTitle = tab.title
         self.intent = .openContent
     }

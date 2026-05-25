@@ -4,13 +4,12 @@
 //
 
 import Foundation
+@testable import TablePro
 import TableProPluginKit
 import Testing
-@testable import TablePro
 
 @Suite("EditorTabPayload")
 struct EditorTabPayloadTests {
-
     @Test("Each init creates unique ID")
     func eachInitCreatesUniqueId() {
         let connectionId = UUID()
@@ -88,7 +87,7 @@ struct EditorTabPayloadTests {
         let connectionId = UUID()
         // Encode TabType.query to get its actual JSON representation
         let tabTypeData = try JSONEncoder().encode(TabType.query)
-        let tabTypeJson = String(data: tabTypeData, encoding: .utf8)!
+        let tabTypeJson = try #require(String(data: tabTypeData, encoding: .utf8))
         let json = """
         {
             "id": "\(id.uuidString)",
@@ -96,7 +95,7 @@ struct EditorTabPayloadTests {
             "tabType": \(tabTypeJson)
         }
         """
-        let data = json.data(using: .utf8)!
+        let data = try #require(json.data(using: .utf8))
         let decoded = try JSONDecoder().decode(EditorTabPayload.self, from: data)
         #expect(decoded.id == id)
         #expect(decoded.connectionId == connectionId)
@@ -106,6 +105,25 @@ struct EditorTabPayloadTests {
         #expect(decoded.initialQuery == nil)
         #expect(decoded.isView == false)
         #expect(decoded.showStructure == false)
+    }
+
+    @Test("ER diagram payload preserves focused table")
+    func erDiagramPayloadPreservesFocusedTable() throws {
+        let connectionId = UUID()
+        let payload = EditorTabPayload(
+            connectionId: connectionId,
+            tabType: .erDiagram,
+            databaseName: "shop",
+            erDiagramSchemaKey: "shop.default",
+            erDiagramFocusedTable: "orders"
+        )
+
+        let data = try JSONEncoder().encode(payload)
+        let decoded = try JSONDecoder().decode(EditorTabPayload.self, from: data)
+
+        #expect(decoded.tabType == .erDiagram)
+        #expect(decoded.erDiagramSchemaKey == "shop.default")
+        #expect(decoded.erDiagramFocusedTable == "orders")
     }
 
     @Test("Different IDs are not equal")
@@ -130,7 +148,7 @@ struct EditorTabPayloadTests {
     func initFromQueryTab() throws {
         let tabManager = QueryTabManager()
         try tabManager.addTableTab(tableName: "users", databaseType: .mysql, databaseName: "mydb")
-        let tab = tabManager.tabs.first!
+        let tab = try #require(tabManager.tabs.first)
         let connectionId = UUID()
         let payload = EditorTabPayload(from: tab, connectionId: connectionId)
         #expect(payload.connectionId == connectionId)

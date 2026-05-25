@@ -13,6 +13,7 @@ final class ERDiagramViewModel {
 
     let connectionId: UUID
     let schemaKey: String
+    let focusedTableName: String?
 
     // MARK: - State
 
@@ -74,9 +75,10 @@ final class ERDiagramViewModel {
 
     // MARK: - Initialization
 
-    init(connectionId: UUID, schemaKey: String, services: AppServices = .live) {
+    init(connectionId: UUID, schemaKey: String, focusedTableName: String? = nil, services: AppServices = .live) {
         self.connectionId = connectionId
         self.schemaKey = schemaKey
+        self.focusedTableName = focusedTableName
         self.services = services
     }
 
@@ -105,10 +107,11 @@ final class ERDiagramViewModel {
             async let fksResult = driver.fetchAllForeignKeys()
             let (allColumns, allFKs) = try await (columnsResult, fksResult)
 
-            let builtGraph = ERDiagramGraphBuilder.build(
+            let fullGraph = ERDiagramGraphBuilder.build(
                 allColumns: allColumns,
                 allForeignKeys: allFKs
             )
+            let builtGraph = focusedTableName.map { fullGraph.subgraph(focusedOn: $0) } ?? fullGraph
             graph = builtGraph
             nodeIdToName = Dictionary(uniqueKeysWithValues: builtGraph.nodes.map { ($0.id, $0.tableName) })
 

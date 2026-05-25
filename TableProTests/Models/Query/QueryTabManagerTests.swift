@@ -10,9 +10,9 @@
 //
 
 import Foundation
+@testable import TablePro
 import TableProPluginKit
 import Testing
-@testable import TablePro
 
 @Suite("QueryTabManager.selectedTabAndIndex")
 @MainActor
@@ -57,5 +57,16 @@ struct QueryTabManagerSelectedTabAndIndexTests {
         let result = manager.selectedTabAndIndex
         #expect(result?.index == 0)
         #expect(result?.tab.tableContext.tableName == "users")
+    }
+
+    @Test("ER diagram focused table is stored on tab display")
+    func erDiagramFocusedTableStored() {
+        let manager = QueryTabManager()
+        manager.addERDiagramTab(schemaKey: "shop.default", databaseName: "shop", focusedTable: "orders")
+
+        let tab = manager.tabs.first
+        #expect(tab?.title == "ER: orders")
+        #expect(tab?.display.erDiagramSchemaKey == "shop.default")
+        #expect(tab?.display.erDiagramFocusedTable == "orders")
     }
 }

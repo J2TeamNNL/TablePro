@@ -193,11 +193,17 @@ final class QueryTabManager {
         selectedTabId = newTab.id
     }
 
-    func addERDiagramTab(schemaKey: String, databaseName: String = "") {
-        let tabTitle = String(localized: "ER Diagram")
+    func addERDiagramTab(schemaKey: String, databaseName: String = "", focusedTable: String? = nil) {
+        let tabTitle: String
+        if let table = focusedTable {
+            tabTitle = String(format: String(localized: "ER: %@"), table)
+        } else {
+            tabTitle = String(localized: "ER Diagram")
+        }
         var newTab = QueryTab(title: tabTitle, tabType: .erDiagram)
         newTab.tableContext.databaseName = databaseName
         newTab.display.erDiagramSchemaKey = schemaKey
+        newTab.display.erDiagramFocusedTable = focusedTable
         newTab.tableContext.isEditable = false
         newTab.hasUserInteraction = true
         tabs.append(newTab)

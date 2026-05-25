@@ -43,6 +43,19 @@ struct ERDiagramGraph: Sendable {
     var nodeIndex: [String: UUID]
 
     static let empty = ERDiagramGraph(nodes: [], edges: [], nodeIndex: [:])
+
+    func subgraph(focusedOn tableName: String) -> ERDiagramGraph {
+        let relatedEdges = edges.filter { $0.fromTable == tableName || $0.toTable == tableName }
+        var visibleNames: Set<String> = [tableName]
+        for edge in relatedEdges {
+            visibleNames.insert(edge.fromTable)
+            visibleNames.insert(edge.toTable)
+        }
+        let filteredNodes = nodes.filter { visibleNames.contains($0.tableName) }
+        let filteredEdges = relatedEdges
+        let filteredIndex = nodeIndex.filter { visibleNames.contains($0.key) }
+        return ERDiagramGraph(nodes: filteredNodes, edges: filteredEdges, nodeIndex: filteredIndex)
+    }
 }
 
 // MARK: - Graph Builder

@@ -143,7 +143,8 @@ enum SessionStateFactory {
                 case .erDiagram:
                     tabMgr.addERDiagramTab(
                         schemaKey: payload.erDiagramSchemaKey ?? payload.databaseName ?? activeDatabaseName,
-                        databaseName: payload.databaseName ?? activeDatabaseName
+                        databaseName: payload.databaseName ?? activeDatabaseName,
+                        focusedTable: payload.erDiagramFocusedTable
                     )
                 case .serverDashboard:
                     tabMgr.addServerDashboardTab()

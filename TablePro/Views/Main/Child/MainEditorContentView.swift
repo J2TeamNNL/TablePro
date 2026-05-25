@@ -256,7 +256,8 @@ struct MainEditorContentView: View {
                         guard erDiagramViewModels[tab.id] == nil else { return }
                         let vm = ERDiagramViewModel(
                             connectionId: connection.id,
-                            schemaKey: tab.display.erDiagramSchemaKey ?? tab.tableContext.databaseName
+                            schemaKey: tab.display.erDiagramSchemaKey ?? tab.tableContext.databaseName,
+                            focusedTableName: tab.display.erDiagramFocusedTable
                         )
                         erDiagramViewModels[tab.id] = vm
                     }
