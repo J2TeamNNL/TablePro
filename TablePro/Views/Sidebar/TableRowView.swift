@@ -26,13 +26,15 @@ enum TableRowLogic {
         }
     }
 
-    static func accessibilityLabel(table: TableInfo, isPendingDelete: Bool, isPendingTruncate: Bool) -> String {
+    static func accessibilityLabel(table: TableInfo, isPendingDelete: Bool, isPendingTruncate: Bool, isFavorite: Bool = false) -> String {
         let kind = accessibilityKindLabel(for: table.type)
         var label = String(format: String(localized: "%@: %@"), kind, table.name)
         if isPendingDelete {
             label += ", " + String(localized: "pending delete")
         } else if isPendingTruncate {
             label += ", " + String(localized: "pending truncate")
+        } else if isFavorite {
+            label += ", " + String(localized: "favorite")
         }
         return label
     }
@@ -60,6 +62,7 @@ struct TableRow: View {
     let table: TableInfo
     let isPendingTruncate: Bool
     let isPendingDelete: Bool
+    var isFavorite: Bool = false
 
     private var iconColor: Color {
         TableRowLogic.iconColor(table: table, isPendingDelete: isPendingDelete, isPendingTruncate: isPendingTruncate)
@@ -91,11 +94,23 @@ struct TableRow: View {
                         .font(.caption)
                         .sidebarTint(.orange)
                         .offset(x: 4, y: 4)
+                } else if isFavorite {
+                    Image(systemName: "star.fill")
+                        .font(.caption)
+                        .foregroundStyle(.yellow)
+                        .offset(x: 4, y: 4)
                 }
             }
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(TableRowLogic.accessibilityLabel(table: table, isPendingDelete: isPendingDelete, isPendingTruncate: isPendingTruncate))
+        .accessibilityLabel(
+            TableRowLogic.accessibilityLabel(
+                table: table,
+                isPendingDelete: isPendingDelete,
+                isPendingTruncate: isPendingTruncate,
+                isFavorite: isFavorite
+            )
+        )
     }
 }

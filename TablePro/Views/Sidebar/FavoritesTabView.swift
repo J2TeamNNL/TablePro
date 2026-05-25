@@ -7,6 +7,7 @@ import SwiftUI
 
 internal struct FavoritesTabView: View {
     @State private var viewModel: FavoritesSidebarViewModel
+    @State private var favoriteTables: [String] = FavoriteTablesStorage.shared.loadFavorites().sorted()
     @State private var folderToDelete: SQLFavoriteFolder?
     @State private var showDeleteFolderAlert = false
     @State private var linkedFileToTrash: LinkedSQLFavorite?
@@ -17,14 +18,24 @@ internal struct FavoritesTabView: View {
     @FocusState private var isRenameFocused: Bool
     let connectionId: UUID
     let windowState: WindowSidebarState
+    let tables: [TableInfo]
     @Bindable private var sidebarState: ConnectionSidebarState
     private var coordinator: MainContentCoordinator?
 
     private var searchText: String { windowState.favoritesSearchText }
+    private var availableFavoriteTables: [TableInfo] {
+        let tableByName = tables.reduce(into: [String: TableInfo]()) { result, table in
+            if result[table.name] == nil {
+                result[table.name] = table
+            }
+        }
+        return favoriteTables.compactMap { tableByName[$0] }
+    }
 
-    init(connectionId: UUID, windowState: WindowSidebarState, coordinator: MainContentCoordinator?) {
+    init(connectionId: UUID, windowState: WindowSidebarState, tables: [TableInfo], coordinator: MainContentCoordinator?) {
         self.connectionId = connectionId
         self.windowState = windowState
+        self.tables = tables
         self.sidebarState = ConnectionSidebarState.shared(for: connectionId)
         _viewModel = State(wrappedValue: FavoritesSidebarViewModel(connectionId: connectionId))
         self.coordinator = coordinator
@@ -33,16 +44,19 @@ internal struct FavoritesTabView: View {
     var body: some View {
         Group {
             let items = viewModel.filteredNodes(searchText: searchText)
+            let filteredTables = searchText.isEmpty
+                ? availableFavoriteTables
+                : availableFavoriteTables.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
 
-            if !viewModel.isInitialLoadComplete && viewModel.nodes.isEmpty {
+            if !viewModel.isInitialLoadComplete && viewModel.nodes.isEmpty && filteredTables.isEmpty {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if viewModel.nodes.isEmpty && searchText.isEmpty {
+            } else if viewModel.nodes.isEmpty && filteredTables.isEmpty && searchText.isEmpty {
                 emptyState
-            } else if items.isEmpty {
+            } else if items.isEmpty && filteredTables.isEmpty {
                 noMatchState
             } else {
-                favoritesList(items)
+                favoritesList(items, filteredTables: filteredTables)
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -53,6 +67,9 @@ internal struct FavoritesTabView: View {
         }
         .onAppear {
             SQLFolderWatcher.shared.start()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .favoriteTablesDidChange)) { _ in
+            favoriteTables = FavoriteTablesStorage.shared.loadFavorites().sorted()
         }
         .sheet(item: $viewModel.editDialogItem) { item in
             FavoriteEditDialog(
@@ -133,9 +150,22 @@ internal struct FavoritesTabView: View {
 
     // MARK: - List
 
-    private func favoritesList(_ items: [FavoriteNode]) -> some View {
+    private func favoritesList(_ items: [FavoriteNode], filteredTables: [TableInfo]) -> some View {
         List(selection: $sidebarState.selectedFavoriteNodeId) {
-            nodeRows(items)
+            if !filteredTables.isEmpty {
+                Section(String(localized: "Tables")) {
+                    ForEach(filteredTables) { table in
+                        favoriteTableRow(table: table)
+                    }
+                }
+                if !items.isEmpty {
+                    Section(String(localized: "Queries")) {
+                        nodeRows(items)
+                    }
+                }
+            } else {
+                nodeRows(items)
+            }
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
@@ -153,8 +183,54 @@ internal struct FavoritesTabView: View {
     }
 
     @ViewBuilder
+    private func favoriteTableRow(table: TableInfo) -> some View {
+        Label {
+            Text(table.name)
+                .font(.system(.callout, design: .monospaced))
+        } icon: {
+            Image(systemName: "star.fill")
+                .foregroundStyle(.yellow)
+        }
+        .tag(tableNodeId(table.name))
+        .contextMenu {
+            favoriteTableContextMenu(table)
+        }
+    }
+
+    @ViewBuilder
+    private func favoriteTableContextMenu(_ table: TableInfo) -> some View {
+        Button(String(localized: "Open Table")) {
+            coordinator?.openTableTab(table)
+        }
+
+        Button(String(localized: "View ER Diagram")) {
+            coordinator?.showERDiagram(tableName: table.name)
+        }
+
+        Divider()
+
+        Button(role: .destructive) {
+            FavoriteTablesStorage.shared.removeFavorite(table.name)
+        } label: {
+            Text(String(localized: "Remove from Favorites"))
+        }
+    }
+
+    private func tableNodeId(_ name: String) -> String {
+        "table:\(name)"
+    }
+
+    private func favoriteTable(forNodeId nodeId: String) -> TableInfo? {
+        guard nodeId.hasPrefix("table:") else { return nil }
+        let name = String(nodeId.dropFirst("table:".count))
+        return availableFavoriteTables.first { $0.name == name }
+    }
+
+    @ViewBuilder
     private func contextMenuFor(nodeId: String) -> some View {
-        if let fav = viewModel.favoriteForNodeId(nodeId) {
+        if let table = favoriteTable(forNodeId: nodeId) {
+            favoriteTableContextMenu(table)
+        } else if let fav = viewModel.favoriteForNodeId(nodeId) {
             favoriteContextMenu(fav)
         } else if let linked = viewModel.linkedFavoriteForNodeId(nodeId) {
             linkedFavoriteContextMenu(linked)
@@ -166,12 +242,32 @@ internal struct FavoritesTabView: View {
     }
 
     private func handlePrimaryAction(nodeId: String) {
+        if let table = favoriteTable(forNodeId: nodeId) {
+            coordinator?.openTableTab(table)
+            return
+        }
         if let fav = viewModel.favoriteForNodeId(nodeId) {
             coordinator?.insertFavorite(fav)
             return
         }
         if let linked = viewModel.linkedFavoriteForNodeId(nodeId) {
             coordinator?.openLinkedFavorite(linked)
+        }
+    }
+
+    private func deleteSelectedNode() {
+        guard let nodeId = sidebarState.selectedFavoriteNodeId else { return }
+        if let table = favoriteTable(forNodeId: nodeId) {
+            FavoriteTablesStorage.shared.removeFavorite(table.name)
+            return
+        }
+        if let fav = viewModel.favoriteForNodeId(nodeId) {
+            viewModel.deleteFavorite(fav)
+            return
+        }
+        if let linked = viewModel.linkedFavoriteForNodeId(nodeId) {
+            linkedFileToTrash = linked
+            showTrashLinkedFileAlert = true
         }
     }
 
@@ -256,18 +352,6 @@ internal struct FavoritesTabView: View {
             }
         } else {
             Label(folder.name, systemImage: "folder")
-        }
-    }
-
-    private func deleteSelectedNode() {
-        guard let nodeId = sidebarState.selectedFavoriteNodeId else { return }
-        if let fav = viewModel.favoriteForNodeId(nodeId) {
-            viewModel.deleteFavorite(fav)
-            return
-        }
-        if let linked = viewModel.linkedFavoriteForNodeId(nodeId) {
-            linkedFileToTrash = linked
-            showTrashLinkedFileAlert = true
         }
     }
 

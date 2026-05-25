@@ -109,6 +109,19 @@ struct SidebarContextMenu: View {
         }
         .disabled(!hasSelection)
 
+        if let table = clickedTable, selectedTables.count <= 1 {
+            let isFav = FavoriteTablesStorage.shared.isFavorite(table.name)
+            let title = isFav ? String(localized: "Remove from Favorites") : String(localized: "Add to Favorites")
+            Button {
+                FavoriteTablesStorage.shared.toggle(table.name)
+            } label: {
+                Label(
+                    title,
+                    systemImage: isFav ? "star.fill" : "star"
+                )
+            }
+        }
+
         Button("Export...") {
             coordinator?.openExportDialog(preselectedTableNames: Set(effectiveTableNames))
         }

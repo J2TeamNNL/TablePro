@@ -11,6 +11,7 @@ import TableProPluginKit
 struct SidebarView: View {
     @State private var viewModel: SidebarViewModel
     @Bindable private var schemaService = SchemaService.shared
+    @State private var favoriteTables: Set<String> = FavoriteTablesStorage.shared.loadFavorites()
 
     var sidebarState: SharedSidebarState
     var windowState: WindowSidebarState
@@ -110,6 +111,7 @@ struct SidebarView: View {
                     FavoritesTabView(
                         connectionId: connectionId,
                         windowState: coordinator.windowSidebarState,
+                        tables: tables,
                         coordinator: coordinator
                     )
                 } else {
@@ -267,6 +269,9 @@ struct SidebarView: View {
         .onExitCommand {
             windowState.selectedTables.removeAll()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .favoriteTablesDidChange)) { _ in
+            favoriteTables = FavoriteTablesStorage.shared.loadFavorites()
+        }
     }
 
     // MARK: - Section View
@@ -304,11 +309,15 @@ struct SidebarView: View {
                     }
             }
         } else {
-            ForEach(viewModel.filteredTables(of: kind, from: tables)) { table in
+            ForEach(SidebarTableOrdering.sortedByFavorite(
+                viewModel.filteredTables(of: kind, from: tables),
+                favoriteTables: favoriteTables
+            )) { table in
                 TableRow(
                     table: table,
                     isPendingTruncate: pendingTruncates.contains(table.name),
-                    isPendingDelete: pendingDeletes.contains(table.name)
+                    isPendingDelete: pendingDeletes.contains(table.name),
+                    isFavorite: favoriteTables.contains(table.name)
                 )
                 .tag(table)
                 .contextMenu {
