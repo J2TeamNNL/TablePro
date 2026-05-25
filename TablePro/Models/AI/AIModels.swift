@@ -14,6 +14,7 @@ enum AIProviderType: String, Codable, CaseIterable, Identifiable, Sendable {
     case openRouter
     case gemini
     case ollama
+    case openCode
     case custom
 
     var id: String { rawValue }
@@ -26,6 +27,7 @@ enum AIProviderType: String, Codable, CaseIterable, Identifiable, Sendable {
         case .openRouter: return "OpenRouter"
         case .gemini:     return "Gemini"
         case .ollama:     return "Ollama"
+        case .openCode:   return "OpenCode Zen"
         case .custom:     return String(localized: "Custom")
         }
     }
@@ -38,6 +40,7 @@ enum AIProviderType: String, Codable, CaseIterable, Identifiable, Sendable {
         case .openRouter: return "https://openrouter.ai/api"
         case .gemini:     return "https://generativelanguage.googleapis.com"
         case .ollama:     return "http://localhost:11434"
+        case .openCode:   return "https://opencode.ai/zen"
         case .custom:     return ""
         }
     }
@@ -60,6 +63,7 @@ enum AIProviderType: String, Codable, CaseIterable, Identifiable, Sendable {
         case .openRouter: return "globe"
         case .gemini:     return "wand.and.stars"
         case .ollama:     return "desktopcomputer"
+        case .openCode:   return "sparkles"
         case .custom:     return "server.rack"
         }
     }

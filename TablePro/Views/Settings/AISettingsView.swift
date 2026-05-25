@@ -213,7 +213,7 @@ struct AISettingsView: View {
     }
 
     private var orderedAddableTypes: [AIProviderType] {
-        [.copilot, .claude, .openAI, .openRouter, .gemini, .ollama]
+        [.copilot, .claude, .openAI, .openRouter, .openCode, .gemini, .ollama]
     }
 
     // MARK: - Inline Suggestions
