@@ -1,5 +1,5 @@
 {
-  "originHash" : "e49cd26950b2b9a687427c0c4359980403a2242976e9d9b5daed883f22e23a11",
+  "originHash" : "0d3e0bd344831cefc0766048c7e269c5d31a0a5a74f411332ec817c4ed7ba67e",
   "pins" : [
     {
       "identity" : "codeeditsymbols",
@@ -23,8 +23,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/ChimeHQ/Rearrange",
       "state" : {
-        "revision" : "f1d74e1642956f0300756ad8d1d64e9034857bc3",
-        "version" : "2.0.0"
+        "revision" : "4de8be41dba304192e87dc0a11e0aa39e72aa2e8",
+        "version" : "2.1.1"
       }
     },
     {
@@ -41,8 +41,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-asn1.git",
       "state" : {
-        "revision" : "810496cf121e525d660cd0ea89a758740476b85f",
-        "version" : "1.5.1"
+        "revision" : "eb50cbd14606a9161cbc5d452f18797c90ef0bab",
+        "version" : "1.7.0"
       }
     },
     {
