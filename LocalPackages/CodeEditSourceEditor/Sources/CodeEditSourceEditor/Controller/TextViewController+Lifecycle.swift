@@ -269,21 +269,12 @@ extension TextViewController {
         case ([commandKey, .shift], "K"):
             deleteLine()
             return nil
-        case (.init(rawValue: 0), "\u{1b}"): // Escape key
-            if findViewController?.viewModel.isShowingFindPanel == true {
-                self.findViewController?.hideFindPanel()
-                return nil
-            }
-            // Attempt to show completions otherwise
-            return handleShowCompletions(event)
+        case (.init(rawValue: 0), "\u{1b}"):
+            return handleEscapeKey(event)
         case (controlKey, " "):
             return handleShowCompletions(event)
         case ([NSEvent.ModifierFlags.command, NSEvent.ModifierFlags.control], "j"):
-            guard let cursor = cursorPositions.first else {
-                return event
-            }
-            jumpToDefinitionModel.performJump(at: cursor.range)
-            return nil
+            return handleJumpToDefinition(event)
         case (_, _):
             // Handle key-code-based shortcuts (arrow keys don't have stable characters)
             return handleKeyCodeCommand(event: event, modifierFlags: modifierFlags)
@@ -321,6 +312,22 @@ extension TextViewController {
             guard multipleLinesHighlighted() else { return event }
             handleIndent()
         }
+        return nil
+    }
+
+    private func handleEscapeKey(_ event: NSEvent) -> NSEvent? {
+        if findViewController?.viewModel.isShowingFindPanel == true {
+            self.findViewController?.hideFindPanel()
+            return nil
+        }
+        return handleShowCompletions(event)
+    }
+
+    private func handleJumpToDefinition(_ event: NSEvent) -> NSEvent? {
+        guard let cursor = cursorPositions.first else {
+            return event
+        }
+        jumpToDefinitionModel.performJump(at: cursor.range)
         return nil
     }
 

@@ -49,11 +49,13 @@ struct CodeSuggestionLabelView: View {
             guard range.lowerBound < clampedUpper else { continue }
 
             if currentIndex < range.lowerBound {
-                let segment = nsLabel.substring(with: NSRange(location: currentIndex, length: range.lowerBound - currentIndex))
+                let length = range.lowerBound - currentIndex
+                let segment = nsLabel.substring(with: NSRange(location: currentIndex, length: length))
                 result = result + Text(segment).foregroundColor(color)
             }
 
-            let segment = nsLabel.substring(with: NSRange(location: range.lowerBound, length: clampedUpper - range.lowerBound))
+            let length = clampedUpper - range.lowerBound
+            let segment = nsLabel.substring(with: NSRange(location: range.lowerBound, length: length))
             result = result + Text(segment).foregroundColor(color).bold()
             currentIndex = clampedUpper
         }

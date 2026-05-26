@@ -24,8 +24,10 @@ final class SuggestionTriggerCharacterModel {
     private var lastPosition: NSRange?
 
     func textView(_ textView: TextView, didReplaceContentsIn range: NSRange, with string: String) {
+        let controllerStatus = self.controller == nil ? "nil" : "set"
+        let delegateStatus = self.controller?.completionDelegate == nil ? "nil" : "set"
         guard let controller, let completionDelegate = controller.completionDelegate else {
-            Self.logger.debug("Typing trigger skipped: controller=\(self.controller == nil ? "nil" : "set"), completionDelegate=\(self.controller?.completionDelegate == nil ? "nil" : "set")")
+            Self.logger.debug("Typing trigger skipped: controller=\(controllerStatus), completionDelegate=\(delegateStatus)")
             return
         }
 
