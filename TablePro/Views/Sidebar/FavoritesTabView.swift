@@ -205,7 +205,7 @@ internal struct FavoritesTabView: View {
         }
 
         Button(String(localized: "View ER Diagram")) {
-            coordinator?.showERDiagram(tableName: table.name)
+            coordinator?.showERDiagram()
         }
 
         Divider()
