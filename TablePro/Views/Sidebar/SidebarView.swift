@@ -374,10 +374,7 @@ struct SidebarView: View {
                     }
             }
         } else {
-            ForEach(SidebarTableOrdering.sortedByFavorite(
-                viewModel.filteredTables(of: kind, from: tables),
-                favoriteTables: favoriteTables
-            )) { table in
+            ForEach(viewModel.filteredTables(of: kind, from: tables)) { table in
                 TableRow(
                     table: table,
                     isPendingTruncate: pendingTruncates.contains(table.name),
