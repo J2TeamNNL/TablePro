@@ -30,8 +30,11 @@ final class UpdaterBridge {
             userDriverDelegate: nil
         )
 
-        // Apply stored setting so Sparkle checks automatically on launch
+        #if !DEBUG
         controller.updater.automaticallyChecksForUpdates = AppSettingsManager.shared.general.automaticallyCheckForUpdates
+        #else
+        controller.updater.automaticallyChecksForUpdates = false
+        #endif
 
         // Observe canCheckForUpdates via KVO
         observation = controller.updater.observe(\.canCheckForUpdates, options: [.new]) { [weak self] _, change in
