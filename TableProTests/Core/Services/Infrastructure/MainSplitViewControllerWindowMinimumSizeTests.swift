@@ -53,4 +53,20 @@ struct MainSplitViewControllerWindowMinimumSizeTests {
         #expect(size.width == 720)
         #expect(size.height == 448)
     }
+
+    @Test("Uses the pane sum when detail and inspector exceed the base floor")
+    func usesPaneSumWhenItExceedsBaseWithSidebarCollapsed() {
+        let size = MainSplitViewController.resolvedContentMinSize(
+            base: NSSize(width: 720, height: 448),
+            panes: [
+                .init(minimumThickness: 280, isCollapsed: true),
+                .init(minimumThickness: 400, isCollapsed: false),
+                .init(minimumThickness: 400, isCollapsed: false)
+            ],
+            dividerThickness: 2
+        )
+
+        #expect(size.width == 802)
+        #expect(size.height == 448)
+    }
 }

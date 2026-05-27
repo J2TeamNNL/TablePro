@@ -44,7 +44,6 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     private var detailHosting: NSHostingController<AnyView>!
     private var inspectorHosting: NSHostingController<AnyView>!
     private var hasMaterializedInspector = false
-    private var baseWindowContentMinSize: NSSize?
 
     // MARK: - Toolbar
 
@@ -262,10 +261,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     ) {
         guard let window = view.window else { return }
 
-        if baseWindowContentMinSize == nil {
-            baseWindowContentMinSize = window.contentRect(forFrameRect: NSRect(origin: .zero, size: window.minSize)).size
-        }
-        guard let baseWindowContentMinSize else { return }
+        let baseWindowContentMinSize = window.contentRect(forFrameRect: NSRect(origin: .zero, size: window.minSize)).size
 
         let resolvedMinSize = Self.resolvedContentMinSize(
             base: baseWindowContentMinSize,
@@ -353,6 +349,10 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     override func viewDidDisappear() {
         super.viewDidDisappear()
         removeObservers()
+    }
+
+    override func splitViewDidResizeSubviews(_ notification: Notification) {
+        recomputeWindowMinimumSize()
     }
 
     // MARK: - Observers
@@ -617,7 +617,9 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     }
 
     func hideInspector() {
-        setCollapsed(true, for: inspectorSplitItem)
+        setCollapsed(true, for: inspectorSplitItem) { [weak self] in
+            self?.recomputeWindowMinimumSize(inspectorCollapsed: true)
+        }
         UserDefaults.standard.set(false, forKey: Self.inspectorPresentedKey)
     }
 
