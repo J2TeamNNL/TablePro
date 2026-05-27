@@ -64,11 +64,6 @@ enum ImportResolution: Hashable {
     case importAsCopy
 }
 
-enum ConnectionImportDuplicateStrategy {
-    case connectionShare
-    case foreignApp
-}
-
 struct ConnectionImportPreview {
     let envelope: ConnectionExportEnvelope
     let items: [ImportItem]
@@ -432,15 +427,11 @@ enum ConnectionExportService {
         return envelope
     }
 
-    static func analyzeImport(
-        _ envelope: ConnectionExportEnvelope,
-        duplicateStrategy: ConnectionImportDuplicateStrategy = .connectionShare
-    ) -> ConnectionImportPreview {
+    static func analyzeImport(_ envelope: ConnectionExportEnvelope) -> ConnectionImportPreview {
         analyzeImport(
             envelope,
             existingConnections: ConnectionStorage.shared.loadConnections(),
             registeredTypeIds: Set(PluginMetadataRegistry.shared.allRegisteredTypeIds()),
-            duplicateStrategy: duplicateStrategy,
             fileExists: { FileManager.default.fileExists(atPath: $0) }
         )
     }
@@ -449,19 +440,18 @@ enum ConnectionExportService {
         _ envelope: ConnectionExportEnvelope,
         existingConnections: [DatabaseConnection],
         registeredTypeIds: Set<String>,
-        duplicateStrategy: ConnectionImportDuplicateStrategy,
         fileExists: (String) -> Bool
     ) -> ConnectionImportPreview {
         var duplicateMap: [ConnectionImportDuplicateKey: DatabaseConnection] = [:]
         for existing in existingConnections {
-            let key = duplicateKey(for: existing, strategy: duplicateStrategy)
+            let key = duplicateKey(for: existing)
             if duplicateMap[key] == nil {
                 duplicateMap[key] = existing
             }
         }
 
         let items: [ImportItem] = envelope.connections.map { exportable in
-            let duplicate = duplicateMap[duplicateKey(for: exportable, strategy: duplicateStrategy)]
+            let duplicate = duplicateMap[duplicateKey(for: exportable)]
 
             if let duplicate {
                 return ImportItem(connection: exportable, status: .duplicate(existing: duplicate))
@@ -474,36 +464,43 @@ enum ConnectionExportService {
             if let ssh = exportable.sshConfig {
                 let keyPath = PathPortability.expandHome(ssh.privateKeyPath)
                 if !keyPath.isEmpty, !fileExists(keyPath) {
-                    warnings.append("SSH private key not found: \(ssh.privateKeyPath)")
+                    warnings.append(String(
+                        format: String(localized: "SSH private key not found: %@"),
+                        ssh.privateKeyPath
+                    ))
                 }
-                // Jump host key paths
                 for jump in ssh.jumpHosts ?? [] {
                     let jumpKeyPath = PathPortability.expandHome(jump.privateKeyPath)
                     if !jumpKeyPath.isEmpty, !fileExists(jumpKeyPath) {
-                        warnings.append("Jump host key not found: \(jump.privateKeyPath)")
+                        warnings.append(String(
+                            format: String(localized: "Jump host key not found: %@"),
+                            jump.privateKeyPath
+                        ))
                     }
                 }
             }
 
             // SSL cert paths check
             if let ssl = exportable.sslConfig {
-                for (path, label) in [
-                    (ssl.caCertificatePath, "CA certificate"),
-                    (ssl.clientCertificatePath, "Client certificate"),
-                    (ssl.clientKeyPath, "Client key")
+                for (path, format) in [
+                    (ssl.caCertificatePath, String(localized: "CA certificate not found: %@")),
+                    (ssl.clientCertificatePath, String(localized: "Client certificate not found: %@")),
+                    (ssl.clientKeyPath, String(localized: "Client key not found: %@"))
                 ] {
                     if let path, !path.isEmpty {
                         let expanded = PathPortability.expandHome(path)
                         if !fileExists(expanded) {
-                            warnings.append("\(label) not found: \(path)")
+                            warnings.append(String(format: format, path))
                         }
                     }
                 }
             }
 
-            // Database type check
             if !registeredTypeIds.contains(exportable.type) {
-                warnings.append("Database type \"\(exportable.type)\" is not installed")
+                warnings.append(String(
+                    format: String(localized: "Database type \"%@\" is not installed"),
+                    exportable.type
+                ))
             }
 
             if !warnings.isEmpty {
@@ -565,6 +562,7 @@ enum ConnectionExportService {
         let prepared = prepareImport(
             preview,
             resolutions: resolutions,
+            existingNames: ConnectionStorage.shared.loadConnections().map(\.name),
             tagIdsByName: tagIdsByName(),
             groupIdsByName: groupIdsByName()
         )
@@ -575,11 +573,13 @@ enum ConnectionExportService {
     static func prepareImport(
         _ preview: ConnectionImportPreview,
         resolutions: [UUID: ImportResolution],
+        existingNames: [String] = [],
         tagIdsByName: [String: UUID],
         groupIdsByName: [String: UUID]
     ) -> PreparedConnectionImport {
         var operations: [PreparedImportOperation] = []
         var connectionIdMap: [Int: UUID] = [:]
+        var takenNames = Set(existingNames.map { normalizedLookupKey($0) })
 
         let itemIndexMap: [UUID: Int] = Dictionary(
             uniqueKeysWithValues: preview.items.enumerated().map { ($1.id, $0) }
@@ -595,7 +595,13 @@ enum ConnectionExportService {
 
             case .importNew, .importAsCopy:
                 let connectionId = UUID()
-                let name = resolution == .importAsCopy ? "\(item.connection.name) (Imported)" : item.connection.name
+                let name: String
+                if resolution == .importAsCopy {
+                    name = uniqueCopyName(for: item.connection.name, taken: takenNames)
+                    takenNames.insert(normalizedLookupKey(name))
+                } else {
+                    name = item.connection.name
+                }
                 let connection = buildDatabaseConnection(
                     id: connectionId,
                     from: item.connection,
@@ -862,60 +868,45 @@ enum ConnectionExportService {
         )
     }
 
+    private static func uniqueCopyName(for baseName: String, taken: Set<String>) -> String {
+        let firstCandidate = "\(baseName) (Imported)"
+        if !taken.contains(normalizedLookupKey(firstCandidate)) {
+            return firstCandidate
+        }
+        var suffix = 2
+        while true {
+            let candidate = "\(baseName) (Imported \(suffix))"
+            if !taken.contains(normalizedLookupKey(candidate)) {
+                return candidate
+            }
+            suffix += 1
+        }
+    }
+
     private struct ConnectionImportDuplicateKey: Hashable {
         let components: [String]
     }
 
-    private static func duplicateKey(
-        for connection: ExportableConnection,
-        strategy: ConnectionImportDuplicateStrategy
-    ) -> ConnectionImportDuplicateKey {
-        switch strategy {
-        case .connectionShare:
-            return ConnectionImportDuplicateKey(
-                components: [
-                    normalizedLookupKey(connection.name),
-                    normalizedLookupKey(connection.host),
-                    String(connection.port),
-                    normalizedLookupKey(connection.type)
-                ]
-            )
-        case .foreignApp:
-            return ConnectionImportDuplicateKey(
-                components: [
-                    normalizedLookupKey(connection.host),
-                    String(connection.port),
-                    normalizedLookupKey(connection.database),
-                    normalizedLookupKey(connection.username)
-                ]
-            )
-        }
+    private static func duplicateKey(for connection: ExportableConnection) -> ConnectionImportDuplicateKey {
+        ConnectionImportDuplicateKey(
+            components: [
+                normalizedLookupKey(connection.host),
+                String(connection.port),
+                normalizedLookupKey(connection.database),
+                normalizedLookupKey(connection.username)
+            ]
+        )
     }
 
-    private static func duplicateKey(
-        for connection: DatabaseConnection,
-        strategy: ConnectionImportDuplicateStrategy
-    ) -> ConnectionImportDuplicateKey {
-        switch strategy {
-        case .connectionShare:
-            return ConnectionImportDuplicateKey(
-                components: [
-                    normalizedLookupKey(connection.name),
-                    normalizedLookupKey(connection.host),
-                    String(connection.port),
-                    normalizedLookupKey(connection.type.rawValue)
-                ]
-            )
-        case .foreignApp:
-            return ConnectionImportDuplicateKey(
-                components: [
-                    normalizedLookupKey(connection.host),
-                    String(connection.port),
-                    normalizedLookupKey(connection.database),
-                    normalizedLookupKey(connection.username)
-                ]
-            )
-        }
+    private static func duplicateKey(for connection: DatabaseConnection) -> ConnectionImportDuplicateKey {
+        ConnectionImportDuplicateKey(
+            components: [
+                normalizedLookupKey(connection.host),
+                String(connection.port),
+                normalizedLookupKey(connection.database),
+                normalizedLookupKey(connection.username)
+            ]
+        )
     }
 
     private static func tagIdsByName() -> [String: UUID] {

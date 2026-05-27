@@ -139,10 +139,7 @@ struct ImportFromAppSheet: View {
             do {
                 let result = try importer.importConnections(includePasswords: includePasswords)
                 try Task.checkCancellation()
-                let preview = await ConnectionExportService.analyzeImport(
-                    result.envelope,
-                    duplicateStrategy: .foreignApp
-                )
+                let preview = await ConnectionExportService.analyzeImport(result.envelope)
                 try Task.checkCancellation()
                 await MainActor.run {
                     step = .preview(preview, result.sourceName, result.credentialsAborted)

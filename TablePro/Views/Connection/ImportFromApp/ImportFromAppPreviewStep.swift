@@ -125,13 +125,24 @@ struct ImportFromAppPreviewStep: View {
         let result = ConnectionExportService.performImport(preview, resolutions: resolutions)
 
         if preview.envelope.credentials != nil {
+            let replacedIndices = Set(
+                preview.items.enumerated()
+                    .filter { isReplace(resolutions[$0.element.id]) }
+                    .map(\.offset)
+            )
+            let newConnectionIdMap = result.connectionIdMap.filter { !replacedIndices.contains($0.key) }
             ConnectionExportService.restoreCredentials(
                 from: preview.envelope,
-                connectionIdMap: result.connectionIdMap
+                connectionIdMap: newConnectionIdMap
             )
         }
 
         dismiss()
         onImported?(result.importedCount)
+    }
+
+    private func isReplace(_ resolution: ImportResolution?) -> Bool {
+        if case .replace = resolution { return true }
+        return false
     }
 }

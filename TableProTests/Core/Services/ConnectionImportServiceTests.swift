@@ -6,8 +6,8 @@ import Testing
 @Suite("Connection Import Service")
 @MainActor
 struct ConnectionImportServiceTests {
-    @Test("foreign app duplicate matching uses host port database and username")
-    func foreignAppDuplicateMatchingUsesConnectionDetails() {
+    @Test("duplicate matching uses host port database and username case-insensitively")
+    func duplicateMatchingUsesConnectionDetails() {
         let existing = DatabaseConnection(
             name: "Local Postgres",
             host: "db.example.com",
@@ -41,7 +41,6 @@ struct ConnectionImportServiceTests {
             makeEnvelope(with: [imported]),
             existingConnections: [existing],
             registeredTypeIds: Set(["MySQL", "PostgreSQL"]),
-            duplicateStrategy: .foreignApp,
             fileExists: { _ in true }
         )
 
@@ -53,8 +52,8 @@ struct ConnectionImportServiceTests {
         #expect(matched.id == existing.id)
     }
 
-    @Test("connection share duplicate matching still uses name and type")
-    func connectionShareDuplicateMatchingStillUsesNameAndType() {
+    @Test("different username on same host is not a duplicate")
+    func differentUsernameSameHostIsNotADuplicate() {
         let existing = DatabaseConnection(
             name: "Local Postgres",
             host: "db.example.com",
@@ -64,12 +63,12 @@ struct ConnectionImportServiceTests {
             type: .postgresql
         )
         let imported = ExportableConnection(
-            name: "Different Name",
+            name: "Local Postgres",
             host: "db.example.com",
             port: 5_432,
             database: "app",
-            username: "admin",
-            type: "MySQL",
+            username: "readonly",
+            type: "PostgreSQL",
             sshConfig: nil,
             sslConfig: nil,
             color: nil,
@@ -87,8 +86,7 @@ struct ConnectionImportServiceTests {
         let preview = ConnectionExportService.analyzeImport(
             makeEnvelope(with: [imported]),
             existingConnections: [existing],
-            registeredTypeIds: Set(["MySQL", "PostgreSQL"]),
-            duplicateStrategy: .connectionShare,
+            registeredTypeIds: Set(["PostgreSQL"]),
             fileExists: { _ in true }
         )
 
@@ -207,6 +205,46 @@ struct ConnectionImportServiceTests {
         } else {
             Issue.record("Expected imported connection id")
         }
+    }
+
+    @Test("as copy resolves name collisions with a numeric suffix")
+    func asCopyResolvesNameCollisions() {
+        let imported = ExportableConnection(
+            name: "Imported",
+            host: "db.example.com",
+            port: 5_432,
+            database: "app",
+            username: "admin",
+            type: "PostgreSQL",
+            sshConfig: nil,
+            sslConfig: nil,
+            color: nil,
+            tagName: nil,
+            groupName: nil,
+            sshProfileId: nil,
+            safeModeLevel: nil,
+            aiPolicy: nil,
+            additionalFields: nil,
+            redisDatabase: nil,
+            startupCommands: nil,
+            localOnly: nil
+        )
+
+        let existing = DatabaseConnection(name: "Imported", host: "db.example.com", port: 5_432, type: .postgresql)
+        let (preview, item) = makeDuplicatePreview(imported: imported, existing: existing)
+        let prepared = ConnectionExportService.prepareImport(
+            preview,
+            resolutions: [item.id: .importAsCopy],
+            existingNames: ["Imported", "Imported (Imported)", "Imported (Imported 2)"],
+            tagIdsByName: [:],
+            groupIdsByName: [:]
+        )
+
+        guard case .add(let connection) = prepared.operations.first else {
+            Issue.record("Expected an add operation")
+            return
+        }
+        #expect(connection.name == "Imported (Imported 3)")
     }
 
     @Test("skip leaves the existing connection untouched")
