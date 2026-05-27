@@ -64,9 +64,26 @@ enum ImportResolution: Hashable {
     case importAsCopy
 }
 
+enum ConnectionImportDuplicateStrategy {
+    case connectionShare
+    case foreignApp
+}
+
 struct ConnectionImportPreview {
     let envelope: ConnectionExportEnvelope
     let items: [ImportItem]
+}
+
+enum PreparedImportOperation: Hashable {
+    case add(DatabaseConnection)
+    case replace(DatabaseConnection)
+}
+
+struct PreparedConnectionImport {
+    let operations: [PreparedImportOperation]
+    let connectionIdMap: [Int: UUID]
+
+    var importedCount: Int { operations.count }
 }
 
 // MARK: - Connection Export Service
@@ -415,18 +432,36 @@ enum ConnectionExportService {
         return envelope
     }
 
-    static func analyzeImport(_ envelope: ConnectionExportEnvelope) -> ConnectionImportPreview {
-        let existingConnections = ConnectionStorage.shared.loadConnections()
-        let registeredTypeIds = Set(PluginMetadataRegistry.shared.allRegisteredTypeIds())
+    static func analyzeImport(
+        _ envelope: ConnectionExportEnvelope,
+        duplicateStrategy: ConnectionImportDuplicateStrategy = .connectionShare
+    ) -> ConnectionImportPreview {
+        analyzeImport(
+            envelope,
+            existingConnections: ConnectionStorage.shared.loadConnections(),
+            registeredTypeIds: Set(PluginMetadataRegistry.shared.allRegisteredTypeIds()),
+            duplicateStrategy: duplicateStrategy,
+            fileExists: { FileManager.default.fileExists(atPath: $0) }
+        )
+    }
+
+    static func analyzeImport(
+        _ envelope: ConnectionExportEnvelope,
+        existingConnections: [DatabaseConnection],
+        registeredTypeIds: Set<String>,
+        duplicateStrategy: ConnectionImportDuplicateStrategy,
+        fileExists: (String) -> Bool
+    ) -> ConnectionImportPreview {
+        var duplicateMap: [ConnectionImportDuplicateKey: DatabaseConnection] = [:]
+        for existing in existingConnections {
+            let key = duplicateKey(for: existing, strategy: duplicateStrategy)
+            if duplicateMap[key] == nil {
+                duplicateMap[key] = existing
+            }
+        }
 
         let items: [ImportItem] = envelope.connections.map { exportable in
-            // Check for duplicate by matching key fields
-            let duplicate = existingConnections.first { existing in
-                existing.name.lowercased() == exportable.name.lowercased()
-                    && existing.host.lowercased() == exportable.host.lowercased()
-                    && existing.port == exportable.port
-                    && existing.type.rawValue.lowercased() == exportable.type.lowercased()
-            }
+            let duplicate = duplicateMap[duplicateKey(for: exportable, strategy: duplicateStrategy)]
 
             if let duplicate {
                 return ImportItem(connection: exportable, status: .duplicate(existing: duplicate))
@@ -438,13 +473,13 @@ enum ConnectionExportService {
             // SSH key path check
             if let ssh = exportable.sshConfig {
                 let keyPath = PathPortability.expandHome(ssh.privateKeyPath)
-                if !keyPath.isEmpty, !FileManager.default.fileExists(atPath: keyPath) {
+                if !keyPath.isEmpty, !fileExists(keyPath) {
                     warnings.append("SSH private key not found: \(ssh.privateKeyPath)")
                 }
                 // Jump host key paths
                 for jump in ssh.jumpHosts ?? [] {
                     let jumpKeyPath = PathPortability.expandHome(jump.privateKeyPath)
-                    if !jumpKeyPath.isEmpty, !FileManager.default.fileExists(atPath: jumpKeyPath) {
+                    if !jumpKeyPath.isEmpty, !fileExists(jumpKeyPath) {
                         warnings.append("Jump host key not found: \(jump.privateKeyPath)")
                     }
                 }
@@ -459,7 +494,7 @@ enum ConnectionExportService {
                 ] {
                     if let path, !path.isEmpty {
                         let expanded = PathPortability.expandHome(path)
-                        if !FileManager.default.fileExists(atPath: expanded) {
+                        if !fileExists(expanded) {
                             warnings.append("\(label) not found: \(path)")
                         }
                     }
@@ -491,9 +526,8 @@ enum ConnectionExportService {
         _ preview: ConnectionImportPreview,
         resolutions: [UUID: ImportResolution]
     ) -> ImportResult {
-        // Create missing groups
-        let existingGroups = GroupStorage.shared.loadGroups()
         if let envelopeGroups = preview.envelope.groups {
+            let existingGroups = GroupStorage.shared.loadGroups()
             for exportGroup in envelopeGroups {
                 let alreadyExists = existingGroups.contains {
                     $0.name.lowercased() == exportGroup.name.lowercased()
@@ -506,9 +540,8 @@ enum ConnectionExportService {
             }
         }
 
-        // Create missing tags
-        let existingTags = TagStorage.shared.loadTags()
         if let envelopeTags = preview.envelope.tags {
+            let existingTags = TagStorage.shared.loadTags()
             for exportTag in envelopeTags {
                 let alreadyExists = existingTags.contains {
                     $0.name.lowercased() == exportTag.name.lowercased()
@@ -529,10 +562,25 @@ enum ConnectionExportService {
             }
         }
 
-        var importedCount = 0
+        let prepared = prepareImport(
+            preview,
+            resolutions: resolutions,
+            tagIdsByName: tagIdsByName(),
+            groupIdsByName: groupIdsByName()
+        )
+
+        return performPreparedImport(prepared)
+    }
+
+    static func prepareImport(
+        _ preview: ConnectionImportPreview,
+        resolutions: [UUID: ImportResolution],
+        tagIdsByName: [String: UUID],
+        groupIdsByName: [String: UUID]
+    ) -> PreparedConnectionImport {
+        var operations: [PreparedImportOperation] = []
         var connectionIdMap: [Int: UUID] = [:]
 
-        // Build a lookup from item.id to envelope index
         let itemIndexMap: [UUID: Int] = Dictionary(
             uniqueKeysWithValues: preview.items.enumerated().map { ($1.id, $0) }
         )
@@ -547,37 +595,60 @@ enum ConnectionExportService {
 
             case .importNew, .importAsCopy:
                 let connectionId = UUID()
-                var name = item.connection.name
-                if case .importAsCopy = resolution {
-                    name += " (Imported)"
-                }
+                let name = resolution == .importAsCopy ? "\(item.connection.name) (Imported)" : item.connection.name
                 let connection = buildDatabaseConnection(
                     id: connectionId,
                     from: item.connection,
-                    name: name
+                    name: name,
+                    tagIdsByName: tagIdsByName,
+                    groupIdsByName: groupIdsByName
                 )
-                ConnectionStorage.shared.addConnection(connection, password: nil)
+                operations.append(.add(connection))
                 connectionIdMap[envelopeIndex] = connectionId
-                importedCount += 1
 
             case .replace(let existingId):
                 let connection = buildDatabaseConnection(
                     id: existingId,
                     from: item.connection,
-                    name: item.connection.name
+                    name: item.connection.name,
+                    tagIdsByName: tagIdsByName,
+                    groupIdsByName: groupIdsByName
                 )
-                ConnectionStorage.shared.updateConnection(connection, password: nil)
+                operations.append(.replace(connection))
                 connectionIdMap[envelopeIndex] = existingId
-                importedCount += 1
             }
         }
 
-        if importedCount > 0 {
-            AppEvents.shared.connectionUpdated.send(nil)
-            logger.info("Imported \(importedCount) connections")
+        return PreparedConnectionImport(
+            operations: operations,
+            connectionIdMap: connectionIdMap
+        )
+    }
+
+    @discardableResult
+    static func performPreparedImport(
+        _ prepared: PreparedConnectionImport,
+        connectionStorage: ConnectionStorage = .shared,
+        notifyConnectionsChanged: () -> Void = { AppEvents.shared.connectionUpdated.send(nil) }
+    ) -> ImportResult {
+        for operation in prepared.operations {
+            switch operation {
+            case .add(let connection):
+                connectionStorage.addConnection(connection, password: nil)
+            case .replace(let connection):
+                connectionStorage.updateConnection(connection, password: nil)
+            }
         }
 
-        return ImportResult(importedCount: importedCount, connectionIdMap: connectionIdMap)
+        if prepared.importedCount > 0 {
+            notifyConnectionsChanged()
+            logger.info("Imported \(prepared.importedCount) connections")
+        }
+
+        return ImportResult(
+            importedCount: prepared.importedCount,
+            connectionIdMap: prepared.connectionIdMap
+        )
     }
 
     // MARK: - Deeplink Builder
@@ -709,7 +780,9 @@ enum ConnectionExportService {
     static func buildDatabaseConnection(
         id: UUID,
         from exportable: ExportableConnection,
-        name: String
+        name: String,
+        tagIdsByName: [String: UUID],
+        groupIdsByName: [String: UUID]
     ) -> DatabaseConnection {
         // Build SSH configuration
         let sshConfig: SSHConfiguration
@@ -755,10 +828,10 @@ enum ConnectionExportService {
 
         // Resolve tag and group by name
         let tagId = exportable.tagName.flatMap { name in
-            TagStorage.shared.loadTags().first { $0.name.lowercased() == name.lowercased() }?.id
+            tagIdsByName[normalizedLookupKey(name)]
         }
         let groupId = exportable.groupName.flatMap { name in
-            GroupStorage.shared.loadGroups().first { $0.name.lowercased() == name.lowercased() }?.id
+            groupIdsByName[normalizedLookupKey(name)]
         }
 
         let parsedSSHProfileId = exportable.sshProfileId.flatMap { UUID(uuidString: $0) }
@@ -787,5 +860,87 @@ enum ConnectionExportService {
             localOnly: exportable.localOnly ?? false,
             additionalFields: exportable.additionalFields
         )
+    }
+
+    private struct ConnectionImportDuplicateKey: Hashable {
+        let components: [String]
+    }
+
+    private static func duplicateKey(
+        for connection: ExportableConnection,
+        strategy: ConnectionImportDuplicateStrategy
+    ) -> ConnectionImportDuplicateKey {
+        switch strategy {
+        case .connectionShare:
+            return ConnectionImportDuplicateKey(
+                components: [
+                    normalizedLookupKey(connection.name),
+                    normalizedLookupKey(connection.host),
+                    String(connection.port),
+                    normalizedLookupKey(connection.type)
+                ]
+            )
+        case .foreignApp:
+            return ConnectionImportDuplicateKey(
+                components: [
+                    normalizedLookupKey(connection.host),
+                    String(connection.port),
+                    normalizedLookupKey(connection.database),
+                    normalizedLookupKey(connection.username)
+                ]
+            )
+        }
+    }
+
+    private static func duplicateKey(
+        for connection: DatabaseConnection,
+        strategy: ConnectionImportDuplicateStrategy
+    ) -> ConnectionImportDuplicateKey {
+        switch strategy {
+        case .connectionShare:
+            return ConnectionImportDuplicateKey(
+                components: [
+                    normalizedLookupKey(connection.name),
+                    normalizedLookupKey(connection.host),
+                    String(connection.port),
+                    normalizedLookupKey(connection.type.rawValue)
+                ]
+            )
+        case .foreignApp:
+            return ConnectionImportDuplicateKey(
+                components: [
+                    normalizedLookupKey(connection.host),
+                    String(connection.port),
+                    normalizedLookupKey(connection.database),
+                    normalizedLookupKey(connection.username)
+                ]
+            )
+        }
+    }
+
+    private static func tagIdsByName() -> [String: UUID] {
+        var idsByName: [String: UUID] = [:]
+        for tag in TagStorage.shared.loadTags() {
+            let key = normalizedLookupKey(tag.name)
+            if idsByName[key] == nil {
+                idsByName[key] = tag.id
+            }
+        }
+        return idsByName
+    }
+
+    private static func groupIdsByName() -> [String: UUID] {
+        var idsByName: [String: UUID] = [:]
+        for group in GroupStorage.shared.loadGroups() {
+            let key = normalizedLookupKey(group.name)
+            if idsByName[key] == nil {
+                idsByName[key] = group.id
+            }
+        }
+        return idsByName
+    }
+
+    private static func normalizedLookupKey(_ value: String?) -> String {
+        value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
     }
 }
