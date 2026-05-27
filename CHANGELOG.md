@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Toggling the right inspector in a narrow editor window now updates the window minimum width from the visible split panes, so the inspector no longer squeezes content or overflows.
+
 ## [0.48.0] - 2026-06-02
 
 ### Added
