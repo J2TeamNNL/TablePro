@@ -107,6 +107,10 @@ final class ConnectionStorage {
         }
     }
 
+    func loadConnection(id: UUID) -> DatabaseConnection? {
+        loadConnections().first { $0.id == id }
+    }
+
     /// Save all connections. Returns `true` if persisted, `false` if encoding or
     /// the atomic write failed. Callers that mutate dependent state (sync tracker,
     /// keychain entries) MUST check the return value and abort on `false`.
@@ -192,6 +196,34 @@ final class ConnectionStorage {
         for connection in updatesById.values where !connection.localOnly && !connection.isSample {
             syncTracker.markDirty(.connection, id: connection.id.uuidString)
         }
+        return true
+    }
+
+    @discardableResult
+    func updateSafeModeLevel(_ level: SafeModeLevel, for connectionId: UUID) -> Bool {
+        var connections = loadConnections()
+        guard let index = connections.firstIndex(where: { $0.id == connectionId }) else {
+            Self.logger.notice(
+                "Skipped updateSafeModeLevel: connection not found for \(connectionId, privacy: .public)"
+            )
+            return false
+        }
+
+        guard connections[index].safeModeLevel != level else { return true }
+
+        connections[index].safeModeLevel = level
+        guard saveConnections(connections) else {
+            Self.logger.error(
+                "Aborted updateSafeModeLevel: persistence failed for \(connectionId, privacy: .public)"
+            )
+            return false
+        }
+
+        let updatedConnection = connections[index]
+        if !updatedConnection.localOnly && !updatedConnection.isSample {
+            syncTracker.markDirty(.connection, id: updatedConnection.id.uuidString)
+        }
+
         return true
     }
 
