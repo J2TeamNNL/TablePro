@@ -327,24 +327,33 @@ struct SyncRecordMapper {
 
     // MARK: - Table Favorite
 
-    static func toCKRecord(favoriteTableName name: String, in zone: CKRecordZone.ID) -> CKRecord {
-        let favoriteId = FavoriteTablesStorage.syncId(for: name)
+    static func toCKRecord(favoriteEntry entry: FavoriteTablesStorage.FavoriteEntry, in zone: CKRecordZone.ID) -> CKRecord {
+        let favoriteId = FavoriteTablesStorage.syncId(for: entry)
         let recordID = recordID(type: .tableFavorite, id: favoriteId, in: zone)
         let record = CKRecord(recordType: SyncRecordType.tableFavorite.rawValue, recordID: recordID)
 
         record["favoriteTableId"] = favoriteId as CKRecordValue
-        record["name"] = name as CKRecordValue
+        record["connectionId"] = entry.connectionId.uuidString as CKRecordValue
+        record["name"] = entry.name as CKRecordValue
+        if let schema = entry.schema {
+            record["schema"] = schema as CKRecordValue
+        }
         record["modifiedAtLocal"] = Date() as CKRecordValue
         record["schemaVersion"] = schemaVersion as CKRecordValue
 
         return record
     }
 
-    static func favoriteTableName(from record: CKRecord) throws -> String {
+    static func favoriteEntry(from record: CKRecord) throws -> FavoriteTablesStorage.FavoriteEntry {
         guard let name = record["name"] as? String, !name.isEmpty else {
             throw SyncDecodeError.missingRequiredField("name")
         }
-        return name
+        guard let connectionIdString = record["connectionId"] as? String,
+              let connectionId = UUID(uuidString: connectionIdString) else {
+            throw SyncDecodeError.missingRequiredField("connectionId")
+        }
+        let schema = record["schema"] as? String
+        return FavoriteTablesStorage.FavoriteEntry(connectionId: connectionId, schema: schema, name: name)
     }
 
     // MARK: - SSH Profile

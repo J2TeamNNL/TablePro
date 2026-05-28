@@ -15,7 +15,7 @@ final class RecentTablesStore {
 
     struct Key: Hashable {
         let connectionID: UUID
-        let database: String
+        let database: String?
     }
 
     struct Entry: Hashable, Identifiable {
@@ -32,7 +32,7 @@ final class RecentTablesStore {
 
     init() {}
 
-    func push(connectionID: UUID, database: String, table: TableInfo) {
+    func push(connectionID: UUID, database: String?, table: TableInfo) {
         let key = Key(connectionID: connectionID, database: database)
         var list = entriesByKey[key] ?? []
         let newEntryId = entryId(name: table.name, schema: table.schema)
@@ -53,11 +53,11 @@ final class RecentTablesStore {
         NotificationCenter.default.post(name: .recentTablesDidChange, object: nil)
     }
 
-    func entries(connectionID: UUID, database: String) -> [Entry] {
+    func entries(connectionID: UUID, database: String?) -> [Entry] {
         entriesByKey[Key(connectionID: connectionID, database: database)] ?? []
     }
 
-    func clear(connectionID: UUID, database: String) {
+    func clear(connectionID: UUID, database: String?) {
         entriesByKey.removeValue(forKey: Key(connectionID: connectionID, database: database))
         NotificationCenter.default.post(name: .recentTablesDidChange, object: nil)
     }

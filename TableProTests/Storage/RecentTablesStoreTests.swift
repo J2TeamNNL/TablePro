@@ -87,4 +87,14 @@ struct RecentTablesStoreTests {
         #expect(store.entries(connectionID: conn, database: "db").isEmpty)
         #expect(store.entries(connectionID: conn, database: "other").map(\.name) == ["b"])
     }
+
+    @Test("Nil database key is distinct from empty-string database")
+    func nilDatabaseDistinctFromEmpty() {
+        let store = makeStore()
+        let conn = UUID()
+        store.push(connectionID: conn, database: nil, table: makeTable("sqlite_table"))
+        store.push(connectionID: conn, database: "postgres", table: makeTable("pg_table"))
+        #expect(store.entries(connectionID: conn, database: nil).map(\.name) == ["sqlite_table"])
+        #expect(store.entries(connectionID: conn, database: "postgres").map(\.name) == ["pg_table"])
+    }
 }

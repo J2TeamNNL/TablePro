@@ -7,7 +7,7 @@ import SwiftUI
 
 internal struct FavoritesTabView: View {
     @State private var viewModel: FavoritesSidebarViewModel
-    @State private var favoriteTables: [String] = FavoriteTablesStorage.shared.loadFavorites().sorted()
+    @State private var favoriteTables: [FavoriteTablesStorage.FavoriteEntry] = []
     @State private var folderToDelete: SQLFavoriteFolder?
     @State private var showDeleteFolderAlert = false
     @State private var linkedFileToTrash: LinkedSQLFavorite?
@@ -24,12 +24,9 @@ internal struct FavoritesTabView: View {
 
     private var searchText: String { windowState.favoritesSearchText }
     private var availableFavoriteTables: [TableInfo] {
-        let tableByName = tables.reduce(into: [String: TableInfo]()) { result, table in
-            if result[table.name] == nil {
-                result[table.name] = table
-            }
+        favoriteTables.compactMap { entry in
+            tables.first { $0.name == entry.name && $0.schema == entry.schema }
         }
-        return favoriteTables.compactMap { tableByName[$0] }
     }
 
     init(connectionId: UUID, windowState: WindowSidebarState, tables: [TableInfo], coordinator: MainContentCoordinator?) {
@@ -67,9 +64,10 @@ internal struct FavoritesTabView: View {
         }
         .onAppear {
             SQLFolderWatcher.shared.start()
+            favoriteTables = FavoriteTablesStorage.shared.favorites(for: connectionId).sorted { $0.name < $1.name }
         }
         .onReceive(NotificationCenter.default.publisher(for: .favoriteTablesDidChange)) { _ in
-            favoriteTables = FavoriteTablesStorage.shared.loadFavorites().sorted()
+            favoriteTables = FavoriteTablesStorage.shared.favorites(for: connectionId).sorted { $0.name < $1.name }
         }
         .sheet(item: $viewModel.editDialogItem) { item in
             FavoriteEditDialog(
@@ -211,7 +209,7 @@ internal struct FavoritesTabView: View {
         Divider()
 
         Button(role: .destructive) {
-            FavoriteTablesStorage.shared.removeFavorite(table.name)
+            FavoriteTablesStorage.shared.removeFavorite(name: table.name, schema: table.schema, connectionId: connectionId)
         } label: {
             Text(String(localized: "Remove from Favorites"))
         }
@@ -259,7 +257,7 @@ internal struct FavoritesTabView: View {
     private func deleteSelectedNode() {
         guard let nodeId = sidebarState.selectedFavoriteNodeId else { return }
         if let table = favoriteTable(forNodeId: nodeId) {
-            FavoriteTablesStorage.shared.removeFavorite(table.name)
+            FavoriteTablesStorage.shared.removeFavorite(name: table.name, schema: table.schema, connectionId: connectionId)
             return
         }
         if let fav = viewModel.favoriteForNodeId(nodeId) {

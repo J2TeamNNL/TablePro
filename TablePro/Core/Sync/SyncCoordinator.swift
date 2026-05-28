@@ -168,8 +168,8 @@ final class SyncCoordinator {
         }
 
         let favoriteTables = services.favoriteTablesStorage.loadFavorites()
-        for tableName in favoriteTables {
-            changeTracker.markDirty(.tableFavorite, id: FavoriteTablesStorage.syncId(for: tableName))
+        for entry in favoriteTables {
+            changeTracker.markDirty(.tableFavorite, id: FavoriteTablesStorage.syncId(for: entry))
         }
 
         // Mark all settings categories as dirty
@@ -304,7 +304,9 @@ final class SyncCoordinator {
             }
         }
 
-        collectDirtyTableFavorites(into: &recordsToSave, deletions: &recordIDsToDelete, zoneID: zoneID)
+        if settings.syncTableFavorites {
+            collectDirtyTableFavorites(into: &recordsToSave, deletions: &recordIDsToDelete, zoneID: zoneID)
+        }
 
         // Deduplicate deletion IDs to prevent CloudKit "can't delete same record twice" error
         let uniqueDeletions = Array(Set(recordIDsToDelete))
@@ -327,7 +329,9 @@ final class SyncCoordinator {
             if settings.syncSettings {
                 changeTracker.clearAllDirty(.settings)
             }
-            changeTracker.clearAllDirty(.tableFavorite)
+            if settings.syncTableFavorites {
+                changeTracker.clearAllDirty(.tableFavorite)
+            }
 
             // Clear tombstones only for types that were actually pushed
             if settings.syncConnections {
@@ -353,8 +357,10 @@ final class SyncCoordinator {
                     metadataStorage.removeTombstone(type: .settings, id: tombstone.id)
                 }
             }
-            for tombstone in metadataStorage.tombstones(for: .tableFavorite) {
-                metadataStorage.removeTombstone(type: .tableFavorite, id: tombstone.id)
+            if settings.syncTableFavorites {
+                for tombstone in metadataStorage.tombstones(for: .tableFavorite) {
+                    metadataStorage.removeTombstone(type: .tableFavorite, id: tombstone.id)
+                }
             }
 
             Self.logger.info("Push completed: \(recordsToSave.count) saved, \(recordIDsToDelete.count) deleted")
@@ -442,7 +448,7 @@ final class SyncCoordinator {
                 applyRemoteSSHProfile(record, tombstoneIds: sshTombstoneIds)
             case SyncRecordType.settings.rawValue where settings.syncSettings:
                 applyRemoteSettings(record)
-            case SyncRecordType.tableFavorite.rawValue:
+            case SyncRecordType.tableFavorite.rawValue where settings.syncTableFavorites:
                 applyRemoteTableFavorite(record, tombstoneIds: tableFavoriteTombstoneIds)
             default:
                 break
@@ -622,9 +628,9 @@ final class SyncCoordinator {
 
     @discardableResult
     private func applyRemoteTableFavorite(_ record: CKRecord, tombstoneIds: Set<String>) -> Bool {
-        let name: String
+        let entry: FavoriteTablesStorage.FavoriteEntry
         do {
-            name = try SyncRecordMapper.favoriteTableName(from: record)
+            entry = try SyncRecordMapper.favoriteEntry(from: record)
         } catch {
             let recordName = record.recordID.recordName
             let message = error.localizedDescription
@@ -633,9 +639,9 @@ final class SyncCoordinator {
             )
             return false
         }
-        if tombstoneIds.contains(FavoriteTablesStorage.syncId(for: name)) { return false }
+        if tombstoneIds.contains(FavoriteTablesStorage.syncId(for: entry)) { return false }
         let before = services.favoriteTablesStorage.loadFavorites()
-        services.favoriteTablesStorage.addFavoriteWithoutSync(name)
+        services.favoriteTablesStorage.addFavoriteWithoutSync(entry)
         return before != services.favoriteTablesStorage.loadFavorites()
     }
 
@@ -887,8 +893,8 @@ final class SyncCoordinator {
         let dirtyIds = changeTracker.dirtyRecords(for: .tableFavorite)
         if !dirtyIds.isEmpty {
             let favorites = services.favoriteTablesStorage.loadFavorites()
-            for name in favorites where dirtyIds.contains(FavoriteTablesStorage.syncId(for: name)) {
-                records.append(SyncRecordMapper.toCKRecord(favoriteTableName: name, in: zoneID))
+            for entry in favorites where dirtyIds.contains(FavoriteTablesStorage.syncId(for: entry)) {
+                records.append(SyncRecordMapper.toCKRecord(favoriteEntry: entry, in: zoneID))
             }
         }
 
