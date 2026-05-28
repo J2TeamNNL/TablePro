@@ -69,4 +69,34 @@ struct MainSplitViewControllerWindowMinimumSizeTests {
         #expect(size.width == 802)
         #expect(size.height == 448)
     }
+
+    @Test("Returns to the original base width after showing then hiding the inspector")
+    func relaxesBackToOriginalBaseAfterInspectorCycle() {
+        let originalBase = NSSize(width: 720, height: 448)
+
+        let shownSize = MainSplitViewController.resolvedContentMinSize(
+            base: originalBase,
+            panes: [
+                .init(minimumThickness: 280, isCollapsed: false),
+                .init(minimumThickness: 400, isCollapsed: false),
+                .init(minimumThickness: 270, isCollapsed: false)
+            ],
+            dividerThickness: 2
+        )
+
+        #expect(shownSize.width == 954)
+
+        let hiddenSize = MainSplitViewController.resolvedContentMinSize(
+            base: originalBase,
+            panes: [
+                .init(minimumThickness: 280, isCollapsed: false),
+                .init(minimumThickness: 400, isCollapsed: false),
+                .init(minimumThickness: 270, isCollapsed: true)
+            ],
+            dividerThickness: 2
+        )
+
+        #expect(hiddenSize.width == 720)
+        #expect(hiddenSize.height == 448)
+    }
 }

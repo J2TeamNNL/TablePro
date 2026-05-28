@@ -44,6 +44,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     private var detailHosting: NSHostingController<AnyView>!
     private var inspectorHosting: NSHostingController<AnyView>!
     private var hasMaterializedInspector = false
+    private var originalContentMinSize: CGSize = .zero
 
     // MARK: - Toolbar
 
@@ -261,10 +262,8 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     ) {
         guard let window = view.window else { return }
 
-        let baseWindowContentMinSize = window.contentRect(forFrameRect: NSRect(origin: .zero, size: window.minSize)).size
-
         let resolvedMinSize = Self.resolvedContentMinSize(
-            base: baseWindowContentMinSize,
+            base: originalContentMinSize,
             panes: [
                 PaneMinimum(
                     minimumThickness: sidebarSplitItem?.minimumThickness ?? .zero,
@@ -334,6 +333,10 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
             installToolbar(coordinator: sessionState.coordinator)
         }
 
+        if originalContentMinSize == .zero {
+            originalContentMinSize = window.contentRect(forFrameRect: NSRect(origin: .zero, size: window.minSize)).size
+        }
+
         if let currentSession, let coordinator = sessionState?.coordinator {
             sidebarContainer.updateSidebarState(
                 SharedSidebarState.forConnection(currentSession.connection.id),
@@ -349,10 +352,6 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     override func viewDidDisappear() {
         super.viewDidDisappear()
         removeObservers()
-    }
-
-    override func splitViewDidResizeSubviews(_ notification: Notification) {
-        recomputeWindowMinimumSize()
     }
 
     // MARK: - Observers
