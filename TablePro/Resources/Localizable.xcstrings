@@ -4737,6 +4737,9 @@
         }
       }
     },
+    "Add to Favorites" : {
+
+    },
     "Add validation rules to ensure data integrity" : {
       "localizations" : {
         "tr" : {
@@ -15165,6 +15168,9 @@
     "Default row sort:" : {
 
     },
+    "Default token" : {
+
+    },
     "Default value" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -21360,6 +21366,9 @@
           }
         }
       }
+    },
+    "Favorited" : {
+
     },
     "Favorites" : {
       "localizations" : {
@@ -38343,6 +38352,9 @@
     "Remove attachment" : {
 
     },
+    "Remove Column" : {
+
+    },
     "Remove Failed" : {
 
     },
@@ -38456,6 +38468,12 @@
         }
       }
     },
+    "Remove Foreign Key" : {
+
+    },
+    "Remove from Favorites" : {
+
+    },
     "Remove from Group" : {
       "localizations" : {
         "tr" : {
@@ -38482,6 +38500,9 @@
 
     },
     "Remove image" : {
+
+    },
+    "Remove Index" : {
 
     },
     "Remove jump host" : {
@@ -40206,9 +40227,6 @@
           }
         }
       }
-    },
-    "Sample" : {
-
     },
     "Sanitize formula-like values" : {
       "extractionState" : "stale",
