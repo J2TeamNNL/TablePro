@@ -7,26 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- Changing the editor or data grid font size in Appearance settings now applies immediately and persists across relaunch, instead of resetting and leaving orphan custom themes behind (#1381)
 ### Added
 
-- Cloudflare Tunnel: connect to a database behind Cloudflare Access by letting TablePro start and stop `cloudflared access tcp` for you, the same way it manages SSH tunnels. Configure it per connection with browser sign-in or a service token. Needs cloudflared installed (`brew install cloudflared`). (#1285)
-- Fill Column: right-click a column header and choose Fill Column to set one value across all loaded rows. The change is staged like a normal edit, so you review it and Save before it applies, and one undo reverts the whole fill. Not available on primary key columns. (#1304)
-- AWS IAM authentication for PostgreSQL and MySQL connections to RDS and Aurora. Pick AWS IAM in the connection's Authentication field and use an access key, a named AWS profile, or SSO. TablePro generates a fresh login token on every connect and reconnect, so you never paste an expiring token, and SSL is required automatically. (#1291)
-- Date, datetime, timestamp, and time cells show a date picker from the chevron button, so you can choose a value visually. Double-clicking still edits the cell as text, and the picker keeps the value's existing format, fractional seconds, and timezone offset. (#1405)
-- Pagination bar for table tabs with a rows-per-page menu (5, 10, 20, 100, 500, 1,000, All rows, or a custom size) and First, Previous, Next, and Last page buttons. (#1364)
-- Click the page indicator in the pagination bar to jump to a specific page. (#1364)
-- Pagination now appears for filtered tables whose total row count is unknown, so you can page through them instead of seeing only the first page. (#1364)
-- First Page and Last Page keyboard actions, unbound by default and assignable in Settings > Keyboard. (#1364)
-- JSON and JSONB cells now display pretty-printed by default, keeping your original key order and exact numbers. Viewing or reformatting a value no longer marks the row as changed, and saving no longer reorders keys or rounds large integers.
+- BigQuery: the sidebar now shows every dataset as an expandable node, with each dataset's tables loading when you open it, instead of showing one dataset at a time behind a picker.
+- OpenCode Zen as an AI provider. Add it from the provider list and paste an OpenCode key, or leave the key blank to use the free models; the model list loads automatically, covering the Claude, GPT, Gemini, and open models Zen serves. (#1400)
+- Oracle Database 11g (11.1 and 11.2) now connects. Previously only 12c and later worked, so 11g servers failed with a "Server Version Not Supported" error. (#1425)
+- Oracle connections can now use a SID instead of a service name. Set Connection Type to SID in the connection form and enter the SID. (#1425)
+- Cmd-click a foreign key arrow to open the referenced table in a new tab instead of the current one. The right-click menu has the same Open in New Tab option. (#1421)
+- Cells holding JSON or PHP serialized values in text columns now open in the structured viewer automatically, without requiring the column type to be JSON.
+
+### Changed
+
+- Clearing a query with the trash button now also clears its results, and a new Clear Results item on the results right-click menu clears results on their own. (#1256)
+- Inserting SQL from AI Chat opens it in a new query tab instead of appending to the current query. An empty editor is filled in place. (#1257)
 
 ### Fixed
 
-- Installing or updating a plugin right after updating TablePro now refetches the current plugin list first, so it no longer fails against a stale cached list (the error a restart used to clear). (#1380)
+- Pasting copied rows no longer misplaces values when a cell contains a comma (such as a user agent string); each value stays in its own column, and a real NULL is kept distinct from the literal text "NULL".
+- BigQuery: switching to another table now loads its data right away, instead of leaving the grid empty until you close and reopen the tab.
+- Custom and OpenAI-compatible AI providers now work when the base URL already ends in `/v1`, instead of building a doubled `/v1/v1/` path that failed. (#1400)
+- MongoDB: opening a collection no longer crashes when a document contains a NaN or infinite number. (#1418)
+- After updating TablePro, connecting to a database whose plugin is still updating in the background now waits for that update to finish instead of wrongly showing "Plugin Not Installed", so you no longer have to quit and reopen the app. When no compatible plugin build exists yet, the message now tells you to update TablePro. (#1380)
+- Opening a saved connection that fails now shows the detailed troubleshooting dialog with suggested fixes, the same one Test Connection shows, instead of a generic error alert. (#1425, #483)
+- Oracle connection errors no longer surface the driver's raw internal message; failures now explain the cause in plain language. (#483)
+- AWS IAM authentication with a named profile now reads `~/.aws/config` (not just `~/.aws/credentials`) and supports `credential_process`, so profiles backed by SSO, IAM Identity Center, or assume-role work through `aws configure export-credentials`. (#1291)
+- iOS: a connection's Safe Mode setting now survives relaunch. iCloud sync no longer drops the value, so a connection set to Confirm Writes or Read-Only no longer reverts to Off after reopening the app.
+- iOS: running a query that returns a very large result no longer crashes the app. The query editor keeps the first rows it loads, stops before memory runs low, and tells you to add LIMIT to fetch more.
+- iOS: Safe Mode "Confirm Writes" now prompts before saving a row edit or inserting a row, matching the query editor. Previously grid edits and inserts saved with no confirmation.
+- Redshift: schema switching now works, along with the contains, starts with, and ends with filters and table search. All previously failed with a SQL syntax error. (#1439)
+- Double-clicking a CSV or TSV file when TablePro is closed now opens the file directly, instead of showing the welcome screen. (#1443)
+- Opening a `.sql` file now names the tab after the file instead of showing "SQL Query". (#1220)
+
+## [0.45.0] - 2026-05-26
+
+### Added
+
+- Cloudflare Tunnel: connect to a database behind Cloudflare Access. TablePro starts and stops `cloudflared access tcp` per connection, the same way it manages SSH tunnels, with browser sign-in or a service token. Needs cloudflared (`brew install cloudflared`). (#1285)
+- Fill Column: right-click a column header to set one value across all loaded rows. The fill is staged like a normal edit, and one undo reverts it. Not available on primary key columns. (#1304)
+- AWS IAM authentication for PostgreSQL and MySQL on RDS and Aurora. Pick AWS IAM in the connection's Authentication field with an access key, named profile, or SSO. TablePro generates a fresh token on every connect and requires SSL. (#1291)
+- Date picker for date, datetime, timestamp, and time cells, from the chevron button. Double-clicking still edits the cell as text, and the picker keeps the value's format, fractional seconds, and timezone offset. (#1405)
+- Pagination bar for table tabs with a rows-per-page menu (5, 10, 20, 100, 500, 1,000, All rows, or custom) and First, Previous, Next, and Last buttons. (#1364)
+- Click the page indicator in the pagination bar to jump to a specific page. (#1364)
+- Pagination now appears for filtered tables with an unknown total row count, instead of showing only the first page. (#1364)
+- First Page and Last Page keyboard actions, unbound by default and assignable in Settings > Keyboard. (#1364)
+- JSON and JSONB cells display pretty-printed by default, keeping your key order and exact numbers. Viewing or reformatting no longer marks the row changed, and saving no longer reorders keys or rounds large integers.
+
+### Fixed
+
+- Changing the editor or data grid font size in Appearance settings now applies immediately and persists across relaunch, with no orphan custom themes left behind. (#1381)
+- Installing or updating a plugin right after updating TablePro now refetches the plugin list first, so it no longer fails against a stale cached list. (#1380)
 - Pressing Esc to close the Raw SQL filter suggestions, or to clear a search field, no longer also exits fullscreen. (#1403)
-- Connecting an OAuth-capable MCP client like Claude Code with an invalid or expired token now shows a clear error instead of a confusing "Invalid OAuth error response". (#1409)
+- Connecting an OAuth-capable MCP client like Claude Code with an invalid or expired token now shows a clear error instead of "Invalid OAuth error response". (#1409)
 
 ## [0.44.0] - 2026-05-23
 
@@ -1994,7 +2025,8 @@ TablePro is a native macOS database client built with SwiftUI and AppKit, design
     - Custom SQL query templates
     - Performance optimized for large datasets
 
-[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.44.0...HEAD
+[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.45.0...HEAD
+[0.45.0]: https://github.com/TableProApp/TablePro/compare/v0.44.0...v0.45.0
 [0.44.0]: https://github.com/TableProApp/TablePro/compare/v0.43.3...v0.44.0
 [0.43.3]: https://github.com/TableProApp/TablePro/compare/v0.43.2...v0.43.3
 [0.43.2]: https://github.com/TableProApp/TablePro/compare/v0.43.1...v0.43.2
