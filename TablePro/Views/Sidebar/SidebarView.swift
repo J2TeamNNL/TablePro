@@ -11,7 +11,7 @@ import TableProPluginKit
 struct SidebarView: View {
     @State private var viewModel: SidebarViewModel
     @Bindable private var schemaService = SchemaService.shared
-    @State private var favoriteTables: Set<String> = FavoriteTablesStorage.shared.loadFavorites()
+    @State private var favoriteTables: Set<FavoriteTablesStorage.FavoriteEntry> = []
     @State private var recentTables: [RecentTablesStore.Entry] = []
 
     var sidebarState: SharedSidebarState
@@ -249,10 +249,7 @@ struct SidebarView: View {
     }
 
     private func reloadRecentTables() {
-        guard let database = coordinator?.activeDatabaseName else {
-            recentTables = []
-            return
-        }
+        let database = coordinator?.activeDatabaseName.nilIfEmpty
         recentTables = RecentTablesStore.shared.entries(
             connectionID: connectionId,
             database: database
@@ -270,8 +267,8 @@ struct SidebarView: View {
                         table: info,
                         isPendingTruncate: pendingTruncates.contains(info.name),
                         isPendingDelete: pendingDeletes.contains(info.name),
-                        isFavorite: favoriteTables.contains(info.name),
-                        onToggleFavorite: { FavoriteTablesStorage.shared.toggle(info.name) }
+                        isFavorite: favoriteTables.contains(FavoriteTablesStorage.FavoriteEntry(connectionId: connectionId, schema: info.schema, name: info.name)),
+                        onToggleFavorite: { FavoriteTablesStorage.shared.toggle(name: info.name, schema: info.schema, connectionId: connectionId) }
                     )
                     .tag(info)
                     .contextMenu {
@@ -329,12 +326,13 @@ struct SidebarView: View {
             windowState.selectedTables.removeAll()
         }
         .onReceive(NotificationCenter.default.publisher(for: .favoriteTablesDidChange)) { _ in
-            favoriteTables = FavoriteTablesStorage.shared.loadFavorites()
+            favoriteTables = FavoriteTablesStorage.shared.favorites(for: connectionId)
         }
         .onReceive(NotificationCenter.default.publisher(for: .recentTablesDidChange)) { _ in
             reloadRecentTables()
         }
         .onAppear {
+            favoriteTables = FavoriteTablesStorage.shared.favorites(for: connectionId)
             reloadRecentTables()
         }
     }
@@ -379,8 +377,8 @@ struct SidebarView: View {
                     table: table,
                     isPendingTruncate: pendingTruncates.contains(table.name),
                     isPendingDelete: pendingDeletes.contains(table.name),
-                    isFavorite: favoriteTables.contains(table.name),
-                    onToggleFavorite: { FavoriteTablesStorage.shared.toggle(table.name) }
+                    isFavorite: favoriteTables.contains(FavoriteTablesStorage.FavoriteEntry(connectionId: connectionId, schema: table.schema, name: table.name)),
+                    onToggleFavorite: { FavoriteTablesStorage.shared.toggle(name: table.name, schema: table.schema, connectionId: connectionId) }
                 )
                 .tag(table)
                 .contextMenu {

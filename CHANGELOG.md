@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - "Create New Table…" from the sidebar right-click menu. Use the plus button next to the sidebar filter instead.
+- "View ER Diagram" from the sidebar right-click menu. Access it from the Favorites tab context menu instead.
 
 ### Fixed
 

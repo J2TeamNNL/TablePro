@@ -1,7 +1,3 @@
-//
-//  FavoriteTablesStorageTests.swift
-//  TableProTests
-//
 
 import Foundation
 @testable import TablePro
@@ -26,20 +22,24 @@ struct FavoriteTablesStorageTests {
     @Test("Add favorite marks stable sync ID dirty")
     func addMarksDirty() throws {
         let (storage, metadata) = try makeStorage()
-        storage.addFavorite("users")
+        let connId = UUID()
+        storage.addFavorite(name: "users", schema: nil, connectionId: connId)
 
-        let id = FavoriteTablesStorage.syncId(for: "users")
-        #expect(storage.loadFavorites() == ["users"])
+        let entry = FavoriteTablesStorage.FavoriteEntry(connectionId: connId, schema: nil, name: "users")
+        let id = FavoriteTablesStorage.syncId(for: entry)
+        #expect(storage.loadFavorites() == [entry])
         #expect(metadata.dirtyIds(for: .tableFavorite) == [id])
     }
 
     @Test("Remove favorite creates sync tombstone")
     func removeCreatesTombstone() throws {
         let (storage, metadata) = try makeStorage()
-        storage.addFavorite("users")
-        storage.removeFavorite("users")
+        let connId = UUID()
+        storage.addFavorite(name: "users", schema: nil, connectionId: connId)
+        storage.removeFavorite(name: "users", schema: nil, connectionId: connId)
 
-        let id = FavoriteTablesStorage.syncId(for: "users")
+        let entry = FavoriteTablesStorage.FavoriteEntry(connectionId: connId, schema: nil, name: "users")
+        let id = FavoriteTablesStorage.syncId(for: entry)
         #expect(storage.loadFavorites().isEmpty)
         #expect(metadata.dirtyIds(for: .tableFavorite).isEmpty)
         #expect(metadata.tombstones(for: .tableFavorite).contains { $0.id == id })
@@ -48,11 +48,52 @@ struct FavoriteTablesStorageTests {
     @Test("Remote apply helpers do not track local sync changes")
     func withoutSyncDoesNotTrackChanges() throws {
         let (storage, metadata) = try makeStorage()
-        storage.addFavoriteWithoutSync("orders")
-        storage.removeFavoriteWithoutSync("orders")
+        let connId = UUID()
+        let entry = FavoriteTablesStorage.FavoriteEntry(connectionId: connId, schema: nil, name: "orders")
+        storage.addFavoriteWithoutSync(entry)
+        storage.removeFavoriteWithoutSync(entry)
 
         #expect(storage.loadFavorites().isEmpty)
         #expect(metadata.dirtyIds(for: .tableFavorite).isEmpty)
         #expect(metadata.tombstones(for: .tableFavorite).isEmpty)
+    }
+
+    @Test("Favorites scoped per connection: same name in different connections are distinct")
+    func favoritesAreConnectionScoped() throws {
+        let (storage, _) = try makeStorage()
+        let connA = UUID()
+        let connB = UUID()
+        storage.addFavorite(name: "users", schema: nil, connectionId: connA)
+        storage.addFavorite(name: "users", schema: nil, connectionId: connB)
+
+        let favA = storage.favorites(for: connA)
+        let favB = storage.favorites(for: connB)
+        #expect(favA.count == 1)
+        #expect(favB.count == 1)
+        #expect(favA.first?.connectionId == connA)
+        #expect(favB.first?.connectionId == connB)
+        #expect(storage.loadFavorites().count == 2)
+    }
+
+    @Test("Schema-qualified and unqualified same-named tables are distinct")
+    func schemaQualifiedIsDistinct() throws {
+        let (storage, _) = try makeStorage()
+        let connId = UUID()
+        storage.addFavorite(name: "users", schema: "public", connectionId: connId)
+        storage.addFavorite(name: "users", schema: "app", connectionId: connId)
+        storage.addFavorite(name: "users", schema: nil, connectionId: connId)
+
+        #expect(storage.favorites(for: connId).count == 3)
+    }
+
+    @Test("Toggle on then off leaves no dirty entries")
+    func toggleOnThenOffNoDirty() throws {
+        let (storage, metadata) = try makeStorage()
+        let connId = UUID()
+        storage.toggle(name: "orders", schema: nil, connectionId: connId)
+        storage.toggle(name: "orders", schema: nil, connectionId: connId)
+
+        #expect(storage.favorites(for: connId).isEmpty)
+        #expect(metadata.dirtyIds(for: .tableFavorite).isEmpty)
     }
 }
