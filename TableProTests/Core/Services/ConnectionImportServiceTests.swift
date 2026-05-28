@@ -100,6 +100,100 @@ struct ConnectionImportServiceTests {
         }
     }
 
+    @Test("redis connections with different database indices are not duplicates")
+    func redisConnectionsWithDifferentDatabaseIndicesAreNotDuplicates() {
+        let existing = DatabaseConnection(
+            name: "Redis DB 0",
+            host: "redis.example.com",
+            port: 6_379,
+            username: "cache",
+            type: .redis,
+            redisDatabase: 0
+        )
+        let imported = ExportableConnection(
+            name: "Redis DB 1",
+            host: "redis.example.com",
+            port: 6_379,
+            database: "",
+            username: "cache",
+            type: "Redis",
+            sshConfig: nil,
+            sslConfig: nil,
+            color: nil,
+            tagName: nil,
+            groupName: nil,
+            sshProfileId: nil,
+            safeModeLevel: nil,
+            aiPolicy: nil,
+            additionalFields: nil,
+            redisDatabase: 1,
+            startupCommands: nil,
+            localOnly: nil
+        )
+
+        let preview = ConnectionExportService.analyzeImport(
+            makeEnvelope(with: [imported]),
+            existingConnections: [existing],
+            registeredTypeIds: Set(["Redis"]),
+            fileExists: { _ in true }
+        )
+
+        guard let item = preview.items.first else {
+            Issue.record("Expected preview item")
+            return
+        }
+
+        if case .duplicate = item.status {
+            Issue.record("Expected non-duplicate status for different Redis database indices")
+        }
+    }
+
+    @Test("redis connections with matching database indices are duplicates")
+    func redisConnectionsWithMatchingDatabaseIndicesAreDuplicates() {
+        let existing = DatabaseConnection(
+            name: "Redis DB 0",
+            host: "redis.example.com",
+            port: 6_379,
+            username: "cache",
+            type: .redis,
+            redisDatabase: 0
+        )
+        let imported = ExportableConnection(
+            name: "Redis DB 0 Copy",
+            host: "redis.example.com",
+            port: 6_379,
+            database: "",
+            username: "cache",
+            type: "Redis",
+            sshConfig: nil,
+            sslConfig: nil,
+            color: nil,
+            tagName: nil,
+            groupName: nil,
+            sshProfileId: nil,
+            safeModeLevel: nil,
+            aiPolicy: nil,
+            additionalFields: nil,
+            redisDatabase: 0,
+            startupCommands: nil,
+            localOnly: nil
+        )
+
+        let preview = ConnectionExportService.analyzeImport(
+            makeEnvelope(with: [imported]),
+            existingConnections: [existing],
+            registeredTypeIds: Set(["Redis"]),
+            fileExists: { _ in true }
+        )
+
+        guard case .duplicate(let matched) = preview.items.first?.status else {
+            Issue.record("Expected duplicate status for matching Redis database indices")
+            return
+        }
+
+        #expect(matched.id == existing.id)
+    }
+
     @Test("replace updates the existing connection")
     func replaceUpdatesTheExistingConnection() {
         let storage = makeStorage()

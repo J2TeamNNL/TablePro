@@ -892,7 +892,7 @@ enum ConnectionExportService {
             components: [
                 normalizedLookupKey(connection.host),
                 String(connection.port),
-                normalizedLookupKey(connection.database),
+                effectiveDatabaseKey(database: connection.database, redisDatabase: connection.redisDatabase),
                 normalizedLookupKey(connection.username)
             ]
         )
@@ -903,10 +903,21 @@ enum ConnectionExportService {
             components: [
                 normalizedLookupKey(connection.host),
                 String(connection.port),
-                normalizedLookupKey(connection.database),
+                effectiveDatabaseKey(database: connection.database, redisDatabase: connection.redisDatabase),
                 normalizedLookupKey(connection.username)
             ]
         )
+    }
+
+    private static func effectiveDatabaseKey(database: String?, redisDatabase: Int?) -> String {
+        let normalized = normalizedLookupKey(database)
+        if !normalized.isEmpty {
+            return normalized
+        }
+        if let redisDatabase {
+            return String(redisDatabase)
+        }
+        return ""
     }
 
     private static func tagIdsByName() -> [String: UUID] {
