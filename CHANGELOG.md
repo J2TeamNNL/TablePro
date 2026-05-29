@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - "Create New Table…" from the sidebar right-click menu. Use the plus button next to the sidebar filter instead.
 - "View ER Diagram" from the sidebar right-click menu. Access it from the Favorites tab context menu instead.
+- A connection can read its password from a file, environment variable, or command at connect time instead of the Keychain, so scripts can provision a connection without entering the password by hand. (#1254)
 
 ### Fixed
 

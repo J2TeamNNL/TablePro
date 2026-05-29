@@ -551,6 +551,7 @@ final class SyncCoordinator {
             }
             var merged = remoteConnection
             merged.localOnly = connections[index].localOnly
+            merged.passwordSource = connections[index].passwordSource
             connections[index] = merged
         } else {
             connections.append(remoteConnection)
