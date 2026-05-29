@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - "Create New Table…" from the sidebar right-click menu. Use the plus button next to the sidebar filter instead.
 - "View ER Diagram" from the sidebar right-click menu. Access it from the Favorites tab context menu instead.
 
+### Fixed
+
+- Moving a connection into or out of a group now syncs across devices, instead of leaving it ungrouped on your other Macs.
+
 ## [0.46.0] - 2026-05-28
 
 ### Added
