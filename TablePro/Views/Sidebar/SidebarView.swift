@@ -12,7 +12,6 @@ struct SidebarView: View {
     @State private var viewModel: SidebarViewModel
     @Bindable private var schemaService = SchemaService.shared
     @State private var favoriteTables: Set<FavoriteTablesStorage.FavoriteEntry> = []
-    @State private var recentTables: [RecentTablesStore.Entry] = []
 
     var sidebarState: SharedSidebarState
     var windowState: WindowSidebarState
@@ -262,22 +261,9 @@ struct SidebarView: View {
 
     // MARK: - Table List
 
-    private var filteredRecents: [RecentTablesStore.Entry] {
-        let search = viewModel.searchText
-        guard !search.isEmpty else { return recentTables }
-        return recentTables.filter { $0.name.localizedCaseInsensitiveContains(search) }
-    }
-
     private var activeDatabase: String? {
         let name = coordinator?.activeDatabaseName ?? ""
         return name.isEmpty ? nil : name
-    }
-
-    private func tableInfo(forRecent entry: RecentTablesStore.Entry) -> TableInfo {
-        if let match = tables.first(where: { $0.name == entry.name && $0.schema == entry.schema }) {
-            return match
-        }
-        return TableInfo(name: entry.name, type: entry.type, rowCount: nil, schema: entry.schema)
     }
 
     private func isFavorite(_ table: TableInfo) -> Bool {
@@ -298,53 +284,8 @@ struct SidebarView: View {
         )
     }
 
-    private func reloadRecentTables() {
-        recentTables = RecentTablesStore.shared.entries(
-            connectionID: connectionId,
-            database: activeDatabase
-        )
-    }
-
-    @ViewBuilder
-    private var recentSection: some View {
-        let recents = filteredRecents
-        if !recents.isEmpty {
-            Section(isExpanded: $viewModel.isRecentsExpanded) {
-                ForEach(recents) { entry in
-                    let info = tableInfo(forRecent: entry)
-                    TableRow(
-                        table: info,
-                        isPendingTruncate: pendingTruncates.contains(info.name),
-                        isPendingDelete: pendingDeletes.contains(info.name),
-                        isFavorite: isFavorite(info),
-                        onToggleFavorite: { toggleFavorite(info) }
-                    )
-                    .selectionDisabled()
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        onDoubleClick?(info)
-                    }
-                    .contextMenu {
-                        SidebarContextMenu(
-                            clickedTable: info,
-                            selectedTables: windowState.selectedTables,
-                            isReadOnly: coordinator?.safeModeLevel.blocksAllWrites ?? false,
-                            onBatchToggleTruncate: { viewModel.batchToggleTruncate(tableNames: $0) },
-                            onBatchToggleDelete: { viewModel.batchToggleDelete(tableNames: $0) },
-                            coordinator: coordinator
-                        )
-                    }
-                }
-            } header: {
-                Text(String(localized: "Recent"))
-            }
-        }
-    }
-
     private var tableList: some View {
         List(selection: selectedTablesBinding) {
-            recentSection
-
             ForEach(SidebarObjectKind.allCases, id: \.self) { kind in
                 sectionView(for: kind)
             }
@@ -381,12 +322,8 @@ struct SidebarView: View {
         .onReceive(NotificationCenter.default.publisher(for: .favoriteTablesDidChange)) { _ in
             favoriteTables = FavoriteTablesStorage.shared.favorites(for: connectionId)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .recentTablesDidChange)) { _ in
-            reloadRecentTables()
-        }
         .onAppear {
             favoriteTables = FavoriteTablesStorage.shared.favorites(for: connectionId)
-            reloadRecentTables()
         }
     }
 

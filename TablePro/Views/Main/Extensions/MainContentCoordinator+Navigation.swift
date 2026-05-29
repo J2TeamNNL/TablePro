@@ -21,11 +21,6 @@ extension MainContentCoordinator {
         redirectToSibling: Bool = false,
         forceNonPreview: Bool = false
     ) {
-        RecentTablesStore.shared.push(
-            connectionID: connection.id,
-            database: activeDatabaseName.isEmpty ? nil : activeDatabaseName,
-            table: table
-        )
         openTableTab(
             table.name,
             schema: table.schema,
