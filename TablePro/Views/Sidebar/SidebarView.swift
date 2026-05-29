@@ -100,11 +100,10 @@ struct SidebarView: View {
         Group {
             switch sidebarState.selectedSidebarTab {
             case .tables:
-                VStack(spacing: 0) {
-                    tablesContent
-                    Divider()
-                    tablesBottomBar
-                }
+                tablesContent
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        tablesBottomBar
+                    }
             case .favorites:
                 if let coordinator {
                     FavoritesTabView(
@@ -169,6 +168,8 @@ struct SidebarView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
+        .frame(maxWidth: .infinity)
+        .background(.bar)
     }
 
     private var createObjectMenu: some View {
