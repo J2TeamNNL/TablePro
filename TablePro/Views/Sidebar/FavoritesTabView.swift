@@ -67,10 +67,7 @@ internal struct FavoritesTabView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 0) {
-                Divider()
-                bottomToolbar
-            }
+            bottomToolbar
         }
         .onAppear {
             SQLFolderWatcher.shared.start()
@@ -574,6 +571,8 @@ internal struct FavoritesTabView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+        .frame(maxWidth: .infinity)
+        .background(.bar)
     }
 
     private func addLinkedFolder() {
