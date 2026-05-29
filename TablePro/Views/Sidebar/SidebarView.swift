@@ -241,6 +241,11 @@ struct SidebarView: View {
         return recentTables.filter { $0.name.localizedCaseInsensitiveContains(search) }
     }
 
+    private var activeDatabase: String? {
+        let name = coordinator?.activeDatabaseName ?? ""
+        return name.isEmpty ? nil : name
+    }
+
     private func tableInfo(forRecent entry: RecentTablesStore.Entry) -> TableInfo {
         if let match = tables.first(where: { $0.name == entry.name && $0.schema == entry.schema }) {
             return match
@@ -251,17 +256,25 @@ struct SidebarView: View {
     private func isFavorite(_ table: TableInfo) -> Bool {
         favoriteTables.contains(FavoriteTablesStorage.FavoriteEntry(
             connectionId: connectionId,
+            database: activeDatabase,
             schema: table.schema,
             name: table.name
         ))
     }
 
+    private func toggleFavorite(_ table: TableInfo) {
+        FavoriteTablesStorage.shared.toggle(
+            name: table.name,
+            schema: table.schema,
+            database: activeDatabase,
+            connectionId: connectionId
+        )
+    }
+
     private func reloadRecentTables() {
-        let activeName = coordinator?.activeDatabaseName ?? ""
-        let database: String? = activeName.isEmpty ? nil : activeName
         recentTables = RecentTablesStore.shared.entries(
             connectionID: connectionId,
-            database: database
+            database: activeDatabase
         )
     }
 
@@ -277,7 +290,7 @@ struct SidebarView: View {
                         isPendingTruncate: pendingTruncates.contains(info.name),
                         isPendingDelete: pendingDeletes.contains(info.name),
                         isFavorite: isFavorite(info),
-                        onToggleFavorite: { FavoriteTablesStorage.shared.toggle(name: info.name, schema: info.schema, connectionId: connectionId) }
+                        onToggleFavorite: { toggleFavorite(info) }
                     )
                     .selectionDisabled()
                     .contentShape(Rectangle())
@@ -391,7 +404,7 @@ struct SidebarView: View {
                     isPendingTruncate: pendingTruncates.contains(table.name),
                     isPendingDelete: pendingDeletes.contains(table.name),
                     isFavorite: isFavorite(table),
-                    onToggleFavorite: { FavoriteTablesStorage.shared.toggle(name: table.name, schema: table.schema, connectionId: connectionId) }
+                    onToggleFavorite: { toggleFavorite(table) }
                 )
                 .tag(table)
                 .contextMenu {

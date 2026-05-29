@@ -11,6 +11,7 @@ final class FavoriteTablesStorage {
 
     struct FavoriteEntry: Codable, Hashable {
         let connectionId: UUID
+        let database: String?
         let schema: String?
         let name: String
     }
@@ -38,14 +39,16 @@ final class FavoriteTablesStorage {
         return _loadFavorites().filter { $0.connectionId == connectionId }
     }
 
-    func isFavorite(name: String, schema: String?, connectionId: UUID) -> Bool {
+    func isFavorite(name: String, schema: String?, database: String?, connectionId: UUID) -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        return _loadFavorites().contains(FavoriteEntry(connectionId: connectionId, schema: schema, name: name))
+        return _loadFavorites().contains(
+            FavoriteEntry(connectionId: connectionId, database: database, schema: schema, name: name)
+        )
     }
 
-    func toggle(name: String, schema: String?, connectionId: UUID) {
-        let entry = FavoriteEntry(connectionId: connectionId, schema: schema, name: name)
+    func toggle(name: String, schema: String?, database: String?, connectionId: UUID) {
+        let entry = FavoriteEntry(connectionId: connectionId, database: database, schema: schema, name: name)
         let action: TrackedAction = mutate { favorites in
             if favorites.contains(entry) {
                 favorites.remove(entry)
@@ -58,8 +61,8 @@ final class FavoriteTablesStorage {
     }
 
     @discardableResult
-    func addFavorite(name: String, schema: String?, connectionId: UUID) -> Bool {
-        let entry = FavoriteEntry(connectionId: connectionId, schema: schema, name: name)
+    func addFavorite(name: String, schema: String?, database: String?, connectionId: UUID) -> Bool {
+        let entry = FavoriteEntry(connectionId: connectionId, database: database, schema: schema, name: name)
         let action: TrackedAction = mutate { favorites in
             guard favorites.insert(entry).inserted else { return .noChange }
             return .added(entry)
@@ -77,8 +80,8 @@ final class FavoriteTablesStorage {
         return action.changed
     }
 
-    func removeFavorite(name: String, schema: String?, connectionId: UUID) {
-        let entry = FavoriteEntry(connectionId: connectionId, schema: schema, name: name)
+    func removeFavorite(name: String, schema: String?, database: String?, connectionId: UUID) {
+        let entry = FavoriteEntry(connectionId: connectionId, database: database, schema: schema, name: name)
         let action = mutate { favorites in
             favorites.remove(entry) != nil ? .removed(entry) : .noChange
         }
@@ -123,7 +126,10 @@ final class FavoriteTablesStorage {
     }
 
     static func syncId(for entry: FavoriteEntry) -> String {
-        let raw = entry.connectionId.uuidString + "|" + (entry.schema ?? "") + "|" + entry.name
+        let raw = entry.connectionId.uuidString
+            + "|" + (entry.database ?? "")
+            + "|" + (entry.schema ?? "")
+            + "|" + entry.name
         return raw.sha256
     }
 

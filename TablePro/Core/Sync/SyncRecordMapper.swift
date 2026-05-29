@@ -334,6 +334,9 @@ struct SyncRecordMapper {
 
         record["connectionId"] = entry.connectionId.uuidString as CKRecordValue
         record["name"] = entry.name as CKRecordValue
+        if let database = entry.database {
+            record["database"] = database as CKRecordValue
+        }
         if let schema = entry.schema {
             record["schema"] = schema as CKRecordValue
         }
@@ -351,8 +354,14 @@ struct SyncRecordMapper {
               let connectionId = UUID(uuidString: connectionIdString) else {
             throw SyncDecodeError.missingRequiredField("connectionId")
         }
+        let database = record["database"] as? String
         let schema = record["schema"] as? String
-        return FavoriteTablesStorage.FavoriteEntry(connectionId: connectionId, schema: schema, name: name)
+        return FavoriteTablesStorage.FavoriteEntry(
+            connectionId: connectionId,
+            database: database,
+            schema: schema,
+            name: name
+        )
     }
 
     // MARK: - SSH Profile

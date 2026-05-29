@@ -18,10 +18,25 @@ internal struct FavoritesTabView: View {
     private var coordinator: MainContentCoordinator?
 
     private var searchText: String { windowState.favoritesSearchText }
+    private var activeDatabase: String? {
+        let name = coordinator?.activeDatabaseName ?? ""
+        return name.isEmpty ? nil : name
+    }
+
     private var availableFavoriteTables: [TableInfo] {
-        favoriteTables.compactMap { entry in
-            tables.first { $0.name == entry.name && $0.schema == entry.schema }
+        let database = activeDatabase
+        let tablesByKey = Dictionary(
+            tables.map { (Self.tableKey(schema: $0.schema, name: $0.name), $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return favoriteTables.compactMap { entry in
+            guard entry.database == database else { return nil }
+            return tablesByKey[Self.tableKey(schema: entry.schema, name: entry.name)]
         }
+    }
+
+    private static func tableKey(schema: String?, name: String) -> String {
+        "\(schema ?? "")\u{1}\(name)"
     }
 
     init(connectionId: UUID, windowState: WindowSidebarState, tables: [TableInfo], coordinator: MainContentCoordinator?) {
@@ -204,7 +219,7 @@ internal struct FavoritesTabView: View {
         Divider()
 
         Button(role: .destructive) {
-            FavoriteTablesStorage.shared.removeFavorite(name: table.name, schema: table.schema, connectionId: connectionId)
+            FavoriteTablesStorage.shared.removeFavorite(name: table.name, schema: table.schema, database: activeDatabase, connectionId: connectionId)
         } label: {
             Text(String(localized: "Remove from Favorites"))
         }
@@ -252,7 +267,7 @@ internal struct FavoritesTabView: View {
     private func deleteSelectedNode() {
         guard let nodeId = sidebarState.selectedFavoriteNodeId else { return }
         if let table = favoriteTable(forNodeId: nodeId) {
-            FavoriteTablesStorage.shared.removeFavorite(name: table.name, schema: table.schema, connectionId: connectionId)
+            FavoriteTablesStorage.shared.removeFavorite(name: table.name, schema: table.schema, database: activeDatabase, connectionId: connectionId)
             return
         }
         if let fav = viewModel.favoriteForNodeId(nodeId) {
