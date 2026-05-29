@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The Tables sidebar bottom bar uses native macOS styling. The schema switcher is a borderless pull-down menu on the sidebar's own background instead of a wide gray bordered control, matching the Favorites footer, and switching schemas now goes through the same path as the toolbar so filters and the active tab stay in sync.
 - The Maintenance submenu in the sidebar context menu is hidden when no maintenance operations are available or the target is read-only, instead of showing an empty disabled menu.
 - The window minimum width now adjusts to the visible panes, so opening the inspector on a small window no longer pushes content off-screen.
 

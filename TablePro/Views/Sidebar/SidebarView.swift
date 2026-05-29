@@ -102,7 +102,6 @@ struct SidebarView: View {
             case .tables:
                 VStack(spacing: 0) {
                     tablesContent
-                    Divider()
                     tablesBottomBar
                 }
             case .favorites:
@@ -162,15 +161,22 @@ struct SidebarView: View {
     // MARK: - Bottom Bar
 
     private var tablesBottomBar: some View {
-        HStack(spacing: 8) {
-            createObjectMenu
-            Spacer()
-            if supportsSchemaFooter {
-                SchemaPickerControl(connectionId: connectionId, databaseType: viewModel.databaseType)
+        VStack(spacing: 0) {
+            Divider()
+            HStack(spacing: 8) {
+                createObjectMenu
+                Spacer()
+                if supportsSchemaFooter {
+                    SchemaPickerControl(
+                        connectionId: connectionId,
+                        databaseType: viewModel.databaseType,
+                        coordinator: coordinator
+                    )
+                }
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
     }
 
     private var createObjectMenu: some View {

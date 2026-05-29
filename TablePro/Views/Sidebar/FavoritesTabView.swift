@@ -49,24 +49,25 @@ internal struct FavoritesTabView: View {
     }
 
     var body: some View {
-        Group {
-            let items = viewModel.filteredNodes(searchText: searchText)
-            let filteredTables = searchText.isEmpty
-                ? availableFavoriteTables
-                : availableFavoriteTables.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        VStack(spacing: 0) {
+            Group {
+                let items = viewModel.filteredNodes(searchText: searchText)
+                let filteredTables = searchText.isEmpty
+                    ? availableFavoriteTables
+                    : availableFavoriteTables.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
 
-            if !viewModel.isInitialLoadComplete && viewModel.nodes.isEmpty && filteredTables.isEmpty {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if viewModel.nodes.isEmpty && filteredTables.isEmpty && searchText.isEmpty {
-                emptyState
-            } else if items.isEmpty && filteredTables.isEmpty {
-                noMatchState
-            } else {
-                favoritesList(items, filteredTables: filteredTables)
+                if !viewModel.isInitialLoadComplete && viewModel.nodes.isEmpty && filteredTables.isEmpty {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if viewModel.nodes.isEmpty && filteredTables.isEmpty && searchText.isEmpty {
+                    emptyState
+                } else if items.isEmpty && filteredTables.isEmpty {
+                    noMatchState
+                } else {
+                    favoritesList(items, filteredTables: filteredTables)
+                }
             }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+
             VStack(spacing: 0) {
                 Divider()
                 bottomToolbar
