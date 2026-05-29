@@ -571,8 +571,6 @@ internal struct FavoritesTabView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .frame(maxWidth: .infinity)
-        .background(.bar)
     }
 
     private func addLinkedFolder() {
