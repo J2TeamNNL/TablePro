@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Mark a table as a favorite by clicking the star button at the end of its sidebar row. Favorites are scoped to the connection, database, and schema, pinned to the top of their section, appear in a dedicated Tables group in the Favorites tab, and sync through iCloud when the Table Favorites toggle is on.
 - A plus button in the bottom bar of the Tables sidebar opens a menu to create a new table or view, without right-clicking. It's disabled while safe mode blocks writes.
-- Recent section at the top of the Tables sidebar tracks the last 10 tables you opened per connection and database, in-memory for the session. (#1352)
+- Recent section at the top of the Tables sidebar tracks the last 10 tables you opened per connection and database, in-memory for the session. Off by default, turn it on in Settings > General > Sidebar. (#1352)
 - A connection can read its password from a file, environment variable, or command at connect time instead of the Keychain, so scripts can provision a connection without entering the password by hand. (#1254)
 
 ### Changed

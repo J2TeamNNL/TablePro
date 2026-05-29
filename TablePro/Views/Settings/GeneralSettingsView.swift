@@ -54,6 +54,11 @@ struct GeneralSettingsView: View {
                     .help("When enabled, tabs from different connections share the same window instead of opening separate windows.")
             }
 
+            Section("Sidebar") {
+                Toggle("Show recent tables", isOn: $settings.showRecentTables)
+                    .help("Adds a Recent section at the top of the Tables sidebar with the last tables you opened per connection and database.")
+            }
+
             Section("Query Execution") {
                 Picker("Query timeout:", selection: $settings.queryTimeoutSeconds) {
                     Text("No limit").tag(0)

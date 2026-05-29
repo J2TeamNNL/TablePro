@@ -13,6 +13,7 @@ struct SidebarView: View {
     @Bindable private var schemaService = SchemaService.shared
     @State private var favoriteTables: Set<FavoriteTablesStorage.FavoriteEntry> = []
     @State private var recentTables: [RecentTablesStore.Entry] = []
+    @State private var settingsManager = AppSettingsManager.shared
 
     var sidebarState: SharedSidebarState
     var windowState: WindowSidebarState
@@ -299,6 +300,10 @@ struct SidebarView: View {
     }
 
     private func reloadRecentTables() {
+        guard settingsManager.general.showRecentTables else {
+            recentTables = []
+            return
+        }
         recentTables = RecentTablesStore.shared.entries(
             connectionID: connectionId,
             database: activeDatabase
@@ -308,7 +313,7 @@ struct SidebarView: View {
     @ViewBuilder
     private var recentSection: some View {
         let recents = filteredRecents
-        if !recents.isEmpty {
+        if settingsManager.general.showRecentTables, !recents.isEmpty {
             Section(isExpanded: $viewModel.isRecentsExpanded) {
                 ForEach(recents) { entry in
                     let info = tableInfo(forRecent: entry)
@@ -382,6 +387,9 @@ struct SidebarView: View {
             favoriteTables = FavoriteTablesStorage.shared.favorites(for: connectionId)
         }
         .onReceive(NotificationCenter.default.publisher(for: .recentTablesDidChange)) { _ in
+            reloadRecentTables()
+        }
+        .onChange(of: settingsManager.general.showRecentTables) { _, _ in
             reloadRecentTables()
         }
         .onAppear {
