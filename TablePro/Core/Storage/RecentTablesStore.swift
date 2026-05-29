@@ -28,17 +28,10 @@ final class RecentTablesStore {
 
     func push(connectionID: UUID, database: String?, table: TableInfo) {
         let key = Key(connectionID: connectionID, database: database)
+        let entry = Entry(name: table.name, schema: table.schema, type: table.type)
         var list = entriesByKey[key] ?? []
-        let newEntryId = entryId(name: table.name, schema: table.schema)
-        list.removeAll { $0.id == newEntryId }
-        list.insert(
-            Entry(
-                name: table.name,
-                schema: table.schema,
-                type: table.type
-            ),
-            at: 0
-        )
+        list.removeAll { $0.id == entry.id }
+        list.insert(entry, at: 0)
         if list.count > cap {
             list = Array(list.prefix(cap))
         }
@@ -61,8 +54,4 @@ final class RecentTablesStore {
     }
 
     var cappedSize: Int { cap }
-
-    private func entryId(name: String, schema: String?) -> String {
-        schema.map { "\($0).\(name)" } ?? name
-    }
 }

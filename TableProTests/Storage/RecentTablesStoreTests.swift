@@ -92,4 +92,16 @@ struct RecentTablesStoreTests {
         #expect(store.entries(connectionID: conn, database: nil).map(\.name) == ["sqlite_table"])
         #expect(store.entries(connectionID: conn, database: "postgres").map(\.name) == ["pg_table"])
     }
+
+    @Test("ClearAll empties every key")
+    func clearAllEmptiesEveryKey() {
+        let store = makeStore()
+        let connA = UUID()
+        let connB = UUID()
+        store.push(connectionID: connA, database: "db", table: makeTable("a"))
+        store.push(connectionID: connB, database: nil, table: makeTable("b"))
+        store.clearAll()
+        #expect(store.entries(connectionID: connA, database: "db").isEmpty)
+        #expect(store.entries(connectionID: connB, database: nil).isEmpty)
+    }
 }
