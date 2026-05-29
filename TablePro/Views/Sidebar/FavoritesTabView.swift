@@ -191,7 +191,6 @@ internal struct FavoritesTabView: View {
         }
     }
 
-    @ViewBuilder
     private func favoriteTableRow(table: TableInfo) -> some View {
         Label {
             Text(table.name)
@@ -201,9 +200,9 @@ internal struct FavoritesTabView: View {
                 .foregroundStyle(TableRowLogic.iconColor(table: table, isPendingDelete: false, isPendingTruncate: false))
         }
         .tag(tableNodeId(table))
-        .contextMenu {
-            favoriteTableContextMenu(table)
-        }
+        .accessibilityLabel(
+            TableRowLogic.accessibilityLabel(table: table, isPendingDelete: false, isPendingTruncate: false)
+        )
     }
 
     @ViewBuilder
