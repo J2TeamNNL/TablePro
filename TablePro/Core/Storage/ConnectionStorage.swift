@@ -173,6 +173,28 @@ final class ConnectionStorage {
         }
     }
 
+    /// Update multiple connections in a single file write, marking each dirty for sync.
+    @discardableResult
+    func updateConnections(_ updates: [DatabaseConnection]) -> Bool {
+        guard !updates.isEmpty else { return true }
+        var connections = loadConnections()
+        let updatesById = Dictionary(updates.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        var didMutate = false
+        for index in connections.indices {
+            if let replacement = updatesById[connections[index].id] {
+                connections[index] = replacement
+                didMutate = true
+            }
+        }
+        guard didMutate, saveConnections(connections) else {
+            return false
+        }
+        for connection in updatesById.values where !connection.localOnly && !connection.isSample {
+            syncTracker.markDirty(.connection, id: connection.id.uuidString)
+        }
+        return true
+    }
+
     /// Delete a connection
     func deleteConnection(_ connection: DatabaseConnection) {
         var connections = loadConnections()
@@ -554,6 +576,8 @@ private struct StoredConnection: Codable {
 
     let isSample: Bool
 
+    let isFavorite: Bool
+
     // TOTP configuration
     let totpMode: String
     let totpAlgorithm: String
@@ -641,6 +665,9 @@ private struct StoredConnection: Codable {
         // Sample marker
         self.isSample = connection.isSample
 
+        // Favorite flag
+        self.isFavorite = connection.isFavorite
+
         // SSH tunnel mode (v2 format preserving jump hosts, profiles, etc.)
         self.sshTunnelModeJson = try? JSONEncoder().encode(connection.sshTunnelMode)
 
@@ -672,6 +699,7 @@ private struct StoredConnection: Codable {
         case additionalFields
         case localOnly
         case isSample
+        case isFavorite
     }
 
     func encode(to encoder: Encoder) throws {
@@ -714,6 +742,7 @@ private struct StoredConnection: Codable {
         try container.encodeIfPresent(additionalFields, forKey: .additionalFields)
         try container.encode(localOnly, forKey: .localOnly)
         try container.encode(isSample, forKey: .isSample)
+        try container.encode(isFavorite, forKey: .isFavorite)
     }
 
     // Custom decoder to handle migration from old format
@@ -782,6 +811,7 @@ private struct StoredConnection: Codable {
         additionalFields = try container.decodeIfPresent([String: String].self, forKey: .additionalFields)
         localOnly = try container.decodeIfPresent(Bool.self, forKey: .localOnly) ?? false
         isSample = try container.decodeIfPresent(Bool.self, forKey: .isSample) ?? false
+        isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
     }
 
     func toConnection() -> DatabaseConnection {
@@ -885,6 +915,7 @@ private struct StoredConnection: Codable {
             sortOrder: sortOrder,
             localOnly: localOnly,
             isSample: isSample,
+            isFavorite: isFavorite,
             additionalFields: mergedFields
         )
     }
