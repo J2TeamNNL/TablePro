@@ -102,10 +102,8 @@ struct SidebarView: View {
             case .tables:
                 VStack(spacing: 0) {
                     tablesContent
-                    if supportsSchemaFooter {
-                        Divider()
-                        SchemaPickerFooter(connectionId: connectionId, databaseType: viewModel.databaseType)
-                    }
+                    Divider()
+                    tablesBottomBar
                 }
             case .favorites:
                 if let coordinator {
@@ -157,6 +155,35 @@ struct SidebarView: View {
         } else {
             flatContent
         }
+    }
+
+    // MARK: - Bottom Bar
+
+    private var tablesBottomBar: some View {
+        HStack(spacing: 8) {
+            createObjectMenu
+            Spacer()
+            if supportsSchemaFooter {
+                SchemaPickerControl(connectionId: connectionId, databaseType: viewModel.databaseType)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+    }
+
+    private var createObjectMenu: some View {
+        Menu {
+            Button(String(localized: "New Table")) { coordinator?.createNewTable() }
+            Button(String(localized: "New View")) { coordinator?.createView() }
+        } label: {
+            Image(systemName: "plus")
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(String(localized: "Create a new table or view"))
+        .disabled(coordinator?.safeModeLevel.blocksAllWrites ?? true)
+        .accessibilityIdentifier("sidebar-create-table")
     }
 
     @ViewBuilder
