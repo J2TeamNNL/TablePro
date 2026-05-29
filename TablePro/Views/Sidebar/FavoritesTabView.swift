@@ -66,9 +66,11 @@ internal struct FavoritesTabView: View {
                 favoritesList(items, filteredTables: filteredTables)
             }
         }
-        .hardBottomScrollEdge()
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            bottomToolbar
+            VStack(spacing: 0) {
+                Divider()
+                bottomToolbar
+            }
         }
         .onAppear {
             SQLFolderWatcher.shared.start()

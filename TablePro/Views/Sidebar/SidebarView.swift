@@ -100,11 +100,11 @@ struct SidebarView: View {
         Group {
             switch sidebarState.selectedSidebarTab {
             case .tables:
-                tablesContent
-                    .hardBottomScrollEdge()
-                    .safeAreaInset(edge: .bottom, spacing: 0) {
-                        tablesBottomBar
-                    }
+                VStack(spacing: 0) {
+                    tablesContent
+                    Divider()
+                    tablesBottomBar
+                }
             case .favorites:
                 if let coordinator {
                     FavoritesTabView(
