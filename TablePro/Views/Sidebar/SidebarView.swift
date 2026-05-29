@@ -321,7 +321,7 @@ struct SidebarView: View {
                     )
                     .selectionDisabled()
                     .contentShape(Rectangle())
-                    .onTapGesture(count: 2) {
+                    .onTapGesture {
                         onDoubleClick?(info)
                     }
                     .contextMenu {

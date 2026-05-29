@@ -65,6 +65,8 @@ struct TableRow: View {
     var isFavorite: Bool = false
     var onToggleFavorite: (() -> Void)?
 
+    @State private var isHovered = false
+
     private var iconColor: Color {
         TableRowLogic.iconColor(table: table, isPendingDelete: isPendingDelete, isPendingTruncate: isPendingTruncate)
     }
@@ -103,23 +105,25 @@ struct TableRow: View {
             Spacer(minLength: 4)
 
             if let onToggleFavorite {
+                let starVisible = isFavorite || isHovered
                 Button(action: onToggleFavorite) {
                     Image(systemName: isFavorite ? "star.fill" : "star")
                         .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(isFavorite ? Color.yellow : Color.secondary.opacity(0.55))
+                        .foregroundStyle(isFavorite ? Color.yellow : Color.secondary)
                         .contentShape(Rectangle())
-                        .frame(width: 16, height: 16)
+                        .frame(width: 20, height: 20)
                 }
                 .buttonStyle(.plain)
+                .opacity(starVisible ? 1 : 0)
+                .allowsHitTesting(starVisible)
+                .accessibilityHidden(true)
                 .help(isFavorite
                       ? String(localized: "Remove from Favorites")
                       : String(localized: "Add to Favorites"))
-                .accessibilityLabel(isFavorite
-                                    ? String(localized: "Remove from Favorites")
-                                    : String(localized: "Add to Favorites"))
             }
         }
         .padding(.vertical, 4)
+        .onHover { isHovered = $0 }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             TableRowLogic.accessibilityLabel(
@@ -129,5 +133,24 @@ struct TableRow: View {
                 isFavorite: isFavorite
             )
         )
+        .modifier(FavoriteAccessibilityAction(isFavorite: isFavorite, toggle: onToggleFavorite))
+    }
+}
+
+private struct FavoriteAccessibilityAction: ViewModifier {
+    let isFavorite: Bool
+    let toggle: (() -> Void)?
+
+    func body(content: Content) -> some View {
+        if let toggle {
+            content.accessibilityAction(
+                named: isFavorite
+                    ? Text("Remove from Favorites")
+                    : Text("Add to Favorites"),
+                toggle
+            )
+        } else {
+            content
+        }
     }
 }
