@@ -17,7 +17,6 @@ final class RecentTablesStore {
         let name: String
         let schema: String?
         let type: TableInfo.TableType
-        let lastAccessedAt: Date
 
         var id: String { schema.map { "\($0).\(name)" } ?? name }
     }
@@ -36,8 +35,7 @@ final class RecentTablesStore {
             Entry(
                 name: table.name,
                 schema: table.schema,
-                type: table.type,
-                lastAccessedAt: Date()
+                type: table.type
             ),
             at: 0
         )
