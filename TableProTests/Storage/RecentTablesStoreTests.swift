@@ -1,8 +1,3 @@
-//
-//  RecentTablesStoreTests.swift
-//  TableProTests
-//
-
 import Foundation
 import Testing
 

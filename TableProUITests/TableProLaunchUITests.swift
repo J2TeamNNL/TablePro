@@ -17,7 +17,7 @@ final class TableProLaunchUITests: XCTestCase {
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 10))
     }
 
-    func testMainWindowRespectsMinimumSize() throws {
+    func testMainWindowLaunchesAtOrAboveBaseMinimum() throws {
         let app = XCUIApplication()
         app.launchEnvironment["TABLEPRO_UI_TESTING"] = "1"
         app.launch()
@@ -26,7 +26,7 @@ final class TableProLaunchUITests: XCTestCase {
         XCTAssertTrue(window.waitForExistence(timeout: 10))
 
         let frame = window.frame
-        XCTAssertGreaterThanOrEqual(frame.width, 950, "Window width must be at least the base minimum")
-        XCTAssertGreaterThanOrEqual(frame.height, 480, "Window height must be at least the base minimum")
+        XCTAssertGreaterThanOrEqual(frame.width, 720, "Window width must be at least the base minimum (720)")
+        XCTAssertGreaterThanOrEqual(frame.height, 480, "Window height must be at least the base minimum (480)")
     }
 }

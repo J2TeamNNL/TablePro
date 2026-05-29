@@ -1,8 +1,3 @@
-//
-//  FavoritesTabView.swift
-//  TablePro
-//
-
 import SwiftUI
 
 internal struct FavoritesTabView: View {
@@ -190,7 +185,7 @@ internal struct FavoritesTabView: View {
             Image(systemName: "star.fill")
                 .foregroundStyle(.yellow)
         }
-        .tag(tableNodeId(table.name))
+        .tag(tableNodeId(table))
         .contextMenu {
             favoriteTableContextMenu(table)
         }
@@ -215,14 +210,14 @@ internal struct FavoritesTabView: View {
         }
     }
 
-    private func tableNodeId(_ name: String) -> String {
-        "table:\(name)"
+    private func tableNodeId(_ table: TableInfo) -> String {
+        let suffix = table.schema.map { "\($0).\(table.name)" } ?? table.name
+        return "table:\(suffix)"
     }
 
     private func favoriteTable(forNodeId nodeId: String) -> TableInfo? {
         guard nodeId.hasPrefix("table:") else { return nil }
-        let name = String(nodeId.dropFirst("table:".count))
-        return availableFavoriteTables.first { $0.name == name }
+        return availableFavoriteTables.first { tableNodeId($0) == nodeId }
     }
 
     @ViewBuilder

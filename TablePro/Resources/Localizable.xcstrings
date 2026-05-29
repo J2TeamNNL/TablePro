@@ -1939,7 +1939,6 @@
       }
     },
     "%lld of %lld" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -22453,7 +22452,6 @@
       }
     },
     "Format JSON" : {
-      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -27294,7 +27292,6 @@
       }
     },
     "Limit" : {
-      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -30212,7 +30209,6 @@
       }
     },
     "Next Page (⌘])" : {
-      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -32648,7 +32644,6 @@
       }
     },
     "Offset" : {
-      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -33899,7 +33894,6 @@
       }
     },
     "Pagination Settings" : {
-      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -35930,7 +35924,6 @@
       }
     },
     "Previous Page (⌘[)" : {
-      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {

@@ -551,7 +551,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
             resized = true
         }
         if resized {
-            window.setFrame(frame, display: true, animate: window.isVisible)
+            window.setFrame(frame, display: true, animate: false)
         }
     }
 

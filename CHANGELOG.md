@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - BigQuery: the sidebar now shows every dataset as an expandable node, with each dataset's tables loading when you open it, instead of showing one dataset at a time behind a picker.
-- Mark a table as a favorite by clicking the star button at the end of its sidebar row. Favorites are pinned to the top of their section, appear in a dedicated Tables group in the Favorites tab, and sync through iCloud.
+- Mark a table as a favorite by clicking the star button at the end of its sidebar row. Favorites are scoped to the connection and schema, pinned to the top of their section, appear in a dedicated Tables group in the Favorites tab, and sync through iCloud when the Table Favorites toggle is on.
 - A plus button next to the sidebar filter creates a new table without right-clicking. The button is disabled while safe mode blocks writes.
 - Recent section at the top of the Tables sidebar tracks the last 10 tables you opened per connection and database, in-memory for the session. (#1352)
 - OpenCode Zen as an AI provider. Add it from the provider list and paste an OpenCode key, or leave the key blank to use the free models; the model list loads automatically, covering the Claude, GPT, Gemini, and open models Zen serves. (#1400)
@@ -23,9 +23,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Clearing a query with the trash button now also clears its results, and a new Clear Results item on the results right-click menu clears results on their own. (#1256)
 - Inserting SQL from AI Chat opens it in a new query tab instead of appending to the current query. An empty editor is filled in place. (#1257)
-
-### Changed
-
 - The Maintenance submenu in the sidebar context menu is hidden when no maintenance operations are available or the target is read-only, instead of showing an empty disabled menu.
 - The window minimum width now adjusts to the visible panes, so opening the inspector on a small window no longer pushes content off-screen.
 

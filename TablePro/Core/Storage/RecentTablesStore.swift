@@ -1,8 +1,3 @@
-//
-//  RecentTablesStore.swift
-//  TablePro
-//
-
 import Foundation
 
 extension Notification.Name {

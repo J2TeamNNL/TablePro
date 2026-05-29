@@ -248,8 +248,17 @@ struct SidebarView: View {
         return TableInfo(name: entry.name, type: entry.type, rowCount: nil, schema: entry.schema)
     }
 
+    private func isFavorite(_ table: TableInfo) -> Bool {
+        favoriteTables.contains(FavoriteTablesStorage.FavoriteEntry(
+            connectionId: connectionId,
+            schema: table.schema,
+            name: table.name
+        ))
+    }
+
     private func reloadRecentTables() {
-        let database = coordinator?.activeDatabaseName.nilIfEmpty
+        let activeName = coordinator?.activeDatabaseName ?? ""
+        let database: String? = activeName.isEmpty ? nil : activeName
         recentTables = RecentTablesStore.shared.entries(
             connectionID: connectionId,
             database: database
@@ -267,10 +276,14 @@ struct SidebarView: View {
                         table: info,
                         isPendingTruncate: pendingTruncates.contains(info.name),
                         isPendingDelete: pendingDeletes.contains(info.name),
-                        isFavorite: favoriteTables.contains(FavoriteTablesStorage.FavoriteEntry(connectionId: connectionId, schema: info.schema, name: info.name)),
+                        isFavorite: isFavorite(info),
                         onToggleFavorite: { FavoriteTablesStorage.shared.toggle(name: info.name, schema: info.schema, connectionId: connectionId) }
                     )
-                    .tag(info)
+                    .selectionDisabled()
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        onDoubleClick?(info)
+                    }
                     .contextMenu {
                         SidebarContextMenu(
                             clickedTable: info,
@@ -377,7 +390,7 @@ struct SidebarView: View {
                     table: table,
                     isPendingTruncate: pendingTruncates.contains(table.name),
                     isPendingDelete: pendingDeletes.contains(table.name),
-                    isFavorite: favoriteTables.contains(FavoriteTablesStorage.FavoriteEntry(connectionId: connectionId, schema: table.schema, name: table.name)),
+                    isFavorite: isFavorite(table),
                     onToggleFavorite: { FavoriteTablesStorage.shared.toggle(name: table.name, schema: table.schema, connectionId: connectionId) }
                 )
                 .tag(table)
