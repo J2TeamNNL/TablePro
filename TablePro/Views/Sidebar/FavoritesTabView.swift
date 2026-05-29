@@ -206,7 +206,7 @@ internal struct FavoritesTabView: View {
             Image(systemName: TableRowLogic.iconName(for: table.type))
                 .foregroundStyle(TableRowLogic.iconColor(table: table, isPendingDelete: false, isPendingTruncate: false))
         }
-        .tag(FavoriteSelection.table(schema: table.schema, name: table.name))
+        .tag(FavoriteSelection.table(database: activeDatabase, schema: table.schema, name: table.name))
         .accessibilityLabel(
             TableRowLogic.accessibilityLabel(table: table, isPendingDelete: false, isPendingTruncate: false)
         )
@@ -231,15 +231,16 @@ internal struct FavoritesTabView: View {
         }
     }
 
-    private func favoriteTable(schema: String?, name: String) -> TableInfo? {
-        availableFavoriteTables.first { $0.name == name && $0.schema == schema }
+    private func favoriteTable(database: String?, schema: String?, name: String) -> TableInfo? {
+        guard database == activeDatabase else { return nil }
+        return availableFavoriteTables.first { $0.name == name && $0.schema == schema }
     }
 
     @ViewBuilder
     private func contextMenu(for selection: FavoriteSelection) -> some View {
         switch selection {
-        case .table(let schema, let name):
-            if let table = favoriteTable(schema: schema, name: name) {
+        case .table(let database, let schema, let name):
+            if let table = favoriteTable(database: database, schema: schema, name: name) {
                 favoriteTableContextMenu(table)
             }
         case .node(let id):
@@ -262,8 +263,8 @@ internal struct FavoritesTabView: View {
 
     private func handlePrimaryAction(_ selection: FavoriteSelection) {
         switch selection {
-        case .table(let schema, let name):
-            if let table = favoriteTable(schema: schema, name: name) {
+        case .table(let database, let schema, let name):
+            if let table = favoriteTable(database: database, schema: schema, name: name) {
                 coordinator?.openTableTab(table)
             }
         case .node(let id):
@@ -282,8 +283,8 @@ internal struct FavoritesTabView: View {
     private func deleteSelectedNode() {
         guard let selection = sidebarState.selectedFavorite else { return }
         switch selection {
-        case .table(let schema, let name):
-            if let table = favoriteTable(schema: schema, name: name) {
+        case .table(let database, let schema, let name):
+            if let table = favoriteTable(database: database, schema: schema, name: name) {
                 FavoriteTablesStorage.shared.removeFavorite(
                     name: table.name, schema: table.schema, database: activeDatabase, connectionId: connectionId
                 )

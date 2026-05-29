@@ -14,7 +14,7 @@ internal struct FavoriteEditItem: Identifiable {
 }
 
 internal enum FavoriteSelection: Hashable {
-    case table(schema: String?, name: String)
+    case table(database: String?, schema: String?, name: String)
     case node(id: String)
 }
 
@@ -24,8 +24,12 @@ extension FavoriteSelection: RawRepresentable {
     init?(rawValue: String) {
         let parts = rawValue.components(separatedBy: Self.separator)
         switch parts.first {
-        case "table" where parts.count == 3:
-            self = .table(schema: parts[1].isEmpty ? nil : parts[1], name: parts[2])
+        case "table" where parts.count == 4:
+            self = .table(
+                database: parts[1].isEmpty ? nil : parts[1],
+                schema: parts[2].isEmpty ? nil : parts[2],
+                name: parts[3]
+            )
         case "node" where parts.count >= 2:
             self = .node(id: parts.dropFirst().joined(separator: Self.separator))
         default:
@@ -35,8 +39,8 @@ extension FavoriteSelection: RawRepresentable {
 
     var rawValue: String {
         switch self {
-        case .table(let schema, let name):
-            return ["table", schema ?? "", name].joined(separator: Self.separator)
+        case .table(let database, let schema, let name):
+            return ["table", database ?? "", schema ?? "", name].joined(separator: Self.separator)
         case .node(let id):
             return ["node", id].joined(separator: Self.separator)
         }
