@@ -101,6 +101,7 @@ struct SidebarView: View {
             switch sidebarState.selectedSidebarTab {
             case .tables:
                 tablesContent
+                    .hardBottomScrollEdge()
                     .safeAreaInset(edge: .bottom, spacing: 0) {
                         tablesBottomBar
                     }

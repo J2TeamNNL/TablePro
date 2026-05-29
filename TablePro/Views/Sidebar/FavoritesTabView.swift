@@ -66,6 +66,7 @@ internal struct FavoritesTabView: View {
                 favoritesList(items, filteredTables: filteredTables)
             }
         }
+        .hardBottomScrollEdge()
         .safeAreaInset(edge: .bottom, spacing: 0) {
             bottomToolbar
         }
