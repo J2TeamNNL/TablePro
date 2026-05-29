@@ -332,7 +332,6 @@ struct SyncRecordMapper {
         let recordID = recordID(type: .tableFavorite, id: favoriteId, in: zone)
         let record = CKRecord(recordType: SyncRecordType.tableFavorite.rawValue, recordID: recordID)
 
-        record["favoriteTableId"] = favoriteId as CKRecordValue
         record["connectionId"] = entry.connectionId.uuidString as CKRecordValue
         record["name"] = entry.name as CKRecordValue
         if let schema = entry.schema {

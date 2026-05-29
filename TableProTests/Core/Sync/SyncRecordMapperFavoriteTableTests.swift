@@ -17,7 +17,6 @@ struct SyncRecordMapperFavoriteTableTests {
         let id = FavoriteTablesStorage.syncId(for: entry)
         #expect(record.recordType == SyncRecordType.tableFavorite.rawValue)
         #expect(record.recordID.recordName == "FavoriteTable_\(id)")
-        #expect(record["favoriteTableId"] as? String == id)
         #expect(record["name"] as? String == "users")
         #expect(record["connectionId"] as? String == connId.uuidString)
         #expect(record["schema"] as? String == "public")

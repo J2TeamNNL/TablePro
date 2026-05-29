@@ -1,10 +1,3 @@
-//
-//  SidebarContextMenu.swift
-//  TablePro
-//
-//  Context menu for sidebar table rows and empty space.
-//
-
 import SwiftUI
 import TableProPluginKit
 
@@ -17,7 +10,6 @@ enum SidebarContextMenuLogic {
         clickedTable?.type == .view
     }
 
-    /// True when the object cannot be modified via DML (INSERT/UPDATE/DELETE).
     static func isReadOnlyKind(_ type: TableInfo.TableType?) -> Bool {
         switch type {
         case .view, .materializedView, .foreignTable, .systemTable:
@@ -46,8 +38,6 @@ enum SidebarContextMenuLogic {
         }
     }
 
-    /// True when the Maintenance group has at least one runnable child.
-    /// Disables the parent menu when every child action is unreachable.
     static func maintenanceGroupEnabled(
         isReadOnly: Bool,
         hasSelection: Bool,
@@ -58,7 +48,6 @@ enum SidebarContextMenuLogic {
     }
 }
 
-/// Unified context menu for sidebar — used for both table rows and empty space
 struct SidebarContextMenu: View {
     let clickedTable: TableInfo?
     let selectedTables: Set<TableInfo>

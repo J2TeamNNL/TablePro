@@ -23,7 +23,7 @@ extension MainContentCoordinator {
     ) {
         RecentTablesStore.shared.push(
             connectionID: connection.id,
-            database: activeDatabaseName.nilIfEmpty,
+            database: activeDatabaseName.isEmpty ? nil : activeDatabaseName,
             table: table
         )
         openTableTab(

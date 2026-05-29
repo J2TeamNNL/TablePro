@@ -640,9 +640,7 @@ final class SyncCoordinator {
             return false
         }
         if tombstoneIds.contains(FavoriteTablesStorage.syncId(for: entry)) { return false }
-        let before = services.favoriteTablesStorage.loadFavorites()
-        services.favoriteTablesStorage.addFavoriteWithoutSync(entry)
-        return before != services.favoriteTablesStorage.loadFavorites()
+        return services.favoriteTablesStorage.addFavoriteWithoutSync(entry)
     }
 
     // MARK: - Observers

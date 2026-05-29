@@ -1,4 +1,3 @@
-
 import Foundation
 import os
 
@@ -47,66 +46,123 @@ final class FavoriteTablesStorage {
 
     func toggle(name: String, schema: String?, connectionId: UUID) {
         let entry = FavoriteEntry(connectionId: connectionId, schema: schema, name: name)
-        lock.lock()
-        var favorites = _loadFavorites()
-        let isPresent = favorites.contains(entry)
-        lock.unlock()
-
-        if isPresent {
-            removeFavorite(name: name, schema: schema, connectionId: connectionId)
-        } else {
-            addFavorite(name: name, schema: schema, connectionId: connectionId)
+        let action: TrackedAction = mutate { favorites in
+            if favorites.contains(entry) {
+                favorites.remove(entry)
+                return .removed(entry)
+            }
+            favorites.insert(entry)
+            return .added(entry)
         }
+        notify(after: action)
     }
 
-    func addFavorite(name: String, schema: String?, connectionId: UUID) {
+    @discardableResult
+    func addFavorite(name: String, schema: String?, connectionId: UUID) -> Bool {
         let entry = FavoriteEntry(connectionId: connectionId, schema: schema, name: name)
-        lock.lock()
-        var favorites = _loadFavorites()
-        guard favorites.insert(entry).inserted else { lock.unlock(); return }
-        _persist(favorites)
-        lock.unlock()
-        syncTracker.markDirty(.tableFavorite, id: Self.syncId(for: entry))
+        let action: TrackedAction = mutate { favorites in
+            guard favorites.insert(entry).inserted else { return .noChange }
+            return .added(entry)
+        }
+        notify(after: action)
+        return action.changed
     }
 
-    func addFavoriteWithoutSync(_ entry: FavoriteEntry) {
-        lock.lock()
-        var favorites = _loadFavorites()
-        guard favorites.insert(entry).inserted else { lock.unlock(); return }
-        _persist(favorites)
-        lock.unlock()
+    @discardableResult
+    func addFavoriteWithoutSync(_ entry: FavoriteEntry) -> Bool {
+        let action = mutate { favorites in
+            favorites.insert(entry).inserted ? .added(entry) : .noChange
+        }
+        notify(after: action, skipSync: true)
+        return action.changed
     }
 
     func removeFavorite(name: String, schema: String?, connectionId: UUID) {
         let entry = FavoriteEntry(connectionId: connectionId, schema: schema, name: name)
-        lock.lock()
-        var favorites = _loadFavorites()
-        guard favorites.remove(entry) != nil else { lock.unlock(); return }
-        _persist(favorites)
-        lock.unlock()
-        syncTracker.markDeleted(.tableFavorite, id: Self.syncId(for: entry))
+        let action = mutate { favorites in
+            favorites.remove(entry) != nil ? .removed(entry) : .noChange
+        }
+        notify(after: action)
     }
 
     func removeFavoriteWithoutSync(_ entry: FavoriteEntry) {
-        lock.lock()
-        var favorites = _loadFavorites()
-        guard favorites.remove(entry) != nil else { lock.unlock(); return }
-        _persist(favorites)
-        lock.unlock()
+        let action = mutate { favorites in
+            favorites.remove(entry) != nil ? .removed(entry) : .noChange
+        }
+        notify(after: action, skipSync: true)
     }
 
     func removeFavoriteWithoutSync(id: String) {
+        let action = mutate { favorites in
+            guard let entry = favorites.first(where: { Self.syncId(for: $0) == id }) else { return .noChange }
+            favorites.remove(entry)
+            return .removed(entry)
+        }
+        notify(after: action, skipSync: true)
+    }
+
+    @discardableResult
+    func removeFavorites(for connectionId: UUID) -> [FavoriteEntry] {
+        var removed: [FavoriteEntry] = []
         lock.lock()
         var favorites = _loadFavorites()
-        guard let entry = favorites.first(where: { Self.syncId(for: $0) == id }) else { lock.unlock(); return }
-        favorites.remove(entry)
-        _persist(favorites)
+        let toRemove = favorites.filter { $0.connectionId == connectionId }
+        if !toRemove.isEmpty {
+            favorites.subtract(toRemove)
+            _persist(favorites)
+            removed = Array(toRemove)
+        }
         lock.unlock()
+
+        guard !removed.isEmpty else { return [] }
+        for entry in removed {
+            syncTracker.markDeleted(.tableFavorite, id: Self.syncId(for: entry))
+        }
+        NotificationCenter.default.post(name: .favoriteTablesDidChange, object: nil)
+        return removed
     }
 
     static func syncId(for entry: FavoriteEntry) -> String {
         let raw = entry.connectionId.uuidString + "|" + (entry.schema ?? "") + "|" + entry.name
         return raw.sha256
+    }
+
+    private enum TrackedAction {
+        case noChange
+        case added(FavoriteEntry)
+        case removed(FavoriteEntry)
+
+        var changed: Bool {
+            if case .noChange = self { return false }
+            return true
+        }
+    }
+
+    private func mutate(_ block: (inout Set<FavoriteEntry>) -> TrackedAction) -> TrackedAction {
+        lock.lock()
+        defer { lock.unlock() }
+        var favorites = _loadFavorites()
+        let action = block(&favorites)
+        guard action.changed else { return action }
+        _persist(favorites)
+        return action
+    }
+
+    private func notify(after action: TrackedAction, skipSync: Bool = false) {
+        switch action {
+        case .noChange:
+            return
+        case .added(let entry):
+            if !skipSync {
+                syncTracker.markDirty(.tableFavorite, id: Self.syncId(for: entry))
+            }
+            NotificationCenter.default.post(name: .favoriteTablesDidChange, object: nil)
+        case .removed(let entry):
+            if !skipSync {
+                syncTracker.markDeleted(.tableFavorite, id: Self.syncId(for: entry))
+            }
+            NotificationCenter.default.post(name: .favoriteTablesDidChange, object: nil)
+        }
     }
 
     private func _loadFavorites() -> Set<FavoriteEntry> {
@@ -127,6 +183,5 @@ final class FavoriteTablesStorage {
             return
         }
         defaults.set(data, forKey: key)
-        NotificationCenter.default.post(name: .favoriteTablesDidChange, object: nil)
     }
 }
