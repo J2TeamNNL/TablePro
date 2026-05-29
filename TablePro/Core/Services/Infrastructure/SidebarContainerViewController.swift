@@ -15,6 +15,8 @@ internal final class SidebarContainerViewController: NSViewController {
     private var windowState: WindowSidebarState?
     private weak var coordinator: MainContentCoordinator?
     private var observationGeneration = 0
+    private var searchTrailingToButton: NSLayoutConstraint?
+    private var searchTrailingToView: NSLayoutConstraint?
 
     var rootView: AnyView {
         get { hostingController.rootView }
@@ -50,10 +52,19 @@ internal final class SidebarContainerViewController: NSViewController {
         hostingView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(hostingView)
 
+        let searchTrailingToButton = searchField.trailingAnchor.constraint(
+            equalTo: createTableButton.leadingAnchor, constant: -6
+        )
+        let searchTrailingToView = searchField.trailingAnchor.constraint(
+            equalTo: view.trailingAnchor, constant: -10
+        )
+        self.searchTrailingToButton = searchTrailingToButton
+        self.searchTrailingToView = searchTrailingToView
+
         NSLayoutConstraint.activate([
             searchField.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 5),
             searchField.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
-            searchField.trailingAnchor.constraint(equalTo: createTableButton.leadingAnchor, constant: -6),
+            searchTrailingToButton,
 
             createTableButton.centerYAnchor.constraint(equalTo: searchField.centerYAnchor),
             createTableButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
@@ -98,7 +109,7 @@ internal final class SidebarContainerViewController: NSViewController {
         self.coordinator = coordinator
         guard let state, let windowState else {
             searchField.isHidden = true
-            createTableButton.isHidden = true
+            setCreateTableButtonVisible(false)
             createTableButton.isEnabled = false
             return
         }
@@ -150,12 +161,19 @@ internal final class SidebarContainerViewController: NSViewController {
     }
 
     private func syncCreateTableEnabled() {
-        createTableButton.isHidden = false
-        guard let coordinator else {
+        let showButton = sidebarState?.selectedSidebarTab == .tables && coordinator != nil
+        setCreateTableButtonVisible(showButton)
+        guard showButton, let coordinator else {
             createTableButton.isEnabled = false
             return
         }
         createTableButton.isEnabled = !coordinator.safeModeLevel.blocksAllWrites
+    }
+
+    private func setCreateTableButtonVisible(_ visible: Bool) {
+        createTableButton.isHidden = !visible
+        searchTrailingToButton?.isActive = visible
+        searchTrailingToView?.isActive = !visible
     }
 }
 
