@@ -162,7 +162,7 @@ internal struct FavoritesTabView: View {
         _ items: [FavoriteNode],
         filteredTables: [TableInfo]
     ) -> some View {
-        List(selection: $sidebarState.selectedFavoriteNodeId) {
+        List(selection: $sidebarState.selectedFavorite) {
             if !filteredTables.isEmpty {
                 Section(String(localized: "Tables")) {
                     ForEach(filteredTables) { table in
@@ -172,7 +172,14 @@ internal struct FavoritesTabView: View {
             }
             if !items.isEmpty {
                 Section(String(localized: "Queries")) {
-                    nodeRows(items)
+                    ForEach(items) { node in
+                        FavoriteNodeRow(
+                            node: node,
+                            connectionId: connectionId,
+                            viewModel: viewModel,
+                            isRenameFocused: $isRenameFocused
+                        )
+                    }
                 }
             }
         }
@@ -181,13 +188,13 @@ internal struct FavoritesTabView: View {
         .onDeleteCommand {
             deleteSelectedNode()
         }
-        .contextMenu(forSelectionType: String.self) { selection in
-            if let nodeId = selection.first {
-                contextMenuFor(nodeId: nodeId)
+        .contextMenu(forSelectionType: FavoriteSelection.self) { selection in
+            if let selected = selection.first {
+                contextMenu(for: selected)
             }
         } primaryAction: { selection in
-            guard let nodeId = selection.first else { return }
-            handlePrimaryAction(nodeId: nodeId)
+            guard let selected = selection.first else { return }
+            handlePrimaryAction(selected)
         }
     }
 
@@ -199,7 +206,7 @@ internal struct FavoritesTabView: View {
             Image(systemName: TableRowLogic.iconName(for: table.type))
                 .foregroundStyle(TableRowLogic.iconColor(table: table, isPendingDelete: false, isPendingTruncate: false))
         }
-        .tag(tableNodeId(table))
+        .tag(FavoriteSelection.table(schema: table.schema, name: table.name))
         .accessibilityLabel(
             TableRowLogic.accessibilityLabel(table: table, isPendingDelete: false, isPendingTruncate: false)
         )
@@ -224,142 +231,74 @@ internal struct FavoritesTabView: View {
         }
     }
 
-    private func tableNodeId(_ table: TableInfo) -> String {
-        let suffix = table.schema.map { "\($0).\(table.name)" } ?? table.name
-        return "table:\(suffix)"
-    }
-
-    private func favoriteTable(forNodeId nodeId: String) -> TableInfo? {
-        guard nodeId.hasPrefix("table:") else { return nil }
-        return availableFavoriteTables.first { tableNodeId($0) == nodeId }
+    private func favoriteTable(schema: String?, name: String) -> TableInfo? {
+        availableFavoriteTables.first { $0.name == name && $0.schema == schema }
     }
 
     @ViewBuilder
-    private func contextMenuFor(nodeId: String) -> some View {
-        if let table = favoriteTable(forNodeId: nodeId) {
-            favoriteTableContextMenu(table)
-        } else if let fav = viewModel.favoriteForNodeId(nodeId) {
-            favoriteContextMenu(fav)
-        } else if let linked = viewModel.linkedFavoriteForNodeId(nodeId) {
-            linkedFavoriteContextMenu(linked)
-        } else if let folder = viewModel.folderForNodeId(nodeId) {
-            folderContextMenu(folder)
-        } else if let linkedFolder = viewModel.linkedFolderForNodeId(nodeId) {
-            linkedFolderContextMenu(linkedFolder)
+    private func contextMenu(for selection: FavoriteSelection) -> some View {
+        switch selection {
+        case .table(let schema, let name):
+            if let table = favoriteTable(schema: schema, name: name) {
+                favoriteTableContextMenu(table)
+            }
+        case .node(let id):
+            if let node = viewModel.node(forId: id) {
+                switch node.content {
+                case .favorite(let favorite):
+                    favoriteContextMenu(favorite)
+                case .linkedFavorite(let linked):
+                    linkedFavoriteContextMenu(linked)
+                case .folder(let folder):
+                    folderContextMenu(folder)
+                case .linkedFolder(let folder):
+                    linkedFolderContextMenu(folder)
+                case .linkedSubfolder:
+                    EmptyView()
+                }
+            }
         }
     }
 
-    private func handlePrimaryAction(nodeId: String) {
-        if let table = favoriteTable(forNodeId: nodeId) {
-            coordinator?.openTableTab(table)
-            return
-        }
-        if let fav = viewModel.favoriteForNodeId(nodeId) {
-            coordinator?.insertFavorite(fav)
-            return
-        }
-        if let linked = viewModel.linkedFavoriteForNodeId(nodeId) {
-            coordinator?.openLinkedFavorite(linked)
+    private func handlePrimaryAction(_ selection: FavoriteSelection) {
+        switch selection {
+        case .table(let schema, let name):
+            if let table = favoriteTable(schema: schema, name: name) {
+                coordinator?.openTableTab(table)
+            }
+        case .node(let id):
+            guard let node = viewModel.node(forId: id) else { return }
+            switch node.content {
+            case .favorite(let favorite):
+                coordinator?.insertFavorite(favorite)
+            case .linkedFavorite(let linked):
+                coordinator?.openLinkedFavorite(linked)
+            case .folder, .linkedFolder, .linkedSubfolder:
+                break
+            }
         }
     }
 
     private func deleteSelectedNode() {
-        guard let nodeId = sidebarState.selectedFavoriteNodeId else { return }
-        if let table = favoriteTable(forNodeId: nodeId) {
-            FavoriteTablesStorage.shared.removeFavorite(name: table.name, schema: table.schema, database: activeDatabase, connectionId: connectionId)
-            return
-        }
-        if let fav = viewModel.favoriteForNodeId(nodeId) {
-            viewModel.deleteFavorite(fav)
-            return
-        }
-        if let linked = viewModel.linkedFavoriteForNodeId(nodeId) {
-            linkedFileToTrash = linked
-            showTrashLinkedFileAlert = true
-        }
-    }
-
-    private func nodeRows(_ items: [FavoriteNode]) -> AnyView {
-        AnyView(ForEach(items) { node in
+        guard let selection = sidebarState.selectedFavorite else { return }
+        switch selection {
+        case .table(let schema, let name):
+            if let table = favoriteTable(schema: schema, name: name) {
+                FavoriteTablesStorage.shared.removeFavorite(
+                    name: table.name, schema: table.schema, database: activeDatabase, connectionId: connectionId
+                )
+            }
+        case .node(let id):
+            guard let node = viewModel.node(forId: id) else { return }
             switch node.content {
             case .favorite(let favorite):
-                FavoriteRowView(favorite: favorite)
-                    .tag(node.id)
-            case .folder(let folder):
-                DisclosureGroup(isExpanded: Binding(
-                    get: { FavoritesExpansionState.shared.isFolderExpanded(folder.id, for: connectionId) },
-                    set: { expanded in
-                        FavoritesExpansionState.shared.setFolderExpanded(folder.id, expanded: expanded, for: connectionId)
-                    }
-                )) {
-                    if let children = node.children {
-                        nodeRows(children)
-                    }
-                } label: {
-                    folderLabel(folder)
-                }
-                .tag(node.id)
-            case .linkedFolder(let linkedFolder):
-                DisclosureGroup(isExpanded: linkedSubtreeBinding(node.id)) {
-                    if let children = node.children {
-                        nodeRows(children)
-                    }
-                } label: {
-                    LinkedFolderRowLabel(folder: linkedFolder)
-                }
-                .tag(node.id)
-            case .linkedSubfolder(_, let displayName, _):
-                DisclosureGroup(isExpanded: linkedSubtreeBinding(node.id)) {
-                    if let children = node.children {
-                        nodeRows(children)
-                    }
-                } label: {
-                    LinkedSubfolderRowLabel(displayName: displayName)
-                }
-                .tag(node.id)
+                viewModel.deleteFavorite(favorite)
             case .linkedFavorite(let linked):
-                LinkedFavoriteRowView(favorite: linked)
-                    .tag(node.id)
+                linkedFileToTrash = linked
+                showTrashLinkedFileAlert = true
+            case .folder, .linkedFolder, .linkedSubfolder:
+                break
             }
-        })
-    }
-
-    private func linkedSubtreeBinding(_ nodeId: String) -> Binding<Bool> {
-        Binding(
-            get: { FavoritesExpansionState.shared.isLinkedNodeExpanded(nodeId, for: connectionId) },
-            set: { expanded in
-                FavoritesExpansionState.shared.setLinkedNodeExpanded(nodeId, expanded: expanded, for: connectionId)
-            }
-        )
-    }
-
-    @ViewBuilder
-    private func folderLabel(_ folder: SQLFavoriteFolder) -> some View {
-        if viewModel.renamingFolderId == folder.id {
-            HStack(spacing: 4) {
-                Image(systemName: "folder")
-                TextField(
-                    "",
-                    text: Binding(
-                        get: { viewModel.renamingFolderName },
-                        set: { viewModel.renamingFolderName = $0 }
-                    )
-                )
-                .textFieldStyle(.roundedBorder)
-                .accessibilityLabel(String(localized: "Folder name"))
-                .focused($isRenameFocused)
-                .onSubmit {
-                    viewModel.commitRenameFolder(folder)
-                }
-                .onExitCommand {
-                    viewModel.renamingFolderId = nil
-                }
-                .onAppear {
-                    isRenameFocused = true
-                }
-            }
-        } else {
-            Label(folder.name, systemImage: "folder")
         }
     }
 
@@ -590,6 +529,97 @@ internal struct FavoritesTabView: View {
             guard !existing.contains(where: { $0.path == path }) else { return }
             LinkedSQLFolderStorage.shared.addFolder(LinkedSQLFolder(path: path))
             SQLFolderWatcher.shared.reload()
+        }
+    }
+}
+
+private struct FavoriteNodeRow: View {
+    let node: FavoriteNode
+    let connectionId: UUID
+    let viewModel: FavoritesSidebarViewModel
+    @FocusState.Binding var isRenameFocused: Bool
+
+    var body: some View {
+        switch node.content {
+        case .favorite(let favorite):
+            FavoriteRowView(favorite: favorite)
+                .tag(FavoriteSelection.node(id: node.id))
+        case .folder(let folder):
+            DisclosureGroup(isExpanded: folderExpansion(folder)) {
+                childRows
+            } label: {
+                folderLabel(folder)
+            }
+            .tag(FavoriteSelection.node(id: node.id))
+        case .linkedFolder(let linkedFolder):
+            DisclosureGroup(isExpanded: linkedExpansion) {
+                childRows
+            } label: {
+                LinkedFolderRowLabel(folder: linkedFolder)
+            }
+            .tag(FavoriteSelection.node(id: node.id))
+        case .linkedSubfolder(_, let displayName, _):
+            DisclosureGroup(isExpanded: linkedExpansion) {
+                childRows
+            } label: {
+                LinkedSubfolderRowLabel(displayName: displayName)
+            }
+            .tag(FavoriteSelection.node(id: node.id))
+        case .linkedFavorite(let linked):
+            LinkedFavoriteRowView(favorite: linked)
+                .tag(FavoriteSelection.node(id: node.id))
+        }
+    }
+
+    @ViewBuilder
+    private var childRows: some View {
+        if let children = node.children {
+            ForEach(children) { child in
+                FavoriteNodeRow(
+                    node: child,
+                    connectionId: connectionId,
+                    viewModel: viewModel,
+                    isRenameFocused: $isRenameFocused
+                )
+            }
+        }
+    }
+
+    private func folderExpansion(_ folder: SQLFavoriteFolder) -> Binding<Bool> {
+        Binding(
+            get: { FavoritesExpansionState.shared.isFolderExpanded(folder.id, for: connectionId) },
+            set: { FavoritesExpansionState.shared.setFolderExpanded(folder.id, expanded: $0, for: connectionId) }
+        )
+    }
+
+    private var linkedExpansion: Binding<Bool> {
+        Binding(
+            get: { FavoritesExpansionState.shared.isLinkedNodeExpanded(node.id, for: connectionId) },
+            set: { FavoritesExpansionState.shared.setLinkedNodeExpanded(node.id, expanded: $0, for: connectionId) }
+        )
+    }
+
+    @ViewBuilder
+    private func folderLabel(_ folder: SQLFavoriteFolder) -> some View {
+        if viewModel.renamingFolderId == folder.id {
+            HStack(spacing: 4) {
+                Image(systemName: "folder")
+                TextField(
+                    "",
+                    text: Binding(
+                        get: { viewModel.renamingFolderName },
+                        set: { viewModel.renamingFolderName = $0 }
+                    )
+                )
+                .textFieldStyle(.roundedBorder)
+                .accessibilityLabel(String(localized: "Folder name"))
+                .focused($isRenameFocused)
+                .onSubmit { viewModel.commitRenameFolder(folder) }
+                .onExitCommand { viewModel.renamingFolderId = nil }
+                .onAppear { isRenameFocused = true }
+            }
+        } else {
+            Label(folder.name, systemImage: "folder")
         }
     }
 }

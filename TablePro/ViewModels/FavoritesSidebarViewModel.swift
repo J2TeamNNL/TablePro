@@ -13,6 +13,36 @@ internal struct FavoriteEditItem: Identifiable {
     let folderId: UUID?
 }
 
+internal enum FavoriteSelection: Hashable {
+    case table(schema: String?, name: String)
+    case node(id: String)
+}
+
+extension FavoriteSelection: RawRepresentable {
+    private static let separator = "\u{1}"
+
+    init?(rawValue: String) {
+        let parts = rawValue.components(separatedBy: Self.separator)
+        switch parts.first {
+        case "table" where parts.count == 3:
+            self = .table(schema: parts[1].isEmpty ? nil : parts[1], name: parts[2])
+        case "node" where parts.count >= 2:
+            self = .node(id: parts.dropFirst().joined(separator: Self.separator))
+        default:
+            return nil
+        }
+    }
+
+    var rawValue: String {
+        switch self {
+        case .table(let schema, let name):
+            return ["table", schema ?? "", name].joined(separator: Self.separator)
+        case .node(let id):
+            return ["node", id].joined(separator: Self.separator)
+        }
+    }
+}
+
 internal struct FavoriteNode: Identifiable, Hashable {
     enum Content: Hashable {
         case folder(SQLFavoriteFolder)
@@ -353,20 +383,8 @@ internal final class FavoritesSidebarViewModel {
         }
     }
 
-    func favoriteForNodeId(_ id: String) -> SQLFavorite? {
-        findNode(nodes, id: id, extract: \.asFavorite)
-    }
-
-    func linkedFavoriteForNodeId(_ id: String) -> LinkedSQLFavorite? {
-        findNode(nodes, id: id, extract: \.asLinkedFavorite)
-    }
-
-    func folderForNodeId(_ id: String) -> SQLFavoriteFolder? {
-        findNode(nodes, id: id, extract: \.asFolder)
-    }
-
-    func linkedFolderForNodeId(_ id: String) -> LinkedSQLFolder? {
-        findNode(nodes, id: id, extract: \.asLinkedFolder)
+    func node(forId id: String) -> FavoriteNode? {
+        findNode(nodes, id: id, extract: { $0 })
     }
 
     private func findNode<T>(
