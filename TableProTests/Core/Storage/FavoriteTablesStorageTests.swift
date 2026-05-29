@@ -1,4 +1,3 @@
-
 import Foundation
 @testable import TablePro
 import Testing
@@ -23,9 +22,9 @@ struct FavoriteTablesStorageTests {
     func addMarksDirty() throws {
         let (storage, metadata) = try makeStorage()
         let connId = UUID()
-        storage.addFavorite(name: "users", schema: nil, connectionId: connId)
+        storage.addFavorite(name: "users", schema: nil, database: nil, connectionId: connId)
 
-        let entry = FavoriteTablesStorage.FavoriteEntry(connectionId: connId, schema: nil, name: "users")
+        let entry = FavoriteTablesStorage.FavoriteEntry(connectionId: connId, database: nil, schema: nil, name: "users")
         let id = FavoriteTablesStorage.syncId(for: entry)
         #expect(storage.loadFavorites() == [entry])
         #expect(metadata.dirtyIds(for: .tableFavorite) == [id])
@@ -35,10 +34,10 @@ struct FavoriteTablesStorageTests {
     func removeCreatesTombstone() throws {
         let (storage, metadata) = try makeStorage()
         let connId = UUID()
-        storage.addFavorite(name: "users", schema: nil, connectionId: connId)
-        storage.removeFavorite(name: "users", schema: nil, connectionId: connId)
+        storage.addFavorite(name: "users", schema: nil, database: nil, connectionId: connId)
+        storage.removeFavorite(name: "users", schema: nil, database: nil, connectionId: connId)
 
-        let entry = FavoriteTablesStorage.FavoriteEntry(connectionId: connId, schema: nil, name: "users")
+        let entry = FavoriteTablesStorage.FavoriteEntry(connectionId: connId, database: nil, schema: nil, name: "users")
         let id = FavoriteTablesStorage.syncId(for: entry)
         #expect(storage.loadFavorites().isEmpty)
         #expect(metadata.dirtyIds(for: .tableFavorite).isEmpty)
@@ -49,7 +48,7 @@ struct FavoriteTablesStorageTests {
     func withoutSyncDoesNotTrackChanges() throws {
         let (storage, metadata) = try makeStorage()
         let connId = UUID()
-        let entry = FavoriteTablesStorage.FavoriteEntry(connectionId: connId, schema: nil, name: "orders")
+        let entry = FavoriteTablesStorage.FavoriteEntry(connectionId: connId, database: nil, schema: nil, name: "orders")
         storage.addFavoriteWithoutSync(entry)
         storage.removeFavoriteWithoutSync(entry)
 
@@ -63,8 +62,8 @@ struct FavoriteTablesStorageTests {
         let (storage, _) = try makeStorage()
         let connA = UUID()
         let connB = UUID()
-        storage.addFavorite(name: "users", schema: nil, connectionId: connA)
-        storage.addFavorite(name: "users", schema: nil, connectionId: connB)
+        storage.addFavorite(name: "users", schema: nil, database: nil, connectionId: connA)
+        storage.addFavorite(name: "users", schema: nil, database: nil, connectionId: connB)
 
         let favA = storage.favorites(for: connA)
         let favB = storage.favorites(for: connB)
@@ -79,19 +78,32 @@ struct FavoriteTablesStorageTests {
     func schemaQualifiedIsDistinct() throws {
         let (storage, _) = try makeStorage()
         let connId = UUID()
-        storage.addFavorite(name: "users", schema: "public", connectionId: connId)
-        storage.addFavorite(name: "users", schema: "app", connectionId: connId)
-        storage.addFavorite(name: "users", schema: nil, connectionId: connId)
+        storage.addFavorite(name: "users", schema: "public", database: nil, connectionId: connId)
+        storage.addFavorite(name: "users", schema: "app", database: nil, connectionId: connId)
+        storage.addFavorite(name: "users", schema: nil, database: nil, connectionId: connId)
 
         #expect(storage.favorites(for: connId).count == 3)
+    }
+
+    @Test("Same name and schema in different databases are distinct")
+    func favoritesAreDatabaseScoped() throws {
+        let (storage, _) = try makeStorage()
+        let connId = UUID()
+        storage.addFavorite(name: "users", schema: "public", database: "db1", connectionId: connId)
+        storage.addFavorite(name: "users", schema: "public", database: "db2", connectionId: connId)
+
+        #expect(storage.favorites(for: connId).count == 2)
+        #expect(storage.isFavorite(name: "users", schema: "public", database: "db1", connectionId: connId))
+        #expect(storage.isFavorite(name: "users", schema: "public", database: "db2", connectionId: connId))
+        #expect(!storage.isFavorite(name: "users", schema: "public", database: "db3", connectionId: connId))
     }
 
     @Test("Toggle on then off leaves no dirty entries")
     func toggleOnThenOffNoDirty() throws {
         let (storage, metadata) = try makeStorage()
         let connId = UUID()
-        storage.toggle(name: "orders", schema: nil, connectionId: connId)
-        storage.toggle(name: "orders", schema: nil, connectionId: connId)
+        storage.toggle(name: "orders", schema: nil, database: nil, connectionId: connId)
+        storage.toggle(name: "orders", schema: nil, database: nil, connectionId: connId)
 
         #expect(storage.favorites(for: connId).isEmpty)
         #expect(metadata.dirtyIds(for: .tableFavorite).isEmpty)
