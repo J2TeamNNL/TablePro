@@ -174,8 +174,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         } else if let session = currentSession, let coordinator = sessionState?.coordinator {
             sidebarContainer.updateSidebarState(
                 SharedSidebarState.forConnection(session.connection.id),
-                windowState: coordinator.windowSidebarState,
-                coordinator: coordinator
+                windowState: coordinator.windowSidebarState
             )
         }
         inspectorSplitItem.isCollapsed = !inspectorPresented
@@ -210,8 +209,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         if let currentSession, let coordinator = sessionState?.coordinator {
             sidebarContainer.updateSidebarState(
                 SharedSidebarState.forConnection(currentSession.connection.id),
-                windowState: coordinator.windowSidebarState,
-                coordinator: coordinator
+                windowState: coordinator.windowSidebarState
             )
         }
 
@@ -329,8 +327,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         if let currentSession, let coordinator = sessionState?.coordinator {
             sidebarContainer.updateSidebarState(
                 SharedSidebarState.forConnection(currentSession.connection.id),
-                windowState: coordinator.windowSidebarState,
-                coordinator: coordinator
+                windowState: coordinator.windowSidebarState
             )
         }
         detailHosting.rootView = AnyView(buildDetailView())

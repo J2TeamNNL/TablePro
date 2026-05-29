@@ -9,14 +9,10 @@ import SwiftUI
 @MainActor
 internal final class SidebarContainerViewController: NSViewController {
     private let searchField = NSSearchField()
-    private let createTableButton = NSButton()
     private var hostingController: NSHostingController<AnyView>
     private var sidebarState: SharedSidebarState?
     private var windowState: WindowSidebarState?
-    private weak var coordinator: MainContentCoordinator?
     private var observationGeneration = 0
-    private var searchTrailingToButton: NSLayoutConstraint?
-    private var searchTrailingToView: NSLayoutConstraint?
 
     var rootView: AnyView {
         get { hostingController.rootView }
@@ -44,32 +40,15 @@ internal final class SidebarContainerViewController: NSViewController {
         searchField.setAccessibilityIdentifier("sidebar-filter")
         view.addSubview(searchField)
 
-        configureCreateTableButton()
-        view.addSubview(createTableButton)
-
         addChild(hostingController)
         let hostingView = hostingController.view
         hostingView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(hostingView)
 
-        let searchTrailingToButton = searchField.trailingAnchor.constraint(
-            equalTo: createTableButton.leadingAnchor, constant: -6
-        )
-        let searchTrailingToView = searchField.trailingAnchor.constraint(
-            equalTo: view.trailingAnchor, constant: -10
-        )
-        self.searchTrailingToButton = searchTrailingToButton
-        self.searchTrailingToView = searchTrailingToView
-
         NSLayoutConstraint.activate([
             searchField.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 5),
             searchField.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
-            searchTrailingToButton,
-
-            createTableButton.centerYAnchor.constraint(equalTo: searchField.centerYAnchor),
-            createTableButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
-            createTableButton.widthAnchor.constraint(equalToConstant: 22),
-            createTableButton.heightAnchor.constraint(equalToConstant: 22),
+            searchField.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
 
             hostingView.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 5),
             hostingView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -78,44 +57,16 @@ internal final class SidebarContainerViewController: NSViewController {
         ])
     }
 
-    private func configureCreateTableButton() {
-        createTableButton.translatesAutoresizingMaskIntoConstraints = false
-        createTableButton.bezelStyle = .accessoryBarAction
-        createTableButton.isBordered = false
-        createTableButton.image = NSImage(systemSymbolName: "plus", accessibilityDescription: nil)
-        createTableButton.imageScaling = .scaleProportionallyDown
-        createTableButton.contentTintColor = .secondaryLabelColor
-        createTableButton.toolTip = String(localized: "Create New Table")
-        createTableButton.setAccessibilityLabel(String(localized: "Create New Table"))
-        createTableButton.setAccessibilityIdentifier("sidebar-create-table")
-        createTableButton.target = self
-        createTableButton.action = #selector(handleCreateTableClicked(_:))
-        createTableButton.isEnabled = false
-        createTableButton.isHidden = true
-    }
-
-    @objc private func handleCreateTableClicked(_ sender: Any?) {
-        coordinator?.createNewTable()
-    }
-
-    func updateSidebarState(
-        _ state: SharedSidebarState?,
-        windowState: WindowSidebarState?,
-        coordinator: MainContentCoordinator? = nil
-    ) {
+    func updateSidebarState(_ state: SharedSidebarState?, windowState: WindowSidebarState?) {
         observationGeneration += 1
         self.sidebarState = state
         self.windowState = windowState
-        self.coordinator = coordinator
         guard let state, let windowState else {
             searchField.isHidden = true
-            setCreateTableButtonVisible(false)
-            createTableButton.isEnabled = false
             return
         }
         searchField.isHidden = false
         syncFromState(state, windowState: windowState)
-        syncCreateTableEnabled()
         startObserving(state, windowState: windowState, generation: observationGeneration)
     }
 
@@ -128,7 +79,6 @@ internal final class SidebarContainerViewController: NSViewController {
             _ = state.selectedSidebarTab
             _ = windowState.searchText
             _ = windowState.favoritesSearchText
-            _ = coordinator?.safeModeLevel
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self,
@@ -136,7 +86,6 @@ internal final class SidebarContainerViewController: NSViewController {
                       let sidebarState = self.sidebarState,
                       let windowState = self.windowState else { return }
                 self.syncFromState(sidebarState, windowState: windowState)
-                self.syncCreateTableEnabled()
                 self.startObserving(sidebarState, windowState: windowState, generation: generation)
             }
         }
@@ -158,22 +107,6 @@ internal final class SidebarContainerViewController: NSViewController {
             searchField.stringValue = activeText
         }
         searchField.placeholderString = placeholder
-    }
-
-    private func syncCreateTableEnabled() {
-        let showButton = sidebarState?.selectedSidebarTab == .tables && coordinator != nil
-        setCreateTableButtonVisible(showButton)
-        guard showButton, let coordinator else {
-            createTableButton.isEnabled = false
-            return
-        }
-        createTableButton.isEnabled = !coordinator.safeModeLevel.blocksAllWrites
-    }
-
-    private func setCreateTableButtonVisible(_ visible: Bool) {
-        createTableButton.isHidden = !visible
-        searchTrailingToButton?.isActive = visible
-        searchTrailingToView?.isActive = !visible
     }
 }
 

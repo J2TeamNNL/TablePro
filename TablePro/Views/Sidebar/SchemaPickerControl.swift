@@ -3,7 +3,7 @@ import os
 import SwiftUI
 import TableProPluginKit
 
-struct SchemaPickerFooter: View {
+struct SchemaPickerControl: View {
     let connectionId: UUID
     let databaseType: DatabaseType
 
@@ -34,19 +34,16 @@ struct SchemaPickerFooter: View {
 
     var body: some View {
         if allSchemas.count > 1 {
-            VStack(spacing: 0) {
-                Divider()
-                SchemaPopUpButton(
-                    title: currentSchema ?? String(localized: "Select schema"),
-                    userSchemas: userSchemas,
-                    systemSchemas: visibleSystemSchemas,
-                    showSystemSchemas: $showSystemSchemas,
-                    currentSchema: currentSchema,
-                    onSelect: select(schema:),
-                    onRefresh: { Task { await schemaService.refresh(connectionId: connectionId) } }
-                )
-                .padding(8)
-            }
+            SchemaPopUpButton(
+                title: currentSchema ?? String(localized: "Select schema"),
+                userSchemas: userSchemas,
+                systemSchemas: visibleSystemSchemas,
+                showSystemSchemas: $showSystemSchemas,
+                currentSchema: currentSchema,
+                onSelect: select(schema:),
+                onRefresh: { Task { await schemaService.refresh(connectionId: connectionId) } }
+            )
+            .fixedSize()
             .onReceive(AppEvents.shared.currentSchemaChanged) { changedId in
                 if changedId == connectionId {
                     schemaVersion &+= 1
