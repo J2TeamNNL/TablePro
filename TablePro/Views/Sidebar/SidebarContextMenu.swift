@@ -1,3 +1,8 @@
+//
+//  SidebarContextMenu.swift
+//  TablePro
+//
+
 import SwiftUI
 import TableProPluginKit
 
@@ -55,6 +60,7 @@ struct SidebarContextMenu: View {
     let onBatchToggleTruncate: ([String]) -> Void
     let onBatchToggleDelete: ([String]) -> Void
     let coordinator: MainContentCoordinator?
+    var activateBeforeAction: (@MainActor () async -> Void)?
 
     private var hasSelection: Bool {
         SidebarContextMenuLogic.hasSelection(selectedTables: selectedTables, clickedTable: clickedTable)
@@ -71,43 +77,60 @@ struct SidebarContextMenu: View {
         return selectedTables.map(\.name).sorted()
     }
 
+    @MainActor
+    private func perform(_ action: @MainActor @escaping () -> Void) {
+        guard let activate = activateBeforeAction else {
+            action()
+            return
+        }
+        Task { @MainActor in
+            await activate()
+            action()
+        }
+    }
+
     var body: some View {
         Button("Create New View...") {
-            coordinator?.createView()
+            perform { coordinator?.createView() }
         }
         .disabled(isReadOnly)
 
         Divider()
 
-        if isView {
-            Button("Edit View Definition") {
-                if let viewName = clickedTable?.name {
-                    coordinator?.editViewDefinition(viewName)
+        if clickedTable != nil {
+            if isView {
+                Button("Edit View Definition") {
+                    perform {
+                        if let viewName = clickedTable?.name {
+                            coordinator?.editViewDefinition(viewName)
+                        }
+                    }
+                }
+                .disabled(isReadOnly)
+            }
+
+            Button("Show Structure") {
+                perform {
+                    if let clickedTable {
+                        coordinator?.openTableTab(clickedTable, showStructure: true)
+                    }
                 }
             }
-            .disabled(isReadOnly)
         }
 
-        Button("Show Structure") {
-            if let clickedTable {
-                coordinator?.openTableTab(clickedTable, showStructure: true)
+        Button("View ER Diagram") {
+            perform { coordinator?.showERDiagram() }
+        }
+
+        if hasSelection {
+            Button("Copy Name") {
+                ClipboardService.shared.writeText(effectiveTableNames.joined(separator: ","))
+            }
+
+            Button("Export...") {
+                perform { coordinator?.openExportDialog(preselectedTableNames: Set(effectiveTableNames)) }
             }
         }
-        .disabled(clickedTable == nil)
-
-        Button(String(localized: "Show ER Diagram")) {
-            coordinator?.showERDiagram()
-        }
-
-        Button("Copy Name") {
-            ClipboardService.shared.writeText(effectiveTableNames.joined(separator: ","))
-        }
-        .disabled(!hasSelection)
-
-        Button("Export...") {
-            coordinator?.openExportDialog(preselectedTableNames: Set(effectiveTableNames))
-        }
-        .disabled(!hasSelection)
 
         if SidebarContextMenuLogic.importVisible(
             clickedTable: clickedTable,
@@ -116,7 +139,7 @@ struct SidebarContextMenu: View {
             )
         ) {
             Button("Import...") {
-                coordinator?.openImportDialog()
+                perform { coordinator?.openImportDialog() }
             }
             .disabled(isReadOnly)
         }
@@ -130,29 +153,33 @@ struct SidebarContextMenu: View {
             Menu(String(localized: "Maintenance")) {
                 ForEach(maintenanceOps, id: \.self) { op in
                     Button(op) {
-                        if let table = clickedTable?.name {
-                            coordinator?.showMaintenanceSheet(operation: op, tableName: table)
+                        perform {
+                            if let table = clickedTable?.name {
+                                coordinator?.showMaintenanceSheet(operation: op, tableName: table)
+                            }
                         }
                     }
                 }
             }
         }
 
-        Divider()
+        if hasSelection {
+            Divider()
 
-        if SidebarContextMenuLogic.truncateVisible(clickedTable: clickedTable) {
-            Button("Truncate") {
-                onBatchToggleTruncate(effectiveTableNames)
+            if SidebarContextMenuLogic.truncateVisible(clickedTable: clickedTable) {
+                Button("Truncate") {
+                    perform { onBatchToggleTruncate(effectiveTableNames) }
+                }
+                .disabled(isReadOnly)
             }
-            .disabled(!hasSelection || isReadOnly)
-        }
 
-        Button(
-            SidebarContextMenuLogic.deleteLabel(for: clickedTable?.type),
-            role: .destructive
-        ) {
-            onBatchToggleDelete(effectiveTableNames)
+            Button(
+                SidebarContextMenuLogic.deleteLabel(for: clickedTable?.type),
+                role: .destructive
+            ) {
+                perform { onBatchToggleDelete(effectiveTableNames) }
+            }
+            .disabled(isReadOnly)
         }
-        .disabled(!hasSelection || isReadOnly)
     }
 }

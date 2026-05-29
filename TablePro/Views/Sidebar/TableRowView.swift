@@ -38,24 +38,6 @@ enum TableRowLogic {
         }
         return label
     }
-
-    static func iconColor(table: TableInfo, isPendingDelete: Bool, isPendingTruncate: Bool) -> Color {
-        if isPendingDelete { return Color(nsColor: .systemRed) }
-        if isPendingTruncate { return Color(nsColor: .systemOrange) }
-        switch table.type {
-        case .table:            return Color(nsColor: .systemBlue)
-        case .view:             return Color(nsColor: .systemPurple)
-        case .materializedView: return Color(nsColor: .systemTeal)
-        case .foreignTable:     return Color(nsColor: .systemIndigo)
-        case .systemTable:      return Color(nsColor: .systemGray)
-        }
-    }
-
-    static func textColor(isPendingDelete: Bool, isPendingTruncate: Bool) -> Color {
-        if isPendingDelete { return Color(nsColor: .systemRed) }
-        if isPendingTruncate { return Color(nsColor: .systemOrange) }
-        return .primary
-    }
 }
 
 struct TableRow: View {
@@ -67,39 +49,31 @@ struct TableRow: View {
 
     @State private var isHovered = false
 
-    private var iconColor: Color {
-        TableRowLogic.iconColor(table: table, isPendingDelete: isPendingDelete, isPendingTruncate: isPendingTruncate)
-    }
-
-    private var textColor: Color {
-        TableRowLogic.textColor(isPendingDelete: isPendingDelete, isPendingTruncate: isPendingTruncate)
+    @ViewBuilder
+    private var pendingStateBadge: some View {
+        if isPendingDelete {
+            Image(systemName: "minus.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.red)
+        } else if isPendingTruncate {
+            Image(systemName: "exclamationmark.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.orange)
+        }
     }
 
     var body: some View {
         HStack(spacing: 6) {
             Label {
                 Text(table.name)
-                    .font(.system(.callout, design: .monospaced))
                     .lineLimit(1)
-                    .sidebarTint(textColor)
             } icon: {
-                ZStack(alignment: .bottomTrailing) {
-                    Image(systemName: TableRowLogic.iconName(for: table.type))
-                        .sidebarTint(iconColor)
-                        .frame(width: 14)
-
-                    if isPendingDelete {
-                        Image(systemName: "minus.circle.fill")
-                            .font(.caption)
-                            .sidebarTint(.red)
-                            .offset(x: 4, y: 4)
-                    } else if isPendingTruncate {
-                        Image(systemName: "exclamationmark.circle.fill")
-                            .font(.caption)
-                            .sidebarTint(.orange)
-                            .offset(x: 4, y: 4)
+                Image(systemName: TableRowLogic.iconName(for: table.type))
+                    .sidebarTint(Color.accentColor)
+                    .frame(width: 16)
+                    .overlay(alignment: .bottomTrailing) {
+                        pendingStateBadge
                     }
-                }
             }
 
             Spacer(minLength: 4)
@@ -122,7 +96,6 @@ struct TableRow: View {
                       : String(localized: "Add to Favorites"))
             }
         }
-        .padding(.vertical, 4)
         .onHover { isHovered = $0 }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(

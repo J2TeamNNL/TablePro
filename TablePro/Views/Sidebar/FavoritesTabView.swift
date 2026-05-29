@@ -201,10 +201,9 @@ internal struct FavoritesTabView: View {
     private func favoriteTableRow(table: TableInfo) -> some View {
         Label {
             Text(table.name)
-                .font(.system(.callout, design: .monospaced))
         } icon: {
             Image(systemName: TableRowLogic.iconName(for: table.type))
-                .foregroundStyle(TableRowLogic.iconColor(table: table, isPendingDelete: false, isPendingTruncate: false))
+                .sidebarTint(Color.accentColor)
         }
         .tag(FavoriteSelection.table(database: activeDatabase, schema: table.schema, name: table.name))
         .accessibilityLabel(
