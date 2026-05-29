@@ -197,8 +197,8 @@ internal struct FavoritesTabView: View {
             Text(table.name)
                 .font(.system(.callout, design: .monospaced))
         } icon: {
-            Image(systemName: "star.fill")
-                .foregroundStyle(.yellow)
+            Image(systemName: TableRowLogic.iconName(for: table.type))
+                .foregroundStyle(TableRowLogic.iconColor(table: table, isPendingDelete: false, isPendingTruncate: false))
         }
         .tag(tableNodeId(table))
         .contextMenu {
@@ -212,7 +212,7 @@ internal struct FavoritesTabView: View {
             coordinator?.openTableTab(table)
         }
 
-        Button(String(localized: "View ER Diagram")) {
+        Button(String(localized: "Show ER Diagram")) {
             coordinator?.showERDiagram()
         }
 

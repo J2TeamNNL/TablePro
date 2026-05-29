@@ -95,6 +95,10 @@ struct SidebarContextMenu: View {
         }
         .disabled(clickedTable == nil)
 
+        Button(String(localized: "Show ER Diagram")) {
+            coordinator?.showERDiagram()
+        }
+
         Button("Copy Name") {
             ClipboardService.shared.writeText(effectiveTableNames.joined(separator: ","))
         }
