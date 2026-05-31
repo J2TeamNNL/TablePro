@@ -133,9 +133,13 @@ TablePro is keyboard-driven. Most actions have shortcuts, and most menu shortcut
 |--------|----------|
 | Select cell | Click |
 | Select row | Click row number |
-| Select multiple cells | Click + drag |
-| Extend selection | Shift + click |
-| Add to selection | Cmd + click |
+| Select rectangular range | Click + drag |
+| Extend selection | `Shift` + click |
+| Add cell to selection | `Cmd` + click |
+| Select entire column | `Cmd` + click column header |
+| Extend selection by one cell | `Shift+Arrow` |
+| Extend selection to grid edge | `Cmd+Shift+Arrow` |
+| Clear cell selection | `Escape` |
 | Extend selection by row | `Shift+Up` / `Shift+Down` |
 | Select to first row | `Shift+Home` |
 | Select to last row | `Shift+End` |
@@ -149,7 +153,7 @@ TablePro is keyboard-driven. Most actions have shortcuts, and most menu shortcut
 | Copy (cell value if a cell is focused on a single row, otherwise row(s) TSV) | `Cmd+C` |
 | Copy Rows as TSV | `Cmd+Shift+C` |
 | Copy as JSON | `Cmd+Option+J` |
-| Copy with Headers | Available from Edit menu and context menu |
+| Copy with Headers | `Cmd+Option+C` |
 
 ## CSV Inspector
 
@@ -196,6 +200,9 @@ Inherits the standard `NSDocument` shortcuts.
 | Action | Shortcut |
 |--------|----------|
 | Toggle sidebar | `Cmd+0` |
+| Focus sidebar filter | `Cmd+Option+F` |
+| Show Tables sidebar | `Control+1` |
+| Show Favorites sidebar | `Control+2` |
 | Toggle full screen | `Cmd+Control+F` |
 | Zoom in | `Cmd+=` |
 | Zoom out | `Cmd+-` |

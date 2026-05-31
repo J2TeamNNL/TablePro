@@ -113,6 +113,10 @@ extension DatabaseType {
         PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.capabilities.supportsOpportunisticTLS ?? true
     }
 
+    var supportsClientKeyPassphrase: Bool {
+        PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.capabilities.supportsClientKeyPassphrase ?? false
+    }
+
     var sslPaneTooltip: String {
         switch rawValue {
         case "PostgreSQL", "Redshift", "CockroachDB":
@@ -334,6 +338,7 @@ struct DatabaseConnection: Identifiable, Hashable {
     var localOnly: Bool = false
     var isSample: Bool = false
     var isFavorite: Bool = false
+    var passwordSource: PasswordSource?
 
     var mongoAuthSource: String? {
         get { additionalFields["mongoAuthSource"]?.nilIfEmpty }
@@ -430,6 +435,7 @@ struct DatabaseConnection: Identifiable, Hashable {
         localOnly: Bool = false,
         isSample: Bool = false,
         isFavorite: Bool = false,
+        passwordSource: PasswordSource? = nil,
         additionalFields: [String: String]? = nil
     ) {
         self.id = id
@@ -472,6 +478,7 @@ struct DatabaseConnection: Identifiable, Hashable {
         self.localOnly = localOnly
         self.isSample = isSample
         self.isFavorite = isFavorite
+        self.passwordSource = passwordSource
         if let additionalFields {
             self.additionalFields = additionalFields
         } else {
@@ -520,6 +527,7 @@ extension DatabaseConnection: Codable {
         case sshConfig, sslConfig, color, tagId, groupId, sshProfileId
         case sshTunnelMode, cloudflareTunnelMode, safeModeLevel, aiPolicy, aiRules, aiAlwaysAllowedTools, externalAccess, additionalFields
         case redisDatabase, startupCommands, sortOrder, localOnly, isSample, isFavorite
+        case passwordSource
     }
 
     init(from decoder: Decoder) throws {
@@ -549,6 +557,7 @@ extension DatabaseConnection: Codable {
         localOnly = try container.decodeIfPresent(Bool.self, forKey: .localOnly) ?? false
         isSample = try container.decodeIfPresent(Bool.self, forKey: .isSample) ?? false
         isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
+        passwordSource = PasswordSource.resilientlyDecoded(from: container, forKey: .passwordSource)
         cloudflareTunnelMode = try container.decodeIfPresent(CloudflareTunnelMode.self, forKey: .cloudflareTunnelMode) ?? .disabled
 
         // Migrate from legacy fields if sshTunnelMode is not present
@@ -600,6 +609,7 @@ extension DatabaseConnection: Codable {
         try container.encode(localOnly, forKey: .localOnly)
         try container.encode(isSample, forKey: .isSample)
         try container.encode(isFavorite, forKey: .isFavorite)
+        try container.encodeIfPresent(passwordSource, forKey: .passwordSource)
     }
 }
 
