@@ -181,7 +181,10 @@ extension DatabaseManager {
     }
 
     internal func resolvedConnectionDefinition(for connection: DatabaseConnection) -> DatabaseConnection {
-        connectionStorage.loadConnection(id: connection.id) ?? connection
+        guard let stored = connectionStorage.loadConnection(id: connection.id) else { return connection }
+        var resolved = connection
+        resolved.safeModeLevel = stored.safeModeLevel
+        return resolved
     }
 
     internal func finalizeConnectionFailure(for connectionId: UUID, cancelled: Bool) {

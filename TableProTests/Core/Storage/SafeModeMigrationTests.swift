@@ -189,6 +189,36 @@ struct SafeModeMigrationTests {
         #expect(resolved.safeModeLevel == .alertFull)
     }
 
+    @Test("resolvedConnectionDefinition keeps in-session connection edits and only refreshes safe mode")
+    func resolvedConnectionDefinitionPreservesInSessionEdits() {
+        let id = UUID()
+        let stored = DatabaseConnection(
+            id: id,
+            name: "Switched Database",
+            host: "127.0.0.1",
+            port: 5_432,
+            database: "original",
+            username: "postgres",
+            type: .postgresql,
+            safeModeLevel: .silent
+        )
+
+        storage.addConnection(stored)
+
+        let manager = DatabaseManager(connectionStorage: storage)
+        manager.injectSession(ConnectionSession(connection: stored), for: id)
+        manager.setSafeModeLevel(.alertFull, for: id)
+        manager.removeSession(for: id)
+
+        var inSession = stored
+        inSession.database = "switched"
+
+        let resolved = manager.resolvedConnectionDefinition(for: inSession)
+
+        #expect(resolved.database == "switched")
+        #expect(resolved.safeModeLevel == .alertFull)
+    }
+
     @Test("A fresh session seeds from the persisted safe mode after disconnect")
     func freshSessionSeedsFromPersistedSafeMode() {
         let id = UUID()
