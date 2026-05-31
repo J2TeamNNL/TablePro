@@ -16,10 +16,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var hasRunPostLaunchActivation = false
 
-    private static var isUITesting: Bool {
-        ProcessInfo.processInfo.environment["TABLEPRO_UI_TESTING"] == "1"
-    }
-
     // MARK: - URL & File Open
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -71,6 +67,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         UNUserNotificationCenter.current().delegate = self
         PluginNotificationService.shared.setUp()
         ChatToolBootstrap.register()
+        FunctionKeyShortcutMonitor.shared.start()
 
         NSWorkspace.shared.notificationCenter.addObserver(
             self, selector: #selector(handleSystemDidWake),
@@ -97,14 +94,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidBecomeActive(_ notification: Notification) {
         runPostLaunchActivationIfNeeded()
-        guard !Self.isUITesting else { return }
         SyncCoordinator.shared.syncIfNeeded()
     }
 
     private func runPostLaunchActivationIfNeeded() {
         guard !hasRunPostLaunchActivation else { return }
         hasRunPostLaunchActivation = true
-        guard !Self.isUITesting else { return }
 
         ConnectionStorage.shared.migratePluginSecureFieldsIfNeeded()
         AnalyticsService.shared.startPeriodicHeartbeat()

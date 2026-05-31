@@ -182,6 +182,7 @@ internal final class MainWindowToolbar: NSObject, NSToolbarDelegate {
             let item = NSToolbarItem(itemIdentifier: Self.inspector)
             item.label = String(localized: "Inspector")
             item.paletteLabel = String(localized: "Inspector")
+            item.toolTip = String(localized: "Toggle Inspector (⌘⌥I)")
             return item
         case Self.dashboard:
             return hostingItem(

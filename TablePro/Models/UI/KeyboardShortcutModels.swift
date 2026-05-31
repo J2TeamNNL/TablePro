@@ -17,6 +17,7 @@ enum ShortcutCategory: String, Codable, CaseIterable, Identifiable {
     case view
     case tabs
     case ai
+    case help
 
     var id: String { rawValue }
 
@@ -27,6 +28,7 @@ enum ShortcutCategory: String, Codable, CaseIterable, Identifiable {
         case .view: return String(localized: "View")
         case .tabs: return String(localized: "Tabs")
         case .ai: return String(localized: "AI")
+        case .help: return String(localized: "Help")
         }
     }
 }
@@ -100,6 +102,9 @@ enum ShortcutAction: String, Codable, CaseIterable, Identifiable {
     case aiExplainQuery
     case aiOptimizeQuery
 
+    // Help
+    case openDocumentation
+
     var id: String { rawValue }
 
     var category: ShortcutCategory {
@@ -122,12 +127,32 @@ enum ShortcutAction: String, Codable, CaseIterable, Identifiable {
             return .tabs
         case .aiExplainQuery, .aiOptimizeQuery:
             return .ai
+        case .openDocumentation:
+            return .help
         }
     }
 
     var allowsBareKey: Bool {
         switch self {
         case .previewFKReference, .clearSelection, .delete:
+            return true
+        default:
+            return false
+        }
+    }
+
+    var supportsFunctionKeyAlternate: Bool {
+        switch self {
+        case .refresh, .executeQuery:
+            return true
+        default:
+            return false
+        }
+    }
+
+    var supportsFunctionKeyPrimary: Bool {
+        switch self {
+        case .openDocumentation:
             return true
         default:
             return false
@@ -189,6 +214,7 @@ enum ShortcutAction: String, Codable, CaseIterable, Identifiable {
         case .showNextTab: return String(localized: "Show Next Tab")
         case .aiExplainQuery: return String(localized: "Explain with AI")
         case .aiOptimizeQuery: return String(localized: "Optimize with AI")
+        case .openDocumentation: return String(localized: "Open Documentation")
         }
     }
 }
@@ -239,10 +265,11 @@ struct KeyCombo: Codable, Equatable, Hashable {
         let hasOption = flags.contains(.option)
         let hasControl = flags.contains(.control)
 
-        // Require at least Cmd or Control (or special bare keys: escape, delete, space)
+        // Require at least Cmd or Control (or special bare keys: escape, delete, space, function keys)
         let specialKeyCode = Self.specialKeyName(for: event.keyCode)
         let isAllowedBareKey = event.keyCode == 53 || event.keyCode == 51
             || event.keyCode == 117 || event.keyCode == 49
+            || Self.isFunctionKeyName(specialKeyCode)
 
         if !hasCommand && !hasControl && !isAllowedBareKey {
             return nil
@@ -287,6 +314,9 @@ struct KeyCombo: Codable, Equatable, Hashable {
             // swiftlint:disable:next force_unwrapping
             case "forwardDelete": return KeyEquivalent(Character(UnicodeScalar(NSDeleteFunctionKey)!))
             default:
+                if let scalar = Self.functionKeyScalar(for: key) {
+                    return KeyEquivalent(Character(scalar))
+                }
                 guard key.count == 1 else { return .escape }
                 return KeyEquivalent(Character(key))
             }
@@ -306,6 +336,10 @@ struct KeyCombo: Codable, Equatable, Hashable {
 
     var hasModifier: Bool {
         command || shift || option || control
+    }
+
+    var isFunctionKey: Bool {
+        isSpecialKey && Self.isFunctionKeyName(key)
     }
 
     /// Human-readable display string (e.g. "⌘S", "⇧⌘P")
@@ -337,7 +371,9 @@ struct KeyCombo: Codable, Equatable, Hashable {
             case "end": return "↘"
             case "pageUp": return "⇞"
             case "pageDown": return "⇟"
-            default: return key.count == 1 ? key.uppercased() : "?"
+            default:
+                if isFunctionKey { return key.uppercased() }
+                return key.count == 1 ? key.uppercased() : "?"
             }
         }
         return key.uppercased()
@@ -362,8 +398,37 @@ struct KeyCombo: Codable, Equatable, Hashable {
         case 119: return "end"
         case 116: return "pageUp"
         case 121: return "pageDown"
+        case 122: return "f1"
+        case 120: return "f2"
+        case 99: return "f3"
+        case 118: return "f4"
+        case 96: return "f5"
+        case 97: return "f6"
+        case 98: return "f7"
+        case 100: return "f8"
+        case 101: return "f9"
+        case 109: return "f10"
+        case 103: return "f11"
+        case 111: return "f12"
         default: return nil
         }
+    }
+
+    private static func functionKeyNumber(for key: String) -> Int? {
+        guard key.hasPrefix("f"), let number = Int(key.dropFirst()), (1...12).contains(number) else {
+            return nil
+        }
+        return number
+    }
+
+    static func isFunctionKeyName(_ key: String?) -> Bool {
+        guard let key else { return false }
+        return functionKeyNumber(for: key) != nil
+    }
+
+    private static func functionKeyScalar(for key: String) -> UnicodeScalar? {
+        guard let number = functionKeyNumber(for: key) else { return nil }
+        return UnicodeScalar(UInt32(NSF1FunctionKey + (number - 1)))
     }
 
     // MARK: - Event Matching
@@ -421,15 +486,21 @@ struct KeyboardSettings: Codable, Equatable {
     /// the old stored key becomes a harmless no-op (never matched by any action).
     var shortcuts: [String: KeyCombo]
 
+    /// User-customized secondary (function-key) bindings (action rawValue → KeyCombo).
+    /// Only contains overrides; missing entries use `defaultAlternates`.
+    var alternates: [String: KeyCombo]
+
     static let `default` = KeyboardSettings(shortcuts: [:])
 
-    init(shortcuts: [String: KeyCombo] = [:]) {
+    init(shortcuts: [String: KeyCombo] = [:], alternates: [String: KeyCombo] = [:]) {
         self.shortcuts = shortcuts
+        self.alternates = alternates
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         shortcuts = try container.decodeIfPresent([String: KeyCombo].self, forKey: .shortcuts) ?? [:]
+        alternates = try container.decodeIfPresent([String: KeyCombo].self, forKey: .alternates) ?? [:]
     }
 
     /// Get the effective shortcut for an action (user override or default)
@@ -446,10 +517,23 @@ struct KeyboardSettings: Codable, Equatable {
         shortcuts[action.rawValue] != nil
     }
 
-    /// Find a conflicting action for the given combo, excluding the specified action
+    /// Get the effective secondary (function-key) shortcut for an action.
+    /// Returns nil if there is none or the user explicitly cleared it.
+    func alternateShortcut(for action: ShortcutAction) -> KeyCombo? {
+        let combo = alternates[action.rawValue] ?? Self.defaultAlternates[action]
+        guard let combo, !combo.isCleared else { return nil }
+        return combo
+    }
+
+    func isAlternateCustomized(_ action: ShortcutAction) -> Bool {
+        alternates[action.rawValue] != nil
+    }
+
+    /// Find a conflicting action for the given combo, excluding the specified action.
+    /// Checks both primary and secondary bindings of every other action.
     func findConflict(for combo: KeyCombo, excluding action: ShortcutAction) -> ShortcutAction? {
         for otherAction in ShortcutAction.allCases where otherAction != action {
-            if shortcut(for: otherAction) == combo {
+            if shortcut(for: otherAction) == combo || alternateShortcut(for: otherAction) == combo {
                 return otherAction
             }
         }
@@ -472,13 +556,28 @@ struct KeyboardSettings: Codable, Equatable {
         shortcuts.removeValue(forKey: action.rawValue)
     }
 
+    /// Set a secondary (function-key) shortcut override for an action
+    mutating func setAlternate(_ combo: KeyCombo, for action: ShortcutAction) {
+        alternates[action.rawValue] = combo
+    }
+
+    /// Clear a secondary shortcut (action will have no function-key binding)
+    mutating func clearAlternate(for action: ShortcutAction) {
+        alternates[action.rawValue] = KeyCombo.cleared
+    }
+
+    /// Reset a secondary shortcut to its default
+    mutating func resetAlternate(for action: ShortcutAction) {
+        alternates.removeValue(forKey: action.rawValue)
+    }
+
     /// Drop overrides that can never dispatch (bare keys on menu-driven actions),
     /// reverting them to their default. Cleared and unknown overrides are kept.
     func sanitized() -> KeyboardSettings {
         var cleaned = shortcuts
         for (rawValue, combo) in shortcuts {
             guard let action = ShortcutAction(rawValue: rawValue), !combo.isCleared else { continue }
-            if !combo.hasModifier, !action.allowsBareKey {
+            if !combo.hasModifier, !action.allowsBareKey, !combo.isFunctionKey {
                 cleaned.removeValue(forKey: rawValue)
             }
         }
@@ -486,9 +585,12 @@ struct KeyboardSettings: Codable, Equatable {
     }
 
     /// Build a SwiftUI KeyboardShortcut for the given action.
-    /// Returns nil if the user has cleared (unassigned) the shortcut.
+    /// Returns nil if the user has cleared (unassigned) the shortcut, or if the
+    /// binding is a function key. Those dispatch through FunctionKeyShortcutMonitor
+    /// instead of the menu, since SwiftUI menu items don't reliably register
+    /// function-key equivalents.
     func keyboardShortcut(for action: ShortcutAction) -> KeyboardShortcut? {
-        guard let combo = shortcut(for: action), !combo.isCleared else {
+        guard let combo = shortcut(for: action), !combo.isCleared, !combo.isFunctionKey else {
             return nil
         }
         return KeyboardShortcut(combo.keyEquivalent, modifiers: combo.eventModifiers)
@@ -558,6 +660,15 @@ struct KeyboardSettings: Codable, Equatable {
         // AI
         .aiExplainQuery: KeyCombo(key: "l", command: true),
         .aiOptimizeQuery: KeyCombo(key: "l", command: true, option: true),
+
+        // Help
+        .openDocumentation: KeyCombo(key: "f1", isSpecialKey: true),
+    ]
+
+    /// Default secondary (function-key) bindings, dispatched by FunctionKeyShortcutMonitor.
+    static let defaultAlternates: [ShortcutAction: KeyCombo] = [
+        .refresh: KeyCombo(key: "f5", isSpecialKey: true),
+        .executeQuery: KeyCombo(key: "f9", isSpecialKey: true),
     ]
 }
 

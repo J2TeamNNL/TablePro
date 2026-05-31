@@ -13,7 +13,9 @@ TablePro is keyboard-driven. Most actions have shortcuts, and most menu shortcut
 
 | Action | Shortcut |
 |--------|----------|
-| Execute query | `Cmd+Enter` |
+| Execute query | `Cmd+Enter` or `F9` |
+| Refresh | `Cmd+R` or `F5` |
+| Open documentation | `F1` |
 | New connection | `Cmd+N` |
 | Open history | `Cmd+Y` |
 | Settings | `Cmd+,` |
@@ -36,7 +38,7 @@ TablePro is keyboard-driven. Most actions have shortcuts, and most menu shortcut
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| Execute query | `Cmd+Enter` | Run query at cursor. Shows parameter panel if `:name` placeholders are detected |
+| Execute query | `Cmd+Enter` or `F9` | Run query at cursor. Shows parameter panel if `:name` placeholders are detected |
 | Execute all statements | `Cmd+Shift+Enter` | Run all statements in the editor. Shows parameter panel if parameters are detected |
 | Cancel query | `Cmd+.` | Stop the currently running query |
 | Explain query | `Option+Cmd+E` | Show execution plan for query at cursor |
@@ -193,7 +195,7 @@ Inherits the standard `NSDocument` shortcuts.
 |--------|----------|
 | New connection | `Cmd+N` |
 | Switch connection | `Cmd+Control+C` |
-| Refresh connection | `Cmd+R` |
+| Refresh connection | `Cmd+R` or `F5` |
 | Delete selected connections | `Cmd+Delete` |
 
 ### View
@@ -342,6 +344,10 @@ Most menu shortcuts are rebindable in **Settings** > **Keyboard**.
 
 <Note>
 Menu actions need a modifier key (`Cmd`, `Option`, `Control`, or `Shift`). A plain key like `Space` won't reach the menu, so TablePro asks you to add a modifier. Data grid actions that read the key directly, like Preview FK Reference (`Space`) and Cancel edit (`Escape`), are the exception.
+</Note>
+
+<Note>
+Refresh and Execute Query have a second field for a function-key shortcut (F5 and F9 by default), which works alongside the main `Cmd` shortcut. Function keys (F1–F12) don't need a modifier.
 </Note>
 
 ### Clearing a Shortcut

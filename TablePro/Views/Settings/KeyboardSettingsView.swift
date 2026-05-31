@@ -16,6 +16,7 @@ struct KeyboardSettingsView: View {
     @State private var conflictAlert: ConflictAlertState?
     @State private var systemReservedAlert: ShortcutAction?
     @State private var needsModifierAlert: ShortcutAction?
+    @State private var needsFunctionKeyAlert: ShortcutAction?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -46,7 +47,7 @@ struct KeyboardSettingsView: View {
                         Button(String(localized: "Reset to Defaults")) {
                             settings = .default
                         }
-                        .disabled(settings.shortcuts.isEmpty)
+                        .disabled(settings.shortcuts.isEmpty && settings.alternates.isEmpty)
                     }
                 }
             }
@@ -64,10 +65,16 @@ struct KeyboardSettingsView: View {
             }
             Button(String(localized: "Reassign")) {
                 if let state = conflictAlert {
-                    // Clear the conflicting action's shortcut
-                    settings.clearShortcut(for: state.conflictingAction)
-                    // Assign the new combo to the intended action
-                    settings.setShortcut(state.combo, for: state.action)
+                    if settings.alternateShortcut(for: state.conflictingAction) == state.combo {
+                        settings.clearAlternate(for: state.conflictingAction)
+                    } else {
+                        settings.clearShortcut(for: state.conflictingAction)
+                    }
+                    if state.isAlternate {
+                        settings.setAlternate(state.combo, for: state.action)
+                    } else {
+                        settings.setShortcut(state.combo, for: state.action)
+                    }
                 }
                 conflictAlert = nil
             }
@@ -104,6 +111,19 @@ struct KeyboardSettingsView: View {
         } message: {
             Text(String(localized: "This action needs a modifier key like ⌘ or ⌥. A plain key won't reach the menu reliably."))
         }
+        .alert(
+            String(localized: "Function Key Required"),
+            isPresented: Binding(
+                get: { needsFunctionKeyAlert != nil },
+                set: { if !$0 { needsFunctionKeyAlert = nil } }
+            )
+        ) {
+            Button(String(localized: "OK"), role: .cancel) {
+                needsFunctionKeyAlert = nil
+            }
+        } message: {
+            Text(String(localized: "The secondary shortcut must be a function key (F1–F12)."))
+        }
     }
 
     // MARK: - Shortcut Row
@@ -113,6 +133,22 @@ struct KeyboardSettingsView: View {
         HStack {
             Text(action.displayName)
                 .frame(maxWidth: .infinity, alignment: .leading)
+
+            if action.supportsFunctionKeyAlternate {
+                ShortcutRecorderView(
+                    combo: Binding(
+                        get: { settings.alternateShortcut(for: action) },
+                        set: { _ in }
+                    ),
+                    onRecord: { newCombo in
+                        handleRecordAlternate(newCombo, for: action)
+                    },
+                    onClear: {
+                        settings.clearAlternate(for: action)
+                    }
+                )
+                .frame(width: 110, height: 24)
+            }
 
             ShortcutRecorderView(
                 combo: Binding(
@@ -147,7 +183,12 @@ struct KeyboardSettingsView: View {
             return
         }
 
-        if !combo.hasModifier, !action.allowsBareKey {
+        if combo.isFunctionKey {
+            if !action.supportsFunctionKeyPrimary {
+                needsModifierAlert = action
+                return
+            }
+        } else if !combo.hasModifier, !action.allowsBareKey {
             needsModifierAlert = action
             return
         }
@@ -163,6 +204,30 @@ struct KeyboardSettingsView: View {
 
         settings.setShortcut(combo, for: action)
     }
+
+    private func handleRecordAlternate(_ combo: KeyCombo, for action: ShortcutAction) {
+        guard combo.isFunctionKey else {
+            needsFunctionKeyAlert = action
+            return
+        }
+
+        if combo.isSystemReserved {
+            systemReservedAlert = action
+            return
+        }
+
+        if let conflict = settings.findConflict(for: combo, excluding: action) {
+            conflictAlert = ConflictAlertState(
+                action: action,
+                conflictingAction: conflict,
+                combo: combo,
+                isAlternate: true
+            )
+            return
+        }
+
+        settings.setAlternate(combo, for: action)
+    }
 }
 
 // MARK: - Conflict Alert State
@@ -171,4 +236,5 @@ private struct ConflictAlertState {
     let action: ShortcutAction
     let conflictingAction: ShortcutAction
     let combo: KeyCombo
+    var isAlternate = false
 }

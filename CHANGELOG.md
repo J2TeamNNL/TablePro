@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - iOS: open DuckDB database files and in-memory DuckDB databases. (#1526)
 - Save the current query as a favorite from the SQL editor toolbar.
 - Select and copy field names and types in the row Details panel.
+- Function-key shortcuts: F5 to refresh, F9 to run a query, F1 to open documentation. F5 and F9 work alongside Cmd+R and Cmd+Return, and all three are assignable in Settings, Keyboard.
 
 ### Changed
 

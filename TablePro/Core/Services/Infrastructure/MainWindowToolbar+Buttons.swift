@@ -58,7 +58,7 @@ struct RefreshToolbarButton: View {
         } label: {
             Label("Refresh", systemImage: "arrow.clockwise")
         }
-        .help(String(localized: "Refresh (⌘R)"))
+        .help(String(localized: "Refresh (⌘R / F5)"))
         .disabled(state.connectionState != .connected)
     }
 }

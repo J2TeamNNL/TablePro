@@ -73,10 +73,14 @@ struct BareKeyValidationTests {
         #expect(!KeyCombo(key: "space", isSpecialKey: true).hasModifier)
     }
 
-    @Test("Every bare-key default belongs to an action that allows bare keys")
+    @Test("Every bare-key default belongs to an action that accepts it")
     func bareKeyDefaultsAreAllowed() {
         for (action, combo) in KeyboardSettings.defaultShortcuts where !combo.hasModifier {
-            #expect(action.allowsBareKey, "\(action.rawValue) ships a bare-key default but does not allow bare keys")
+            if combo.isFunctionKey {
+                #expect(action.supportsFunctionKeyPrimary, "\(action.rawValue) ships a function-key default but does not support a function-key primary")
+            } else {
+                #expect(action.allowsBareKey, "\(action.rawValue) ships a bare-key default but does not allow bare keys")
+            }
         }
     }
 }
