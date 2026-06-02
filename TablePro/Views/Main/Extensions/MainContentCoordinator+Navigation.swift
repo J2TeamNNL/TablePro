@@ -19,7 +19,8 @@ extension MainContentCoordinator {
         _ table: TableInfo,
         showStructure: Bool = false,
         redirectToSibling: Bool = false,
-        forceNonPreview: Bool = false
+        forceNonPreview: Bool = false,
+        activateGridFocus: Bool = false
     ) {
         if AppSettingsManager.shared.general.showRecentTables {
             RecentTablesStore.shared.push(
@@ -34,7 +35,8 @@ extension MainContentCoordinator {
             showStructure: showStructure,
             isView: table.type == .view,
             redirectToSibling: redirectToSibling,
-            forceNonPreview: forceNonPreview
+            forceNonPreview: forceNonPreview,
+            activateGridFocus: activateGridFocus
         )
     }
 
@@ -44,7 +46,8 @@ extension MainContentCoordinator {
         showStructure: Bool = false,
         isView: Bool = false,
         redirectToSibling: Bool = false,
-        forceNonPreview: Bool = false
+        forceNonPreview: Bool = false,
+        activateGridFocus: Bool = false
     ) {
         let navigationModel = PluginMetadataRegistry.shared.snapshot(
             forTypeId: connection.type.pluginTypeId
@@ -72,7 +75,14 @@ extension MainContentCoordinator {
             if showStructure, let (_, tabIndex) = tabManager.selectedTabAndIndex {
                 tabManager.mutate(at: tabIndex) { $0.display.resultsViewMode = .structure }
             }
+            if activateGridFocus {
+                focusActiveGrid()
+            }
             return
+        }
+
+        if activateGridFocus {
+            pendingGridFocusOnOpen = true
         }
 
         // During database switch, update the existing tab in-place instead of
@@ -89,6 +99,8 @@ extension MainContentCoordinator {
                 } catch {
                     navigationLogger.error("openTableTab addTableTab failed: \(error.localizedDescription, privacy: .public)")
                 }
+            } else {
+                pendingGridFocusOnOpen = false
             }
             return
         }
@@ -109,6 +121,7 @@ extension MainContentCoordinator {
                 guard hasMatch,
                       let windowId = sibling.windowId,
                       let window = WindowLifecycleMonitor.shared.window(for: windowId) else { continue }
+                pendingGridFocusOnOpen = false
                 window.makeKeyAndOrderFront(nil)
                 return
             }
@@ -222,7 +235,6 @@ extension MainContentCoordinator {
             }
             toolbarState.isTableTab = true
         }
-        updatePreviewSubtitle(isPreview: createAsPreview)
         restoreLastHiddenColumnsForTable(tableName)
         restoreFiltersForTable(tableName)
         if isInPlace, let dbIndex = Int(currentDatabase) {
@@ -267,10 +279,9 @@ extension MainContentCoordinator {
             }
             toolbarState.isTableTab = true
         }
-        updatePreviewSubtitle(isPreview: createAsPreview)
         restoreLastHiddenColumnsForTable(tableName)
         restoreFiltersForTable(tableName)
-        runQuery()
+        executeSelectedTableTabQuery()
     }
 
     // MARK: - Preview Tabs
@@ -295,13 +306,6 @@ extension MainContentCoordinator {
         guard let (tab, tabIndex) = tabManager.selectedTabAndIndex,
               tab.isPreview else { return }
         tabManager.mutate(at: tabIndex) { $0.isPreview = false }
-        updatePreviewSubtitle(isPreview: false)
-    }
-
-    private func updatePreviewSubtitle(isPreview: Bool) {
-        contentWindow?.subtitle = isPreview
-            ? String(format: String(localized: "%@ - Preview"), connection.name)
-            : connection.name
     }
 
     func showAllTablesMetadata() {

@@ -49,24 +49,25 @@ internal struct FavoritesTabView: View {
     }
 
     var body: some View {
-        Group {
-            let items = viewModel.filteredNodes(searchText: searchText)
-            let filteredTables = searchText.isEmpty
-                ? availableFavoriteTables
-                : availableFavoriteTables.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        VStack(spacing: 0) {
+            Group {
+                let items = viewModel.filteredNodes(searchText: searchText)
+                let filteredTables = searchText.isEmpty
+                    ? availableFavoriteTables
+                    : availableFavoriteTables.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
 
-            if !viewModel.isInitialLoadComplete && viewModel.nodes.isEmpty && filteredTables.isEmpty {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if viewModel.nodes.isEmpty && filteredTables.isEmpty && searchText.isEmpty {
-                emptyState
-            } else if items.isEmpty && filteredTables.isEmpty {
-                noMatchState
-            } else {
-                favoritesList(items, filteredTables: filteredTables)
+                if !viewModel.isInitialLoadComplete && viewModel.nodes.isEmpty && filteredTables.isEmpty {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if viewModel.nodes.isEmpty && filteredTables.isEmpty && searchText.isEmpty {
+                    emptyState
+                } else if items.isEmpty && filteredTables.isEmpty {
+                    noMatchState
+                } else {
+                    favoritesList(items, filteredTables: filteredTables)
+                }
             }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+
             VStack(spacing: 0) {
                 Divider()
                 bottomToolbar
@@ -201,10 +202,9 @@ internal struct FavoritesTabView: View {
     private func favoriteTableRow(table: TableInfo) -> some View {
         Label {
             Text(table.name)
-                .font(.system(.callout, design: .monospaced))
         } icon: {
             Image(systemName: TableRowLogic.iconName(for: table.type))
-                .foregroundStyle(TableRowLogic.iconColor(table: table, isPendingDelete: false, isPendingTruncate: false))
+                .sidebarTint(Color.accentColor)
         }
         .tag(FavoriteSelection.table(database: activeDatabase, schema: table.schema, name: table.name))
         .accessibilityLabel(
@@ -215,7 +215,7 @@ internal struct FavoritesTabView: View {
     @ViewBuilder
     private func favoriteTableContextMenu(_ table: TableInfo) -> some View {
         Button(String(localized: "Open Table")) {
-            coordinator?.openTableTab(table)
+            coordinator?.openTableTab(table, activateGridFocus: true)
         }
 
         Button(String(localized: "Show ER Diagram")) {
@@ -265,7 +265,7 @@ internal struct FavoritesTabView: View {
         switch selection {
         case .table(let database, let schema, let name):
             if let table = favoriteTable(database: database, schema: schema, name: name) {
-                coordinator?.openTableTab(table)
+                coordinator?.openTableTab(table, activateGridFocus: true)
             }
         case .node(let id):
             guard let node = viewModel.node(forId: id) else { return }

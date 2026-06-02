@@ -156,3 +156,6 @@ fix-1322-plugin-abi-and-registry-overhaul.diff
 # Issue analysis blueprints (local only)
 .analysis/
 .docs/
+
+# Plans (local only)
+/plans/reports

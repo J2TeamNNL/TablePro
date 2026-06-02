@@ -28,14 +28,14 @@ final class ConnectionStorage {
 
     private let fileURL: URL
 
-    private let keychain: KeychainHelper
+    private let keychain: any KeychainStoring
 
     init(
         fileURL: URL = ConnectionStorage.defaultFileURL(),
         userDefaults: UserDefaults = .standard,
         syncTracker: SyncChangeTracker = .shared,
         appSettings: @escaping @autoclosure () -> AppSettingsStorage = .shared,
-        keychain: KeychainHelper = .shared
+        keychain: any KeychainStoring = KeychainHelper.shared
     ) {
         self.fileURL = fileURL
         self.defaults = userDefaults
@@ -105,6 +105,10 @@ final class ConnectionStorage {
             Self.logger.error("Failed to load connections: \(error)")
             return []
         }
+    }
+
+    func loadConnection(id: UUID) -> DatabaseConnection? {
+        loadConnections().first { $0.id == id }
     }
 
     /// Save all connections. Returns `true` if persisted, `false` if encoding or
@@ -196,6 +200,34 @@ final class ConnectionStorage {
         return true
     }
 
+    @discardableResult
+    func updateSafeModeLevel(_ level: SafeModeLevel, for connectionId: UUID) -> Bool {
+        var connections = loadConnections()
+        guard let index = connections.firstIndex(where: { $0.id == connectionId }) else {
+            Self.logger.notice(
+                "Skipped updateSafeModeLevel: connection not found for \(connectionId, privacy: .public)"
+            )
+            return false
+        }
+
+        guard connections[index].safeModeLevel != level else { return true }
+
+        connections[index].safeModeLevel = level
+        guard saveConnections(connections) else {
+            Self.logger.error(
+                "Aborted updateSafeModeLevel: persistence failed for \(connectionId, privacy: .public)"
+            )
+            return false
+        }
+
+        let updatedConnection = connections[index]
+        if !updatedConnection.localOnly && !updatedConnection.isSample {
+            syncTracker.markDirty(.connection, id: updatedConnection.id.uuidString)
+        }
+
+        return true
+    }
+
     /// Delete a connection
     func deleteConnection(_ connection: DatabaseConnection) {
         var connections = loadConnections()
@@ -210,6 +242,7 @@ final class ConnectionStorage {
         deletePassword(for: connection.id)
         deleteSSHPassword(for: connection.id)
         deleteKeyPassphrase(for: connection.id)
+        deleteSSLClientKeyPassphrase(for: connection.id)
         deleteTOTPSecret(for: connection.id)
         deleteCloudflareTokenId(for: connection.id)
         deleteCloudflareTokenSecret(for: connection.id)
@@ -240,6 +273,7 @@ final class ConnectionStorage {
             deletePassword(for: conn.id)
             deleteSSHPassword(for: conn.id)
             deleteKeyPassphrase(for: conn.id)
+            deleteSSLClientKeyPassphrase(for: conn.id)
             deleteTOTPSecret(for: conn.id)
             deleteCloudflareTokenId(for: conn.id)
             deleteCloudflareTokenSecret(for: conn.id)
@@ -306,6 +340,9 @@ final class ConnectionStorage {
         if let keyPassphrase = loadKeyPassphrase(for: connection.id) {
             saveKeyPassphrase(keyPassphrase, for: newId)
         }
+        if let sslKeyPassphrase = loadSSLClientKeyPassphrase(for: connection.id) {
+            saveSSLClientKeyPassphrase(sslKeyPassphrase, for: newId)
+        }
         if let totpSecret = loadTOTPSecret(for: connection.id) {
             saveTOTPSecret(totpSecret, for: newId)
         }
@@ -368,6 +405,23 @@ final class ConnectionStorage {
 
     func deleteKeyPassphrase(for connectionId: UUID) {
         let key = "com.TablePro.keypassphrase.\(connectionId.uuidString)"
+        keychain.delete(forKey: key)
+    }
+
+    // MARK: - SSL Client Key Passphrase Storage
+
+    func saveSSLClientKeyPassphrase(_ passphrase: String, for connectionId: UUID) {
+        let key = "com.TablePro.sslkeypassphrase.\(connectionId.uuidString)"
+        keychain.writeString(passphrase, forKey: key)
+    }
+
+    func loadSSLClientKeyPassphrase(for connectionId: UUID) -> String? {
+        let key = "com.TablePro.sslkeypassphrase.\(connectionId.uuidString)"
+        return resolveString(.init(label: "SSL client key passphrase", connectionId: connectionId), forKey: key)
+    }
+
+    func deleteSSLClientKeyPassphrase(for connectionId: UUID) {
+        let key = "com.TablePro.sslkeypassphrase.\(connectionId.uuidString)"
         keychain.delete(forKey: key)
     }
 

@@ -113,6 +113,10 @@ extension DatabaseType {
         PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.capabilities.supportsOpportunisticTLS ?? true
     }
 
+    var supportsClientKeyPassphrase: Bool {
+        PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.capabilities.supportsClientKeyPassphrase ?? false
+    }
+
     var sslPaneTooltip: String {
         switch rawValue {
         case "PostgreSQL", "Redshift", "CockroachDB":
@@ -151,6 +155,10 @@ extension DatabaseType {
 
     var category: DatabaseCategory {
         PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.connection.category ?? .other
+    }
+
+    var pathFieldRole: PathFieldRole {
+        PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.pathFieldRole ?? .database
     }
 
     var tagline: String? {
