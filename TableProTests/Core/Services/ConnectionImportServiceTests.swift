@@ -247,6 +247,78 @@ struct ConnectionImportServiceTests {
         #expect(saved[0].username == "admin")
     }
 
+    @Test("replace is excluded from newConnectionIdMap so its credentials are not restored")
+    func replaceIsExcludedFromNewConnectionIdMap() {
+        let existing = DatabaseConnection(name: "Existing", host: "db.example.com", port: 5_432, type: .postgresql)
+        let imported = ExportableConnection(
+            name: "Imported",
+            host: "db.example.com",
+            port: 5_432,
+            database: "app",
+            username: "admin",
+            type: "PostgreSQL",
+            sshConfig: nil,
+            sslConfig: nil,
+            color: nil,
+            tagName: nil,
+            groupName: nil,
+            sshProfileId: nil,
+            safeModeLevel: nil,
+            aiPolicy: nil,
+            additionalFields: nil,
+            redisDatabase: nil,
+            startupCommands: nil,
+            localOnly: nil
+        )
+
+        let (preview, item) = makeDuplicatePreview(imported: imported, existing: existing)
+        let prepared = ConnectionExportService.prepareImport(
+            preview,
+            resolutions: [item.id: .replace(existingId: existing.id)],
+            tagIdsByName: [:],
+            groupIdsByName: [:]
+        )
+
+        #expect(prepared.connectionIdMap[0] == .some(existing.id))
+        #expect(prepared.newConnectionIdMap.isEmpty)
+    }
+
+    @Test("added connections appear in newConnectionIdMap")
+    func addedConnectionsAppearInNewConnectionIdMap() {
+        let imported = ExportableConnection(
+            name: "Fresh",
+            host: "db.example.com",
+            port: 5_432,
+            database: "app",
+            username: "admin",
+            type: "PostgreSQL",
+            sshConfig: nil,
+            sslConfig: nil,
+            color: nil,
+            tagName: nil,
+            groupName: nil,
+            sshProfileId: nil,
+            safeModeLevel: nil,
+            aiPolicy: nil,
+            additionalFields: nil,
+            redisDatabase: nil,
+            startupCommands: nil,
+            localOnly: nil
+        )
+
+        let item = ImportItem(connection: imported, status: .ready)
+        let preview = ConnectionImportPreview(envelope: makeEnvelope(with: [imported]), items: [item])
+        let prepared = ConnectionExportService.prepareImport(
+            preview,
+            resolutions: [item.id: .importNew],
+            tagIdsByName: [:],
+            groupIdsByName: [:]
+        )
+
+        #expect(prepared.newConnectionIdMap[0] != nil)
+        #expect(prepared.newConnectionIdMap[0] == prepared.connectionIdMap[0])
+    }
+
     @Test("as copy imports a renamed duplicate")
     func asCopyImportsARenamedDuplicate() {
         let storage = makeStorage()

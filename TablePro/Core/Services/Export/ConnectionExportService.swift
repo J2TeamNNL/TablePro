@@ -69,7 +69,7 @@ struct ConnectionImportPreview {
     let items: [ImportItem]
 }
 
-enum PreparedImportOperation: Hashable {
+enum PreparedImportOperation {
     case add(DatabaseConnection)
     case replace(DatabaseConnection)
 }
@@ -77,6 +77,7 @@ enum PreparedImportOperation: Hashable {
 struct PreparedConnectionImport {
     let operations: [PreparedImportOperation]
     let connectionIdMap: [Int: UUID]
+    let newConnectionIdMap: [Int: UUID]
 
     var importedCount: Int { operations.count }
 }
@@ -515,7 +516,8 @@ enum ConnectionExportService {
 
     struct ImportResult {
         let importedCount: Int
-        let connectionIdMap: [Int: UUID] // envelope index -> new connection UUID
+        let connectionIdMap: [Int: UUID] // envelope index -> connection UUID (added and replaced)
+        let newConnectionIdMap: [Int: UUID] // envelope index -> UUID, added connections only
     }
 
     @discardableResult
@@ -579,6 +581,7 @@ enum ConnectionExportService {
     ) -> PreparedConnectionImport {
         var operations: [PreparedImportOperation] = []
         var connectionIdMap: [Int: UUID] = [:]
+        var newConnectionIdMap: [Int: UUID] = [:]
         var takenNames = Set(existingNames.map { normalizedLookupKey($0) })
 
         let itemIndexMap: [UUID: Int] = Dictionary(
@@ -598,10 +601,10 @@ enum ConnectionExportService {
                 let name: String
                 if resolution == .importAsCopy {
                     name = uniqueCopyName(for: item.connection.name, taken: takenNames)
-                    takenNames.insert(normalizedLookupKey(name))
                 } else {
                     name = item.connection.name
                 }
+                takenNames.insert(normalizedLookupKey(name))
                 let connection = buildDatabaseConnection(
                     id: connectionId,
                     from: item.connection,
@@ -611,6 +614,7 @@ enum ConnectionExportService {
                 )
                 operations.append(.add(connection))
                 connectionIdMap[envelopeIndex] = connectionId
+                newConnectionIdMap[envelopeIndex] = connectionId
 
             case .replace(let existingId):
                 let connection = buildDatabaseConnection(
@@ -627,7 +631,8 @@ enum ConnectionExportService {
 
         return PreparedConnectionImport(
             operations: operations,
-            connectionIdMap: connectionIdMap
+            connectionIdMap: connectionIdMap,
+            newConnectionIdMap: newConnectionIdMap
         )
     }
 
@@ -653,7 +658,8 @@ enum ConnectionExportService {
 
         return ImportResult(
             importedCount: prepared.importedCount,
-            connectionIdMap: prepared.connectionIdMap
+            connectionIdMap: prepared.connectionIdMap,
+            newConnectionIdMap: prepared.newConnectionIdMap
         )
     }
 
