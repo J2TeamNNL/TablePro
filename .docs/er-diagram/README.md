@@ -2,6 +2,10 @@
 
 Tính năng hiển thị sơ đồ quan hệ thực thể (ER Diagram) cho database schema trong TablePro.
 
+> ⚠️ **Focused-diagram CHƯA trên main (verified 2026-06-02).** Feature "right-click table → focused diagram" chỉ ở branch local `er-diagram` (commit `60509a12 feat(er-diagram): focus table context diagrams`), KHÔNG có PR mở, CHƯA merge.
+>
+> Code main hiện chỉ có **full diagram**: `showERDiagram()` (no param, `MainContentCoordinator+ERDiagram.swift:14`), `addERDiagramTab(schemaKey:databaseName:)`. Các symbol focused (`subgraph(focusedOn:)`, `erDiagramFocusedTable`, `focusedTableName`) **absent** khỏi main. README/tasks/context dưới mô tả phiên bản trên branch.
+
 ## Scope
 
 - Render toàn bộ schema dưới dạng graph: tables là nodes, foreign keys là edges

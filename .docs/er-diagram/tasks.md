@@ -1,5 +1,7 @@
 # Tasks
 
+> ⚠️ Mọi item "Done" dưới là **trên branch `er-diagram`** (`60509a12`), CHƯA vào main (verified 2026-06-02).
+
 ## Done
 
 - [x] Phân tích UX issue: context menu "View ER Diagram" không dùng `clickedTable`

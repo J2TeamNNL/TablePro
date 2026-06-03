@@ -22,7 +22,7 @@ Toggling inspector pane (right panel) trong cửa sổ nhỏ gây nội dung tr�
 `originalContentMinSize`/`setCollapsed`. **CRITICAL fix**: GỘP logic PR vào method cũ
 `:516`, không tạo method thứ hai; không thêm override `splitViewDidResizeSubviews()`
 (đã có `:183`). Commit atomic. Plus drop noise (`.gitignore` + `CLAUDE.md:171`).
-Chi tiết: `content.md` mục "Open fork PR #1463", `tasks.md` agent checklist.
+Chi tiết: `context.md` mục "Open fork PR #1463", `tasks.md` agent checklist.
 
 ## Files trong folder này
 
@@ -30,7 +30,7 @@ Chi tiết: `content.md` mục "Open fork PR #1463", `tasks.md` agent checklist.
 |---|---|
 | `README.md` | File này — index + navigation |
 | `brief.md` | One-pager: vấn đề, mục tiêu, kết quả |
-| `content.md` | Root cause chi tiết + diff snippet |
+| `context.md` | Root cause chi tiết + diff snippet |
 | `flow.md` | Mermaid diagram luồng recompute |
 | `tasks.md` | Bảng trạng thái task |
 | `decisions.md` | ADR-lite: các approach được cân nhắc |

@@ -61,7 +61,7 @@ User confirmed 4 bugs chưa được cover bởi các PR đã merge:
 | JSON expand/detail popover truncate string tại 80 ký tự | — | [#1459](https://github.com/TableProApp/TablePro/pull/1459) | ✅ MERGED | `JSONTreeNode.maxDisplayLength` 80 → 300 |
 | Filter bar luôn ON mặc định khi mở table | — | [#1459](https://github.com/TableProApp/TablePro/pull/1459) | ✅ MERGED | `TabFilterState.isVisible` default `false`, cần `true` cho `.table` |
 
-Chi tiết xem `content.md` phần 7–10 + § "Open fork PR #1459".
+Chi tiết xem `context.md` phần 7–10 + § "Open fork PR #1459".
 
 ---
 

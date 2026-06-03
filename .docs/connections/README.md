@@ -7,7 +7,7 @@
 ## Files
 
 - [`brief.md`](brief.md) — vấn đề + root cause 1 câu + mục tiêu
-- [`content.md`](content.md) — case-study: 3 chỗ point về saved → session là live SOT
+- [`context.md`](context.md) — case-study: 3 chỗ point về saved → session là live SOT
 - [`flow.md`](flow.md) — Mermaid: lifecycle, write-through, reconfigure path
 - [`tasks.md`](tasks.md) — file changes + note scope
 - [`decisions.md`](decisions.md) — 4 ADR: session vs saved persist, tách `update(from:)` / `syncFromSession`, write-through 2 chỗ, tests cô lập

@@ -1,5 +1,7 @@
 # Code review — `keyboard/` (PR #1489)
 
+> ⚠️ **Design CŨ (superseded) — verified 2026-06-02.** Review dưới dựa trên `FunctionKeyShortcutMonitor` + `supportsFunctionKeyPrimary`, các symbol này KHÔNG còn trên feat branch `8342e510`. Impl hiện tại: `KeyCode.functionKeyIndex` + `KeyboardLayout`/`ShortcutConflictResolver`/`SystemHotkeyChecker`. Giữ làm history; re-verify trong worktree `../TablePro-pr1489`.
+
 ## Files changed
 
 **Production**

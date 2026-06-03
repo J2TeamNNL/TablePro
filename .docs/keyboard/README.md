@@ -2,13 +2,19 @@
 
 Scope: `feat(keyboard)` — handoff cho 1 conversation/agent fix PR #1489. PR của fork `J2TeamNNL/TablePro` → upstream `TableProApp/TablePro`.
 
+> ⚠️ **Implementation đã refactor — verified 2026-06-02 vs branch `feat/function-key-shortcuts` (`8342e510`, worktree `../TablePro-pr1489`).** `.docs` dưới mô tả design CŨ:
+> - `FunctionKeyShortcutMonitor.swift` (NSEvent local monitor) + `supportsFunctionKeyPrimary` **KHÔNG còn tồn tại**.
+> - Design hiện tại: `KeyCode.functionKeyIndex` (`KeyCode.swift:190`, F1=1/F5=5/F9=9) + `KeyboardLayout.swift` + `ShortcutConflictResolver.swift` + `SystemHotkeyChecker.swift`. Không còn NSEvent local monitor / `addLocalMonitorForEvents`.
+> - End-user docs `docs/features/keyboard-shortcuts.mdx` (trên feat) chỉ list **F1** (Open documentation) + ghi chú chung "function keys F1-F12 work on their own" — KHÔNG list F5/F9 riêng. Có thể F5/F9 đã đổi/bỏ.
+> - PR #1489 **chưa vào main**. Re-verify chi tiết trong worktree `../TablePro-pr1489` trước khi tin các đoạn dưới.
+
 ## Vấn đề
 
 Toolbar chưa có phím chức năng nhanh cho các action chính (refresh, execute, docs). PR thêm F5/F9/F1 và cải thiện tooltip trên toolbar buttons.
 
-## Fix
+## Fix (mô tả design CŨ — xem banner, đã superseded)
 
-`FunctionKeyShortcutMonitor` (NSEvent local monitor) bắt F5/F9/F1, dispatch tới refresh/execute/docs. Menu filtering trả `nil` cho F-key tránh double-dispatch. Tooltip hint được thêm vào toolbar + status bar.
+~~`FunctionKeyShortcutMonitor` (NSEvent local monitor) bắt F5/F9/F1, dispatch tới refresh/execute/docs.~~ Design hiện tại không dùng monitor riêng; F-key resolve qua `KeyCode.functionKeyIndex` + conflict check (`ShortcutConflictResolver`, `SystemHotkeyChecker`). Tooltip hint trên toolbar + status bar (phần này còn đúng).
 
 ## Status
 
@@ -29,7 +35,7 @@ Toolbar chưa có phím chức năng nhanh cho các action chính (refresh, exec
 |---|---|
 | `README.md` | File này — index + navigation |
 | `brief.md` | One-pager: PR làm gì, files, blocker, đánh giá |
-| `content.md` | Code review chi tiết: findings GOOD + conflict thật + optional improvements |
+| `context.md` | Code review chi tiết (design CŨ): findings GOOD + conflict thật + optional improvements |
 | `flow.md` | Mermaid: monitor lifecycle, F-key dispatch, xcstrings conflict resolution |
 | `tasks.md` | Checklist actionable cho agent |
 | `decisions.md` | ADR-lite: bỏ noise, merge order, optional improvements, US ANSI |
@@ -39,7 +45,8 @@ Toolbar chưa có phím chức năng nhanh cho các action chính (refresh, exec
 
 | File | Vai trò |
 |---|---|
-| `TablePro/Core/KeyboardHandling/FunctionKeyShortcutMonitor.swift` | NSEvent monitor lifecycle, F-key detection |
+| `TablePro/Core/KeyboardHandling/KeyCode.swift` | `functionKeyIndex` (F1/F5/F9), keyCode mapping (thay `FunctionKeyShortcutMonitor` cũ) |
+| `TablePro/Core/KeyboardHandling/KeyboardLayout.swift`, `ShortcutConflictResolver.swift`, `SystemHotkeyChecker.swift` | Layout + conflict/system-hotkey resolution hiện tại |
 | `TablePro/Models/UI/KeyboardShortcutModels.swift` | Model cho shortcut config |
 | `TablePro/Views/Settings/KeyboardSettingsView.swift` | Settings UI cho F-key |
 | `TablePro/Views/Main/Child/MainWindowToolbar.swift` | Tích hợp shortcut vào toolbar |

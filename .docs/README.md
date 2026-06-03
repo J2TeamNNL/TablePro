@@ -28,13 +28,15 @@ Mỗi folder có đúng 7 files:
 |---|---|
 | `README.md` | Index + navigation trong scope |
 | `brief.md` | One-pager: vấn đề chung, mục tiêu, kết quả |
-| `content.md` | **Case-study chi tiết**: symptom → root cause (file+function) → fix (diff snippet) |
+| `context.md` | **Case-study chi tiết**: symptom → root cause (file+function) → fix (diff snippet) |
 | `flow.md` | Mermaid diagram cho case phức tạp nhất trong scope |
 | `tasks.md` | Bảng issue # / PR # / author / merge date / commit SHA / status |
 | `decisions.md` | ADR-lite: trade-offs, options considered, chosen approach |
 | `changelog.md` | Timeline issue mở → PR merge → version released |
 
-## 8 scope folders
+## 9 scope folders
+
+> Mỗi folder có đúng 7 files; file case-study tên `context.md` (trước đây nhầm `content.md`, đã đổi 2026-06-02).
 
 | Scope | Items | Issues | PRs chính |
 |---|---|---|---|
@@ -45,7 +47,8 @@ Mỗi folder có đúng 7 files:
 | [`sidebar/`](sidebar/README.md) | create table entry, context menu disabled state, favorite/recent tables, sidebar toggle | #1352, #1353 + local checklist | _không có PR linked — partial current branch_ |
 | [`inspector/`](inspector/README.md) | inspector pane overflow khi toggle | local checklist | _không có PR linked — DONE branch `sidebar`_ |
 | [`import/`](import/README.md) | DBeaver username lost | #1355 | #1366 |
-| [`keyboard/`](keyboard/README.md) | F5/F9/F1 function-key shortcuts + tooltip | fork PR | #1489 |
+| [`keyboard/`](keyboard/README.md) | F5/F9/F1 function-key shortcuts + tooltip | fork PR | #1489 (impl refactored — xem banner trong scope) |
+| [`er-diagram/`](er-diagram/README.md) | focused ER diagram (right-click table) | local | branch `er-diagram` `60509a12`, **chưa vào main** |
 
 ## Open fork PR triage (2026-05-30)
 
@@ -88,18 +91,20 @@ PR này **không phải product feature** nên không có folder scope riêng. N
 
 ## Review 2026-05-25 — current branch
 
+> Cột "Current status" đã verify lại 2026-06-02 vs main (local `main` `345692e7`; keyboard ở branch riêng). Chi tiết từng scope: `*/context.md`.
+
 | Scope | Item từ checklist | Current status |
 |---|---|---|
-| `sidebar` | Hiển thị nút create/insert new table ở phía trên thay vì chỉ trong right-click menu | TODO-fork. Hiện chỉ có `Create New Table...` trong `SidebarContextMenu`. |
-| `sidebar` | Disable parent/button khi toàn bộ action con bị disabled trong context menu | TODO-fork. Chưa có helper tổng hợp disabled-state cho menu group. |
-| `inspector` | Toggle sidebar làm window/trailing controls bị tràn/che | DONE-current. Xem [`inspector/`](inspector/README.md). Pending manual UI verify. |
+| `sidebar` | Hiển thị nút create/insert new table ở phía trên thay vì chỉ trong right-click menu | ✅ DONE (2026-06-02). `SidebarView.createObjectMenu` (New Table/New View, icon plus). |
+| `sidebar` | Disable parent/button khi toàn bộ action con bị disabled trong context menu | ✅ DONE. `SidebarContextMenu.maintenanceGroupEnabled` (`:46`,`:148`). |
+| `inspector` | Toggle sidebar làm window/trailing controls bị tràn/che | Basic fix `recomputeWindowMinSize` ✅ trên main; enhancements PR #1463 ⏳ open. Xem [`inspector/`](inspector/README.md). |
 | `datagrid` | Save hidden columns + filter theo table; giữ hidden khi switch table | DONE-current. Có `ColumnVisibilityPersistence` + save outgoing tab khi switch. |
 | `datagrid` | Cmd+C mặc định copy value cell; copy row là action riêng | DONE-current. `KeyHandlingTableView.copy(_:)` ưu tiên focused cell. |
 | `datagrid` | Luôn hiển thị/restore filter | DONE-upstream/current theo #1347, #1387, #1395. |
-| `sidebar` | Favorite table / recent table | TODO-current. Source không có `FavoriteTablesStorage`, table star badge, hoặc `RecentTable*`. Favorites tab hiện là SQL favorites. |
+| `sidebar` | Favorite table / recent table | Favorites ✅ DONE trên main (#1422): `FavoriteTablesStorage` + star button. Recent ⏳ PR #1484 open (chưa main). |
 | `import` | DBeaver import mất username | DONE-upstream. |
 | `datagrid` | Copy sau khi hide column chỉ copy cột đang show | DONE-upstream/current. |
-| `sidebar` | Sidebar toggle có thêm toggle/more option gây rối | VERIFY-current. User checklist mark done, nhưng source vẫn gộp Tables/Favorites trong toolbar item. |
+| `sidebar` | Sidebar toggle có thêm toggle/more option gây rối | ⛔ SKIPPED (user quyết). Source vẫn gộp Tables/Favorites. |
 | `connections` | Safe Mode reset khi mở table mới | DONE-upstream. |
 | `toolbar` | Active Connections là modal dim background, cần nút đóng | DONE-upstream. Đã đổi sang popover. |
 | `toolbar` | Quick switcher thừa khoảng trống bên dưới | DONE-upstream. |
@@ -110,7 +115,7 @@ PR này **không phải product feature** nên không có folder scope riêng. N
 ## Convention
 
 - Mọi link issue/PR dùng URL đầy đủ `https://github.com/TableProApp/TablePro/...`
-- Mọi file path trong content.md dùng path tương đối từ repo root
+- Mọi file path trong context.md dùng path tương đối từ repo root
 - Diff snippet ngắn, trích chỗ cốt lõi — đầy đủ xem `gh pr diff <num>`
 - Mermaid block dùng cú pháp chuẩn, paste vào https://mermaid.live để verify
 

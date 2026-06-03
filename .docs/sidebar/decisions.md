@@ -88,8 +88,7 @@ trong `default` → user customize toolbar add nếu cần.
 
 **Rationale:** Per-connection thêm complexity (composite key, migration) không tương xứng với use case. Nếu table "users" được favorite, hợp lý để highlight ở tất cả connections có table tên đó. Nếu connection không có table đó → silently ignored.
 
-**Current source:** không có implementation. Nếu build thật, re-evaluate global
-vs composite key; composite key có thể match user expectation hơn trong multi-connection app.
+**Current source (2026-06-02):** favorites ĐÃ implement trên main (#1422) dùng **composite key** (connection + database + schema, theo `docs/features/favorites.mdx`), KHÔNG phải global `Set<String>` như proposal này. Proposal D6 lỗi thời.
 
 ---
 
@@ -109,7 +108,7 @@ UserDefaults key `"com.TablePro.favoriteTables"`. Notification
 | `Views/Sidebar/FavoritesTabView.swift` | Section "Tables" + Section "Queries" khi có cả hai |
 | `docs/features/sql-favorites.mdx` | Đổi title → "Favorites", thêm section Table Favorites |
 
-**Current source:** none of these table-favorite changes exist.
+**Current source (2026-06-02):** favorites ĐÃ trên main (#1422) — `FavoriteTablesStorage.swift`, `TableRowView` star button, `SidebarView` wiring. Proposal D7 (UserDefaults `Set<String>`) lỗi thời; actual storage khác.
 
 ---
 
@@ -126,7 +125,7 @@ UUIDs.
 per-category toggle. This matches docs/UI wording added in this branch. If table
 names are considered sensitive later, add `syncTableFavorites` to `SyncSettings`.
 
-**Current source:** no `tableFavorite` sync record exists.
+**Current source (2026-06-02):** favorites iCloud sync ĐÃ trên main (#1422) — `docs/features/favorites.mdx` xác nhận "sync through iCloud". Chi tiết record-type xem code sync; proposal D8 chỉ là phác thảo ban đầu.
 
 ---
 
@@ -231,7 +230,7 @@ need a usable minimum width.
 
 ## D5. Document trạng thái current-best-guess
 
-**Chosen.** Vì không có PR linked, document file `content.md` rõ ràng đây là
+**Chosen.** Vì không có PR linked, document file `context.md` rõ ràng đây là
 reverse-engineer + hypothesis, không phải authoritative source. Người đọc kiểm
 chứng với `git blame` hoặc hỏi maintainer trước khi build feature dựa trên doc
 này.

@@ -14,7 +14,7 @@ Case-studies trong scope `datagrid` (Conventional Commits scope chính trong ups
 ## Files
 
 - [`brief.md`](brief.md) — vấn đề chung + mục tiêu + trade-off
-- [`content.md`](content.md) — 6 case-studies chi tiết (symptom → root cause → fix + diff)
+- [`context.md`](context.md) — 6 case-studies chi tiết + items 7-10 (đã merged qua #1459)
 - [`flow.md`](flow.md) — Mermaid: Cmd+C dispatch, filter persistence, Cmd+F routing, hide → query scope
 - [`tasks.md`](tasks.md) — bảng issue/PR/author/merge date/file-count
 - [`decisions.md`](decisions.md) — 9 ADR-lite: target visible, fallback dispatch, render-layer truncation, hide=drop, scalar JSON parser, composite key, user-clear vs internal-reset, CompletionEngine reuse

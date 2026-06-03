@@ -317,7 +317,7 @@ switch table" là trạng thái cũ; source hiện tại đã lưu hidden column
 
 ---
 
-## 7. Context menu "Copy" nên copy cell value (OPEN — 2026-05-27)
+## 7. Context menu "Copy" nên copy cell value (✅ MERGED qua #1459, 2026-05-29)
 
 ### Symptom
 
@@ -363,7 +363,7 @@ let copyRowItem   = NSMenuItem(title: "Copy Row", ...)
 
 ---
 
-## 8. Hidden columns không load khi mở NEW TAB (OPEN — 2026-05-27)
+## 8. Hidden columns không load khi mở NEW TAB (✅ MERGED qua #1459, 2026-05-29)
 
 ### Symptom
 
@@ -401,7 +401,7 @@ và TRƯỚC khi `buildBaseTableQuery` chạy lần đầu.
 
 ---
 
-## 9. JSON expand/detail popover truncate string tại 80 ký tự (OPEN — 2026-05-27)
+## 9. JSON expand/detail popover truncate string tại 80 ký tự (✅ MERGED qua #1459, 2026-05-29)
 
 ### Symptom
 
@@ -449,7 +449,7 @@ User cần thấy đủ data trong expand view → Option A đủ cho MVP.
 
 ---
 
-## 10. Filter bar luôn hiển thị mặc định (OPEN — 2026-05-27)
+## 10. Filter bar luôn hiển thị mặc định (✅ MERGED qua #1459, 2026-05-29)
 
 ### Symptom
 

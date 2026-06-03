@@ -13,11 +13,12 @@ Lý do chọn Option A thay vì Option B (full diagram + scroll to table):
 - Focused view cung cấp ngữ cảnh hữu ích mà không làm mất thông tin quan trọng
 - Deduplication theo `(schemaKey, focusedTable)` cho phép mở nhiều focused tabs song song
 
-## Trạng thái hiện tại
+## Trạng thái hiện tại (verified 2026-06-02)
 
-Đã implement xong và đã thêm unit tests cho graph filtering + tab state/payload.
-Changed-file SwiftLint pass.
+Implement xong **trên branch `er-diagram`** (`60509a12`) + unit tests cho graph
+filtering + tab state/payload. **CHƯA merge vào main**, không có PR mở. Code main
+chỉ có full diagram (`showERDiagram()` no param); focused-diagram symbols absent.
 
-Full `xcodebuild test` đã thử nhưng bị chặn trước khi compile app vì dependency
-SwiftLintPlugin trong `LocalPackages/CodeEdit*` không load được
-`sourcekitdInProc.framework` bên trong Xcode package-plugin sandbox.
+Full `xcodebuild test` từng bị chặn trước compile vì SwiftLintPlugin trong
+`LocalPackages/CodeEdit*` không load `sourcekitdInProc.framework` trong Xcode
+package-plugin sandbox.

@@ -8,7 +8,7 @@
 ## Files
 
 - [`brief.md`](brief.md) — vấn đề + root cause + pattern transferable
-- [`content.md`](content.md) — case-study chi tiết: DBeaver storage layout cũ vs mới, fallback chain
+- [`context.md`](context.md) — case-study chi tiết: DBeaver storage layout cũ vs mới, fallback chain
 - [`flow.md`](flow.md) — Mermaid: import flow, storage layout split, metadata vs secret
 - [`tasks.md`](tasks.md) — file changes, 4 test cases, related PRs trong scope
 - [`decisions.md`](decisions.md) — 5 ADR: metadata vs secret, precedence credentials > config, fallback chain, test coverage, pattern transferable cho importer khác
@@ -29,4 +29,4 @@
 - #1462 dedup dialog: **OPEN-fork** (branch `feat/import`). Blocker: CONFLICTING
   chỉ do noise (`.gitignore` + `CLAUDE.md:171`). Drop noise → rebase → verify
   `ConnectionImportServiceTests` thực chất → merge (sau #1459). Chi tiết:
-  `content.md` mục "Open fork PR #1462", `tasks.md` agent checklist.
+  `context.md` mục "Open fork PR #1462", `tasks.md` agent checklist.

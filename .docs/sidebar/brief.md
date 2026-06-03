@@ -56,15 +56,15 @@ tới table-level favorites + recent tables, không phải build toàn bộ favo
 
 ### Local checklist — create table action
 
-- **Chưa implement top-level button.** `SidebarContainerViewController` chỉ có
-  `NSSearchField` + hosted `SidebarView`.
-- `SidebarContextMenu` có `Create New Table...` ở đầu menu right-click.
+- ✅ **DONE.** `SidebarView.createObjectMenu` — SwiftUI `Menu` (New Table / New View)
+  với icon `plus`, gọi `coordinator?.createNewTable()` / `createView()`.
+  (Không phải NSButton trong `SidebarContainerViewController` như note cũ.)
+- "Create New Table..." đã rời khỏi `SidebarContextMenu` (giờ ở top-level menu).
 
 ### Local checklist — disabled group
 
-- **Chưa implement helper tổng hợp disabled-state.**
-- `SidebarContextMenuLogic` có logic cho selection / read-only kind / import /
-  truncate, nhưng chưa có rule "all children disabled ⇒ parent disabled".
+- ✅ **DONE.** `SidebarContextMenu.maintenanceGroupEnabled(...)` (`:46`) ẩn
+  `Menu("Maintenance")` khi mọi child disabled (dùng tại `:148`).
 
 ### Local checklist — sidebar overflow
 
@@ -79,7 +79,7 @@ tới table-level favorites + recent tables, không phải build toàn bộ favo
 > Supersede note 2026-05-25 bên dưới.
 >
 > - **Favorite tables: ĐÃ trên main** qua PR #1422 (`4fad0b83`) — `FavoriteTablesStorage.swift` tồn tại. Nguồn chính thức, không phải branch `sidebar`.
-> - **Recent tables: CHƯA trên main** — PR #1484 OPEN (CONFLICTING + CLA FAIL), opt-in default OFF. Xem `content.md` → "Open fork PR #1484".
+> - **Recent tables: CHƯA trên main** — PR #1484 OPEN (CONFLICTING + CLA FAIL), opt-in default OFF. Xem `context.md` → "Case study PR #1484".
 
 ### #1352 — note cũ 2026-05-25 (stale, kept for history)
 

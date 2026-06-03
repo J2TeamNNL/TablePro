@@ -10,7 +10,7 @@ Item gốc 13-list: #1355. Thêm fork PR #1462 (dedup dialog) — review 2026-05
 **OPEN-fork**, branch `feat/import`. Dedup dialog Replace/As Copy/Skip; dedup key
 host+port+database+username case-insensitive (Redis via `effectiveDatabaseKey`);
 refactor `analyzeImport → prepareImport → performPreparedImport`. **Blocker**:
-CONFLICTING chỉ do noise (`.gitignore` + `CLAUDE.md:171`). Chi tiết: `content.md`,
+CONFLICTING chỉ do noise (`.gitignore` + `CLAUDE.md:171`). Chi tiết: `context.md`,
 `tasks.md`.
 
 ## Vấn đề (#1355)

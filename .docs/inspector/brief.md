@@ -39,7 +39,7 @@ pre-hook tránh animation clip) nhưng dưới tên method MỚI `recomputeWindo
 **Blocker (CONFLICTING logic)**: KHÔNG tạo method thứ hai — GỘP logic PR vào
 `recomputeWindowMinSize()` `:516` sẵn có, giữ 4 call site; KHÔNG thêm override
 `splitViewDidResizeSubviews()` (đã có `:183`). Commit atomic. Drop noise
-(`.gitignore` + `CLAUDE.md:171`). Chi tiết: `content.md`, `tasks.md`.
+(`.gitignore` + `CLAUDE.md:171`). Chi tiết: `context.md`, `tasks.md`.
 
 > Verified 2026-05-30: status cũ "DONE 2026-05-25" superseded — PR vẫn open.
 
