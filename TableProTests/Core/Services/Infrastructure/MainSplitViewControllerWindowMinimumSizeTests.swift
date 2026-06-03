@@ -99,4 +99,41 @@ struct MainSplitViewControllerWindowMinimumSizeTests {
         #expect(hiddenSize.width == 720)
         #expect(hiddenSize.height == 448)
     }
+
+    @Test("Applies the controller base constants as the runtime content floor")
+    func usesControllerBaseConstantsAsFloor() {
+        #expect(MainSplitViewController.baseContentMinWidth == 720)
+        #expect(MainSplitViewController.baseContentMinHeight == 480)
+
+        let base = NSSize(
+            width: MainSplitViewController.baseContentMinWidth,
+            height: MainSplitViewController.baseContentMinHeight
+        )
+
+        let sidebarAndDetail = MainSplitViewController.resolvedContentMinSize(
+            base: base,
+            panes: [
+                .init(minimumThickness: 280, isCollapsed: false),
+                .init(minimumThickness: 400, isCollapsed: false),
+                .init(minimumThickness: 270, isCollapsed: true)
+            ],
+            dividerThickness: 2
+        )
+
+        #expect(sidebarAndDetail.width == MainSplitViewController.baseContentMinWidth)
+        #expect(sidebarAndDetail.height == MainSplitViewController.baseContentMinHeight)
+
+        let allPanesVisible = MainSplitViewController.resolvedContentMinSize(
+            base: base,
+            panes: [
+                .init(minimumThickness: 280, isCollapsed: false),
+                .init(minimumThickness: 400, isCollapsed: false),
+                .init(minimumThickness: 270, isCollapsed: false)
+            ],
+            dividerThickness: 2
+        )
+
+        #expect(allPanesVisible.width == 954)
+        #expect(allPanesVisible.height == MainSplitViewController.baseContentMinHeight)
+    }
 }

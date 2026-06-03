@@ -51,7 +51,6 @@ internal final class TabWindowController: NSWindowController, NSWindowDelegate {
             defer: false
         )
         window.identifier = NSUserInterfaceItemIdentifier("main")
-        window.minSize = NSSize(width: 720, height: 480)
         window.isRestorable = AppSettingsStorage.shared.loadGeneral().startupBehavior == .reopenLast
         window.restorationClass = TabWindowRestoration.self
         window.toolbarStyle = .unified

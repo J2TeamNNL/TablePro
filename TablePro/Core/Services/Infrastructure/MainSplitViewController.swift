@@ -44,7 +44,6 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     private var detailHosting: NSHostingController<AnyView>!
     private var inspectorHosting: NSHostingController<AnyView>!
     private var hasMaterializedInspector = false
-    private var originalContentMinSize: CGSize = .zero
 
     // MARK: - Toolbar
 
@@ -263,7 +262,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         guard let window = view.window else { return }
 
         let resolvedMinSize = Self.resolvedContentMinSize(
-            base: originalContentMinSize,
+            base: NSSize(width: Self.baseContentMinWidth, height: Self.baseContentMinHeight),
             panes: [
                 PaneMinimum(
                     minimumThickness: sidebarSplitItem?.minimumThickness ?? .zero,
@@ -331,10 +330,6 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
             sessionState.coordinator.inspectorProxy = self
             sessionState.coordinator.splitViewController = self
             installToolbar(coordinator: sessionState.coordinator)
-        }
-
-        if originalContentMinSize == .zero {
-            originalContentMinSize = window.contentRect(forFrameRect: NSRect(origin: .zero, size: window.minSize)).size
         }
 
         if let currentSession, let coordinator = sessionState?.coordinator {
@@ -657,5 +652,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
 
     // MARK: - Constants
 
+    internal static let baseContentMinWidth: CGFloat = 720
+    internal static let baseContentMinHeight: CGFloat = 480
     private static let inspectorPresentedKey = "com.TablePro.rightPanel.isPresented"
 }
