@@ -212,6 +212,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         inspectorSplitItem.canCollapse = true
         inspectorSplitItem.minimumThickness = 270
         inspectorSplitItem.maximumThickness = 400
+        inspectorSplitItem.collapseBehavior = .preferResizingSplitViewWithFixedSiblings
         addSplitViewItem(inspectorSplitItem)
 
         if currentSession?.driver == nil {
@@ -225,97 +226,18 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         inspectorSplitItem.isCollapsed = !inspectorPresented
     }
 
-    override func splitViewDidResizeSubviews(_ notification: Notification) {
-        super.splitViewDidResizeSubviews(notification)
-        recomputeWindowMinimumSize()
-    }
-
     private func materializeInspectorIfNeeded() {
         guard !hasMaterializedInspector, let inspectorHosting else { return }
         hasMaterializedInspector = true
         inspectorHosting.rootView = AnyView(buildInspectorView())
     }
 
-    internal struct PaneMinimum {
-        internal let minimumThickness: CGFloat
-        internal let isCollapsed: Bool
-    }
-
-    internal static func resolvedContentMinSize(
-        base: NSSize,
-        panes: [PaneMinimum],
-        dividerThickness: CGFloat
-    ) -> NSSize {
-        let visiblePanes = panes.filter { !$0.isCollapsed }
-        let paneWidth = visiblePanes.reduce(CGFloat.zero) { partialResult, pane in
-            partialResult + max(CGFloat.zero, pane.minimumThickness)
-        }
-        let dividerCount = max(visiblePanes.count - 1, 0)
-        let resolvedWidth = max(base.width, paneWidth + (CGFloat(dividerCount) * dividerThickness))
-        return NSSize(width: resolvedWidth, height: base.height)
-    }
-
-    private func recomputeWindowMinimumSize(
-        sidebarCollapsed: Bool? = nil,
-        inspectorCollapsed: Bool? = nil
-    ) {
-        guard let window = view.window else { return }
-
-        let resolvedMinSize = Self.resolvedContentMinSize(
-            base: NSSize(width: Self.baseContentMinWidth, height: Self.baseContentMinHeight),
-            panes: [
-                PaneMinimum(
-                    minimumThickness: sidebarSplitItem?.minimumThickness ?? .zero,
-                    isCollapsed: sidebarCollapsed ?? (sidebarSplitItem?.isCollapsed ?? true)
-                ),
-                PaneMinimum(
-                    minimumThickness: detailSplitItem?.minimumThickness ?? .zero,
-                    isCollapsed: detailSplitItem?.isCollapsed ?? false
-                ),
-                PaneMinimum(
-                    minimumThickness: inspectorSplitItem?.minimumThickness ?? .zero,
-                    isCollapsed: inspectorCollapsed ?? (inspectorSplitItem?.isCollapsed ?? true)
-                )
-            ],
-            dividerThickness: splitView.dividerThickness
-        )
-
-        if window.contentMinSize != resolvedMinSize {
-            window.contentMinSize = resolvedMinSize
-        }
-
-        let currentContentSize = window.contentRect(forFrameRect: window.frame).size
-        guard currentContentSize.width < resolvedMinSize.width || currentContentSize.height < resolvedMinSize.height else { return }
-        window.setContentSize(NSSize(
-            width: max(currentContentSize.width, resolvedMinSize.width),
-            height: max(currentContentSize.height, resolvedMinSize.height)
-        ))
-    }
-
-    private func setCollapsed(
-        _ isCollapsed: Bool,
-        for splitItem: NSSplitViewItem?,
-        prepareWindowMinimumSize: (() -> Void)? = nil
-    ) {
-        guard let splitItem else { return }
-
-        if splitItem.isCollapsed == isCollapsed {
-            recomputeWindowMinimumSize()
-            return
-        }
-
-        prepareWindowMinimumSize?()
-
-        guard view.window?.isVisible == true else {
-            splitItem.isCollapsed = isCollapsed
-            recomputeWindowMinimumSize()
-            return
-        }
-
-        NSAnimationContext.runAnimationGroup { _ in
+    private func setCollapsed(_ isCollapsed: Bool, for splitItem: NSSplitViewItem?) {
+        guard let splitItem, splitItem.isCollapsed != isCollapsed else { return }
+        if view.window?.isVisible == true {
             splitItem.animator().isCollapsed = isCollapsed
-        } completionHandler: { [weak self] in
-            self?.recomputeWindowMinimumSize()
+        } else {
+            splitItem.isCollapsed = isCollapsed
         }
     }
 
@@ -340,7 +262,6 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         }
 
         installObservers()
-        recomputeWindowMinimumSize()
         window.recalculateKeyViewLoop()
     }
 
@@ -435,10 +356,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         }
 
         let collapseSidebar = newSession.driver == nil
-        setCollapsed(collapseSidebar, for: sidebarSplitItem) { [weak self] in
-            guard !collapseSidebar else { return }
-            self?.recomputeWindowMinimumSize(sidebarCollapsed: false)
-        }
+        setCollapsed(collapseSidebar, for: sidebarSplitItem)
         rebuildPanes()
     }
 
@@ -604,16 +522,12 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
 
     func showInspector() {
         materializeInspectorIfNeeded()
-        setCollapsed(false, for: inspectorSplitItem) { [weak self] in
-            self?.recomputeWindowMinimumSize(inspectorCollapsed: false)
-        }
+        setCollapsed(false, for: inspectorSplitItem)
         UserDefaults.standard.set(true, forKey: Self.inspectorPresentedKey)
     }
 
     func hideInspector() {
-        setCollapsed(true, for: inspectorSplitItem) { [weak self] in
-            self?.recomputeWindowMinimumSize(inspectorCollapsed: true)
-        }
+        setCollapsed(true, for: inspectorSplitItem)
         UserDefaults.standard.set(false, forKey: Self.inspectorPresentedKey)
     }
 
@@ -640,9 +554,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
 
         if sidebarSplitItem?.isCollapsed == true {
             sidebarState.selectedSidebarTab = tab
-            setCollapsed(false, for: sidebarSplitItem) { [weak self] in
-                self?.recomputeWindowMinimumSize(sidebarCollapsed: false)
-            }
+            setCollapsed(false, for: sidebarSplitItem)
         } else if sidebarState.selectedSidebarTab == tab {
             setCollapsed(true, for: sidebarSplitItem)
         } else {
@@ -652,7 +564,5 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
 
     // MARK: - Constants
 
-    internal static let baseContentMinWidth: CGFloat = 720
-    internal static let baseContentMinHeight: CGFloat = 480
     private static let inspectorPresentedKey = "com.TablePro.rightPanel.isPresented"
 }
