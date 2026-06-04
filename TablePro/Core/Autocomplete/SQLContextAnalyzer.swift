@@ -247,14 +247,14 @@ final class SQLContextAnalyzer {
 
     private static let tableRefRegexes: [NSRegularExpression] = {
         let patterns = [
-            "(?i)\\bFROM\\s+[`\"']?([\\w.]+)[`\"']?" +
+            "(?i)\\bFROM\\s+([\\w.`\"']+)" +
             "(?:\\s+(?:AS\\s+)?[`\"']?([\\w]+)[`\"']?)?",
             "(?i)(?:LEFT|RIGHT|INNER|OUTER|CROSS|FULL)?\\s*(?:OUTER)?\\s*JOIN\\s+" +
-            "[`\"']?([\\w.]+)[`\"']?(?:\\s+(?:AS\\s+)?[`\"']?([\\w]+)[`\"']?)?",
-            "(?i)\\bUPDATE\\s+[`\"']?([\\w.]+)[`\"']?" +
+            "([\\w.`\"']+)(?:\\s+(?:AS\\s+)?[`\"']?([\\w]+)[`\"']?)?",
+            "(?i)\\bUPDATE\\s+([\\w.`\"']+)" +
             "(?:\\s+(?:AS\\s+)?[`\"']?([\\w]+)[`\"']?)?",
-            "(?i)\\bINSERT\\s+INTO\\s+[`\"']?([\\w.]+)[`\"']?",
-            "(?i)\\bCREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+\\w+\\s+ON\\s+[`\"']?([\\w.]+)[`\"']?"
+            "(?i)\\bINSERT\\s+INTO\\s+([\\w.`\"']+)",
+            "(?i)\\bCREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+\\w+\\s+ON\\s+([\\w.`\"']+)"
         ]
         return patterns.map { compileRegex($0) }
     }()
@@ -768,13 +768,17 @@ final class SQLContextAnalyzer {
     ]
 
     /// Strip schema prefix from a potentially schema-qualified name
+    private static let identifierQuotes = CharacterSet(charactersIn: "`\"'")
+
     private static func stripSchemaPrefix(_ raw: String) -> String {
         let ns = raw as NSString
         let dotRange = ns.range(of: ".", options: .backwards)
-        guard dotRange.location != NSNotFound else { return raw }
+        guard dotRange.location != NSNotFound else {
+            return raw.trimmingCharacters(in: identifierQuotes)
+        }
         let start = dotRange.location + 1
-        guard start < ns.length else { return raw }
-        return ns.substring(from: start)
+        guard start < ns.length else { return raw.trimmingCharacters(in: identifierQuotes) }
+        return ns.substring(from: start).trimmingCharacters(in: identifierQuotes)
     }
 
     /// Extract all table references (table names and aliases) from the query
@@ -798,7 +802,7 @@ final class SQLContextAnalyzer {
                 let segments = rawName.split(separator: ".")
                 let schema = segments.count >= 2
                     ? String(segments[segments.count - 2])
-                        .trimmingCharacters(in: CharacterSet(charactersIn: "`\""))
+                        .trimmingCharacters(in: Self.identifierQuotes)
                     : nil
 
                 var alias: String?
