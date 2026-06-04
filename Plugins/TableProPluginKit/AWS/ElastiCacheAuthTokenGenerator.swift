@@ -1,24 +1,13 @@
-//
-//  RDSAuthTokenGenerator.swift
-//  TablePro
-//
-//  Builds an RDS IAM authentication token: a SigV4 presigned GET URL for the
-//  rds-db connect action, with the scheme stripped. The token is used as the
-//  database password and is valid for 15 minutes.
-//
-
 import Foundation
-import TableProPluginKit
 
-enum RDSAuthTokenGenerator {
-    private static let service = "rds-db"
+public enum ElastiCacheAuthTokenGenerator {
+    private static let service = "elasticache"
     private static let expirySeconds = 900
 
-    static func generateToken(
-        host: String,
-        port: Int,
+    public static func generateToken(
+        replicationGroupId: String,
         region: String,
-        username: String,
+        userId: String,
         credentials: AWSCredentials,
         now: Date = Date()
     ) -> String {
@@ -35,7 +24,7 @@ enum RDSAuthTokenGenerator {
 
         var params: [(String, String)] = [
             ("Action", "connect"),
-            ("DBUser", username),
+            ("User", userId),
             ("X-Amz-Algorithm", "AWS4-HMAC-SHA256"),
             ("X-Amz-Credential", credential),
             ("X-Amz-Date", amzDate),
@@ -52,7 +41,7 @@ enum RDSAuthTokenGenerator {
             .map { "\($0.0)=\($0.1)" }
             .joined(separator: "&")
 
-        let canonicalHeaders = "host:\(host):\(port)\n"
+        let canonicalHeaders = "host:\(replicationGroupId)\n"
         let signedHeaders = "host"
         let payloadHash = AWSSigV4.sha256Hex(Data())
 
@@ -80,7 +69,7 @@ enum RDSAuthTokenGenerator {
         )
         let signature = AWSSigV4.hmacHex(key: signingKey, data: Data(stringToSign.utf8))
 
-        let url = "https://\(host):\(port)/?\(canonicalQuery)&X-Amz-Signature=\(signature)"
+        let url = "https://\(replicationGroupId)/?\(canonicalQuery)&X-Amz-Signature=\(signature)"
         return String(url.dropFirst("https://".count))
     }
 }
