@@ -361,6 +361,10 @@ struct DatabaseConnection: Identifiable, Hashable {
         set { additionalFields["mongoUseSrv"] = newValue ? "true" : "" }
     }
 
+    var usesMongoSrv: Bool {
+        mongoUseSrv || host.hasSuffix(".mongodb.net")
+    }
+
     var mongoAuthMechanism: String? {
         get { additionalFields["mongoAuthMechanism"]?.nilIfEmpty }
         set { additionalFields["mongoAuthMechanism"] = newValue ?? "" }
@@ -394,6 +398,10 @@ struct DatabaseConnection: Identifiable, Hashable {
     var usesAWSIAM: Bool {
         let value = additionalFields["awsAuth"] ?? "off"
         return value != "off" && !value.isEmpty
+    }
+
+    var resolvesAWSIAMInDriver: Bool {
+        type == .cassandra || type == .scylladb
     }
 
     var preConnectScript: String? {
