@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Switcher, menus, and alerts now use each database's own container name: Dataset for BigQuery, Keyspace for Cassandra and ScyllaDB. (#509)
+- Filter panel header "Unset" renamed to "Clear": it now keeps filter rows in place and only removes the applied state, returning the table to unfiltered results. Use "Remove All Filters" in the filter options menu to discard all filter rows at once.
+- Per-row Apply and Applied buttons removed from the filter panel; "Apply Only This Filter" is now in each row's right-click context menu.
+- A tri-state checkbox in the filter panel header toggles all filter rows enabled or disabled at once.
 
 ### Fixed
 
