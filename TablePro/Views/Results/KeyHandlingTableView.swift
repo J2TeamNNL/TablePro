@@ -222,6 +222,12 @@ final class KeyHandlingTableView: NSTableView {
 
     @objc func delete(_ sender: Any?) {
         guard coordinator?.isEditable == true else { return }
+        if let controller = gridSelection, !controller.isEmpty {
+            let rows = controller.selection.affectedRows
+            guard !rows.isEmpty else { return }
+            coordinator?.delegate?.dataGridDeleteRows(Set(rows))
+            return
+        }
         guard !selectedRowIndexes.isEmpty else { return }
         coordinator?.delegate?.dataGridDeleteRows(Set(selectedRowIndexes))
     }
@@ -279,7 +285,8 @@ final class KeyHandlingTableView: NSTableView {
     override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
         switch item.action {
         case #selector(delete(_:)), #selector(deleteBackward(_:)):
-            return coordinator?.isEditable == true && !selectedRowIndexes.isEmpty
+            let hasGridSelection = gridSelection?.isEmpty == false
+            return coordinator?.isEditable == true && (hasGridSelection || !selectedRowIndexes.isEmpty)
         case #selector(copy(_:)):
             let hasGridSelection = gridSelection?.isEmpty == false
             return hasGridSelection || !selectedRowIndexes.isEmpty
@@ -407,7 +414,7 @@ final class KeyHandlingTableView: NSTableView {
 
     private func deleteSelectedRowsIfPossible() {
         guard coordinator?.isEditable == true else { return }
-        guard !selectedRowIndexes.isEmpty else { return }
+        guard gridSelection?.isEmpty == false || !selectedRowIndexes.isEmpty else { return }
         delete(nil)
     }
 
@@ -519,6 +526,19 @@ final class KeyHandlingTableView: NSTableView {
         focusedColumn = prevColumn
         scrollRowToVisible(prevRow)
         scrollColumnToVisible(prevColumn)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let clickedRow = row(at: point)
+        if clickedRow >= 0, selectedRowIndexes.contains(clickedRow) {
+            window?.makeFirstResponder(self)
+            if let menu = menu(for: event) {
+                NSMenu.popUpContextMenu(menu, with: event, for: self)
+            }
+            return
+        }
+        super.rightMouseDown(with: event)
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
