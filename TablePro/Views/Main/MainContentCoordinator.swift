@@ -167,6 +167,7 @@ final class MainContentCoordinator {
     var activeSheet: ActiveSheet?
     var isDatabaseSwitcherShown = false
     var isConnectionSwitcherShown = false
+    var sessionContexts: [PluginSessionContext] = []
     var databaseToDrop: String?
     var importFileURL: URL?
     var exportPreselectedTableNames: Set<String>?
@@ -177,7 +178,7 @@ final class MainContentCoordinator {
 
     @ObservationIgnored var displayFormatsCache: [UUID: DisplayFormatsCacheEntry] = [:]
 
-    @ObservationIgnored var schemaColumnsCache: [String: (columns: [String], primaryKeys: [String])] = [:]
+    @ObservationIgnored let schemaColumns = SchemaColumnStore()
     @ObservationIgnored var columnScopeRequeryTask: Task<Void, Never>?
 
     @ObservationIgnored var pendingScrollToTopAfterReplace: Set<UUID> = []
@@ -186,7 +187,7 @@ final class MainContentCoordinator {
 
     @ObservationIgnored internal var queryGeneration: Int = 0
     @ObservationIgnored internal var currentQueryTask: Task<Void, Never>?
-    @ObservationIgnored internal var tableLoadTasks: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored internal var tableLoadTasks: [UUID: (token: UUID, task: Task<Void, Never>)] = [:]
     @ObservationIgnored internal var redisDatabaseSwitchTask: Task<Void, Never>?
     @ObservationIgnored private var changeManagerUpdateTask: Task<Void, Never>?
     @ObservationIgnored private var activeSortTasks: [UUID: Task<Void, Never>] = [:]
@@ -526,7 +527,7 @@ final class MainContentCoordinator {
 
     func refreshTables() async {
         guard let driver = services.databaseManager.driver(for: connectionId) else { return }
-        schemaColumnsCache.removeAll()
+        schemaColumns.removeAll()
         await services.schemaService.reload(
             connectionId: connectionId,
             driver: driver,
@@ -640,7 +641,7 @@ final class MainContentCoordinator {
         fileWatcher = nil
         currentQueryTask?.cancel()
         currentQueryTask = nil
-        for task in tableLoadTasks.values { task.cancel() }
+        for entry in tableLoadTasks.values { entry.task.cancel() }
         tableLoadTasks.removeAll()
         changeManagerUpdateTask?.cancel()
         changeManagerUpdateTask = nil
@@ -654,7 +655,7 @@ final class MainContentCoordinator {
         tabSessionRegistry.removeAll()
         querySortCache.removeAll()
         displayFormatsCache.removeAll()
-        schemaColumnsCache.removeAll()
+        schemaColumns.removeAll()
         columnScopeRequeryTask?.cancel()
 
         tabManager.tabs.removeAll()

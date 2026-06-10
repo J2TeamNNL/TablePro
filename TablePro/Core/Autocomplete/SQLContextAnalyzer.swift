@@ -141,8 +141,6 @@ final class SQLContextAnalyzer {
     private static let openParen = UInt16(UnicodeScalar("(").value)
     private static let closeParen = UInt16(UnicodeScalar(")").value)
     private static let dot = UInt16(UnicodeScalar(".").value)
-    private static let backtick = UInt16(UnicodeScalar("`").value)
-    private static let underscore = UInt16(UnicodeScalar("_").value)
     private static let comma = UInt16(UnicodeScalar(",").value)
     private static let space = UInt16(UnicodeScalar(" ").value)
     private static let tab = UInt16(UnicodeScalar("\t").value)
@@ -246,31 +244,20 @@ final class SQLContextAnalyzer {
     private static let cteCommaRegex = compileRegex("(?i),\\s*([\\w]+)\\s+AS\\s*\\(")
 
     private static let tableRefRegexes: [NSRegularExpression] = {
+        let segment = "[`\"']?\\w+[`\"']?"
+        let path = "(\(segment)(?:\\.\(segment))*)"
+        let alias = "(?:\\s+(?:AS\\s+)?[`\"']?(\\w+)[`\"']?)?"
         let patterns = [
-            "(?i)\\bFROM\\s+([\\w.`\"']+)" +
-            "(?:\\s+(?:AS\\s+)?[`\"']?([\\w]+)[`\"']?)?",
-            "(?i)(?:LEFT|RIGHT|INNER|OUTER|CROSS|FULL)?\\s*(?:OUTER)?\\s*JOIN\\s+" +
-            "([\\w.`\"']+)(?:\\s+(?:AS\\s+)?[`\"']?([\\w]+)[`\"']?)?",
-            "(?i)\\bUPDATE\\s+([\\w.`\"']+)" +
-            "(?:\\s+(?:AS\\s+)?[`\"']?([\\w]+)[`\"']?)?",
-            "(?i)\\bINSERT\\s+INTO\\s+([\\w.`\"']+)",
-            "(?i)\\bCREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+\\w+\\s+ON\\s+([\\w.`\"']+)"
+            "(?i)\\bFROM\\s+\(path)\(alias)",
+            "(?i)(?:LEFT|RIGHT|INNER|OUTER|CROSS|FULL)?\\s*(?:OUTER)?\\s*JOIN\\s+\(path)\(alias)",
+            "(?i)\\bUPDATE\\s+\(path)\(alias)",
+            "(?i)\\bINSERT\\s+INTO\\s+\(path)",
+            "(?i)\\bCREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+\\w+\\s+ON\\s+\(path)"
         ]
         return patterns.map { compileRegex($0) }
     }()
 
     // MARK: - UTF-16 Helpers
-
-    /// Check if a UTF-16 code unit is a letter or digit (ASCII fast path + fallback)
-    private static func isIdentifierChar(_ ch: UInt16) -> Bool {
-        // ASCII letters
-        if (ch >= 0x41 && ch <= 0x5A) || (ch >= 0x61 && ch <= 0x7A) { return true }
-        // ASCII digits
-        if ch >= 0x30 && ch <= 0x39 { return true }
-        // underscore
-        if ch == underscore { return true }
-        return false
-    }
 
     /// Check if a UTF-16 code unit is whitespace (space, tab, newline, CR)
     private static func isWhitespace(_ ch: UInt16) -> Bool {
@@ -531,7 +518,7 @@ final class SQLContextAnalyzer {
             }
 
             if !inString {
-                if Self.isIdentifierChar(ch) {
+                if SQLTokenBoundary.isIdentifierChar(ch) {
                     if wordStart < 0 {
                         wordStart = i
                     }
@@ -702,7 +689,6 @@ final class SQLContextAnalyzer {
     }
 
     /// Extract the current word prefix and any dot prefix (table.column).
-    /// Uses NSString character-at-index for O(1) access instead of Array(text).
     private func extractPrefix(
         from text: String
     ) -> (prefix: String, start: Int, dotPrefix: String?) {
@@ -712,54 +698,23 @@ final class SQLContextAnalyzer {
             return ("", 0, nil)
         }
 
-        // Scan backwards to find start of identifier
-        var prefixStart = length
-        var foundDot = false
-        var dotPosition = -1
+        let start = SQLTokenBoundary.segmentStart(in: ns, endingAt: length)
+        let prefix = ns.substring(from: start)
 
-        var i = length - 1
-        while i >= 0 {
-            let ch = ns.character(at: i)
-
-            if ch == Self.dot && !foundDot {
-                foundDot = true
-                dotPosition = i
-                i -= 1
-                continue
-            }
-
-            if Self.isIdentifierChar(ch) || ch == Self.backtick || ch == Self.doubleQuote {
-                prefixStart = i
-            } else {
-                break
-            }
-
-            i -= 1
+        guard start > 0, ns.character(at: start - 1) == Self.dot else {
+            return (prefix, start, nil)
         }
 
-        if foundDot && dotPosition > prefixStart {
-            // Has dot prefix like "users.na" or "u.na"
-            let beforeDotRange = NSRange(
-                location: prefixStart, length: dotPosition - prefixStart
-            )
-            let beforeDot = ns.substring(with: beforeDotRange)
-            let afterDotRange = NSRange(
-                location: dotPosition + 1, length: length - dotPosition - 1
-            )
-            let afterDot = ns.substring(with: afterDotRange)
-
-            let cleanDotPrefix = beforeDot.trimmingCharacters(
-                in: CharacterSet(charactersIn: "`\"")
-            )
-            return (afterDot, dotPosition + 1, cleanDotPrefix)
-        } else {
-            // No dot, just a regular prefix
-            let prefixRange = NSRange(
-                location: prefixStart, length: length - prefixStart
-            )
-            let prefix = ns.substring(with: prefixRange)
-            return (prefix, prefixStart, nil)
+        let qualifierEnd = start - 1
+        let qualifierStart = SQLTokenBoundary.segmentStart(in: ns, endingAt: qualifierEnd)
+        guard qualifierStart < qualifierEnd else {
+            return (prefix, start, nil)
         }
+
+        let qualifierRange = NSRange(location: qualifierStart, length: qualifierEnd - qualifierStart)
+        let dotPrefix = ns.substring(with: qualifierRange)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "`\""))
+        return (prefix, start, dotPrefix)
     }
 
     private static let tableRefKeywords: Set<String> = [
@@ -767,19 +722,7 @@ final class SQLContextAnalyzer {
         "JOIN", "ON", "AND", "OR", "WHERE", "SELECT", "FROM", "AS"
     ]
 
-    /// Strip schema prefix from a potentially schema-qualified name
-    private static let identifierQuotes = CharacterSet(charactersIn: "`\"'")
-
-    private static func stripSchemaPrefix(_ raw: String) -> String {
-        let ns = raw as NSString
-        let dotRange = ns.range(of: ".", options: .backwards)
-        guard dotRange.location != NSNotFound else {
-            return raw.trimmingCharacters(in: identifierQuotes)
-        }
-        let start = dotRange.location + 1
-        guard start < ns.length else { return raw.trimmingCharacters(in: identifierQuotes) }
-        return ns.substring(from: start).trimmingCharacters(in: identifierQuotes)
-    }
+    private static let identifierQuoteChars = CharacterSet(charactersIn: "`\"'")
 
     /// Extract all table references (table names and aliases) from the query
     private func extractTableReferences(from query: String) -> [TableReference] {
@@ -796,14 +739,13 @@ final class SQLContextAnalyzer {
                 guard tableNSRange.location != NSNotFound else { return }
 
                 let rawName = (query as NSString).substring(with: tableNSRange)
-                let tableName = Self.stripSchemaPrefix(rawName)
+                let segments = rawName.split(separator: ".").map {
+                    String($0).trimmingCharacters(in: Self.identifierQuoteChars)
+                }
+                guard let tableName = segments.last, !tableName.isEmpty else { return }
                 guard !Self.tableRefKeywords.contains(tableName.uppercased()) else { return }
 
-                let segments = rawName.split(separator: ".")
-                let schema = segments.count >= 2
-                    ? String(segments[segments.count - 2])
-                        .trimmingCharacters(in: Self.identifierQuotes)
-                    : nil
+                let schema = segments.count >= 2 ? segments[segments.count - 2] : nil
 
                 var alias: String?
                 if match.numberOfRanges > 2 {
