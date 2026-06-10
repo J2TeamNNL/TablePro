@@ -95,3 +95,33 @@ PR #1459 (branch `fix/datagrid`) đã được **merge vào upstream/main** lúc
 
 **Không cần làm**
 - Không sửa logic (review không tìm thấy bug chặn merge).
+
+---
+
+## Open items: 2026-06-10
+
+Checklist UI mới của owner (quan sát trên build 0.48.0). Đối chiếu upstream + trace
+code trên `main` 0.50.0 (2026-06-09/10). Đã loại các mục fix sẵn ở 0.49/0.50:
+⌘+Enter execute (#1556 keyboard rewrite), Esc hủy ô đang sửa (#1490,
+`CellOverlayEditor.cancelOperation` → `dismiss(commit:false)`), autocomplete EDITOR
+(#1601/#1611). Ctrl+Enter: owner xác nhận nhầm → bỏ. Baseline plan = `main`, fix để
+PR ngược upstream.
+
+| Item | Status | Root (file:line) |
+|---|---|---|
+| Delete key không xóa khi chọn cell-range; phải chuột phải | TODO | `delete(_:)` + `validateUserInterfaceItem` chỉ đọc `selectedRowIndexes`, bỏ `gridSelection` (KeyHandlingTableView.swift:223,281). `copy()` (229) đã đọc cả hai = mẫu đúng. |
+| Chuột phải Delete chỉ xóa 1 dòng | TODO | `menu(for:)` thay selection = dòng vừa click trước khi mở menu (KeyHandlingTableView.swift:538). |
+| Filter panel khó hiểu (2 Apply, "Unset" xóa hết rows, không có check-all) | TODO | "Unset" → `clearFilterState()` set `filters=[]` (FilterCoordinator.swift:414); Apply-solo per-row (FilterRowView.soloApplyButton). |
+| ⌘R không reload grid table tab + mất filter | TODO (cần repro) | `handleRefresh` cancel async rồi `runQuery()` ngay → bail `guard !isExecuting`; `refreshTables()` luôn chạy. `rebuildTableQuery` chỉ giữ WHERE khi `hasAppliedFilters`. |
+| Filter autocomplete luôn hiện / Enter chèn rác (ô FILTER) | TODO (phase 2) | `FilterValueTextField` chưa nhận fix editor #1601/#1611: `presentSuggestions` vô điều kiện; `spliceTokenCompletion` fail thầm khi range stale. |
+
+Decisions: **D12** (delete theo selection thống nhất), **D13** (filter 1-Apply + Clear +
+check-all), **D14** (⌘R re-run xác định, giữ filter), **D15** (port autocomplete editor
+sang filter). Case-study chi tiết + verify: `context.md` § "Open items: 2026-06-10".
+
+### Thứ tự đề xuất
+
+1. Delete + chuột phải (D12): nhỏ, cùng 1 commit, gốc selection chung.
+2. Filter panel redesign (D13): owner đã chốt model.
+3. ⌘R refresh (D14): repro bằng OSLog trước, rồi mới sửa.
+4. Filter autocomplete (D15): phase 2.

@@ -546,3 +546,119 @@ PR sạch (MERGEABLE). Vướng duy nhất là 2 hunk môi trường lỡ commit
 ### Fix approach
 
 Bỏ 2 hunk noise → verify 4 test suite pass → merge. Đây là PR ưu tiên #1 (an toàn nhất). Không sửa logic. Chi tiết checklist xem `tasks.md` § "Open PR #1459 — agent checklist".
+
+---
+
+## Open items: 2026-06-10 (checklist UI mới của owner)
+
+> Quan sát trên build 0.48.0; trace lại trên `main` 0.50.0 (2026-06-09/10). Đã loại
+> mục fix sẵn ở 0.49/0.50: ⌘+Enter execute (#1556), Esc hủy ô đang sửa (#1490,
+> `CellOverlayEditor.cancelOperation` → `dismiss(commit:false)`), autocomplete EDITOR
+> (#1601/#1611). Ctrl+Enter: owner nhầm → bỏ. Baseline = main, fix để PR ngược
+> upstream. Decisions: D12–D15.
+
+### A. Delete key không xóa multi-select (cell-range) [D12]
+
+**Symptom.** Chọn nhiều dòng/vùng ô rồi bấm Delete → không gì xảy ra; phải chuột phải
+→ Delete. Owner xác nhận vẫn lỗi trên bản mới nhất.
+
+**Root cause.**
+- `KeyHandlingTableView.delete(_:)` (223): `guard !selectedRowIndexes.isEmpty` rồi
+  `dataGridDeleteRows(Set(selectedRowIndexes))`. Chỉ đọc row-selection.
+- `validateUserInterfaceItem` (281-282): `delete:`/`deleteBackward:` enable
+  `= isEditable && !selectedRowIndexes.isEmpty`. Cell-range (gridSelection) → rows
+  rỗng → menu item disable → phím Delete vô hiệu.
+- `copy(_:)` (229) đọc `gridSelection` trước rồi fallback rows → copy đúng. Chuột phải
+  Delete đọc `coordinator.selectedRowIndices` (DataGridRowView.swift:390) nên xóa được
+  → đó là vì sao workaround chạy.
+
+**Fix approach.** `delete(_:)` và validate đọc `gridSelection.affectedRows` (nếu
+non-empty) rồi fallback `selectedRowIndexes`, giống `copy()`. Gửi tập rows hợp nhất
+vào `dataGridDeleteRows`.
+
+**Verify.** Build; cell-range nhiều dòng → Delete xóa hết; full-row → xóa hết;
+read-only/safe-mode → disable. Thêm test delete theo gridSelection.
+
+### B. Chuột phải Delete chỉ xóa 1 dòng [D12]
+
+**Symptom.** Multi-select rows → chuột phải → Delete chỉ xóa dòng vừa click.
+
+**Root cause.** `KeyHandlingTableView.menu(for:)` (538-539) gọi
+`selectRowIndexes(IndexSet(integer: clickedRow), byExtendingSelection: false)` vô điều
+kiện trước khi show menu → `deleteRow` đọc `selectedRowIndices` chỉ còn dòng click.
+
+**Fix approach.** Chỉ thay selection khi dòng click CHƯA nằm trong selection hiện tại
+(giống guard gridSelection ở 530-536, chuẩn NSTableView/Finder). Nếu đã trong selection
+→ giữ nguyên để xóa cả tập.
+
+**Verify.** Multi-select 3 dòng, chuột phải trong vùng chọn → xóa cả 3; chuột phải
+ngoài vùng chọn → chọn lại 1 dòng rồi xóa.
+
+### C. Filter panel redesign [D13]
+
+**Symptom.** Panel rối: 2 nút Apply (header + per-row), "Unset" xóa sạch filter rows,
+không có check/uncheck all, "Match all" khó hiểu, cột không thẳng hàng, banding tối.
+
+**Hiện trạng / root.**
+- 3 cơ chế tham gia chồng nhau: checkbox `isEnabled` (FilterRowView.enabledToggle),
+  Apply-all (FilterPanelView header, 101), Apply-solo (FilterRowView.soloApplyButton).
+- "Unset" → `clearFilterState()` (FilterCoordinator.swift:414) set `filters=[]` (xóa
+  rows). `clearAppliedFilters()` (304) chỉ set `commit=nil` (giữ rows) đã có sẵn nhưng
+  không nối vào nút header.
+- `filterLogicMode` (.and/.or) = "Match all"/"Match any", chỉ hiện khi >1 dòng (AND vs OR).
+
+**Fix approach (model mới, owner chốt).**
+1. 1 Apply (header). Bỏ Apply/Applied per-row; "Apply only this row" vào `rowContextMenu`.
+2. "Unset" → "Clear" gọi `clearAppliedFilters()` (giữ rows, về unfiltered). "Remove all
+   filters" (clearFilterState) vào menu `…`.
+3. Checkbox tri-state đầu cột (bật/tắt tất cả), thay vì 2 nút.
+4. Canh width picker cột/toán tử thẳng hàng; ô value đồng nhất style; 1 nền + divider
+   mảnh (bỏ banding controlBackground vs window).
+
+**Verify.** UI test: Apply áp các dòng enabled theo logic mode; Clear giữ rows;
+tri-state toggle tất cả; Remove all trong menu; chuột phải có "Apply only this row".
+Cập nhật docs/features. Không đổi semantics clearFilterState/clearAppliedFilters (D8).
+
+### D. ⌘R không reload grid table tab + mất filter [D14]
+
+**Symptom.** Table tab (mở từ sidebar): ⌘R chỉ reload danh sách tables ở sidebar, không
+reload data grid; có lúc reload thì mất filter đang áp. Owner xác nhận trên bản mới nhất.
+
+**Root cause (giả thuyết theo code, CẦN repro).**
+- ⌘R = menu Refresh (TableProApp.swift:418) → `AppCommands.refreshData.send(nil)` →
+  `handleRefreshData` (MainContentCommandActions.swift:912): `handleRefresh()` +
+  `Task { refreshTables() }`.
+- `handleRefresh` (+Refresh.swift:43-48) cho `.table`: `currentQueryTask?.cancel()`
+  (async) → `rebuildTableQuery` → `runQuery()` ngay. `runQuery` (778),
+  `executeTableTabQueryDirectly` (852), `executeQueryInternal` (1030) đều mở đầu
+  `guard !tab.execution.isExecuting`. Cờ chưa reset sau cancel async → bail → grid
+  không reload. `refreshTables()` (MainContentCoordinator.swift:528) luôn chạy →
+  sidebar reload.
+- Mất filter: `rebuildTableQuery` (FilterCoordinator.swift:93) chỉ build WHERE khi
+  `hasAppliedFilters`; nếu nhánh reload thắng là base-query → mất WHERE.
+
+**Fix approach.** Refresh xác định: reset execution state đồng bộ (hoặc await hủy task)
+trước re-run; rebuild theo `appliedFilters` (giữ filter+sort+page); chạy đúng 1 reload;
+không để base-query đè. Giữ chủ ý "query tab không auto re-run" (comment +Refresh.swift:33).
+
+**Verify (BẮT BUỘC trước khi sửa).** Build main + OSLog ở handleRefresh/runQuery/
+executeQueryInternal để xác định nhánh nào bail và reload nào thắng. Sau fix: ⌘R trên
+table tab có filter → grid reload, GIỮ filter+sort+page; query tab → không re-run.
+Thêm test.
+
+### E. Filter autocomplete: luôn hiện / Enter chèn rác (ô FILTER) [D15], phase 2
+
+**Symptom.** Trong ô filter, gợi ý luôn hiện kể cả không cần; Enter chèn thêm ký tự
+rác; gợi ý không hợp lý theo vị trí.
+
+**Root cause.** `FilterValueTextField` là path riêng, chưa nhận fix EDITOR (#1601
+replace-whole-word qua SQLTokenBoundary; #1611 filter-in-place): `presentSuggestions`
+gọi vô điều kiện sau mỗi debounce; `spliceTokenCompletion` fail thầm khi
+`latestReplacementRange` stale → dismiss nhưng để lại ký tự rác.
+
+**Fix approach.** Tái dùng `SQLTokenBoundary` (range tính lúc accept theo live text) +
+cơ chế filter-in-place của editor cho FilterValueTextField. Giữ custom dropdown (D9).
+Phase 2 sau 3 fix A–D (medium, đụng async completion).
+
+**Verify.** Gợi ý chỉ hiện ở token boundary hợp lệ; Enter chèn đúng token (không
+"memessage"); popup lọc tại chỗ, không restart mỗi keystroke. Test.

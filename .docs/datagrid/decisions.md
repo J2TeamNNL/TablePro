@@ -177,3 +177,83 @@ tab, JSON popover cap, filter bar default).
 
 **Chosen.** (b) — đều nhỏ, cùng scope datagrid, test đầy đủ, đang MERGEABLE. Tách
 giờ tốn công vô ích (YAGNI).
+
+---
+
+## D12. Delete hành xử theo nguồn selection thống nhất (gridSelection + rows)
+
+**Context.** `delete(_:)` và `validateUserInterfaceItem` (KeyHandlingTableView.swift:223,281)
+chỉ đọc `selectedRowIndexes` (row-selection của NSTableView). Chọn bằng cell-range
+(gridSelection) → `selectedRowIndexes` rỗng → Delete bị disable + no-op, phải chuột
+phải. `copy()` (dòng 229) đã đọc `gridSelection` trước rồi fallback rows nên copy đúng.
+
+**Options.**
+- (a) Sync gridSelection → selectedRowIndexes mọi lúc (rủi ro side-effect UI selection)
+- (b) **`delete` + validate đọc `gridSelection.affectedRows` nếu non-empty, fallback `selectedRowIndexes`** ✓ (đối xứng `copy()`)
+
+**Chosen.** (b): tái dùng đúng mẫu `copy()` (D1/D2). Một nguồn xóa thống nhất cũng
+sửa luôn case chuột phải.
+
+**Consequence.** Chuột phải Delete: `menu(for:)` (dòng 538) đang thay selection = dòng
+click trước khi mở menu → chỉ thay khi dòng click CHƯA nằm trong selection hiện có
+(chuẩn NSTableView/Finder). Sửa cùng commit.
+
+---
+
+## D13. Filter panel: 1 Apply + Clear (un-apply) + tri-state check-all
+
+**Context.** 3 cơ chế "dòng nào tham gia" chồng nhau (checkbox enable, Apply-all header,
+Apply-solo per-row) → khó hiểu. "Unset" gọi `clearFilterState()` xóa sạch `state.filters`
+(FilterCoordinator.swift:414) thay vì chỉ bỏ filter đang áp.
+
+**Options.**
+- (a) Giữ nguyên, chỉ đổi label
+- (b) **1 Apply (header); solo → context menu; "Unset"→"Clear" gọi `clearAppliedFilters()` (commit=nil, giữ rows); checkbox tri-state đầu cột bật/tắt tất cả; "Remove all filters" vào menu …** ✓
+
+**Chosen.** (b): owner chốt. `clearAppliedFilters()` (dòng 304) đã có sẵn. Tri-state theo
+chuẩn macOS select-all (owner chọn thay 2 nút). Canh width picker cột/toán tử thẳng
+hàng; ô value đồng nhất style; 1 nền + divider mảnh (bỏ banding).
+
+**Consequence.** Hành vi destructive (xóa hết rows) chuyển vào menu, có chủ đích.
+Không đổi semantics `clearFilterState`/`clearAppliedFilters` (D8 vẫn đúng). Cập nhật
+docs/features + UI test.
+
+---
+
+## D14. Refresh (⌘R): re-run xác định 1 lần, giữ filter/sort/page
+
+**Context.** ⌘R → `handleRefreshData` (MainContentCommandActions.swift:912) chạy 2 việc:
+`handleRefresh()` (reload grid chỉ khi `.table`) + `refreshTables()` (luôn reload
+sidebar). `handleRefresh` (+Refresh.swift:45) `currentQueryTask?.cancel()` rồi
+`runQuery()` ngay; nhưng `runQuery`/`executeTableTabQueryDirectly`/`executeQueryInternal`
+(780/854/1034) đều mở đầu `guard !tab.execution.isExecuting`. Cancel async, cờ chưa
+reset → bail → grid không reload. `rebuildTableQuery` chỉ giữ WHERE khi `hasAppliedFilters`
+→ nếu reload base-query thắng thì mất filter.
+
+**Options.**
+- (a) Bỏ guard `isExecuting` ở path refresh (rủi ro chạy chồng query)
+- (b) **Reset execution state đồng bộ (hoặc await hủy task) trước re-run; rebuild theo `appliedFilters`; chạy đúng 1 reload; không để base-query đè** ✓
+- (c) Gộp handleRefresh + refreshTables thành 1 pipeline có thứ tự
+
+**Chosen.** (b), cân nhắc (c) khi implement. CẦN build + OSLog repro để chốt đúng nhánh
+nào bail / reload nào thắng trước khi sửa (không kết luận khi chưa chạy thật).
+
+**Consequence.** Query tab vẫn KHÔNG auto re-run trên Refresh (giữ chủ ý maintainer,
+comment +Refresh.swift:33). Chỉ sửa table tab.
+
+---
+
+## D15. Port fix autocomplete EDITOR sang FilterValueTextField (phase 2)
+
+**Context.** D9 đã đưa raw filter qua CompletionEngine. Nhưng lỗi behavior (popup luôn
+hiện; Enter chèn rác do range stale) đã fix ở EDITOR (#1601 replace-whole-word qua
+SQLTokenBoundary; #1611 filter-in-place) mà `FilterValueTextField` (path riêng) chưa
+nhận: `presentSuggestions` gọi vô điều kiện; `spliceTokenCompletion` fail thầm khi
+`latestReplacementRange` stale.
+
+**Options.**
+- (a) Viết lại logic filter riêng
+- (b) **Tái dùng SQLTokenBoundary + filter-in-place của editor cho filter** ✓
+
+**Chosen.** (b): cùng nguồn chân lý với editor, tránh phân kỳ lần 3. Phase 2 (sau 3
+fix datagrid trên), vì medium và đụng async completion.
