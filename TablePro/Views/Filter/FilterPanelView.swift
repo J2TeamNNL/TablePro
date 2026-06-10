@@ -67,8 +67,43 @@ struct FilterPanelView: View {
         .onPreferenceChange(FilterRowsHeightKey.self) { filterRowsHeight = $0 }
     }
 
+    private var allFiltersCheckboxImage: String {
+        switch allFiltersEnabledState {
+        case true: return "checkmark.square.fill"
+        case false: return "square"
+        case .none: return "minus.square.fill"
+        }
+    }
+
+    private var allFiltersEnabledState: Bool? {
+        guard !filterState.filters.isEmpty else { return false }
+        let enabledCount = filterState.filters.count { $0.isEnabled }
+        if enabledCount == filterState.filters.count { return true }
+        if enabledCount == 0 { return false }
+        return nil
+    }
+
+    private func toggleAllFiltersEnabled() {
+        let allEnabled = filterState.filters.allSatisfy { $0.isEnabled }
+        let newState = !allEnabled
+        for filter in filterState.filters {
+            var updated = filter
+            updated.isEnabled = newState
+            coordinator.updateFilter(updated)
+        }
+    }
+
     private var filterHeader: some View {
         HStack(spacing: 8) {
+            if !filterState.filters.isEmpty {
+                Button(action: toggleAllFiltersEnabled) {
+                    Image(systemName: allFiltersCheckboxImage)
+                        .foregroundStyle(.primary)
+                }
+                .buttonStyle(.plain)
+                .help(String(localized: "Enable or disable all filters"))
+            }
+
             Text("Filters")
                 .font(.callout.weight(.medium))
 
@@ -88,15 +123,15 @@ struct FilterPanelView: View {
 
             filterOptionsMenu
 
-            Button("Unset") {
-                coordinator.clearFilterState()
+            Button("Clear") {
+                coordinator.clearAppliedFilters()
                 onUnset()
                 coordinator.focusActiveGrid()
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
             .disabled(!filterState.hasAppliedFilters)
-            .help(String(localized: "Remove all filters and reload"))
+            .help(String(localized: "Clear applied filters without removing filter rows"))
 
             Button("Apply") {
                 applyAllValidFilters()
@@ -172,6 +207,17 @@ struct FilterPanelView: View {
 
             Divider()
 
+            Button(role: .destructive) {
+                coordinator.clearFilterState()
+                onUnset()
+                coordinator.focusActiveGrid()
+            } label: {
+                Label(String(localized: "Remove All Filters"), systemImage: "xmark.circle")
+            }
+            .disabled(filterState.filters.isEmpty)
+
+            Divider()
+
             Button {
                 showSettingsPopover.toggle()
             } label: {
@@ -198,7 +244,6 @@ struct FilterPanelView: View {
                     completions: completionItems(),
                     enumValuesByColumn: enumValuesByColumn,
                     rawSQLCompletionProvider: rawSQLCompletionProvider,
-                    isApplied: filterState.commit == .solo(filter.id),
                     onAdd: {
                         coordinator.addFilter(columns: columns, primaryKeyColumn: primaryKeyColumn)
                         focusedFilterId = filterState.filters.last?.id
