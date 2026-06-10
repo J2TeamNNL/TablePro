@@ -1,5 +1,18 @@
 # inspector — changelog
 
+## 2026-06-09 — PR pivot sang collapseBehavior + conflict resolved
+
+| Date | Event |
+|---|---|
+| ~2026-06 | PR pivot: commit `58cd1102` ("refactor(inspector): grow the window via NSSplitViewItem.collapseBehavior instead of custom min-size code") **xóa hẳn** `recomputeWindowMinSize()`, override `splitViewDidResizeSubviews`, `PaneMinimum`/`resolvedContentMinSize`/`originalContentMinSize`, và test `MainSplitViewControllerWindowMinimumSizeTests`. Thay bằng `inspectorSplitItem.collapseBehavior = .preferResizingSplitViewWithFixedSiblings` + helper `setCollapsed(_:for:)`. |
+| 2026-06-09 | Resolve conflict: merge `upstream/main` vào `fix/inspector` (commit local `69e3555e`). Hết conflict. 3 conflict file: `SQLContextAnalyzer.swift` + `PasswordSourceResolver.swift` lấy bản main (bị #1581/#1587/#1601 thay), `CHANGELOG.md` giữ wording main + chèn lại dòng inspector. Net diff vs main = `MainSplitViewController.swift` (collapseBehavior) + 1 dòng CHANGELOG. |
+| 2026-06-09 | Cập nhật PR description cho khớp collapseBehavior (bỏ mô tả recomputeWindowMinimumSize + test cũ). |
+| 2026-06-09 | Push **chưa xong**: GitHub chặn vì commit mang email `longnn@senprints.com` (account bật block push lộ email). Build/lint chưa verify cục bộ (không có Xcode/swiftlint) → CI là cổng. |
+
+> Supersede note: toàn bộ timeline 2026-05-25/28/30 bên dưới dựa trên cách `recomputeWindowMinSize`
+> (recompute `window.minSize` thủ công). PR đã pivot sang collapseBehavior nên các fix đó **moot**.
+> Giữ lại để tham chiếu lịch sử.
+
 ## 2026-05-30 — Reconcile vs main (verified)
 
 | Date | Event |

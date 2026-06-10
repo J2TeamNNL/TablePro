@@ -65,6 +65,10 @@
 
 # Open fork PR #1463 — decisions (2026-05-30)
 
+> **Superseded 2026-06-09 bởi ADR-011.** ADR-005..010 thiết kế quanh việc gộp logic vào
+> `recomputeWindowMinSize`. PR đã pivot sang `collapseBehavior` (commit `58cd1102`) và xóa
+> hết code recompute, nên ADR-006/008/010 moot, ADR-007 bị đảo. Giữ để tham chiếu lịch sử.
+
 ## ADR-005: Drop noise `.gitignore` / `CLAUDE.md`
 **Context**: upstream/main đã có entries; PR add lại = conflict giả.
 **Decision**: reset 2 file về upstream khi rebase.
@@ -109,3 +113,28 @@ không bị overwrite bởi giá trị widen). Body `recomputeWindowMinSize()` s
 **Verify khi fix**: confirm `originalContentMinSize` của PR capture đúng base gốc; test cycle
 show → hide phải relax về 720pt (fail nếu base đọc từ minSize mutate).
 **Trade-off**: không — đây là điều kiện đúng đắn của tính năng, không phải optional.
+
+---
+
+## ADR-011: Dùng `NSSplitViewItem.collapseBehavior` native, bỏ toàn bộ recompute thủ công (supersede ADR-001/002/006/007/008/010)
+**Date**: 2026-06-09
+**Context**: ADR-001..010 thiết kế quanh việc tính `window.minSize` thủ công
+(`recomputeWindowMinSize` + `PaneMinimum`/`resolvedContentMinSize`/`originalContentMinSize` +
+4 call site + override `splitViewDidResizeSubviews`). Cách này phức tạp, có bug "floor chỉ
+tăng" (ADR-010), và cần geometry test riêng. Commit `58cd1102` của PR chọn hướng khác:
+AppKit đã có sẵn `NSSplitViewItem.collapseBehavior` để xử lý đúng tình huống này.
+**Decision**: set `inspectorSplitItem.collapseBehavior = .preferResizingSplitViewWithFixedSiblings`.
+Khi inspector mở rộng, AppKit nới chính cửa sổ (resize split view với fixed siblings) thay vì ép
+detail pane co. **Xóa hẳn** `recomputeWindowMinSize()`, override `splitViewDidResizeSubviews`,
+`PaneMinimum`, `resolvedContentMinSize`, `originalContentMinSize`. Floor 720×480 vẫn do
+`TabWindowController:75` set tĩnh. Helper `setCollapsed(_:for:)` chỉ còn nhiệm vụ animate collapse
+khi `window.isVisible` (dùng chung cho sidebar + inspector).
+**Lý do**: native hơn (đúng nguyên tắc "Native only" của CLAUDE.md); ít code hơn; không còn bug
+floor-chỉ-tăng vì không còn đọc `window.minSize` mutate; bỏ được geometry test dễ vỡ.
+**Hệ quả với các ADR cũ**:
+- ADR-001 (dynamic minSize), ADR-002 (4 call site), ADR-006 (gộp method), ADR-008 (commit atomic gộp), ADR-010 (baseline immutable): **moot** — không còn recompute.
+- ADR-007 (giữ geometry test): **đảo** — test bị xóa cùng code; không có unit test mới (resize/animation không deterministic dưới test harness).
+- ADR-009 (`setCollapsed` pre-hook): **đổi vai** — `setCollapsed` vẫn còn nhưng chỉ animate-when-visible, không còn pre-widen/pre-shrink.
+- ADR-003 (dùng `minSize` không `contentMinSize`): vẫn đúng — floor tĩnh dùng `window.minSize`.
+**Trade-off**: dựa vào hành vi AppKit thay vì geometry tự tính → khó unit-test; bù lại đơn giản và
+đúng native. Cần manual UI verify + CI build (chưa verify cục bộ: máy không có Xcode).

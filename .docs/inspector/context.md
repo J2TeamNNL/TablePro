@@ -1,5 +1,13 @@
 # Inspector pane overflow — case study chi tiết
 
+> **Reconcile 2026-06-09.** Toàn bộ phần "Fix" (snippet `recomputeWindowMinSize`, 4 call site,
+> bảng scenario minSize) và mục "Open fork PR #1463 — code review & conflict resolution" bên dưới
+> mô tả cách CŨ. PR đã pivot sang `NSSplitViewItem.collapseBehavior = .preferResizingSplitViewWithFixedSiblings`
+> (commit `58cd1102`) và **xóa hết** code recompute + `PaneMinimum`/`resolvedContentMinSize`/
+> `originalContentMinSize` + geometry test. Bug Codex P2 "base-min-size chỉ tăng" cũng **moot** (không
+> còn code đọc `window.minSize` mutate). Symptom + root cause (TabWindowController set minSize tĩnh,
+> các pane minimumThickness) vẫn đúng. Chi tiết cách cuối: `decisions.md` ADR-011.
+
 ## Symptom
 
 Toggle inspector pane khi window width ~720pt → content area bị squeeze/tràn, toolbar controls bị che.

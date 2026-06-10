@@ -1,5 +1,11 @@
 # Inspector pane overflow — brief
 
+> **Reconcile 2026-06-09.** Cách fix cuối của PR đã đổi sang native `NSSplitViewItem.collapseBehavior`
+> (commit `58cd1102`), **bỏ hẳn** mọi thứ về `recomputeWindowMinSize`/`PaneMinimum`/
+> `resolvedContentMinSize`/`originalContentMinSize` và geometry test. Mục "Open fork PR #1463",
+> "Kết quả", và bảng pane-sum bên dưới mô tả cách CŨ, nay **superseded**. Floor 720×480 vẫn tĩnh ở
+> `TabWindowController:75`. Chi tiết: `README.md`, `decisions.md` ADR-011, `tasks.md`.
+
 ## Vấn đề
 
 Khi user toggle inspector pane (panel bên phải) trong một cửa sổ hẹp (~720pt), nội dung và toolbar bị tràn ra ngoài viền window. AppKit cố gắng fit 954pt content vào 720pt frame.

@@ -1,5 +1,18 @@
 # Inspector pane overflow — flow
 
+> **Reconcile 2026-06-09.** Các diagram bên dưới mô tả luồng `recomputeWindowMinSize` (cách CŨ) và
+> "merged sizing flow" (kế hoạch GỘP). PR đã pivot sang `collapseBehavior` (commit `58cd1102`), bỏ
+> hết recompute → các diagram đó **superseded**. Luồng thực tế hiện tại:
+>
+> ```mermaid
+> flowchart TD
+>     A[Setup: inspectorSplitItem.collapseBehavior<br/>= .preferResizingSplitViewWithFixedSiblings] --> B[User toggle inspector]
+>     B --> C[showInspector / hideInspector]
+>     C --> D[setCollapsed _:for_:<br/>animate isCollapsed CHỈ khi window.isVisible]
+>     D --> E[AppKit tự nới/thu window<br/>để fit, không ép detail pane]
+>     E --> F[Floor 720×480 tĩnh từ TabWindowController:75]
+> ```
+
 ## Luồng toggle inspector
 
 ```mermaid
