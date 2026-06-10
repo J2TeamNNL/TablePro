@@ -34,6 +34,8 @@ extension MainContentCoordinator {
                     if let (tab, tabIndex) = tabManager.selectedTabAndIndex,
                        tab.tabType == .table {
                         currentQueryTask?.cancel()
+                        currentQueryTask = nil
+                        tabManager.mutate(at: tabIndex) { $0.execution.isExecuting = false }
                         rebuildTableQuery(at: tabIndex)
                         runQuery()
                     }
@@ -43,6 +45,8 @@ extension MainContentCoordinator {
             if let (tab, tabIndex) = tabManager.selectedTabAndIndex,
                tab.tabType == .table {
                 currentQueryTask?.cancel()
+                currentQueryTask = nil
+                tabManager.mutate(at: tabIndex) { $0.execution.isExecuting = false }
                 rebuildTableQuery(at: tabIndex)
                 runQuery()
             }

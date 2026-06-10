@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Pressing Cmd+R to refresh while a query is executing now cancels the running query and starts a fresh one instead of silently doing nothing.
 - iCloud Sync between the iPhone and Mac apps: the iOS app now uses the Production CloudKit environment, so a development build no longer syncs into a separate database the Mac never reads.
 - Exports no longer fail mid-table on servers that enforce a statement time limit; the export session disables the limit and restores it afterwards, the same way mysqldump does. (#1633)
 
