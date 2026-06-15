@@ -223,9 +223,7 @@ final class KeyHandlingTableView: NSTableView {
     @objc func delete(_ sender: Any?) {
         guard coordinator?.isEditable == true else { return }
         if let controller = gridSelection, !controller.isEmpty {
-            let rows = controller.selection.affectedRows
-            guard !rows.isEmpty else { return }
-            coordinator?.delegate?.dataGridDeleteRows(Set(rows))
+            coordinator?.delegate?.dataGridDeleteRows(Set(controller.selection.affectedRows))
             return
         }
         guard !selectedRowIndexes.isEmpty else { return }
@@ -531,7 +529,7 @@ final class KeyHandlingTableView: NSTableView {
     override func rightMouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let clickedRow = row(at: point)
-        if clickedRow >= 0, selectedRowIndexes.contains(clickedRow) {
+        if clickedRow >= 0, clickIsInsideSelection(row: clickedRow, point: point) {
             window?.makeFirstResponder(self)
             if let menu = menu(for: event) {
                 NSMenu.popUpContextMenu(menu, with: event, for: self)
@@ -539,6 +537,18 @@ final class KeyHandlingTableView: NSTableView {
             return
         }
         super.rightMouseDown(with: event)
+    }
+
+    private func clickIsInsideSelection(row clickedRow: Int, point: NSPoint) -> Bool {
+        if selectedRowIndexes.contains(clickedRow) { return true }
+        guard let controller = gridSelection, !controller.isEmpty else { return false }
+        let clickedColumn = column(at: point)
+        guard clickedColumn >= 0,
+              let schema = coordinator?.identitySchema,
+              let dataColumn = DataGridView.dataColumnIndex(for: clickedColumn, in: self, schema: schema) else {
+            return false
+        }
+        return controller.selection.contains(row: clickedRow, column: dataColumn)
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
