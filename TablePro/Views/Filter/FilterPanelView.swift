@@ -68,24 +68,15 @@ struct FilterPanelView: View {
     }
 
     private var allFiltersCheckboxImage: String {
-        switch allFiltersEnabledState {
-        case true: return "checkmark.square.fill"
-        case false: return "square"
+        switch filterState.allEnabledState {
+        case .some(true): return "checkmark.square.fill"
+        case .some(false): return "square"
         case .none: return "minus.square.fill"
         }
     }
 
-    private var allFiltersEnabledState: Bool? {
-        guard !filterState.filters.isEmpty else { return false }
-        let enabledCount = filterState.filters.count { $0.isEnabled }
-        if enabledCount == filterState.filters.count { return true }
-        if enabledCount == 0 { return false }
-        return nil
-    }
-
     private func toggleAllFiltersEnabled() {
-        let allEnabled = filterState.filters.allSatisfy { $0.isEnabled }
-        let newState = !allEnabled
+        let newState = filterState.allEnabledState != true
         for filter in filterState.filters {
             var updated = filter
             updated.isEnabled = newState

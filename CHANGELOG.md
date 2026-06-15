@@ -11,13 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The tree sidebar can show only the databases you pick. Use the filter button to check the ones you want, with a search box for long lists. The choice is saved per connection. (#1667)
 - Closing a query tab no longer loses unsaved SQL. The next blank query tab you open for the same connection brings the last closed draft back. (#1686)
+- A checkbox in the filter panel header turns every filter row on or off at once. It shows a dash when only some rows are on.
+
+### Changed
+
+- The filter panel's "Unset" button is now "Clear". It keeps your filter rows and only drops the applied state, so the table returns to unfiltered results. To remove the rows themselves, use "Remove All Filters" in the filter options menu.
+- Apply a single filter on its own from a row's right-click menu with "Apply Only This Filter". The inline per-row Apply button is gone.
 
 ### Fixed
 
-- Switcher, menus, and alerts now use each database's own container name: Dataset for BigQuery, Keyspace for Cassandra and ScyllaDB. (#509)
-- Filter panel header "Unset" renamed to "Clear": it now keeps filter rows in place and only removes the applied state, returning the table to unfiltered results. Use "Remove All Filters" in the filter options menu to discard all filter rows at once.
-- Per-row Apply and Applied buttons removed from the filter panel; "Apply Only This Filter" is now in each row's right-click context menu.
-- A tri-state checkbox in the filter panel header toggles all filter rows enabled or disabled at once.
 - Oracle connections no longer crash the app during connect. A short or unexpected handshake packet from the server (such as session-setup metadata or an error) now surfaces the error or continues instead of trapping. (#1683)
 - MongoDB filters on `_id` and other ObjectId fields now match. A 24-character hex value is matched as an ObjectId as well as a string, so filtering by `_id` returns the row instead of nothing. (#1682)
 - The sidebar and inspector keep their width per connection, the sidebar keeps its collapsed state, and the inspector keeps its selected tab, when you quit and reopen the app.
