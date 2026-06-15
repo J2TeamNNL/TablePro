@@ -92,6 +92,81 @@ struct FilterSettingsStorageTests {
         )
     }
 
+    @Test("Removing a connection's filters keeps other connections intact")
+    func removeFiltersForConnection() {
+        let (storage, directory) = makeStorage()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let deletedConnection = UUID()
+        let keptConnection = UUID()
+        let deletedFilters = [TestFixtures.makeTableFilter(column: "a")]
+        let keptFilters = [TestFixtures.makeTableFilter(column: "b")]
+
+        storage.saveLastFilters(
+            deletedFilters, for: "users", connectionId: deletedConnection, databaseName: "db", schemaName: nil
+        )
+        storage.saveLastFilters(
+            keptFilters, for: "users", connectionId: keptConnection, databaseName: "db", schemaName: nil
+        )
+
+        storage.removeFilters(for: deletedConnection)
+
+        #expect(
+            storage.loadLastFilters(for: "users", connectionId: deletedConnection, databaseName: "db", schemaName: nil)
+                .isEmpty
+        )
+        #expect(
+            storage.loadLastFilters(for: "users", connectionId: keptConnection, databaseName: "db", schemaName: nil)
+                == keptFilters
+        )
+    }
+
+    @Test("Batch removal clears filters for every given connection in one pass")
+    func removeFiltersForMultipleConnections() {
+        let (storage, directory) = makeStorage()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = UUID()
+        let second = UUID()
+        let kept = UUID()
+        for connectionId in [first, second, kept] {
+            storage.saveLastFilters(
+                [TestFixtures.makeTableFilter(column: "a")],
+                for: "users", connectionId: connectionId, databaseName: "db", schemaName: nil
+            )
+        }
+
+        storage.removeFilters(for: [first, second])
+
+        #expect(storage.loadLastFilters(for: "users", connectionId: first, databaseName: "db", schemaName: nil).isEmpty)
+        #expect(storage.loadLastFilters(for: "users", connectionId: second, databaseName: "db", schemaName: nil).isEmpty)
+        #expect(
+            !storage.loadLastFilters(for: "users", connectionId: kept, databaseName: "db", schemaName: nil).isEmpty
+        )
+    }
+
+    @Test("Removed filters stay gone for a fresh storage instance")
+    func removeFiltersDeletesFiles() {
+        let suiteName = "FilterSettingsStorageTests-\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            fatalError("Failed to create UserDefaults suite for tests")
+        }
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FilterSettingsStorageTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let connectionId = UUID()
+        let storage = FilterSettingsStorage(filterStateDirectory: directory, defaults: defaults)
+        storage.saveLastFilters(
+            [TestFixtures.makeTableFilter(column: "a")],
+            for: "users", connectionId: connectionId, databaseName: "db", schemaName: nil
+        )
+
+        storage.removeFilters(for: connectionId)
+
+        let fresh = FilterSettingsStorage(filterStateDirectory: directory, defaults: defaults)
+        #expect(
+            fresh.loadLastFilters(for: "users", connectionId: connectionId, databaseName: "db", schemaName: nil).isEmpty
+        )
+    }
+
     @Test("Saving an empty filter set clears the stored filters")
     func savingEmptyClearsState() {
         let (storage, directory) = makeStorage()

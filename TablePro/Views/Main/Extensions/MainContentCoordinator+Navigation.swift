@@ -37,7 +37,8 @@ extension MainContentCoordinator {
         showStructure: Bool = false,
         isView: Bool = false,
         forceNonPreview: Bool = false,
-        activateGridFocus: Bool = false
+        activateGridFocus: Bool = false,
+        forceNewWindowTab: Bool = false
     ) {
         let navigationModel = PluginMetadataRegistry.shared.snapshot(
             forTypeId: connection.type.pluginTypeId
@@ -54,9 +55,10 @@ extension MainContentCoordinator {
         }
 
         let resolvedSchema = schema
-        let createAsPreview = !forceNonPreview && AppSettingsManager.shared.tabs.enablePreviewTabs
+        let createAsPreview = !forceNonPreview && !forceNewWindowTab
+            && AppSettingsManager.shared.tabs.enablePreviewTabs
 
-        if activateIfAlreadyOpen(
+        if !forceNewWindowTab, activateIfAlreadyOpen(
             tableName: tableName,
             databaseName: currentDatabase,
             schemaName: resolvedSchema,
@@ -136,7 +138,7 @@ extension MainContentCoordinator {
             return
         }
 
-        if isActiveTabReusable {
+        if isActiveTabReusable, !forceNewWindowTab {
             reuseActiveTab(
                 for: tableName,
                 currentDatabase: currentDatabase,
@@ -302,6 +304,7 @@ extension MainContentCoordinator {
             || tab.hasUserActiveSort {
             return false
         }
+        if tab.tabType == .createTable { return !toolbarState.hasCreateTablePending }
         if tab.isPreview { return true }
         if tab.tabType == .query,
            tab.execution.lastExecutedAt == nil,
@@ -445,18 +448,11 @@ extension MainContentCoordinator {
             return
         }
 
-        clearFilterState()
         let previousSchema = toolbarState.currentSchema
         toolbarState.currentSchema = schema
 
         do {
             try await DatabaseManager.shared.switchSchema(to: schema, for: connectionId)
-
-            closeSiblingNativeWindows()
-            persistence.saveNowSync(tabs: tabManager.tabs, selectedTabId: tabManager.selectedTabId)
-            tabSessionRegistry.removeAll()
-            tabManager.tabs = []
-            tabManager.selectedTabId = nil
         } catch {
             toolbarState.currentSchema = previousSchema
 

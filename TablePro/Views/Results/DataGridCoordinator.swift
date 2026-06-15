@@ -1,7 +1,10 @@
 import AppKit
 import Combine
+import os
 import SwiftUI
 import TableProPluginKit
+
+private let fkTraceLogger = Logger(subsystem: "com.TablePro", category: "DataGrid")
 
 // MARK: - Coordinator
 
@@ -630,6 +633,7 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
     func refreshForeignKeyColumns() {
         guard let tableView else { return }
         let tableRows = tableRowsProvider()
+        rebuildKindSets(from: tableRows)
         let fkColumnIndices = IndexSet(
             tableView.tableColumns.enumerated().compactMap { displayIndex, tableColumn in
                 guard tableColumn.identifier != ColumnIdentitySchema.rowNumberIdentifier,
@@ -689,6 +693,11 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
             }
         }
         enumOrSetColumns = enumSet
+        if fkSet != fkColumns {
+            fkTraceLogger.info(
+                "[fk] grid columns=\(columns.count) fkColumns=\(fkSet.count) fkMeta=\(fkKeys.count)"
+            )
+        }
         fkColumns = fkSet
     }
 

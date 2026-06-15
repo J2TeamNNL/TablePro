@@ -11,6 +11,7 @@ import TableProPluginKit
 struct SidebarView: View {
     @State private var viewModel: SidebarViewModel
     @State private var favoriteTables: Set<FavoriteTablesStorage.FavoriteEntry> = []
+    @State private var showDatabaseFilter: Bool = false
 
     private var schemaService: SchemaService { SchemaService.shared }
 
@@ -165,6 +166,9 @@ struct SidebarView: View {
             Divider()
             HStack(spacing: 8) {
                 createObjectMenu
+                if usesDatabaseTree {
+                    databaseFilterButton
+                }
                 Spacer()
                 if supportsSchemaFooter {
                     SchemaPickerControl(
@@ -176,6 +180,37 @@ struct SidebarView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
+        }
+    }
+
+    private var isDatabaseFilterActive: Bool {
+        !sidebarState.databaseFilterSelected.isEmpty
+    }
+
+    private var databaseFilterSelectionBinding: Binding<Set<String>> {
+        Binding(
+            get: { sidebarState.databaseFilterSelected },
+            set: { sidebarState.databaseFilterSelected = $0 }
+        )
+    }
+
+    private var databaseFilterButton: some View {
+        Button {
+            showDatabaseFilter = true
+        } label: {
+            Image(systemName: isDatabaseFilterActive
+                ? "line.3.horizontal.decrease.circle.fill"
+                : "line.3.horizontal.decrease.circle")
+                .foregroundStyle(isDatabaseFilterActive ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+        }
+        .buttonStyle(.borderless)
+        .help(String(localized: "Filter databases"))
+        .accessibilityIdentifier("sidebar-database-filter")
+        .popover(isPresented: $showDatabaseFilter) {
+            DatabaseTreeFilterPopover(
+                connectionId: connectionId,
+                selectedDatabases: databaseFilterSelectionBinding
+            )
         }
     }
 
@@ -208,7 +243,8 @@ struct SidebarView: View {
             windowState: windowState,
             pendingTruncates: $pendingTruncates,
             pendingDeletes: $pendingDeletes,
-            coordinator: coordinator
+            coordinator: coordinator,
+            sidebarState: sidebarState
         )
     }
 

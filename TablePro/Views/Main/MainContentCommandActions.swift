@@ -332,16 +332,18 @@ final class MainContentCommandActions {
     // MARK: - Tab Operations (Group A — Called Directly)
 
     func newTab(initialQuery: String? = nil) {
+        let resolvedQuery = initialQuery
+            ?? ClosedTabDraftStorage.shared.consumeQuery(connectionId: connection.id)
         if let coordinator, coordinator.tabManager.tabs.isEmpty {
             coordinator.tabManager.addTab(
-                initialQuery: initialQuery,
+                initialQuery: resolvedQuery,
                 databaseName: coordinator.activeDatabaseName
             )
             return
         }
         let payload = EditorTabPayload(
             connectionId: connection.id,
-            initialQuery: initialQuery,
+            initialQuery: resolvedQuery,
             intent: .newEmptyTab
         )
         WindowManager.shared.openTab(payload: payload)
@@ -384,6 +386,12 @@ final class MainContentCommandActions {
             window.close()
         } else {
             if let coordinator {
+                if let draft = ClosedTabDraftStorage.draftCandidate(
+                    from: coordinator.tabManager.tabs,
+                    selectedTabId: coordinator.tabManager.selectedTabId
+                ) {
+                    ClosedTabDraftStorage.shared.saveQuery(draft, connectionId: connection.id)
+                }
                 for tab in coordinator.tabManager.tabs {
                     coordinator.tabSessionRegistry.removeTableRows(for: tab.id)
                     if let url = tab.content.sourceFileURL {
@@ -584,6 +592,10 @@ final class MainContentCommandActions {
     // MARK: - Data Operations (Group A — Called Directly)
 
     func saveChanges() {
+        if coordinator?.tabManager.selectedTab?.tabType == .createTable {
+            coordinator?.createTableActions?.createTable?()
+            return
+        }
         // Check if we're in structure view mode
         if coordinator?.tabManager.selectedTab?.display.resultsViewMode == .structure {
             coordinator?.structureActions?.saveChanges?()
@@ -758,23 +770,7 @@ final class MainContentCommandActions {
     }
 
     func formatQuery() {
-        guard let coordinator,
-              let (tab, tabIndex) = coordinator.tabManager.selectedTabAndIndex else { return }
-        let dbType = connection.type
-        let formatter = SQLFormatterService()
-        let options = SQLFormatterOptions.default
-
-        do {
-            let result = try formatter.format(
-                tab.content.query,
-                dialect: dbType,
-                cursorOffset: 0,
-                options: options
-            )
-            coordinator.tabManager.mutate(at: tabIndex) { $0.content.query = result.formattedSQL }
-        } catch {
-            Self.logger.error("SQL Formatting error: \(error.localizedDescription, privacy: .public)")
-        }
+        EditorEventRouter.shared.performFormatSQLForKeyWindow()
     }
 
     // MARK: - UI Operations (Group A — Called Directly)
@@ -893,34 +889,36 @@ final class MainContentCommandActions {
 
     // MARK: Data Broadcasts
 
+    func refresh() {
+        guard let coordinator else { return }
+        coordinator.requestRefresh(
+            hasPendingTableOps: hasPendingTableOps,
+            onDiscard: { [weak self] in self?.clearPendingTableOps() }
+        )
+    }
+
+    private var hasPendingTableOps: Bool {
+        !pendingTruncates.wrappedValue.isEmpty || !pendingDeletes.wrappedValue.isEmpty
+    }
+
+    private func clearPendingTableOps() {
+        pendingTruncates.wrappedValue.removeAll()
+        pendingDeletes.wrappedValue.removeAll()
+    }
+
     private func setupDataBroadcastObservers() {
         AppCommands.shared.refreshData
             .receive(on: RunLoop.main)
-            .sink { [weak self] target in
-                guard let self else { return }
-                if let target, target != self.connection.id {
-                    return
-                }
-                if target == nil && !self.isKeyWindow() {
-                    return
-                }
-                self.handleRefreshData()
+            .sink { [weak self] changedConnectionId in
+                guard let self, changedConnectionId == self.connection.id,
+                      let coordinator = self.coordinator else { return }
+                coordinator.reloadActiveTableData(
+                    hasPendingTableOps: self.hasPendingTableOps,
+                    onDiscard: { [weak self] in self?.clearPendingTableOps() }
+                )
+                Task { await coordinator.refreshTables() }
             }
             .store(in: &eventCancellables)
-    }
-
-    private func handleRefreshData() {
-        let hasPendingTableOps = !pendingTruncates.wrappedValue.isEmpty || !pendingDeletes.wrappedValue.isEmpty
-        coordinator?.handleRefresh(
-            hasPendingTableOps: hasPendingTableOps,
-            onDiscard: { [weak self] in
-                self?.pendingTruncates.wrappedValue.removeAll()
-                self?.pendingDeletes.wrappedValue.removeAll()
-            }
-        )
-        if let coordinator {
-            Task { await coordinator.refreshTables() }
-        }
     }
 
     // MARK: Tab Broadcasts

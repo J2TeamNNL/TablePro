@@ -7,8 +7,42 @@
 //
 
 import Foundation
+import TableProPluginKit
+
+enum PostgreSQLSchemaProbe: Equatable {
+    case schema(String)
+    case empty
+    case failed
+}
 
 enum PostgreSQLSchemaQueries {
+    /// Returns the first schema on the effective search path, or SQL NULL
+    /// when the path is empty (neither `$user` nor `public` exists).
+    static let currentSchema = "SELECT current_schema()"
+
+    /// Like `current_schema()`, but resolves via `current_schemas(false)`,
+    /// which omits search path entries that do not correspond to existing,
+    /// searchable schemas.
+    static let firstSearchPathSchema = "SELECT current_schemas(false)[1]"
+
+    /// Queries tried in order when `current_schema()` resolves to NULL, so a
+    /// database without a `public` schema still gets a usable default schema
+    /// instead of silently showing no tables.
+    static let schemaFallbackQueries = [firstSearchPathSchema, listSchemas]
+
+    /// Redshift fallback: ends with the `USAGE`-filtered schema list so the
+    /// chosen default is one the connected role can actually read.
+    static let schemaFallbackQueriesRedshift = [firstSearchPathSchema, listSchemasRedshift]
+
+    /// Distinguishes a probe whose query failed (keep the prior schema, do
+    /// not fall back on a transient error) from one that succeeded with SQL
+    /// NULL (empty search path, try the next fallback query).
+    static func probe(rows: [[PluginCellValue]]?) -> PostgreSQLSchemaProbe {
+        guard let rows else { return .failed }
+        guard let schema = rows.first?.first?.asText, !schema.isEmpty else { return .empty }
+        return .schema(schema)
+    }
+
     /// Lists user-visible schemas, excluding PostgreSQL's built-in `pg_*`
     /// namespaces and `information_schema`.
     ///
@@ -78,9 +112,55 @@ enum PostgreSQLSchemaQueries {
 
     static func setSearchPath(toSchema schema: String) -> String {
         let quotedIdentifier = "\"\(schema.replacingOccurrences(of: "\"", with: "\"\""))\""
-        guard schema != "public" else {
-            return "SET search_path TO \(quotedIdentifier)"
-        }
-        return "SET search_path TO \(quotedIdentifier), public"
+        return "SET search_path TO \(quotedIdentifier)"
+    }
+
+    /// Column introspection for one schema. Passing `tableLiteral` restricts the
+    /// result to a single table; passing `nil` returns every table's columns and
+    /// prefixes each row with `table_name`. `schemaLiteral` is the only schema
+    /// source, so the caller resolves the target schema (qualified reference,
+    /// then current schema) before escaping and passing it here. The identity,
+    /// generated, and attribute-join fragments come from the connected server's
+    /// versioned capabilities.
+    static func columnsQuery(
+        schemaLiteral: String,
+        tableLiteral: String?,
+        identityProjection: String,
+        generatedProjection: String,
+        attributeJoin: String
+    ) -> String {
+        let shape = ColumnQueryShape.fragments(tableLiteral: tableLiteral)
+        return """
+            SELECT
+                \(shape.selectPrefix)c.column_name,
+                c.data_type,
+                c.is_nullable,
+                c.column_default,
+                c.collation_name,
+                pgd.description,
+                c.udt_name,
+                CASE WHEN pk.column_name IS NOT NULL THEN 'YES' ELSE 'NO' END AS is_pk,
+                \(identityProjection),
+                \(generatedProjection)
+            FROM information_schema.columns c
+            LEFT JOIN pg_catalog.pg_statio_all_tables st
+                ON st.schemaname = c.table_schema
+                AND st.relname = c.table_name
+            LEFT JOIN pg_catalog.pg_description pgd
+                ON pgd.objoid = st.relid
+                AND pgd.objsubid = c.ordinal_position
+            \(attributeJoin)
+            LEFT JOIN (
+                SELECT DISTINCT \(shape.pkSelect)
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu
+                    ON tc.constraint_name = kcu.constraint_name
+                    AND tc.table_schema = kcu.table_schema
+                WHERE tc.constraint_type = 'PRIMARY KEY'
+                    AND tc.table_schema = '\(schemaLiteral)'\(shape.pkTableFilter)
+            ) pk ON \(shape.pkJoin)
+            WHERE c.table_schema = '\(schemaLiteral)'\(shape.mainTableFilter)
+            ORDER BY \(shape.orderBy)
+            """
     }
 }

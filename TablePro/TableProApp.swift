@@ -237,7 +237,7 @@ struct AppMenuCommands: Commands {
         //    - Clean method calls, no global event bus
         //
         // 3. **NotificationCenter** (Multi-listener broadcasts only):
-        //    - refreshData (Sidebar + Coordinator + StructureView)
+        //    - refreshData: targeted per-connection data-changed signal
         //    - Legitimate broadcasts where multiple views respond
 
         // File menu
@@ -423,7 +423,7 @@ struct AppMenuCommands: Commands {
             .disabled(!(actions?.isQueryExecuting ?? false))
 
             Button("Refresh") {
-                AppCommands.shared.refreshData.send(nil)
+                actions?.refresh()
             }
             .optionalKeyboardShortcut(shortcut(for: .refresh))
             .disabled(!(actions?.isConnected ?? false))
@@ -767,11 +767,17 @@ struct TableProApp: App {
     @State private var commandRegistry = CommandActionsRegistry.shared
 
     init() {
+        AppSettingsStorage.shared.migrateStartupBehaviorToReopenLastIfNeeded()
         AIProviderRegistration.registerAll()
 
         // Perform startup cleanup of query history if auto-cleanup is enabled
         Task {
             await QueryHistoryManager.shared.performStartupCleanup()
+        }
+
+        Task { @MainActor in
+            let activeIds = Set(ConnectionStorage.shared.loadConnections().map(\.id))
+            await SQLFavoriteManager.shared.pruneOrphaned(activeConnectionIds: activeIds)
         }
     }
 

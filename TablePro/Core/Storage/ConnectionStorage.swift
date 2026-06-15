@@ -255,6 +255,12 @@ final class ConnectionStorage {
         appSettings.saveLastSchema(nil, for: connection.id)
 
         FavoriteTablesStorage.shared.removeFavorites(for: connection.id)
+        FilterSettingsStorage.shared.removeFilters(for: connection.id)
+        DatabaseTreeFilterStorage.shared.removeFilter(for: connection.id)
+        ClosedTabDraftStorage.shared.removeDraft(for: connection.id)
+        Task {
+            await SQLFavoriteManager.shared.removeFavoritesAndFolders(for: connection.id)
+        }
     }
 
     /// Batch-delete multiple connections and clean up their Keychain entries
@@ -283,6 +289,14 @@ final class ConnectionStorage {
             appSettings.saveLastDatabase(nil, for: conn.id)
             appSettings.saveLastSchema(nil, for: conn.id)
             FavoriteTablesStorage.shared.removeFavorites(for: conn.id)
+        }
+        FilterSettingsStorage.shared.removeFilters(for: idsToDelete)
+        DatabaseTreeFilterStorage.shared.removeFilters(for: idsToDelete)
+        ClosedTabDraftStorage.shared.removeDrafts(for: idsToDelete)
+        Task {
+            for conn in connectionsToDelete {
+                await SQLFavoriteManager.shared.removeFavoritesAndFolders(for: conn.id)
+            }
         }
     }
 
