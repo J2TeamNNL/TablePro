@@ -67,14 +67,6 @@ struct FilterPanelView: View {
         .onPreferenceChange(FilterRowsHeightKey.self) { filterRowsHeight = $0 }
     }
 
-    private var allFiltersCheckboxImage: String {
-        switch filterState.allEnabledState {
-        case .some(true): return "checkmark.square.fill"
-        case .some(false): return "square"
-        case .none: return "minus.square.fill"
-        }
-    }
-
     private func toggleAllFiltersEnabled() {
         let newState = filterState.allEnabledState != true
         for filter in filterState.filters {
@@ -87,12 +79,12 @@ struct FilterPanelView: View {
     private var filterHeader: some View {
         HStack(spacing: 8) {
             if !filterState.filters.isEmpty {
-                Button(action: toggleAllFiltersEnabled) {
-                    Image(systemName: allFiltersCheckboxImage)
-                        .foregroundStyle(.primary)
-                }
-                .buttonStyle(.plain)
+                TristateCheckbox(
+                    state: TristateCheckbox.State(allEnabled: filterState.allEnabledState),
+                    action: toggleAllFiltersEnabled
+                )
                 .help(String(localized: "Enable or disable all filters"))
+                .accessibilityLabel(String(localized: "Enable or disable all filters"))
             }
 
             Text("Filters")
