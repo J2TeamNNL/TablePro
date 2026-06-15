@@ -227,32 +227,46 @@ final class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
     }
 
     func fetchForeignKeys(table: String, schema: String?) async throws -> [PluginForeignKeyInfo] {
+        let schemaLiteral = escapeLiteral(schema ?? core.currentSchema)
         let query = """
             SELECT
-                tc.constraint_name,
-                kcu.column_name,
-                ccu.table_name AS referenced_table,
-                ccu.column_name AS referenced_column,
-                ccu.table_schema AS referenced_schema,
-                rc.delete_rule,
-                rc.update_rule
-            FROM information_schema.table_constraints tc
-            JOIN information_schema.key_column_usage kcu
-                ON tc.constraint_name = kcu.constraint_name
-                AND tc.table_schema = kcu.table_schema
-            JOIN information_schema.referential_constraints rc
-                ON tc.constraint_name = rc.constraint_name
-                AND tc.constraint_schema = rc.constraint_schema
-            JOIN information_schema.constraint_column_usage ccu
-                ON rc.unique_constraint_name = ccu.constraint_name
-                AND rc.unique_constraint_schema = ccu.constraint_schema
-            WHERE tc.table_name = '\(escapeLiteral(table))'
-                AND tc.table_schema = '\(escapedSchema)'
-                AND tc.constraint_type = 'FOREIGN KEY'
-            ORDER BY tc.constraint_name
+                con.conname,
+                src_col.attname,
+                ref_cl.relname AS referenced_table,
+                ref_col.attname AS referenced_column,
+                ref_ns.nspname AS referenced_schema,
+                CASE con.confdeltype
+                    WHEN 'c' THEN 'CASCADE'
+                    WHEN 'n' THEN 'SET NULL'
+                    WHEN 'd' THEN 'SET DEFAULT'
+                    WHEN 'r' THEN 'RESTRICT'
+                    ELSE 'NO ACTION'
+                END AS delete_rule,
+                CASE con.confupdtype
+                    WHEN 'c' THEN 'CASCADE'
+                    WHEN 'n' THEN 'SET NULL'
+                    WHEN 'd' THEN 'SET DEFAULT'
+                    WHEN 'r' THEN 'RESTRICT'
+                    ELSE 'NO ACTION'
+                END AS update_rule
+            FROM pg_catalog.pg_constraint con
+            JOIN pg_catalog.pg_class src_cl ON src_cl.oid = con.conrelid
+            JOIN pg_catalog.pg_namespace src_ns ON src_ns.oid = src_cl.relnamespace
+            JOIN pg_catalog.pg_class ref_cl ON ref_cl.oid = con.confrelid
+            JOIN pg_catalog.pg_namespace ref_ns ON ref_ns.oid = ref_cl.relnamespace
+            CROSS JOIN LATERAL unnest(con.conkey, con.confkey)
+                WITH ORDINALITY AS cols(src_attnum, ref_attnum, ord)
+            JOIN pg_catalog.pg_attribute src_col
+                ON src_col.attrelid = con.conrelid AND src_col.attnum = cols.src_attnum
+            JOIN pg_catalog.pg_attribute ref_col
+                ON ref_col.attrelid = con.confrelid AND ref_col.attnum = cols.ref_attnum
+            WHERE con.contype = 'f'
+                AND src_cl.relname = '\(escapeLiteral(table))'
+                AND src_ns.nspname = '\(schemaLiteral)'
+            ORDER BY con.conname, cols.ord
             """
         let result = try await execute(query: query)
-        return result.rows.compactMap { row -> PluginForeignKeyInfo? in
+        let foreignKeys: [PluginForeignKeyInfo] = result.rows.compactMap { row -> PluginForeignKeyInfo? in
             guard row.count >= 7,
                   let name = row[0].asText,
                   let column = row[1].asText,
@@ -269,32 +283,48 @@ final class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
                 onUpdate: row[6].asText ?? "NO ACTION"
             )
         }
+        Self.logger.info("[fk] postgres fetchForeignKeys schema=\(schema ?? self.core.currentSchema, privacy: .public) table=\(table, privacy: .public) rows=\(result.rows.count) parsed=\(foreignKeys.count)")
+        return foreignKeys
     }
 
     func fetchAllForeignKeys(schema: String?) async throws -> [String: [PluginForeignKeyInfo]] {
+        let schemaLiteral = escapeLiteral(schema ?? core.currentSchema)
         let query = """
             SELECT
-                tc.table_name,
-                tc.constraint_name,
-                kcu.column_name,
-                ccu.table_name AS referenced_table,
-                ccu.column_name AS referenced_column,
-                ccu.table_schema AS referenced_schema,
-                rc.delete_rule,
-                rc.update_rule
-            FROM information_schema.table_constraints tc
-            JOIN information_schema.key_column_usage kcu
-                ON tc.constraint_name = kcu.constraint_name
-                AND tc.table_schema = kcu.table_schema
-            JOIN information_schema.referential_constraints rc
-                ON tc.constraint_name = rc.constraint_name
-                AND tc.constraint_schema = rc.constraint_schema
-            JOIN information_schema.constraint_column_usage ccu
-                ON rc.unique_constraint_name = ccu.constraint_name
-                AND rc.unique_constraint_schema = ccu.constraint_schema
-            WHERE tc.table_schema = '\(escapedSchema)'
-                AND tc.constraint_type = 'FOREIGN KEY'
-            ORDER BY tc.table_name, tc.constraint_name
+                src_cl.relname AS table_name,
+                con.conname,
+                src_col.attname,
+                ref_cl.relname AS referenced_table,
+                ref_col.attname AS referenced_column,
+                ref_ns.nspname AS referenced_schema,
+                CASE con.confdeltype
+                    WHEN 'c' THEN 'CASCADE'
+                    WHEN 'n' THEN 'SET NULL'
+                    WHEN 'd' THEN 'SET DEFAULT'
+                    WHEN 'r' THEN 'RESTRICT'
+                    ELSE 'NO ACTION'
+                END AS delete_rule,
+                CASE con.confupdtype
+                    WHEN 'c' THEN 'CASCADE'
+                    WHEN 'n' THEN 'SET NULL'
+                    WHEN 'd' THEN 'SET DEFAULT'
+                    WHEN 'r' THEN 'RESTRICT'
+                    ELSE 'NO ACTION'
+                END AS update_rule
+            FROM pg_catalog.pg_constraint con
+            JOIN pg_catalog.pg_class src_cl ON src_cl.oid = con.conrelid
+            JOIN pg_catalog.pg_namespace src_ns ON src_ns.oid = src_cl.relnamespace
+            JOIN pg_catalog.pg_class ref_cl ON ref_cl.oid = con.confrelid
+            JOIN pg_catalog.pg_namespace ref_ns ON ref_ns.oid = ref_cl.relnamespace
+            CROSS JOIN LATERAL unnest(con.conkey, con.confkey)
+                WITH ORDINALITY AS cols(src_attnum, ref_attnum, ord)
+            JOIN pg_catalog.pg_attribute src_col
+                ON src_col.attrelid = con.conrelid AND src_col.attnum = cols.src_attnum
+            JOIN pg_catalog.pg_attribute ref_col
+                ON ref_col.attrelid = con.confrelid AND ref_col.attnum = cols.ref_attnum
+            WHERE con.contype = 'f'
+                AND src_ns.nspname = '\(schemaLiteral)'
+            ORDER BY src_cl.relname, con.conname, cols.ord
             """
         let result = try await execute(query: query)
         var grouped: [String: [PluginForeignKeyInfo]] = [:]
@@ -336,6 +366,8 @@ final class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
 
     func fetchTableDDL(table: String, schema: String?) async throws -> String {
         let safeTable = escapeLiteral(table)
+        let resolvedSchema = schema ?? core.currentSchema
+        let schemaLiteral = escapeLiteral(resolvedSchema)
         let quotedTable = quoteIdentifier(table)
         let caps = versionedCapabilities
 
@@ -382,7 +414,7 @@ final class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
             JOIN pg_namespace n ON n.oid = c.relnamespace
             LEFT JOIN pg_attrdef d ON d.adrelid = c.oid AND d.adnum = a.attnum
             WHERE c.relname = '\(safeTable)'
-              AND n.nspname = '\(escapedSchema)'
+              AND n.nspname = '\(schemaLiteral)'
               AND a.attnum > 0
               AND NOT a.attisdropped
             ORDER BY a.attnum
@@ -395,7 +427,7 @@ final class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
             JOIN pg_class c ON c.oid = con.conrelid
             JOIN pg_namespace n ON n.oid = c.relnamespace
             WHERE c.relname = '\(safeTable)'
-              AND n.nspname = '\(escapedSchema)'
+              AND n.nspname = '\(schemaLiteral)'
               AND con.contype IN ('p', 'u', 'c')
             ORDER BY
               CASE con.contype WHEN 'p' THEN 0 WHEN 'u' THEN 1 WHEN 'c' THEN 2 END
@@ -405,13 +437,13 @@ final class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
             SELECT indexdef
             FROM pg_indexes
             WHERE tablename = '\(safeTable)'
-              AND schemaname = '\(escapedSchema)'
+              AND schemaname = '\(schemaLiteral)'
               AND indexname NOT IN (
                 SELECT conname FROM pg_constraint
                 JOIN pg_class ON pg_class.oid = conrelid
                 JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
                 WHERE pg_class.relname = '\(safeTable)'
-                  AND pg_namespace.nspname = '\(escapedSchema)'
+                  AND pg_namespace.nspname = '\(schemaLiteral)'
               )
             ORDER BY indexname
             """
@@ -431,7 +463,7 @@ final class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
         var parts = columnDefs
         parts.append(contentsOf: constraints)
 
-        let quotedSchema = quoteIdentifier(core.currentSchema)
+        let quotedSchema = quoteIdentifier(resolvedSchema)
         let ddl = "CREATE TABLE \(quotedSchema).\(quotedTable) (\n  " +
             parts.joined(separator: ",\n  ") +
             "\n);"
@@ -442,11 +474,12 @@ final class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
     }
 
     func fetchViewDefinition(view: String, schema: String?) async throws -> String {
+        let schemaLiteral = escapeLiteral(schema ?? core.currentSchema)
         let query = """
             SELECT 'CREATE OR REPLACE VIEW ' || quote_ident(schemaname) || '.' || quote_ident(viewname) || ' AS ' || E'\\n' || definition AS ddl
             FROM pg_views
             WHERE viewname = '\(escapeLiteral(view))'
-              AND schemaname = '\(escapedSchema)'
+              AND schemaname = '\(schemaLiteral)'
             """
         let result = try await execute(query: query)
         guard let firstRow = result.rows.first, let ddl = firstRow[0].asText else {
@@ -456,6 +489,7 @@ final class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
     }
 
     func fetchTableMetadata(table: String, schema: String?) async throws -> PluginTableMetadata {
+        let schemaLiteral = escapeLiteral(schema ?? core.currentSchema)
         let query = """
             SELECT
                 pg_total_relation_size(c.oid) AS total_size,
@@ -466,7 +500,7 @@ final class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
             FROM pg_class c
             JOIN pg_namespace n ON n.oid = c.relnamespace
             WHERE c.relname = '\(escapeLiteral(table))'
-              AND n.nspname = '\(escapedSchema)'
+              AND n.nspname = '\(schemaLiteral)'
             """
         let result = try await execute(query: query)
         guard let row = result.rows.first else {
@@ -506,7 +540,9 @@ final class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
             SELECT
                 (SELECT COUNT(*)
                  FROM information_schema.tables
-                 WHERE table_schema = 'public' AND table_catalog = '\(escapedDbLiteral)'),
+                 WHERE table_catalog = '\(escapedDbLiteral)'
+                   AND table_schema NOT LIKE 'pg!_%' ESCAPE '!'
+                   AND table_schema <> 'information_schema'),
                 pg_database_size('\(escapedDbLiteral)')
         """
         let result = try await execute(query: query)
@@ -544,6 +580,7 @@ final class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
 
     func fetchDependentTypes(table: String, schema: String?) async throws -> [(name: String, labels: [String])] {
         let safeTable = escapeLiteral(table)
+        let schemaLiteral = escapeLiteral(schema ?? core.currentSchema)
         let query = """
             SELECT DISTINCT t.typname,
                    array_agg(e.enumlabel ORDER BY e.enumsortorder)
@@ -553,7 +590,7 @@ final class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
             JOIN pg_type t ON t.oid = a.atttypid
             JOIN pg_enum e ON e.enumtypid = t.oid
             WHERE c.relname = '\(safeTable)'
-              AND n.nspname = '\(escapedSchema)'
+              AND n.nspname = '\(schemaLiteral)'
               AND a.attnum > 0
               AND NOT a.attisdropped
             GROUP BY t.typname
@@ -572,6 +609,8 @@ final class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
     func fetchDependentSequences(table: String, schema: String?) async throws -> [(name: String, ddl: String)] {
         guard includesSequencesCatalog() else { return [] }
         let safeTable = escapeLiteral(table)
+        let schemaName = schema ?? core.currentSchema
+        let schemaLiteral = escapeLiteral(schemaName)
         let query = """
             SELECT s.sequencename,
                    s.start_value,
@@ -586,11 +625,10 @@ final class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
             JOIN pg_sequences s ON s.schemaname = n.nspname
                  AND pg_get_expr(ad.adbin, ad.adrelid) LIKE '%' || quote_ident(s.sequencename) || '%'
             WHERE c.relname = '\(safeTable)'
-              AND n.nspname = '\(escapedSchema)'
+              AND n.nspname = '\(schemaLiteral)'
               AND pg_get_expr(ad.adbin, ad.adrelid) LIKE '%nextval%'
             """
         let result = try await execute(query: query)
-        let schemaName = schema ?? core.currentSchema
         return result.rows.compactMap { row -> (name: String, ddl: String)? in
             guard let seqName = row[0].asText else { return nil }
             let startVal = row[1].asText ?? "1"

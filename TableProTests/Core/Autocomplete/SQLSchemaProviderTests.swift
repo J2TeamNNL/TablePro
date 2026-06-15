@@ -12,10 +12,14 @@ import Testing
 
 // MARK: - Mock Driver
 
-final class MockDatabaseDriver: DatabaseDriver, @unchecked Sendable {
+final class MockDatabaseDriver: DatabaseDriver, SchemaSwitchable, @unchecked Sendable {
     let connection: DatabaseConnection
     var status: ConnectionStatus = .connected
     var serverVersion: String? { nil }
+
+    var currentSchema: String?
+    var escapedSchema: String?
+    var switchSchemaCallCount = 0
 
     var tablesToReturn: [TableInfo] = []
     var schemaTablesToReturn: [String: [TableInfo]] = [:]
@@ -24,6 +28,7 @@ final class MockDatabaseDriver: DatabaseDriver, @unchecked Sendable {
     var fetchColumnsCalls: [String] = []
     var fetchSchemaTablesCalls: [String] = []
     var applyQueryTimeoutValues: [Int] = []
+    var cancelQueryCallCount = 0
 
     init(connection: DatabaseConnection = TestFixtures.makeConnection()) {
         self.connection = connection
@@ -94,10 +99,15 @@ final class MockDatabaseDriver: DatabaseDriver, @unchecked Sendable {
     }
 
     func createDatabase(name: String, charset: String, collation: String?) async throws {}
-    func cancelQuery() throws {}
+    func cancelQuery() throws { cancelQueryCallCount += 1 }
     func beginTransaction() async throws {}
     func commitTransaction() async throws {}
     func rollbackTransaction() async throws {}
+
+    func switchSchema(to schema: String) async throws {
+        switchSchemaCallCount += 1
+        currentSchema = schema
+    }
 }
 
 // MARK: - Tests

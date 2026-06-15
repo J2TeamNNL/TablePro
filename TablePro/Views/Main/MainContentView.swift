@@ -278,14 +278,6 @@ struct MainContentView: View {
                 databaseType: connection.type,
                 onExecute: coordinator.executeMaintenance
             )
-        case .quickSwitcher:
-            QuickSwitcherSheet(
-                isPresented: dismissBinding,
-                schemaProvider: SchemaProviderRegistry.shared.getOrCreate(for: connection.id),
-                connectionId: connection.id,
-                databaseType: connection.type,
-                onSelect: coordinator.handleQuickSwitcherSelection
-            )
         case .sqlPreview:
             SQLReviewSheet(
                 isPresented: dismissBinding,
@@ -304,7 +296,8 @@ struct MainContentView: View {
             pendingTruncates: pendingTruncates,
             pendingDeletes: pendingDeletes,
             hasStructureChanges: toolbarState.hasStructureChanges,
-            isFileDirty: tabManager.selectedTab?.content.isFileDirty ?? false
+            isFileDirty: tabManager.selectedTab?.content.isFileDirty ?? false,
+            hasCreateTablePending: toolbarState.hasCreateTablePending
         )
     }
 
@@ -469,9 +462,6 @@ struct MainContentView: View {
             },
             onClearFilters: {
                 coordinator.clearFiltersAndReload()
-            },
-            onRefresh: {
-                coordinator.runQuery()
             },
             onFirstPage: {
                 coordinator.goToFirstPage()

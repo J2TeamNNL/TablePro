@@ -6633,6 +6633,9 @@
         }
       }
     },
+    "All Types" : {
+
+    },
     "Allow" : {
       "localizations" : {
         "tr" : {
@@ -7056,6 +7059,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "外部链接要应用筛选条件：\n\n%@"
+          }
+        }
+      }
+    },
+    "An external link wants to connect to a %@ database:\n\n%@\n\nConnect only if you trust the source of this link." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "An external link wants to connect to a %1$@ database:\n\n%2$@\n\nConnect only if you trust the source of this link."
           }
         }
       }
@@ -7944,6 +7957,12 @@
           }
         }
       }
+    },
+    "Are you sure you want to delete \"%@\"? Saved queries linked to this connection will also be deleted." : {
+
+    },
+    "Are you sure you want to delete %lld connections? Saved queries linked to these connections will also be deleted. This cannot be undone." : {
+
     },
     "Are you sure you want to delete %lld connections? This cannot be undone." : {
       "localizations" : {
@@ -29626,6 +29645,9 @@
         }
       }
     },
+    "Host: %@" : {
+
+    },
     "Hostname" : {
       "localizations" : {
         "tr" : {
@@ -32988,6 +33010,12 @@
         }
       }
     },
+    "Key pattern" : {
+
+    },
+    "Key pattern, e.g. user:*" : {
+
+    },
     "Key Prefix Root" : {
       "localizations" : {
         "tr" : {
@@ -34717,6 +34745,9 @@
         }
       }
     },
+    "Load Query" : {
+
+    },
     "Load Table Template" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -35079,6 +35110,7 @@
       }
     },
     "Loading..." : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -39498,6 +39530,7 @@
       }
     },
     "No matching objects" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -39656,6 +39689,7 @@
       }
     },
     "No objects found" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -39678,6 +39712,7 @@
       }
     },
     "No objects match \"%@\"" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -39854,6 +39889,9 @@
           }
         }
       }
+    },
+    "No results for \"%@\"" : {
+
     },
     "No rows" : {
       "localizations" : {
@@ -41754,6 +41792,9 @@
         }
       }
     },
+    "Open External Database Connection?" : {
+
+    },
     "Open File" : {
       "localizations" : {
         "tr" : {
@@ -41819,6 +41860,9 @@
           }
         }
       }
+    },
+    "Open in New Tab" : {
+
     },
     "Open in Window" : {
       "localizations" : {
@@ -42066,6 +42110,9 @@
           }
         }
       }
+    },
+    "Open Structure" : {
+
     },
     "Open Table" : {
       "comment" : "A context menu option to open a table in the main view.",
@@ -51800,6 +51847,9 @@
         }
       }
     },
+    "Saved Queries" : {
+
+    },
     "Saved Query" : {
       "localizations" : {
         "tr" : {
@@ -52493,7 +52543,11 @@
         }
       }
     },
+    "Search tables, views, databases, queries..." : {
+
+    },
     "Search tables, views, databases..." : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -54295,6 +54349,9 @@
           }
         }
       }
+    },
+    "Show all results" : {
+
     },
     "Show All Rows" : {
       "localizations" : {
@@ -57939,6 +57996,9 @@
         }
       }
     },
+    "Switch" : {
+
+    },
     "switch %@" : {
 
     },
@@ -58239,6 +58299,9 @@
           }
         }
       }
+    },
+    "Switch to Tab" : {
+
     },
     "Switch to this database before executing" : {
       "localizations" : {
@@ -62675,6 +62738,7 @@
       }
     },
     "Token '%@' with permission '%@' cannot access '%@'" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -65025,6 +65089,9 @@
           }
         }
       }
+    },
+    "User: %@" : {
+
     },
     "username" : {
       "localizations" : {
