@@ -99,7 +99,14 @@ final class SidebarViewModel {
             )
         }
     }
-    var isRecentsExpanded: Bool = true
+    var isRecentsExpanded: Bool {
+        didSet {
+            UserDefaults.standard.set(
+                isRecentsExpanded,
+                forKey: SidebarPersistenceKey.recentsExpanded(connectionId: connectionId)
+            )
+        }
+    }
     var redisKeyTreeViewModel: RedisKeyTreeViewModel?
     var showOperationDialog = false
     var pendingOperationType: TableOperationType?
@@ -166,6 +173,10 @@ final class SidebarViewModel {
             legacyKey: SidebarPersistenceKey.legacyRedisKeysExpanded,
             defaultValue: true
         )
+        let recentsKey = SidebarPersistenceKey.recentsExpanded(connectionId: connectionId)
+        self.isRecentsExpanded = UserDefaults.standard.object(forKey: recentsKey) != nil
+            ? UserDefaults.standard.bool(forKey: recentsKey)
+            : true
     }
 
     private static func loadInitialExpansion(connectionId: UUID) -> ExpansionState {
