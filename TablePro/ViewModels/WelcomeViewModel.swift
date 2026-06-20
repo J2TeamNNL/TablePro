@@ -47,6 +47,7 @@ final class WelcomeViewModel {
     var showOnboarding: Bool
     var connectionsToDelete: [DatabaseConnection] = []
     var showDeleteConfirmation = false
+    var pendingDeleteHasFavorites = false
     var showDeleteGroupConfirmation = false
     var groupToDelete: ConnectionGroup?
     var pendingMoveToNewGroup: [DatabaseConnection] = []
@@ -359,6 +360,16 @@ final class WelcomeViewModel {
 
     // MARK: - Delete
 
+    func requestDeleteConnections(_ targets: [DatabaseConnection]) {
+        guard !targets.isEmpty else { return }
+        connectionsToDelete = targets
+        pendingDeleteHasFavorites = false
+        showDeleteConfirmation = true
+        Task {
+            pendingDeleteHasFavorites = await services.sqlFavoriteManager.hasFavorites(for: targets.map(\.id))
+        }
+    }
+
     func deleteSelectedConnections() {
         let idsToDelete = Set(connectionsToDelete.map(\.id))
         storage.deleteConnections(connectionsToDelete)
@@ -439,6 +450,22 @@ final class WelcomeViewModel {
             connections = storage.loadConnections()
             rebuildTree()
             return
+        }
+        rebuildTree()
+    }
+
+    func createGroup(name: String, color: ConnectionColor, parentId: UUID?) {
+        let group = ConnectionGroup(name: name, color: color, parentId: parentId)
+        groupStorage.addGroup(group)
+        groups = groupStorage.loadGroups()
+        guard groups.contains(where: { $0.id == group.id }) else { return }
+        expandedGroupIds.insert(group.id)
+        if let parentId {
+            expandedGroupIds.insert(parentId)
+        }
+        if !pendingMoveToNewGroup.isEmpty {
+            moveConnections(pendingMoveToNewGroup, toGroup: group.id)
+            pendingMoveToNewGroup = []
         }
         rebuildTree()
     }

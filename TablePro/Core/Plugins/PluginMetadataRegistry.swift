@@ -54,6 +54,8 @@ struct PluginMetadataSnapshot: Sendable {
         var supportsAddIndex: Bool = true
         var supportsDropIndex: Bool = true
         var supportsModifyPrimaryKey: Bool = true
+        var supportsTriggers: Bool = false
+        var supportsTriggerEditing: Bool = false
         var defaultSSLMode: SSLMode = .disabled
         var supportsOpportunisticTLS: Bool = true
         var supportsCloudflareTunnel: Bool = true
@@ -88,6 +90,7 @@ struct PluginMetadataSnapshot: Sendable {
         let defaultSchemaName: String
         let defaultGroupName: String
         let tableEntityName: String
+        let containerEntityName: String
         let defaultPrimaryKeyColumn: String?
         let immutableColumns: [String]
         let systemDatabaseNames: [String]
@@ -100,6 +103,7 @@ struct PluginMetadataSnapshot: Sendable {
             defaultSchemaName: "public",
             defaultGroupName: "main",
             tableEntityName: "Tables",
+            containerEntityName: "Database",
             defaultPrimaryKeyColumn: nil,
             immutableColumns: [],
             systemDatabaseNames: [],
@@ -447,12 +451,15 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                     requiresReconnectForDatabaseSwitch: false,
                     supportsDropDatabase: true,
                     supportsRenameColumn: true,
+                    supportsTriggers: true,
+                    supportsTriggerEditing: true,
                     defaultSSLMode: .preferred
                 ),
                 schema: PluginMetadataSnapshot.SchemaInfo(
                     defaultSchemaName: "public",
                     defaultGroupName: "main",
                     tableEntityName: "Tables",
+                    containerEntityName: "Database",
                     defaultPrimaryKeyColumn: nil,
                     immutableColumns: [],
                     systemDatabaseNames: ["information_schema", "mysql", "performance_schema", "sys"],
@@ -495,12 +502,15 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                     requiresReconnectForDatabaseSwitch: false,
                     supportsDropDatabase: true,
                     supportsRenameColumn: true,
+                    supportsTriggers: true,
+                    supportsTriggerEditing: true,
                     defaultSSLMode: .preferred
                 ),
                 schema: PluginMetadataSnapshot.SchemaInfo(
                     defaultSchemaName: "public",
                     defaultGroupName: "main",
                     tableEntityName: "Tables",
+                    containerEntityName: "Database",
                     defaultPrimaryKeyColumn: nil,
                     immutableColumns: [],
                     systemDatabaseNames: ["information_schema", "mysql", "performance_schema", "sys"],
@@ -544,12 +554,15 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                     requiresReconnectForDatabaseSwitch: true,
                     supportsDropDatabase: true,
                     supportsRenameColumn: true,
+                    supportsTriggers: true,
+                    supportsTriggerEditing: true,
                     defaultSSLMode: .preferred
                 ),
                 schema: PluginMetadataSnapshot.SchemaInfo(
                     defaultSchemaName: "public",
                     defaultGroupName: "main",
                     tableEntityName: "Tables",
+                    containerEntityName: "Database",
                     defaultPrimaryKeyColumn: nil,
                     immutableColumns: [],
                     systemDatabaseNames: ["postgres", "template0", "template1"],
@@ -598,6 +611,7 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                     defaultSchemaName: "public",
                     defaultGroupName: "main",
                     tableEntityName: "Tables",
+                    containerEntityName: "Database",
                     defaultPrimaryKeyColumn: nil,
                     immutableColumns: [],
                     systemDatabaseNames: ["postgres", "template0", "template1"],
@@ -658,6 +672,7 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                     defaultSchemaName: "public",
                     defaultGroupName: "main",
                     tableEntityName: "Tables",
+                    containerEntityName: "Database",
                     defaultPrimaryKeyColumn: nil,
                     immutableColumns: [],
                     systemDatabaseNames: ["postgres", "system", "defaultdb"],
@@ -702,12 +717,15 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                     supportsModifyColumn: false,
                     supportsRenameColumn: true,
                     supportsModifyPrimaryKey: false,
+                    supportsTriggers: true,
+                    supportsTriggerEditing: true,
                     supportsCloudflareTunnel: false
                 ),
                 schema: PluginMetadataSnapshot.SchemaInfo(
                     defaultSchemaName: "public",
                     defaultGroupName: "main",
                     tableEntityName: "Tables",
+                    containerEntityName: "Database",
                     defaultPrimaryKeyColumn: nil,
                     immutableColumns: [],
                     systemDatabaseNames: [],
@@ -886,6 +904,8 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                 supportsAddIndex: driverType.supportsAddIndex,
                 supportsDropIndex: driverType.supportsDropIndex,
                 supportsModifyPrimaryKey: driverType.supportsModifyPrimaryKey,
+                supportsTriggers: driverType.supportsTriggers,
+                supportsTriggerEditing: driverType.supportsTriggerEditing,
                 defaultSSLMode: existingSnapshot?.capabilities.defaultSSLMode ?? .disabled,
                 supportsOpportunisticTLS: existingSnapshot?.capabilities.supportsOpportunisticTLS ?? true,
                 supportsCloudflareTunnel: driverType.supportsSSH,
@@ -895,6 +915,7 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                 defaultSchemaName: driverType.defaultSchemaName,
                 defaultGroupName: driverType.defaultGroupName,
                 tableEntityName: driverType.tableEntityName,
+                containerEntityName: driverType.containerEntityName,
                 defaultPrimaryKeyColumn: driverType.defaultPrimaryKeyColumn,
                 immutableColumns: driverType.immutableColumns,
                 systemDatabaseNames: driverType.systemDatabaseNames,

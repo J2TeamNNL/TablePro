@@ -26,6 +26,7 @@ enum AppLanguage: String, Codable, CaseIterable, Identifiable {
     case english = "en"
     case vietnamese = "vi"
     case chineseSimplified = "zh-Hans"
+    case chineseTraditional = "zh-Hant"
     case turkish = "tr"
 
     var id: String { rawValue }
@@ -36,6 +37,7 @@ enum AppLanguage: String, Codable, CaseIterable, Identifiable {
         case .english: return "English"
         case .vietnamese: return "Tiếng Việt"
         case .chineseSimplified: return "简体中文"
+        case .chineseTraditional: return "繁體中文"
         case .turkish: return "Türkçe"
         }
     }
@@ -65,7 +67,7 @@ struct GeneralSettings: Codable, Equatable {
     var showRecentTables: Bool
 
     static let `default` = GeneralSettings(
-        startupBehavior: .showWelcome,
+        startupBehavior: .reopenLast,
         language: .system,
         automaticallyCheckForUpdates: true,
         queryTimeoutSeconds: 60,
@@ -74,7 +76,7 @@ struct GeneralSettings: Codable, Equatable {
     )
 
     init(
-        startupBehavior: StartupBehavior = .showWelcome,
+        startupBehavior: StartupBehavior = .reopenLast,
         language: AppLanguage = .system,
         automaticallyCheckForUpdates: Bool = true,
         queryTimeoutSeconds: Int = 60,

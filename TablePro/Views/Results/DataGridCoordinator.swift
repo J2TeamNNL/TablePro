@@ -1,7 +1,10 @@
 import AppKit
 import Combine
+import os
 import SwiftUI
 import TableProPluginKit
+
+private let fkTraceLogger = Logger(subsystem: "com.TablePro", category: "DataGrid")
 
 // MARK: - Coordinator
 
@@ -106,7 +109,6 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
     let cellFactory = DataGridCellFactory()
     let cellRegistry: DataGridCellRegistry
     let columnPool = DataGridColumnPool()
-    let tableRowsController = TableRowsController()
     let selectionController = GridSelectionController()
     var overlayEditor: CellOverlayEditor?
     var overlayViewer: CellOverlayViewer?
@@ -231,7 +233,6 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
             }
             tableView.reloadData()
         }
-        tableRowsController.detach()
         delegate = nil
         activeFKPreviewPopover?.close()
         clearFKPreviewState()
@@ -630,6 +631,7 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
     func refreshForeignKeyColumns() {
         guard let tableView else { return }
         let tableRows = tableRowsProvider()
+        rebuildKindSets(from: tableRows)
         let fkColumnIndices = IndexSet(
             tableView.tableColumns.enumerated().compactMap { displayIndex, tableColumn in
                 guard tableColumn.identifier != ColumnIdentitySchema.rowNumberIdentifier,
@@ -689,6 +691,11 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
             }
         }
         enumOrSetColumns = enumSet
+        if fkSet != fkColumns {
+            fkTraceLogger.info(
+                "[fk] grid columns=\(columns.count) fkColumns=\(fkSet.count) fkMeta=\(fkKeys.count)"
+            )
+        }
         fkColumns = fkSet
     }
 
@@ -704,7 +711,7 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
     // MARK: - NSTableViewDataSource
 
     func numberOfRows(in tableView: NSTableView) -> Int {
-        sortedIDs?.count ?? tableRowsProvider().count
+        sortedIDs?.count ?? cachedRowCount
     }
 }
 

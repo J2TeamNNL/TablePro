@@ -44,6 +44,8 @@ final class OraclePlugin: NSObject, TableProPlugin, DriverPlugin, PluginDiagnost
     // MARK: - UI/Capability Metadata
 
     static let isDownloadable = true
+    static let supportsTriggers = true
+    static let supportsTriggerEditing = true
     static let pathFieldRole: PathFieldRole = .serviceName
     static let supportsForeignKeyDisable = false
     static let supportsSchemaSwitching = true
@@ -158,6 +160,16 @@ final class OraclePlugin: NSObject, TableProPlugin, DriverPlugin, PluginDiagnost
                     String(localized: "Upgrade the database to 11.2 or later, or connect with a client that bundles Oracle's OCI client such as SQL Developer or DataGrip.")
                 ],
                 supportURL: issuesURL
+            )
+        case .protocolError:
+            return PluginDiagnostic(
+                title: String(localized: "Connection Reset"),
+                message: oracleError.message,
+                suggestedActions: [
+                    String(localized: "Run the query again. TablePro reconnects to the server automatically."),
+                    String(localized: "If the same query keeps failing, the server may be returning data the driver cannot decode. File an issue with your Oracle version.")
+                ],
+                supportURL: URL(string: "https://github.com/TableProApp/TablePro/issues/483")
             )
         case .generic, .notConnected, .connectionFailed, .queryFailed:
             return nil
@@ -465,6 +477,69 @@ final class OraclePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
                 onUpdate: "NO ACTION"
             )
         }
+    }
+
+    func fetchTriggers(table: String, schema: String?) async throws -> [PluginTriggerInfo] {
+        let escapedTable = table.replacingOccurrences(of: "'", with: "''")
+        let escaped = effectiveSchemaEscaped(schema)
+        let sql = """
+            SELECT TRIGGER_NAME, TRIGGER_TYPE, TRIGGERING_EVENT, STATUS, WHEN_CLAUSE
+            FROM ALL_TRIGGERS
+            WHERE TABLE_OWNER = '\(escaped)'
+              AND TABLE_NAME = '\(escapedTable)'
+            ORDER BY TRIGGER_NAME
+            """
+        let result = try await execute(query: sql)
+        return result.rows.compactMap { row -> PluginTriggerInfo? in
+            guard let name = row[safe: 0]?.asText else { return nil }
+            let triggerType = (row[safe: 1]?.asText ?? "").uppercased()
+            let event = row[safe: 2]?.asText ?? ""
+            let timing: String
+            if triggerType.contains("INSTEAD OF") {
+                timing = "INSTEAD OF"
+            } else if triggerType.hasPrefix("BEFORE") {
+                timing = "BEFORE"
+            } else {
+                timing = "AFTER"
+            }
+            let isRowLevel = triggerType.contains("EACH ROW")
+            let enabled = (row[safe: 3]?.asText ?? "").uppercased() == "ENABLED"
+            let whenClause = row[safe: 4]?.asText
+            let quotedName = "\"\(name.replacingOccurrences(of: "\"", with: "\"\""))\""
+            let quotedTable = "\"\(table.replacingOccurrences(of: "\"", with: "\"\""))\""
+            let forEach = isRowLevel ? " FOR EACH ROW" : ""
+            let whenLine = (whenClause?.isEmpty == false) ? "\n    WHEN (\(whenClause ?? ""))" : ""
+            let statement = """
+                CREATE OR REPLACE TRIGGER \(quotedName)
+                    \(timing) \(event) ON \(quotedTable)\(forEach)\(whenLine)
+                """
+            return PluginTriggerInfo(
+                name: name,
+                timing: timing,
+                event: event,
+                statement: statement,
+                enabled: enabled
+            )
+        }
+    }
+
+    var triggerEditUsesReplace: Bool { true }
+
+    func createTriggerTemplate(table: String, schema: String?) -> String? {
+        let quotedTable = "\"\(table.replacingOccurrences(of: "\"", with: "\"\""))\""
+        return """
+        CREATE OR REPLACE TRIGGER \("\"TRIGGER_NAME\"")
+        BEFORE INSERT ON \(quotedTable)
+        FOR EACH ROW
+        BEGIN
+            -- :NEW.column := ...;
+            NULL;
+        END;
+        """
+    }
+
+    func generateDropTriggerSQL(name: String, table: String, schema: String?) -> String? {
+        "DROP TRIGGER \"\(name.replacingOccurrences(of: "\"", with: "\"\""))\""
     }
 
     func fetchAllColumns(schema: String?) async throws -> [String: [PluginColumnInfo]] {

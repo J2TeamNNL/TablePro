@@ -11,46 +11,6 @@ import Observation
 import SwiftUI
 import TableProPluginKit
 
-// MARK: - Connection Environment
-
-/// Represents the connection environment type for visual badges
-enum ConnectionEnvironment: String, CaseIterable {
-    case local = "LOCAL"
-    case ssh = "SSH"
-    case production = "PROD"
-    case staging = "STAGING"
-
-    /// SF Symbol for this environment type
-    var iconName: String {
-        switch self {
-        case .local: return "house.fill"
-        case .ssh: return "lock.fill"
-        case .production: return "exclamationmark.triangle.fill"
-        case .staging: return "testtube.2"
-        }
-    }
-
-    /// Badge background color
-    var backgroundColor: Color {
-        switch self {
-        case .local: return .gray.opacity(0.3)
-        case .ssh: return .orange.opacity(0.3)
-        case .production: return .red.opacity(0.3)
-        case .staging: return .blue.opacity(0.3)
-        }
-    }
-
-    /// Badge foreground color
-    var foregroundColor: Color {
-        switch self {
-        case .local: return .secondary
-        case .ssh: return .orange
-        case .production: return .red
-        case .staging: return .blue
-        }
-    }
-}
-
 // MARK: - Connection State
 
 /// Represents the current state of the database connection
@@ -196,6 +156,9 @@ final class ConnectionToolbarState {
     /// Whether the structure view has pending schema changes
     var hasStructureChanges: Bool = false
 
+    /// Whether the Create Table tab has a committable definition (name + valid column)
+    var hasCreateTablePending: Bool = false
+
     /// Whether the current editor has non-empty query text
     var hasQueryText: Bool = false
 
@@ -235,6 +198,10 @@ final class ConnectionToolbarState {
             }
             return currentDatabase
         case .byDatabase, .flat, .hierarchicalSchema:
+            if PluginManager.shared.containerSwitchTarget(for: databaseType) == .schema,
+               let schema = currentSchema, !schema.isEmpty {
+                return schema
+            }
             return currentDatabase
         }
     }

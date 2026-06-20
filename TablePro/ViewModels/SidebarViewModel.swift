@@ -10,6 +10,7 @@ import TableProPluginKit
 @MainActor @Observable
 final class SidebarViewModel {
     private static var registry: [UUID: SidebarViewModel] = [:]
+    private static let searchDebounceNanoseconds: UInt64 = 150_000_000
 
     static func shared(
         connectionId: UUID,
@@ -78,8 +79,15 @@ final class SidebarViewModel {
     // MARK: - Published State
 
     var searchText = "" {
+        didSet { scheduleFilterQueryUpdate(oldValue: oldValue) }
+    }
+
+    private(set) var filterQuery = "" {
         didSet { invalidateFilterCaches() }
     }
+
+    @ObservationIgnored private var filterDebounceTask: Task<Void, Never>?
+
     var expanded: ExpansionState {
         didSet { persistExpansion(oldValue: oldValue) }
     }
@@ -330,7 +338,7 @@ final class SidebarViewModel {
     }
 
     func filteredTables(from tables: [TableInfo]) -> [TableInfo] {
-        let query = searchText
+        let query = filterQuery
         let fingerprint = (count: tables.count, generation: schemaGeneration, query: query)
         if let cache = cachedFilteredTables,
            let inputs = cachedFilterInputs,
@@ -341,7 +349,7 @@ final class SidebarViewModel {
         if query.isEmpty {
             result = tables
         } else {
-            result = tables.filter { $0.name.localizedCaseInsensitiveContains(query) }
+            result = tables.filter { FuzzyMatcher.matches(query: query, candidate: $0.name) }
         }
         cachedFilteredTables = result
         cachedFilterInputs = fingerprint
@@ -360,7 +368,7 @@ final class SidebarViewModel {
     }
 
     func filteredTables(of kind: SidebarObjectKind, from tables: [TableInfo]) -> [TableInfo] {
-        let query = searchText
+        let query = filterQuery
         let fingerprint = (count: tables.count, generation: schemaGeneration, query: query)
         if cachedFilteredByKindFingerprint?.count != fingerprint.count
             || cachedFilteredByKindFingerprint?.generation != fingerprint.generation
@@ -379,7 +387,7 @@ final class SidebarViewModel {
     }
 
     func filteredRoutines(of kind: SidebarObjectKind, from routines: [RoutineInfo]) -> [RoutineInfo] {
-        let query = searchText
+        let query = filterQuery
         let fingerprint = (count: routines.count, generation: schemaGeneration, query: query)
         if cachedFilteredRoutinesFingerprint?.count != fingerprint.count
             || cachedFilteredRoutinesFingerprint?.generation != fingerprint.generation
@@ -394,18 +402,18 @@ final class SidebarViewModel {
     }
 
     func effectiveExpanded(kind: SidebarObjectKind, hasMatches: Bool) -> Bool {
-        if !searchText.isEmpty && hasMatches { return true }
+        if !filterQuery.isEmpty && hasMatches { return true }
         return expanded[kind]
     }
 
     private func applyQuery(_ query: String, to tables: [TableInfo]) -> [TableInfo] {
         guard !query.isEmpty else { return tables }
-        return tables.filter { $0.name.localizedCaseInsensitiveContains(query) }
+        return tables.filter { FuzzyMatcher.matches(query: query, candidate: $0.name) }
     }
 
     private func applyRoutineQuery(_ query: String, to routines: [RoutineInfo]) -> [RoutineInfo] {
         guard !query.isEmpty else { return routines }
-        return routines.filter { $0.name.localizedCaseInsensitiveContains(query) }
+        return routines.filter { FuzzyMatcher.matches(query: query, candidate: $0.name) }
     }
 
     private func rebuildKindBuckets(from tables: [TableInfo]) {
@@ -436,5 +444,25 @@ final class SidebarViewModel {
         cachedFilteredByKindFingerprint = nil
         cachedFilteredRoutines = [:]
         cachedFilteredRoutinesFingerprint = nil
+    }
+
+    private func scheduleFilterQueryUpdate(oldValue: String) {
+        if searchText.isEmpty || oldValue.isEmpty {
+            filterDebounceTask?.cancel()
+            filterDebounceTask = nil
+            filterQuery = searchText
+            return
+        }
+        filterDebounceTask?.cancel()
+        filterDebounceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: Self.searchDebounceNanoseconds)
+            guard !Task.isCancelled else { return }
+            guard let self else { return }
+            self.filterQuery = self.searchText
+        }
+    }
+
+    deinit {
+        filterDebounceTask?.cancel()
     }
 }

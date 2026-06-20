@@ -65,7 +65,7 @@ struct ConnectionSharingTests {
             #expect(link.contains("sshHost=bastion.com"))
             #expect(link.contains("sshPort=2222"))
             #expect(link.contains("sshUsername=deploy"))
-            #expect(link.contains("sshAuthMethod=privateKey"))
+            #expect(link.contains("sshAuthMethod=Private%20Key"))
         }
 
         @Test("Omits SSH when disabled")
@@ -111,7 +111,7 @@ struct ConnectionSharingTests {
                 sslConfig: ssl
             )
             let link = ConnectionExportService.buildImportDeeplink(for: conn)!
-            #expect(link.contains("sslMode=required"))
+            #expect(link.contains("sslMode=Required"))
             #expect(link.contains("sslCaCertPath="))
         }
 
@@ -137,7 +137,7 @@ struct ConnectionSharingTests {
                 aiPolicy: .never
             )
             let link = ConnectionExportService.buildImportDeeplink(for: conn)!
-            #expect(link.contains("color=red"))
+            #expect(link.contains("color=Red"))
             #expect(link.contains("safeModeLevel=readOnly"))
             #expect(link.contains("aiPolicy=never"))
         }
@@ -351,7 +351,7 @@ struct ConnectionSharingTests {
             #expect(parsed.sshConfig?.host == "bastion.prod.com")
             #expect(parsed.sshConfig?.port == 2222)
             #expect(parsed.sshConfig?.username == "deploy")
-            #expect(parsed.sshConfig?.authMethod == "privateKey")
+            #expect(parsed.sshConfig?.authMethod == "Private Key")
             #expect(parsed.sshConfig?.privateKeyPath == "~/.ssh/prod_key")
             #expect(parsed.sshConfig?.agentSocketPath == "/tmp/agent.sock")
         }
@@ -377,7 +377,7 @@ struct ConnectionSharingTests {
                 return
             }
             #expect(parsed.sslConfig != nil)
-            #expect(parsed.sslConfig?.mode == "verifyCa")
+            #expect(parsed.sslConfig?.mode == "Verify CA")
             #expect(parsed.sslConfig?.caCertificatePath == "~/certs/ca.pem")
             #expect(parsed.sslConfig?.clientCertificatePath == "~/certs/client.pem")
             #expect(parsed.sslConfig?.clientKeyPath == "~/certs/client.key")
@@ -401,7 +401,7 @@ struct ConnectionSharingTests {
                 Issue.record("Failed to parse round-trip link")
                 return
             }
-            #expect(parsed.color == "red")
+            #expect(parsed.color == "Red")
             #expect(parsed.safeModeLevel == "readOnly")
             #expect(parsed.aiPolicy == "never")
             #expect(parsed.startupCommands == "SET statement_timeout = 30000;")
@@ -524,19 +524,58 @@ struct ConnectionSharingTests {
             #expect(parsed.sshConfig?.host == "bastion.prod.com")
             #expect(parsed.sshConfig?.port == 2222)
             #expect(parsed.sshConfig?.username == "deploy")
-            #expect(parsed.sshConfig?.authMethod == "privateKey")
+            #expect(parsed.sshConfig?.authMethod == "Private Key")
             #expect(parsed.sshConfig?.jumpHosts?.count == 1)
             #expect(parsed.sshConfig?.jumpHosts?.first?.host == "jump1.com")
 
-            #expect(parsed.sslConfig?.mode == "verifyCa")
+            #expect(parsed.sslConfig?.mode == "Verify CA")
             #expect(parsed.sslConfig?.caCertificatePath == "~/certs/ca.pem")
 
-            #expect(parsed.color == "red")
+            #expect(parsed.color == "Red")
             #expect(parsed.safeModeLevel == "readOnly")
             #expect(parsed.aiPolicy == "never")
             #expect(parsed.startupCommands == "SET statement_timeout = 30000;")
             #expect(parsed.localOnly == true)
             #expect(parsed.additionalFields?["schema"] == "public")
+        }
+    }
+
+    // MARK: - Import Sanitization
+
+    @Suite("Import Sanitization")
+    struct ImportSanitizationTests {
+
+        @Test("Deeplink import drops preConnectScript but keeps benign fields")
+        @MainActor
+        func testDeeplinkImportDropsPreConnectScript() {
+            var components = URLComponents()
+            components.scheme = "tablepro"
+            components.host = "import"
+            components.queryItems = [
+                URLQueryItem(name: "name", value: "Evil"),
+                URLQueryItem(name: "host", value: "localhost"),
+                URLQueryItem(name: "port", value: "3306"),
+                URLQueryItem(name: "type", value: "MySQL"),
+                URLQueryItem(name: "af_preConnectScript", value: "touch /tmp/pwned"),
+                URLQueryItem(name: "af_mongoAuthSource", value: "admin")
+            ]
+            guard let url = components.url else {
+                Issue.record("Failed to build import URL")
+                return
+            }
+            guard case .success(.importConnection(let parsed)) = DeeplinkParser.parse(url) else {
+                Issue.record("Failed to parse import link")
+                return
+            }
+
+            #expect(parsed.additionalFields?["preConnectScript"] == nil)
+            #expect(parsed.additionalFields?["mongoAuthSource"] == "admin")
+
+            let connection = ConnectionExportService.buildDatabaseConnection(
+                id: UUID(), from: parsed, name: parsed.name,
+                tagIdsByName: [:], groupIdsByName: [:]
+            )
+            #expect(connection.preConnectScript == nil)
         }
     }
 }

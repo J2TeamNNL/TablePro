@@ -285,6 +285,8 @@ extension PluginMetadataRegistry {
             "Enum": ["ENUM"]
         ]
 
+        let duckdbConnectionFields = Self.duckdbConnectionFields
+
         let cassandraDialect = SQLDialectDescriptor(
             identifierQuote: "\"",
             keywords: [
@@ -535,6 +537,7 @@ extension PluginMetadataRegistry {
                     defaultSchemaName: "public",
                     defaultGroupName: "main",
                     tableEntityName: "Collections",
+                    containerEntityName: "Database",
                     defaultPrimaryKeyColumn: "_id",
                     immutableColumns: ["_id"],
                     systemDatabaseNames: ["admin", "local", "config"],
@@ -617,6 +620,7 @@ extension PluginMetadataRegistry {
                     defaultSchemaName: "public",
                     defaultGroupName: "db0",
                     tableEntityName: "Keys",
+                    containerEntityName: "Database",
                     defaultPrimaryKeyColumn: "Key",
                     immutableColumns: [],
                     systemDatabaseNames: [],
@@ -673,6 +677,7 @@ extension PluginMetadataRegistry {
                     defaultSchemaName: "dbo",
                     defaultGroupName: "main",
                     tableEntityName: "Tables",
+                    containerEntityName: "Database",
                     defaultPrimaryKeyColumn: nil,
                     immutableColumns: [],
                     systemDatabaseNames: ["master", "tempdb", "model", "msdb"],
@@ -726,6 +731,7 @@ extension PluginMetadataRegistry {
                     defaultSchemaName: "public",
                     defaultGroupName: "main",
                     tableEntityName: "Tables",
+                    containerEntityName: "Database",
                     defaultPrimaryKeyColumn: nil,
                     immutableColumns: [],
                     systemDatabaseNames: [
@@ -787,6 +793,7 @@ extension PluginMetadataRegistry {
                     defaultSchemaName: "public",
                     defaultGroupName: "main",
                     tableEntityName: "Tables",
+                    containerEntityName: "Database",
                     defaultPrimaryKeyColumn: nil,
                     immutableColumns: [],
                     systemDatabaseNames: ["information_schema", "INFORMATION_SCHEMA", "system"],
@@ -806,18 +813,18 @@ extension PluginMetadataRegistry {
                 )
             )),
             ("DuckDB", PluginMetadataSnapshot(
-                displayName: "DuckDB", iconName: "duckdb-icon", defaultPort: 0,
+                displayName: "DuckDB", iconName: "duckdb-icon", defaultPort: 9_494,
                 requiresAuthentication: false, supportsForeignKeys: true, supportsSchemaEditing: true,
                 isDownloadable: true, primaryUrlScheme: "duckdb", parameterStyle: .dollar,
                 navigationModel: .standard,
                 explainVariants: [
                     ExplainVariant(id: "explain", label: "EXPLAIN", sqlPrefix: "EXPLAIN"),
                 ],
-                pathFieldRole: .filePath,
-                supportsHealthMonitor: false, urlSchemes: ["duckdb"], postConnectActions: [],
+                pathFieldRole: .database,
+                supportsHealthMonitor: false, urlSchemes: ["duckdb", "quack"], postConnectActions: [],
                 brandColorHex: "#FFD900",
                 queryLanguageName: "SQL", editorLanguage: .sql,
-                connectionMode: .fileBased, supportsDatabaseSwitching: false,
+                connectionMode: .apiOnly, supportsDatabaseSwitching: false,
                 supportsColumnReorder: false,
                 capabilities: PluginMetadataSnapshot.CapabilityFlags(
                     supportsSchemaSwitching: false,
@@ -837,6 +844,7 @@ extension PluginMetadataRegistry {
                     defaultSchemaName: "public",
                     defaultGroupName: "main",
                     tableEntityName: "Tables",
+                    containerEntityName: "Database",
                     defaultPrimaryKeyColumn: nil,
                     immutableColumns: [],
                     systemDatabaseNames: ["information_schema", "pg_catalog"],
@@ -851,8 +859,9 @@ extension PluginMetadataRegistry {
                     columnTypesByCategory: duckdbColumnTypes
                 ),
                 connection: PluginMetadataSnapshot.ConnectionConfig(
+                    additionalConnectionFields: duckdbConnectionFields,
                     category: .analytical,
-                    tagline: String(localized: "Embedded analytical SQL")
+                    tagline: String(localized: "Embedded and remote analytical SQL")
                 )
             )),
             ("Cassandra", PluginMetadataSnapshot(
@@ -889,6 +898,7 @@ extension PluginMetadataRegistry {
                     defaultSchemaName: "public",
                     defaultGroupName: "default",
                     tableEntityName: "Tables",
+                    containerEntityName: "Keyspace",
                     defaultPrimaryKeyColumn: nil,
                     immutableColumns: [],
                     systemDatabaseNames: [
@@ -952,6 +962,7 @@ extension PluginMetadataRegistry {
                     defaultSchemaName: "public",
                     defaultGroupName: "default",
                     tableEntityName: "Tables",
+                    containerEntityName: "Keyspace",
                     defaultPrimaryKeyColumn: nil,
                     immutableColumns: [],
                     systemDatabaseNames: [
@@ -1009,6 +1020,7 @@ extension PluginMetadataRegistry {
                     defaultSchemaName: "public",
                     defaultGroupName: "main",
                     tableEntityName: "Keys",
+                    containerEntityName: "Database",
                     defaultPrimaryKeyColumn: "Key",
                     immutableColumns: ["Version", "ModRevision", "CreateRevision"],
                     systemDatabaseNames: [],
@@ -1094,6 +1106,7 @@ extension PluginMetadataRegistry {
                     defaultSchemaName: "main",
                     defaultGroupName: "main",
                     tableEntityName: "Tables",
+                    containerEntityName: "Database",
                     defaultPrimaryKeyColumn: nil,
                     immutableColumns: [],
                     systemDatabaseNames: [],
@@ -1153,6 +1166,7 @@ extension PluginMetadataRegistry {
                     defaultSchemaName: "main",
                     defaultGroupName: "main",
                     tableEntityName: "Tables",
+                    containerEntityName: "Database",
                     defaultPrimaryKeyColumn: nil,
                     immutableColumns: [],
                     systemDatabaseNames: [],

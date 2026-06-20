@@ -15,11 +15,15 @@ struct QueryFetchResult {
     let resultColumnMeta: [ResultColumnMeta]?
 }
 
-typealias SchemaResult = (columnInfo: [ColumnInfo], fkInfo: [ForeignKeyInfo], approximateRowCount: Int?)
+struct FetchedTableSchema {
+    let columns: [ColumnInfo]
+    let foreignKeys: [ForeignKeyInfo]?
+    let approximateRowCount: Int?
+}
 
 struct ParsedSchemaMetadata {
     let columnDefaults: [String: String?]
-    let columnForeignKeys: [String: ForeignKeyInfo]
+    let columnForeignKeys: [String: ForeignKeyInfo]?
     let columnNullable: [String: Bool]
     let primaryKeyColumns: [String]
     let approximateRowCount: Int?
@@ -117,28 +121,55 @@ final class QueryExecutor {
 
     // MARK: - Schema fetch + parse
 
-    static func fetchTableSchema(connectionId: UUID, tableName: String) async throws -> SchemaResult {
-        try await DatabaseManager.shared.withMetadataDriver(connectionId: connectionId) { driver in
+    static func fetchTableSchema(connectionId: UUID, tableName: String) async throws -> FetchedTableSchema {
+        let session = DatabaseManager.shared.session(for: connectionId)
+        queryExecutorLog.info(
+            "[fk] schema fetch start table=\(tableName, privacy: .public) db=\(session?.currentDatabase ?? "default", privacy: .public) schema=\(session?.currentSchema ?? "default", privacy: .public)"
+        )
+        let (columns, approximateRowCount) = try await DatabaseManager.shared.withMetadataDriver(
+            connectionId: connectionId
+        ) { driver in
             let columns = try await driver.fetchColumns(table: tableName)
-            let foreignKeys = try await driver.fetchForeignKeys(table: tableName)
             let approximateRowCount = try? await driver.fetchApproximateRowCount(table: tableName)
-            return (columnInfo: columns, fkInfo: foreignKeys, approximateRowCount: approximateRowCount)
+            return (columns, approximateRowCount)
+        }
+        let foreignKeys = await fetchForeignKeys(connectionId: connectionId, tableName: tableName)
+        queryExecutorLog.info(
+            "[fk] schema fetch done table=\(tableName, privacy: .public) columns=\(columns.count) fks=\(foreignKeys.map { String($0.count) } ?? "failed", privacy: .public)"
+        )
+        return FetchedTableSchema(columns: columns, foreignKeys: foreignKeys, approximateRowCount: approximateRowCount)
+    }
+
+    private static func fetchForeignKeys(connectionId: UUID, tableName: String) async -> [ForeignKeyInfo]? {
+        do {
+            return try await DatabaseManager.shared.withMetadataDriver(connectionId: connectionId) { driver in
+                try await driver.fetchForeignKeys(table: tableName)
+            }
+        } catch {
+            queryExecutorLog.error(
+                "[fk] FK fetch failed for \(tableName, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            return nil
         }
     }
 
-    static func parseSchemaMetadata(_ schema: SchemaResult) -> ParsedSchemaMetadata {
+    static func parseSchemaMetadata(_ schema: FetchedTableSchema) -> ParsedSchemaMetadata {
         var defaults: [String: String?] = [:]
-        var fks: [String: ForeignKeyInfo] = [:]
         var nullable: [String: Bool] = [:]
-        for col in schema.columnInfo {
+        for col in schema.columns {
             defaults[col.name] = col.defaultValue
             nullable[col.name] = col.isNullable
         }
-        for fk in schema.fkInfo {
-            fks[fk.column] = fk
+        var fks: [String: ForeignKeyInfo]?
+        if let foreignKeys = schema.foreignKeys {
+            var byColumn: [String: ForeignKeyInfo] = [:]
+            for fk in foreignKeys {
+                byColumn[fk.column] = fk
+            }
+            fks = byColumn
         }
         var enumValues: [String: [String]] = [:]
-        for col in schema.columnInfo {
+        for col in schema.columns {
             if let values = col.allowedValues, !values.isEmpty {
                 enumValues[col.name] = values
             }
@@ -147,7 +178,7 @@ final class QueryExecutor {
             columnDefaults: defaults,
             columnForeignKeys: fks,
             columnNullable: nullable,
-            primaryKeyColumns: schema.columnInfo.filter { $0.isPrimaryKey }.map(\.name),
+            primaryKeyColumns: schema.columns.filter { $0.isPrimaryKey }.map(\.name),
             approximateRowCount: schema.approximateRowCount,
             columnEnumValues: enumValues
         )
@@ -165,7 +196,7 @@ final class QueryExecutor {
         }
         return ParsedSchemaMetadata(
             columnDefaults: [:],
-            columnForeignKeys: [:],
+            columnForeignKeys: nil,
             columnNullable: nullable,
             primaryKeyColumns: primaryKeys,
             approximateRowCount: nil,

@@ -363,7 +363,7 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
         let result = try await execute(query: query)
 
-        return result.rows.compactMap { row in
+        let foreignKeys: [PluginForeignKeyInfo] = result.rows.compactMap { row in
             guard let name = row[safe: 0]?.asText,
                   let column = row[safe: 1]?.asText,
                   let refTable = row[safe: 2]?.asText,
@@ -378,6 +378,61 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
                 onUpdate: (row[safe: 6]?.asText) ?? "NO ACTION"
             )
         }
+        Self.logger.info("[fk] mysql fetchForeignKeys db=\(dbName, privacy: .public) table=\(table, privacy: .public) rows=\(result.rows.count) parsed=\(foreignKeys.count)")
+        return foreignKeys
+    }
+
+    func fetchTriggers(table: String, schema: String?) async throws -> [PluginTriggerInfo] {
+        let dbName = _activeDatabase
+        let escapedDb = dbName.replacingOccurrences(of: "'", with: "''")
+        let escapedTable = table.replacingOccurrences(of: "'", with: "''")
+
+        let query = """
+            SELECT TRIGGER_NAME, ACTION_TIMING, EVENT_MANIPULATION, ACTION_STATEMENT
+            FROM information_schema.TRIGGERS
+            WHERE EVENT_OBJECT_SCHEMA = '\(escapedDb)'
+                AND EVENT_OBJECT_TABLE = '\(escapedTable)'
+            ORDER BY TRIGGER_NAME
+            """
+
+        let result = try await execute(query: query)
+
+        let triggers: [PluginTriggerInfo] = result.rows.compactMap { row in
+            guard let name = row[safe: 0]?.asText,
+                  let timing = row[safe: 1]?.asText,
+                  let event = row[safe: 2]?.asText,
+                  let body = row[safe: 3]?.asText
+            else { return nil }
+
+            let statement = """
+                CREATE TRIGGER \(quoteIdentifier(name)) \(timing) \(event)
+                ON \(quoteIdentifier(table)) FOR EACH ROW
+                \(body)
+                """
+
+            return PluginTriggerInfo(
+                name: name,
+                timing: timing,
+                event: event,
+                statement: statement
+            )
+        }
+        Self.logger.info("[trigger] mysql fetchTriggers db=\(dbName, privacy: .public) table=\(table, privacy: .public) rows=\(result.rows.count) parsed=\(triggers.count)")
+        return triggers
+    }
+
+    func createTriggerTemplate(table: String, schema: String?) -> String? {
+        """
+        CREATE TRIGGER \(quoteIdentifier("trigger_name")) BEFORE INSERT
+        ON \(quoteIdentifier(table)) FOR EACH ROW
+        BEGIN
+            -- SET NEW.column = ...;
+        END
+        """
+    }
+
+    func generateDropTriggerSQL(name: String, table: String, schema: String?) -> String? {
+        "DROP TRIGGER \(quoteIdentifier(name))"
     }
 
     func fetchAllForeignKeys(schema: String?) async throws -> [String: [PluginForeignKeyInfo]] {
@@ -587,14 +642,8 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     // MARK: - Query Timeout
 
     func applyQueryTimeout(_ seconds: Int) async throws {
-        guard seconds > 0 else { return }
         do {
-            if isMariaDB {
-                _ = try await execute(query: "SET SESSION max_statement_time = \(seconds)")
-            } else {
-                let ms = seconds * 1_000
-                _ = try await execute(query: "SET SESSION max_execution_time = \(ms)")
-            }
+            _ = try await execute(query: mysqlQueryTimeoutStatement(seconds: seconds, isMariaDB: isMariaDB))
         } catch {
             Self.logger.warning("Failed to set query timeout: \(error.localizedDescription)")
         }
