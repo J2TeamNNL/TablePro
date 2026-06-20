@@ -42,16 +42,4 @@ final class RecentTablesStore {
     func entries(connectionID: UUID, database: String?) -> [Entry] {
         entriesByKey[Key(connectionID: connectionID, database: database)] ?? []
     }
-
-    func clear(connectionID: UUID, database: String?) {
-        entriesByKey.removeValue(forKey: Key(connectionID: connectionID, database: database))
-        NotificationCenter.default.post(name: .recentTablesDidChange, object: nil)
-    }
-
-    func clearAll() {
-        entriesByKey.removeAll()
-        NotificationCenter.default.post(name: .recentTablesDidChange, object: nil)
-    }
-
-    var cappedSize: Int { cap }
 }

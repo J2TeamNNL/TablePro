@@ -43,7 +43,7 @@ struct RecentTablesStoreTests {
             store.push(connectionID: conn, database: "db", table: makeTable("t\(index)"))
         }
         let entries = store.entries(connectionID: conn, database: "db")
-        #expect(entries.count == store.cappedSize)
+        #expect(entries.count == 10)
         #expect(entries.first?.name == "t14")
         #expect(entries.last?.name == "t5")
     }
@@ -72,17 +72,6 @@ struct RecentTablesStoreTests {
         #expect(entries.count == 2)
     }
 
-    @Test("Clear removes all entries for a key")
-    func clearKey() {
-        let store = makeStore()
-        let conn = UUID()
-        store.push(connectionID: conn, database: "db", table: makeTable("a"))
-        store.push(connectionID: conn, database: "other", table: makeTable("b"))
-        store.clear(connectionID: conn, database: "db")
-        #expect(store.entries(connectionID: conn, database: "db").isEmpty)
-        #expect(store.entries(connectionID: conn, database: "other").map(\.name) == ["b"])
-    }
-
     @Test("Nil database key is distinct from empty-string database")
     func nilDatabaseDistinctFromEmpty() {
         let store = makeStore()
@@ -91,17 +80,5 @@ struct RecentTablesStoreTests {
         store.push(connectionID: conn, database: "postgres", table: makeTable("pg_table"))
         #expect(store.entries(connectionID: conn, database: nil).map(\.name) == ["sqlite_table"])
         #expect(store.entries(connectionID: conn, database: "postgres").map(\.name) == ["pg_table"])
-    }
-
-    @Test("ClearAll empties every key")
-    func clearAllEmptiesEveryKey() {
-        let store = makeStore()
-        let connA = UUID()
-        let connB = UUID()
-        store.push(connectionID: connA, database: "db", table: makeTable("a"))
-        store.push(connectionID: connB, database: nil, table: makeTable("b"))
-        store.clearAll()
-        #expect(store.entries(connectionID: connA, database: "db").isEmpty)
-        #expect(store.entries(connectionID: connB, database: nil).isEmpty)
     }
 }

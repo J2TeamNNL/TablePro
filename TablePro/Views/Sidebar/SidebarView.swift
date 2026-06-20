@@ -331,22 +331,22 @@ struct SidebarView: View {
 
     // MARK: - Table List
 
-    private var filteredRecents: [RecentTablesStore.Entry] {
+    private var recentTableInfos: [TableInfo] {
         let search = viewModel.searchText
-        guard !search.isEmpty else { return recentTables }
-        return recentTables.filter { $0.name.localizedCaseInsensitiveContains(search) }
+        return recentTables.compactMap { entry in
+            guard let match = tables.first(where: { $0.name == entry.name && $0.schema == entry.schema }) else {
+                return nil
+            }
+            if !search.isEmpty, !match.name.localizedCaseInsensitiveContains(search) {
+                return nil
+            }
+            return match
+        }
     }
 
     private var activeDatabase: String? {
         let name = coordinator?.activeDatabaseName ?? ""
         return name.isEmpty ? nil : name
-    }
-
-    private func tableInfo(forRecent entry: RecentTablesStore.Entry) -> TableInfo {
-        if let match = tables.first(where: { $0.name == entry.name && $0.schema == entry.schema }) {
-            return match
-        }
-        return TableInfo(name: entry.name, type: entry.type, rowCount: nil, schema: entry.schema)
     }
 
     private func isFavorite(_ table: TableInfo) -> Bool {
@@ -380,11 +380,10 @@ struct SidebarView: View {
 
     @ViewBuilder
     private var recentSection: some View {
-        let recents = filteredRecents
+        let recents = recentTableInfos
         if settingsManager.general.showRecentTables, !recents.isEmpty {
             Section(isExpanded: $viewModel.isRecentsExpanded) {
-                ForEach(recents) { entry in
-                    let info = tableInfo(forRecent: entry)
+                ForEach(recents) { info in
                     TableRow(
                         table: info,
                         isPendingTruncate: pendingTruncates.contains(info.name),
@@ -394,7 +393,7 @@ struct SidebarView: View {
                     )
                     .selectionDisabled()
                     .contentShape(Rectangle())
-                    .onTapGesture {
+                    .onTapGesture(count: 2) {
                         onDoubleClick?(info)
                     }
                     .contextMenu {
