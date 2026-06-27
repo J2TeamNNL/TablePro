@@ -19,13 +19,9 @@ extension TableViewCoordinator {
         guard let delta = recordCellEdit(row: row, columnIndex: columnIndex, newValue: typedNewValue) else { return }
 
         invalidateDisplayCache()
-        visualIndex.updateRow(row, from: changeManager, sortedIDs: sortedIDs)
+        visualIndex.updateRow(row, from: changeManager, sortedIDs: displayIDs)
 
-        guard let tableColumnIndex = DataGridView.tableColumnIndex(
-            for: columnIndex,
-            in: tableView,
-            schema: identitySchema
-        ) else { return }
+        guard let tableColumnIndex = tableColumnIndex(for: columnIndex) else { return }
         tableView.reloadData(
             forRowIndexes: IndexSet(integer: row),
             columnIndexes: IndexSet(integer: tableColumnIndex)

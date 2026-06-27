@@ -7,6 +7,7 @@ import AppKit
 import Combine
 import os
 import SwiftUI
+import TableProImport
 import TableProPluginKit
 
 enum WelcomeActiveSheet: Identifiable {
@@ -41,6 +42,7 @@ final class WelcomeViewModel {
 
     var connections: [DatabaseConnection] = []
     var searchText = "" { didSet { scheduleRebuildTree(oldValue: oldValue) } }
+    var tagFilter = TagFilter() { didSet { if tagFilter != oldValue { rebuildTree() } } }
     var selectedConnectionIds: Set<UUID> = []
     var groups: [ConnectionGroup] = []
     var linkedConnections: [LinkedConnection] = []
@@ -103,13 +105,22 @@ final class WelcomeViewModel {
     private(set) var depthByGroup: [UUID: Int] = [:]
     private(set) var maxDescendantDepthByGroup: [UUID: Int] = [:]
 
+    var availableTags: [ConnectionTag] {
+        let usedIds = Set(connections.flatMap { $0.tagIds })
+        return TagStorage.shared.loadTags().filter { usedIds.contains($0.id) }
+    }
+
     func rebuildTree() {
         favoriteConnections = connections
             .filter(\.isFavorite)
+            .filter { tagFilter.matches($0) }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
 
-        let tree = buildGroupTree(groups: groups, connections: connections, parentId: nil)
-        let baseItems = searchText.isEmpty ? tree : filterGroupTree(tree, searchText: searchText)
+        let (tree, indices) = buildGroupTreeWithIndices(groups: groups, connections: connections)
+        var baseItems = searchText.isEmpty ? tree : filterGroupTree(tree, searchText: searchText)
+        if tagFilter.isActive {
+            baseItems = filterGroupTreeByTags(baseItems, filter: tagFilter)
+        }
         if searchText.isEmpty, !favoriteConnections.isEmpty {
             treeItems = baseItems.filter { node in
                 if case .connection(let conn) = node, conn.isFavorite { return false }
@@ -119,17 +130,9 @@ final class WelcomeViewModel {
             treeItems = baseItems
         }
 
-        var counts: [UUID: Int] = [:]
-        var depths: [UUID: Int] = [:]
-        var descendantDepths: [UUID: Int] = [:]
-        for group in groups {
-            counts[group.id] = connectionCount(in: group.id, connections: connections, groups: groups)
-            depths[group.id] = depthOf(groupId: group.id, groups: groups)
-            descendantDepths[group.id] = maxDescendantDepth(groupId: group.id, groups: groups)
-        }
-        connectionCountByGroup = counts
-        depthByGroup = depths
-        maxDescendantDepthByGroup = descendantDepths
+        connectionCountByGroup = indices.connectionCountByGroup
+        depthByGroup = indices.depthByGroup
+        maxDescendantDepthByGroup = indices.maxDescendantDepthByGroup
     }
 
     private func scheduleRebuildTree(oldValue: String) {
@@ -160,7 +163,11 @@ final class WelcomeViewModel {
 
     // MARK: - Initialization
 
-    init(services: AppServices = .live) {
+    convenience init() {
+        self.init(services: .live)
+    }
+
+    init(services: AppServices) {
         self.services = services
         self.showOnboarding = !services.appSettingsStorage.hasCompletedOnboarding()
     }
@@ -376,6 +383,16 @@ final class WelcomeViewModel {
         connections.removeAll { idsToDelete.contains($0.id) }
         selectedConnectionIds.subtract(idsToDelete)
         connectionsToDelete = []
+        rebuildTree()
+    }
+
+    // MARK: - Tags
+
+    func deleteTag(_ tag: ConnectionTag) {
+        guard !tag.isPreset else { return }
+        TagStorage.shared.deleteTag(tag, clearingFrom: storage)
+        connections = storage.loadConnections()
+        tagFilter.selectedIds.remove(tag.id)
         rebuildTree()
     }
 

@@ -5,6 +5,7 @@
 
 import os
 import SwiftUI
+import TableProImport
 import UniformTypeIdentifiers
 
 struct WelcomeWindowView: View {
@@ -222,6 +223,10 @@ struct WelcomeWindowView: View {
         VStack(spacing: 0) {
             connectionsHeader
             Divider()
+            if !vm.availableTags.isEmpty {
+                TagFilterBar(tagFilter: $vm.tagFilter, availableTags: vm.availableTags)
+                Divider()
+            }
             ZStack {
                 if vm.treeItems.isEmpty && vm.linkedConnections.isEmpty && vm.favoriteConnections.isEmpty {
                     emptyState

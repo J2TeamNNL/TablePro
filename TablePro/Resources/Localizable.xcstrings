@@ -2433,6 +2433,9 @@
         }
       }
     },
+    "%d connections" : {
+
+    },
     "%d connections found" : {
       "localizations" : {
         "tr" : {
@@ -3791,6 +3794,9 @@
           }
         }
       }
+    },
+    "+%lld" : {
+
     },
     "<1ms" : {
       "localizations" : {
@@ -7183,6 +7189,9 @@
           }
         }
       }
+    },
+    "Add tags" : {
+
     },
     "Add the JSON below inside the file and save" : {
       "localizations" : {
@@ -12710,6 +12719,7 @@
       }
     },
     "CA certificate not found: %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -15745,6 +15755,7 @@
       }
     },
     "Client certificate not found: %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -15914,6 +15925,7 @@
       }
     },
     "Client key not found: %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -21936,6 +21948,9 @@
         }
       }
     },
+    "Create Trigger" : {
+
+    },
     "Create your own slash commands. Use {{query}}, {{schema}}, {{database}}, or {{body}} in the template to insert chat context at runtime." : {
       "localizations" : {
         "tr" : {
@@ -23808,6 +23823,7 @@
       }
     },
     "Database type \"%@\" is not installed" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -24429,6 +24445,7 @@
       }
     },
     "Decryption failed: %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -27808,6 +27825,12 @@
         }
       }
     },
+    "Drop Trigger" : {
+
+    },
+    "Drop trigger “%@”?" : {
+
+    },
     "Drop View" : {
       "localizations" : {
         "tr" : {
@@ -27866,6 +27889,7 @@
       }
     },
     "DuckLake Data Path" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -28832,6 +28856,9 @@
           }
         }
       }
+    },
+    "Edit Trigger" : {
+
     },
     "Edit Values..." : {
       "localizations" : {
@@ -33093,6 +33120,7 @@
       }
     },
     "Failed to encode connection data" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -33892,6 +33920,7 @@
       }
     },
     "Failed to parse connection file: %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -40054,6 +40083,7 @@
       }
     },
     "Incorrect passphrase" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -42142,6 +42172,7 @@
       }
     },
     "Jump host key not found: %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -45207,6 +45238,7 @@
       }
     },
     "Loading schemas…" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -46113,6 +46145,9 @@
         }
       }
     },
+    "Match All" : {
+
+    },
     "Match ALL filters (AND) or ANY filter (OR)" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -46197,6 +46232,9 @@
           }
         }
       }
+    },
+    "Match Any" : {
+
     },
     "matches regex" : {
       "localizations" : {
@@ -49424,6 +49462,9 @@
         }
       }
     },
+    "New Trigger" : {
+
+    },
     "New View" : {
       "localizations" : {
         "tr" : {
@@ -51727,6 +51768,7 @@
       }
     },
     "No schemas" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -53303,6 +53345,9 @@
           }
         }
       }
+    },
+    "Off by default. Turn it on to encrypt saved passwords with a passphrase." : {
+
     },
     "Offset" : {
       "extractionState" : "stale",
@@ -56313,6 +56358,7 @@
       }
     },
     "Passwords will be encrypted with the passphrase you provide." : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -62747,7 +62793,11 @@
         }
       }
     },
+    "Remote (Quack, experimental)" : {
+
+    },
     "Remote (Quack)" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -67429,6 +67479,7 @@
       }
     },
     "Schema: %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -67624,6 +67675,9 @@
           }
         }
       }
+    },
+    "Search and analytics engine" : {
+
     },
     "Search columns..." : {
       "localizations" : {
@@ -71876,6 +71930,9 @@
         }
       }
     },
+    "Skip TLS Verification" : {
+
+    },
     "Skips foreign key constraint checks for this operation" : {
       "localizations" : {
         "tr" : {
@@ -73521,6 +73578,7 @@
       }
     },
     "SSH private key not found: %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -77142,6 +77200,7 @@
       }
     },
     "Tag: %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -77168,6 +77227,12 @@
           }
         }
       }
+    },
+    "Tags" : {
+
+    },
+    "Tags: %@" : {
+
     },
     "Template" : {
       "extractionState" : "stale",
@@ -78107,6 +78172,7 @@
       }
     },
     "The encrypted file is corrupt or incomplete" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -79026,6 +79092,9 @@
         }
       }
     },
+    "This database cannot drop triggers" : {
+
+    },
     "This database has no %@ yet." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -79283,6 +79352,7 @@
       }
     },
     "This file is encrypted and requires a passphrase" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -79311,6 +79381,7 @@
       }
     },
     "This file is not a valid TablePro export" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -79339,6 +79410,7 @@
       }
     },
     "This file requires a newer version of TablePro (format version %d)" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -81966,6 +82038,9 @@
         }
       }
     },
+    "Trigger operation failed" : {
+
+    },
     "Triggers" : {
       "localizations" : {
         "tr" : {
@@ -83404,6 +83479,7 @@
       }
     },
     "Unsupported encryption version %d" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {
@@ -84246,6 +84322,9 @@
         }
       }
     },
+    "Use at least 8 characters" : {
+
+    },
     "Use clipboard URL" : {
       "localizations" : {
         "tr" : {
@@ -84303,6 +84382,7 @@
       }
     },
     "Use DuckLake" : {
+      "extractionState" : "stale",
       "localizations" : {
         "tr" : {
           "stringUnit" : {

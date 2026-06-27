@@ -148,7 +148,7 @@ struct DataGridView: NSViewRepresentable {
         coordinator.changeManager = changeManager
 
         let latestRows = tableRowsProvider()
-        let rowDisplayCount = sortedIDs?.count ?? latestRows.count
+        let rowDisplayCount = coordinator.valueFilteredIDs?.count ?? sortedIDs?.count ?? latestRows.count
         let columnCount = latestRows.columns.count
         let settings = AppSettingsManager.shared.dataGrid
         let rowHeight = CGFloat(settings.rowHeight.rawValue)
@@ -159,6 +159,7 @@ struct DataGridView: NSViewRepresentable {
             columnCount: columnCount,
             columns: latestRows.columns,
             sortedIDsCount: sortedIDs?.count,
+            valueFilteredIDsCount: coordinator.valueFilteredIDs?.count,
             displayFormats: displayFormats,
             configuration: configuration,
             isEditable: isEditable,
@@ -259,7 +260,9 @@ struct DataGridView: NSViewRepresentable {
         coordinator.primaryKeyColumns = configuration.primaryKeyColumns
         coordinator.tabType = configuration.tabType
 
-        coordinator.visualIndex.rebuild(from: coordinator.changeManager, sortedIDs: coordinator.sortedIDs)
+        coordinator.recomputeValueFilteredIDs()
+        coordinator.updateCache()
+        coordinator.visualIndex.rebuild(from: coordinator.changeManager, sortedIDs: coordinator.displayIDs)
 
         if !latestRows.columns.isEmpty {
             coordinator.isRebuildingColumns = true
@@ -271,11 +274,14 @@ struct DataGridView: NSViewRepresentable {
                 savedLayout: savedLayout
             )
             coordinator.isRebuildingColumns = false
+            coordinator.invalidateColumnIndexCache()
 
             if savedLayout == nil {
                 coordinator.scheduleLayoutPersist()
             }
         }
+
+        coordinator.updateValueFilterHeaderIndicators()
 
         if needsFullReload {
             coordinator.selectionController.clear()
@@ -364,6 +370,7 @@ struct DataGridView: NSViewRepresentable {
         let headerCell = SortableHeaderCell(textCell: "#")
         headerCell.font = defaultHeaderFont
         headerCell.alignment = .right
+        headerCell.supportsValueFilter = false
         headerCell.setAccessibilityLabel(String(localized: "Row number"))
         column.headerCell = headerCell
         return column
@@ -398,16 +405,6 @@ struct DataGridView: NSViewRepresentable {
 
     static func isDataTableColumn(_ tableColumnIndex: Int) -> Bool {
         tableColumnIndex >= firstDataTableColumnIndex
-    }
-
-    static func tableColumnIndex(
-        for dataIndex: Int,
-        in tableView: NSTableView,
-        schema: ColumnIdentitySchema
-    ) -> Int? {
-        guard let identifier = schema.identifier(for: dataIndex) else { return nil }
-        let index = tableView.column(withIdentifier: identifier)
-        return index >= 0 ? index : nil
     }
 
     static func dataColumnIndex(
