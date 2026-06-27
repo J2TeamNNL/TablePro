@@ -466,6 +466,9 @@ struct SidebarView: View {
         .onChange(of: settingsManager.general.showRecentTables) { _, _ in
             reloadRecentTables()
         }
+        .onChange(of: activeDatabase) { _, _ in
+            reloadRecentTables()
+        }
         .onAppear {
             favoriteTables = FavoriteTablesStorage.shared.favorites(for: connectionId)
             reloadRecentTables()
