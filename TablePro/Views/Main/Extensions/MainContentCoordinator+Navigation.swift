@@ -63,7 +63,7 @@ extension MainContentCoordinator {
             currentDatabase = activeDatabaseName
         }
 
-        let resolvedSchema = schema
+        let resolvedSchema = DatabaseManager.shared.resolvedSchemaName(schema, for: connectionId)
         let createAsPreview = !forceNonPreview && !forceNewWindowTab
             && AppSettingsManager.shared.tabs.enablePreviewTabs
 
