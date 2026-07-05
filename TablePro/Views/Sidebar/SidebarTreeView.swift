@@ -7,12 +7,34 @@ struct SidebarTreeView: View {
     let connectionId: UUID
     let viewModel: SidebarViewModel
     let windowState: WindowSidebarState
+    var sidebarState: SharedSidebarState
     @Binding var pendingTruncates: Set<String>
     @Binding var pendingDeletes: Set<String>
     var onDoubleClick: ((TableInfo) -> Void)?
     weak var coordinator: MainContentCoordinator?
 
+    @State private var settingsManager = AppSettingsManager.shared
     @State private var searchLoadTask: Task<Void, Never>?
+
+    private var activeDatabase: String? {
+        let name = coordinator?.activeDatabaseName ?? ""
+        return name.isEmpty ? nil : name
+    }
+
+    private var recentRows: [RecentTableRow] {
+        guard settingsManager.general.showRecentTables else { return [] }
+        let byIdentity = Dictionary(
+            schemaService.allLoadedTables(for: connectionId).map {
+                (RecentTableEntry.identityKey(schema: $0.schema, name: $0.name), $0)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let infos = sidebarState.recentEntries(inDatabase: activeDatabase).map { entry in
+            byIdentity[entry.identityKey]
+                ?? TableInfo(name: entry.name, type: .table, rowCount: nil, schema: entry.schema)
+        }
+        return viewModel.filteredRecentTables(infos).map(RecentTableRow.init)
+    }
 
     private var systemSchemas: Set<String> {
         Set(PluginManager.shared.systemSchemaNames(for: viewModel.databaseType))
@@ -55,6 +77,7 @@ struct SidebarTreeView: View {
 
     private var treeList: some View {
         List(selection: selectedTablesBinding) {
+            recentSection
             ForEach(visibleSchemas, id: \.self) { schema in
                 Section(isExpanded: expansionBinding(for: schema)) {
                     datasetContent(for: schema)
@@ -116,15 +139,63 @@ struct SidebarTreeView: View {
         )
         .tag(table)
         .contextMenu {
-            SidebarContextMenu(
-                clickedTable: table,
-                selectedTables: windowState.selectedTables,
-                isReadOnly: coordinator?.safeModeLevel.blocksAllWrites ?? false,
-                onBatchToggleTruncate: { viewModel.batchToggleTruncate(tableNames: $0) },
-                onBatchToggleDelete: { viewModel.batchToggleDelete(tableNames: $0) },
-                coordinator: coordinator
-            )
+            tableContextMenu(table)
         }
+    }
+
+    @ViewBuilder
+    private func tableContextMenu(_ table: TableInfo) -> some View {
+        SidebarContextMenu(
+            clickedTable: table,
+            selectedTables: windowState.selectedTables,
+            isReadOnly: coordinator?.safeModeLevel.blocksAllWrites ?? false,
+            onBatchToggleTruncate: { viewModel.batchToggleTruncate(tableNames: $0) },
+            onBatchToggleDelete: { viewModel.batchToggleDelete(tableNames: $0) },
+            coordinator: coordinator
+        )
+    }
+
+    @ViewBuilder
+    private var recentSection: some View {
+        let rows = recentRows
+        if !rows.isEmpty {
+            Section(isExpanded: recentsExpansionBinding) {
+                ForEach(rows) { row in
+                    let table = row.table
+                    TableRow(
+                        table: table,
+                        isPendingTruncate: pendingTruncates.contains(table.name),
+                        isPendingDelete: pendingDeletes.contains(table.name)
+                    )
+                    .selectionDisabled()
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        onDoubleClick?(table)
+                    }
+                    .contextMenu {
+                        tableContextMenu(table)
+                        Divider()
+                        Button(String(localized: "Remove from Recent")) {
+                            sidebarState.removeRecentTable(
+                                database: activeDatabase, schema: table.schema, name: table.name
+                            )
+                        }
+                        Button(String(localized: "Clear Recent Tables")) {
+                            sidebarState.clearRecentTables()
+                        }
+                    }
+                }
+            } header: {
+                Text(String(localized: "Recent"))
+            }
+        }
+    }
+
+    private var recentsExpansionBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.isRecentsExpanded },
+            set: { viewModel.isRecentsExpanded = $0 }
+        )
     }
 
     private func datasetHeader(_ schema: String) -> some View {

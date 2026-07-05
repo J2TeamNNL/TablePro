@@ -11,7 +11,6 @@ import TableProPluginKit
 struct SidebarView: View {
     @State private var viewModel: SidebarViewModel
     @State private var favoriteTables: Set<FavoriteTablesStorage.FavoriteEntry> = []
-    @State private var recentTables: [RecentTablesStore.Entry] = []
     @State private var settingsManager = AppSettingsManager.shared
     @State private var showDatabaseFilter: Bool = false
 
@@ -262,6 +261,7 @@ struct SidebarView: View {
                 connectionId: connectionId,
                 viewModel: viewModel,
                 windowState: windowState,
+                sidebarState: sidebarState,
                 pendingTruncates: $pendingTruncates,
                 pendingDeletes: $pendingDeletes,
                 onDoubleClick: onDoubleClick,
@@ -335,17 +335,16 @@ struct SidebarView: View {
 
     // MARK: - Table List
 
-    private var recentTableInfos: [TableInfo] {
-        let search = viewModel.searchText
-        return recentTables.compactMap { entry in
-            guard let match = tables.first(where: { $0.name == entry.name && $0.schema == entry.schema }) else {
-                return nil
-            }
-            if !search.isEmpty, !match.name.localizedCaseInsensitiveContains(search) {
-                return nil
-            }
-            return match
+    private var recentRows: [RecentTableRow] {
+        let byIdentity = Dictionary(
+            tables.map { (RecentTableEntry.identityKey(schema: $0.schema, name: $0.name), $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let infos = sidebarState.recentEntries(inDatabase: activeDatabase).map { entry in
+            byIdentity[entry.identityKey]
+                ?? TableInfo(name: entry.name, type: .table, rowCount: nil, schema: entry.schema)
         }
+        return viewModel.filteredRecentTables(infos).map(RecentTableRow.init)
     }
 
     private var activeDatabase: String? {
@@ -371,44 +370,48 @@ struct SidebarView: View {
         )
     }
 
-    private func reloadRecentTables() {
-        guard settingsManager.general.showRecentTables else {
-            recentTables = []
-            return
-        }
-        recentTables = RecentTablesStore.shared.entries(
-            connectionID: connectionId,
-            database: activeDatabase
+    @ViewBuilder
+    private func tableSelectionMenu(clicked: TableInfo?, selected: Set<TableInfo>) -> some View {
+        SidebarContextMenu(
+            clickedTable: clicked,
+            selectedTables: selected,
+            isReadOnly: coordinator?.safeModeLevel.blocksAllWrites ?? false,
+            onBatchToggleTruncate: { viewModel.batchToggleTruncate(tableNames: $0) },
+            onBatchToggleDelete: { viewModel.batchToggleDelete(tableNames: $0) },
+            coordinator: coordinator
         )
     }
 
     @ViewBuilder
     private var recentSection: some View {
-        let recents = recentTableInfos
-        if settingsManager.general.showRecentTables, !recents.isEmpty {
+        let rows = recentRows
+        if settingsManager.general.showRecentTables, !rows.isEmpty {
             Section(isExpanded: $viewModel.isRecentsExpanded) {
-                ForEach(recents) { info in
+                ForEach(rows) { row in
+                    let table = row.table
                     TableRow(
-                        table: info,
-                        isPendingTruncate: pendingTruncates.contains(info.name),
-                        isPendingDelete: pendingDeletes.contains(info.name),
-                        isFavorite: isFavorite(info),
-                        onToggleFavorite: { toggleFavorite(info) }
+                        table: table,
+                        isPendingTruncate: pendingTruncates.contains(table.name),
+                        isPendingDelete: pendingDeletes.contains(table.name),
+                        isFavorite: isFavorite(table),
+                        onToggleFavorite: { toggleFavorite(table) }
                     )
                     .selectionDisabled()
                     .contentShape(Rectangle())
-                    .onTapGesture(count: 2) {
-                        onDoubleClick?(info)
+                    .onTapGesture {
+                        onDoubleClick?(table)
                     }
                     .contextMenu {
-                        SidebarContextMenu(
-                            clickedTable: info,
-                            selectedTables: windowState.selectedTables,
-                            isReadOnly: coordinator?.safeModeLevel.blocksAllWrites ?? false,
-                            onBatchToggleTruncate: { viewModel.batchToggleTruncate(tableNames: $0) },
-                            onBatchToggleDelete: { viewModel.batchToggleDelete(tableNames: $0) },
-                            coordinator: coordinator
-                        )
+                        tableSelectionMenu(clicked: table, selected: [table])
+                        Divider()
+                        Button(String(localized: "Remove from Recent")) {
+                            sidebarState.removeRecentTable(
+                                database: activeDatabase, schema: table.schema, name: table.name
+                            )
+                        }
+                        Button(String(localized: "Clear Recent Tables")) {
+                            sidebarState.clearRecentTables()
+                        }
                     }
                 }
             } header: {
@@ -463,18 +466,11 @@ struct SidebarView: View {
         .onReceive(NotificationCenter.default.publisher(for: .favoriteTablesDidChange)) { _ in
             favoriteTables = FavoriteTablesStorage.shared.favorites(for: connectionId)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .recentTablesDidChange)) { _ in
-            reloadRecentTables()
-        }
         .onChange(of: settingsManager.general.showRecentTables) { _, _ in
-            reloadRecentTables()
-        }
-        .onChange(of: activeDatabase) { _, _ in
-            reloadRecentTables()
+            sidebarState.reloadRecentTablesFromStore()
         }
         .onAppear {
             favoriteTables = FavoriteTablesStorage.shared.favorites(for: connectionId)
-            reloadRecentTables()
         }
     }
 

@@ -124,6 +124,7 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
 
     private func snapshotDependencies() {
         _ = service.databaseListState(for: connectionId)
+        _ = sidebarState?.recentTables
         for node in nodeCache.values {
             switch node.kind {
             case .database(let metadata):
@@ -133,7 +134,7 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
             case .schema(let database, let schema):
                 _ = service.tablesLoadState(connectionId: connectionId, database: database, schema: schema)
                 _ = service.routinesLoadState(connectionId: connectionId, database: database, schema: schema)
-            case .table, .routine, .status:
+            case .recentSection, .recentTable, .table, .routine, .status:
                 break
             }
         }
@@ -173,27 +174,53 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
     private func buildChildren(of node: DatabaseTreeNode?) -> [DatabaseTreeNode] {
         guard let node else { return rootNodes() }
         switch node.kind {
+        case .recentSection:
+            return recentTableRefs().map {
+                self.node(id: DatabaseTreeNode.recentTableId($0), kind: .recentTable($0))
+            }
         case .database(let metadata):
             return supportsSchemaLevel
                 ? schemaNodes(database: metadata.name)
                 : objectNodes(database: metadata.name, schema: nil)
         case .schema(let database, let schema):
             return objectNodes(database: database, schema: schema)
-        case .table, .routine, .status:
+        case .recentTable, .table, .routine, .status:
             return []
         }
     }
 
     private func rootNodes() -> [DatabaseTreeNode] {
+        var nodes: [DatabaseTreeNode] = []
+        if !recentTableRefs().isEmpty {
+            nodes.append(node(id: DatabaseTreeNode.recentSectionId, kind: .recentSection))
+        }
         let visible = DatabaseTreeVisibility.visible(
             databases: service.databases(for: connectionId),
             selected: sidebarState?.databaseFilterSelected ?? []
         )
         let matched = searchText.isEmpty ? visible : visible.filter { databaseMatchesSearch($0) }
         var seen = Set<String>()
-        return matched
+        nodes += matched
             .filter { seen.insert($0.id).inserted }
             .map { node(id: DatabaseTreeNode.databaseId($0.name), kind: .database($0)) }
+        return nodes
+    }
+
+    private func recentTableRefs() -> [DatabaseTreeTableRef] {
+        guard let sidebarState, AppSettingsManager.shared.general.showRecentTables else { return [] }
+        let database = activeDatabase ?? ""
+        var seen = Set<String>()
+        return sidebarState.recentTables.compactMap { entry -> DatabaseTreeTableRef? in
+            guard (entry.database ?? "") == database else { return nil }
+            let tables = service.tables(connectionId: connectionId, database: database, schema: entry.schema)
+            guard let table = tables.first(where: { $0.name == entry.name && $0.schema == entry.schema }) else {
+                return nil
+            }
+            let ref = DatabaseTreeTableRef(database: database, schema: entry.schema, table: table)
+            guard seen.insert(ref.id).inserted else { return nil }
+            if !searchText.isEmpty, !DatabaseTreeFilter.matches(searchText, table.name) { return nil }
+            return ref
+        }
     }
 
     private func schemaNodes(database: String) -> [DatabaseTreeNode] {
@@ -293,6 +320,9 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
         isApplyingExpansion = true
         defer { isApplyingExpansion = false }
         let searching = !searchText.isEmpty
+        for rootNode in resolvedChildren(of: nil) where rootNode.id == DatabaseTreeNode.recentSectionId {
+            setExpanded(rootNode, searching || (viewModel?.isRecentsExpanded ?? true))
+        }
         for databaseNode in resolvedChildren(of: nil) {
             guard case .database(let metadata) = databaseNode.kind else { continue }
             let want = searching
@@ -326,6 +356,8 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
 
     private func recordExpansion(_ node: DatabaseTreeNode, expanded: Bool) {
         switch node.kind {
+        case .recentSection:
+            viewModel?.isRecentsExpanded = expanded
         case .database(let metadata):
             if expanded {
                 windowState?.expandedTreeDatabases.insert(metadata.name)
@@ -339,7 +371,7 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
             } else {
                 windowState?.expandedTreeDatabaseSchemas.remove(key)
             }
-        case .table, .routine, .status:
+        case .recentTable, .table, .routine, .status:
             break
         }
     }
@@ -356,7 +388,7 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
             }
         case .schema(let database, let schema):
             loadObjects(database: database, schema: schema)
-        case .table, .routine, .status:
+        case .recentSection, .recentTable, .table, .routine, .status:
             break
         }
     }
@@ -464,7 +496,11 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
             refreshObjects: { [weak self] database, schema in self?.refreshObjects(database: database, schema: schema) },
             showRoutineDDL: { [weak self] routine in self?.mainCoordinator?.showRoutineDDL(routine) },
             batchToggleTruncate: { [weak self] in self?.viewModel?.batchToggleTruncate(tableNames: $0) },
-            batchToggleDelete: { [weak self] in self?.viewModel?.batchToggleDelete(tableNames: $0) }
+            batchToggleDelete: { [weak self] in self?.viewModel?.batchToggleDelete(tableNames: $0) },
+            removeRecent: { [weak self] ref in
+                self?.sidebarState?.removeRecentTable(database: ref.database, schema: ref.schema, name: ref.table.name)
+            },
+            clearRecents: { [weak self] in self?.sidebarState?.clearRecentTables() }
         )
     }
 
@@ -472,7 +508,7 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
     func handleDoubleClick() {
         guard let outlineView, outlineView.clickedRow >= 0,
               let node = outlineView.item(atRow: outlineView.clickedRow) as? DatabaseTreeNode else { return }
-        if let ref = node.tableRef {
+        if let ref = node.tableRef ?? node.recentTableRef {
             pendingSingleClickWork?.cancel()
             pendingSingleClickWork = nil
             open(ref, activateGridFocus: true, forceNewWindowTab: true)
@@ -511,7 +547,8 @@ extension DatabaseTreeOutlineCoordinator: NSOutlineViewDelegate {
     }
 
     func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool {
-        (item as? DatabaseTreeNode)?.tableRef != nil
+        guard let node = item as? DatabaseTreeNode else { return false }
+        return node.tableRef != nil || node.recentTableRef != nil
     }
 
     func outlineViewItemWillExpand(_ notification: Notification) {
@@ -527,6 +564,13 @@ extension DatabaseTreeOutlineCoordinator: NSOutlineViewDelegate {
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
         guard !isSyncingSelection, !isReloading else { return }
+        if let outlineView, outlineView.selectedRowIndexes.count == 1,
+           let node = outlineView.item(atRow: outlineView.selectedRow) as? DatabaseTreeNode,
+           let ref = node.recentTableRef {
+            scheduleSingleClickOpen(ref)
+            lastSelection = []
+            return
+        }
         let refs = Set(selectedRefs())
         if let added = SelectionDelta.singleAddition(old: lastSelection, new: refs) {
             if isKeyboardDrivenSelection {

@@ -27,6 +27,53 @@ final class SharedSidebarState {
     var searchText: String = ""
     var favoritesSearchText: String = ""
 
+    var recentTables: [RecentTableEntry] = []
+
+    @ObservationIgnored private var pendingRecordTask: Task<Void, Never>?
+
+    func recentEntries(inDatabase database: String?) -> [RecentTableEntry] {
+        recentTables.filter { $0.database == normalizedDatabase(database) }
+    }
+
+    func recordTableOpen(database: String?, schema: String?, name: String) {
+        let normalizedDb = normalizedDatabase(database)
+        pendingRecordTask?.cancel()
+        pendingRecordTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard let self, !Task.isCancelled else { return }
+            QuickSwitcherFrecencyStore(connectionId: self.connectionId).recordAccess(
+                itemId: QuickSwitcherItem.tableItemId(schema: schema, name: name)
+            )
+            guard AppSettingsManager.shared.general.showRecentTables else { return }
+            self.recentTables = RecentTablesStore.shared.record(
+                connectionId: self.connectionId, database: normalizedDb, schema: schema, name: name
+            )
+        }
+    }
+
+    func removeRecentTable(database: String?, schema: String?, name: String) {
+        let entry = RecentTableEntry(
+            database: normalizedDatabase(database), schema: schema, name: name, openedAt: Date()
+        )
+        recentTables = RecentTablesStore.shared.remove(connectionId: connectionId, entry: entry)
+    }
+
+    func clearRecentTables() {
+        RecentTablesStore.shared.clear(connectionId: connectionId)
+        recentTables = []
+    }
+
+    func reloadRecentTablesFromStore() {
+        recentTables = AppSettingsManager.shared.general.showRecentTables
+            ? RecentTablesStore.shared.entries(connectionId: connectionId)
+            : []
+    }
+
+    private func normalizedDatabase(_ database: String?) -> String? {
+        guard let database, !database.isEmpty else { return nil }
+        return database
+    }
+
     var selectedSidebarTab: SidebarTab {
         didSet {
             UserDefaults.standard.set(
@@ -101,6 +148,9 @@ final class SharedSidebarState {
         self.selectedFavorite = UserDefaults.standard.string(
             forKey: SidebarPersistenceKey.selectedFavorite(connectionId: connectionId)
         ).flatMap(FavoriteSelection.init(rawValue:))
+        if AppSettingsManager.shared.general.showRecentTables {
+            self.recentTables = RecentTablesStore.shared.entries(connectionId: connectionId)
+        }
     }
 
     /// Default init for previews and tests

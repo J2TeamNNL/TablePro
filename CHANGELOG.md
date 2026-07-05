@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Recent section at the top of the Tables sidebar tracks the last 10 tables you opened per connection and database, in-memory for the session. Off by default, turn it on in Settings > General > Sidebar. (#1352)
+- Recent section at the top of the sidebar tracks the last 10 tables you opened per connection and database, in every sidebar layout, and remembers them between launches. It records a table when you open it, not while you arrow through previews. Click a recent table to reopen it, or right-click to remove one or clear the list. Off by default, turn it on in Settings > General > Sidebar. (#1352)
 
 ### Fixed
 

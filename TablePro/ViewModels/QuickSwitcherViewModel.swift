@@ -117,7 +117,7 @@ internal final class QuickSwitcherViewModel {
                 subtitle = String(localized: "System")
             }
             items.append(QuickSwitcherItem(
-                id: "table_\(table.name)_\(table.type.rawValue)",
+                id: QuickSwitcherItem.tableItemId(schema: table.schema, name: table.name),
                 name: table.name,
                 kind: kind,
                 subtitle: subtitle,

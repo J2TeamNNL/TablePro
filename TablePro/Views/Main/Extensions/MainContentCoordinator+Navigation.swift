@@ -22,13 +22,6 @@ extension MainContentCoordinator {
         activateGridFocus: Bool = false,
         forceNewWindowTab: Bool = false
     ) {
-        if AppSettingsManager.shared.general.showRecentTables {
-            RecentTablesStore.shared.push(
-                connectionID: connection.id,
-                database: activeDatabaseName.isEmpty ? nil : activeDatabaseName,
-                table: table
-            )
-        }
         openTableTab(
             table.name,
             schema: table.schema,

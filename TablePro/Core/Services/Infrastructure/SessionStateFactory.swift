@@ -62,6 +62,11 @@ enum SessionStateFactory {
             },
             tabSessionRegistry: tabSessionRegistry
         )
+        tabMgr.onTableOpened = { tableName, schemaName, databaseName, _ in
+            SharedSidebarState.forConnection(connectionId).recordTableOpen(
+                database: databaseName, schema: schemaName, name: tableName
+            )
+        }
         let changeMgr = DataChangeManager()
         changeMgr.databaseType = connection.type
         let toolbarSt = ConnectionToolbarState(connection: connection)

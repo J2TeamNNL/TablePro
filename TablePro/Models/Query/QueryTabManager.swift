@@ -143,6 +143,12 @@ final class QueryTabManager {
         }
     }
 
+    var onTableOpened: ((_ tableName: String, _ schemaName: String?, _ databaseName: String, _ isPreview: Bool) -> Void)?
+
+    private func notifyTableOpened(tableName: String, schemaName: String?, databaseName: String, isPreview: Bool) {
+        onTableOpened?(tableName, schemaName, databaseName, isPreview)
+    }
+
     func addTableTab(
         tableName: String,
         databaseType: DatabaseType = .mysql,
@@ -157,6 +163,9 @@ final class QueryTabManager {
                 && $0.tableContext.schemaName == schemaName
         }) {
             selectedTabId = existingTab.id
+            notifyTableOpened(
+                tableName: tableName, schemaName: schemaName, databaseName: databaseName, isPreview: false
+            )
             return
         }
 
@@ -178,6 +187,9 @@ final class QueryTabManager {
         newTab.tableContext.schemaName = schemaName
         tabs.append(newTab)
         selectedTabId = newTab.id
+        notifyTableOpened(
+            tableName: tableName, schemaName: schemaName, databaseName: databaseName, isPreview: false
+        )
     }
 
     static func tabTitle(name: String, schema: String?, databaseType: DatabaseType) -> String {
@@ -236,6 +248,9 @@ final class QueryTabManager {
                 && $0.tableContext.schemaName == schemaName
         }) {
             selectedTabId = existing.id
+            notifyTableOpened(
+                tableName: tableName, schemaName: schemaName, databaseName: databaseName, isPreview: true
+            )
             return
         }
 
@@ -258,6 +273,9 @@ final class QueryTabManager {
         newTab.isPreview = true
         tabs.append(newTab)
         selectedTabId = newTab.id
+        notifyTableOpened(
+            tableName: tableName, schemaName: schemaName, databaseName: databaseName, isPreview: true
+        )
     }
 
     /// Replace the currently selected tab's content with a new table.
@@ -309,6 +327,9 @@ final class QueryTabManager {
         tab.isPreview = isPreview
         tabs[selectedIndex] = tab
         tabStructureVersion += 1
+        notifyTableOpened(
+            tableName: tableName, schemaName: schemaName, databaseName: databaseName, isPreview: isPreview
+        )
         return true
     }
 
