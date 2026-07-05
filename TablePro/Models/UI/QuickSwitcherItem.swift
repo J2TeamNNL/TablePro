@@ -72,8 +72,8 @@ internal struct QuickSwitcherItem: Identifiable, Hashable, Sendable {
     var payload: String?
     var isOpenInTab: Bool = false
 
-    static func tableItemId(schema: String?, name: String) -> String {
-        "table\u{1}\(schema ?? "")\u{1}\(name)"
+    static func tableItemId(name: String, isView: Bool) -> String {
+        "table_\(name)_\(isView ? "VIEW" : "TABLE")"
     }
 
     /// SF Symbol name for this item's icon

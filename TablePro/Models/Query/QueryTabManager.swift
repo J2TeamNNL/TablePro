@@ -143,10 +143,12 @@ final class QueryTabManager {
         }
     }
 
-    var onTableOpened: ((_ tableName: String, _ schemaName: String?, _ databaseName: String, _ isPreview: Bool) -> Void)?
+    var onTableOpened: ((_ tableName: String, _ schemaName: String?, _ databaseName: String, _ isView: Bool, _ isPreview: Bool) -> Void)?
 
-    private func notifyTableOpened(tableName: String, schemaName: String?, databaseName: String, isPreview: Bool) {
-        onTableOpened?(tableName, schemaName, databaseName, isPreview)
+    private func notifyTableOpened(
+        tableName: String, schemaName: String?, databaseName: String, isView: Bool, isPreview: Bool
+    ) {
+        onTableOpened?(tableName, schemaName, databaseName, isView, isPreview)
     }
 
     func addTableTab(
@@ -154,6 +156,7 @@ final class QueryTabManager {
         databaseType: DatabaseType = .mysql,
         databaseName: String = "",
         schemaName: String? = nil,
+        isView: Bool = false,
         quoteIdentifier: ((String) -> String)? = nil
     ) throws {
         if let existingTab = tabs.first(where: {
@@ -164,7 +167,8 @@ final class QueryTabManager {
         }) {
             selectedTabId = existingTab.id
             notifyTableOpened(
-                tableName: tableName, schemaName: schemaName, databaseName: databaseName, isPreview: false
+                tableName: tableName, schemaName: schemaName, databaseName: databaseName,
+                isView: isView, isPreview: false
             )
             return
         }
@@ -188,7 +192,8 @@ final class QueryTabManager {
         tabs.append(newTab)
         selectedTabId = newTab.id
         notifyTableOpened(
-            tableName: tableName, schemaName: schemaName, databaseName: databaseName, isPreview: false
+            tableName: tableName, schemaName: schemaName, databaseName: databaseName,
+            isView: isView, isPreview: false
         )
     }
 
@@ -239,6 +244,7 @@ final class QueryTabManager {
         databaseType: DatabaseType = .mysql,
         databaseName: String = "",
         schemaName: String? = nil,
+        isView: Bool = false,
         quoteIdentifier: ((String) -> String)? = nil
     ) throws {
         if let existing = tabs.first(where: {
@@ -249,7 +255,8 @@ final class QueryTabManager {
         }) {
             selectedTabId = existing.id
             notifyTableOpened(
-                tableName: tableName, schemaName: schemaName, databaseName: databaseName, isPreview: true
+                tableName: tableName, schemaName: schemaName, databaseName: databaseName,
+                isView: isView, isPreview: true
             )
             return
         }
@@ -274,7 +281,8 @@ final class QueryTabManager {
         tabs.append(newTab)
         selectedTabId = newTab.id
         notifyTableOpened(
-            tableName: tableName, schemaName: schemaName, databaseName: databaseName, isPreview: true
+            tableName: tableName, schemaName: schemaName, databaseName: databaseName,
+            isView: isView, isPreview: true
         )
     }
 
@@ -328,7 +336,8 @@ final class QueryTabManager {
         tabs[selectedIndex] = tab
         tabStructureVersion += 1
         notifyTableOpened(
-            tableName: tableName, schemaName: schemaName, databaseName: databaseName, isPreview: isPreview
+            tableName: tableName, schemaName: schemaName, databaseName: databaseName,
+            isView: isView, isPreview: isPreview
         )
         return true
     }

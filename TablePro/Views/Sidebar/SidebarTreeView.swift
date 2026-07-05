@@ -23,16 +23,7 @@ struct SidebarTreeView: View {
 
     private var recentRows: [RecentTableRow] {
         guard settingsManager.general.showRecentTables else { return [] }
-        let byIdentity = Dictionary(
-            schemaService.allLoadedTables(for: connectionId).map {
-                (RecentTableEntry.identityKey(schema: $0.schema, name: $0.name), $0)
-            },
-            uniquingKeysWith: { first, _ in first }
-        )
-        let infos = sidebarState.recentEntries(inDatabase: activeDatabase).map { entry in
-            byIdentity[entry.identityKey]
-                ?? TableInfo(name: entry.name, type: .table, rowCount: nil, schema: entry.schema)
-        }
+        let infos = sidebarState.recentEntries(inDatabase: activeDatabase).map(\.tableInfo)
         return viewModel.filteredRecentTables(infos).map(RecentTableRow.init)
     }
 
@@ -181,7 +172,7 @@ struct SidebarTreeView: View {
                             )
                         }
                         Button(String(localized: "Clear Recent Tables")) {
-                            sidebarState.clearRecentTables()
+                            sidebarState.clearRecentTables(inDatabase: activeDatabase)
                         }
                     }
                 }

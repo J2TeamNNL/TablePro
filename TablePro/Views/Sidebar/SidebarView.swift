@@ -336,14 +336,8 @@ struct SidebarView: View {
     // MARK: - Table List
 
     private var recentRows: [RecentTableRow] {
-        let byIdentity = Dictionary(
-            tables.map { (RecentTableEntry.identityKey(schema: $0.schema, name: $0.name), $0) },
-            uniquingKeysWith: { first, _ in first }
-        )
-        let infos = sidebarState.recentEntries(inDatabase: activeDatabase).map { entry in
-            byIdentity[entry.identityKey]
-                ?? TableInfo(name: entry.name, type: .table, rowCount: nil, schema: entry.schema)
-        }
+        guard settingsManager.general.showRecentTables else { return [] }
+        let infos = sidebarState.recentEntries(inDatabase: activeDatabase).map(\.tableInfo)
         return viewModel.filteredRecentTables(infos).map(RecentTableRow.init)
     }
 
@@ -385,7 +379,7 @@ struct SidebarView: View {
     @ViewBuilder
     private var recentSection: some View {
         let rows = recentRows
-        if settingsManager.general.showRecentTables, !rows.isEmpty {
+        if !rows.isEmpty {
             Section(isExpanded: $viewModel.isRecentsExpanded) {
                 ForEach(rows) { row in
                     let table = row.table
@@ -410,7 +404,7 @@ struct SidebarView: View {
                             )
                         }
                         Button(String(localized: "Clear Recent Tables")) {
-                            sidebarState.clearRecentTables()
+                            sidebarState.clearRecentTables(inDatabase: activeDatabase)
                         }
                     }
                 }

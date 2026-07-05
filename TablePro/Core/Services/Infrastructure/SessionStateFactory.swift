@@ -62,9 +62,9 @@ enum SessionStateFactory {
             },
             tabSessionRegistry: tabSessionRegistry
         )
-        tabMgr.onTableOpened = { tableName, schemaName, databaseName, _ in
+        tabMgr.onTableOpened = { tableName, schemaName, databaseName, isView, isPreview in
             SharedSidebarState.forConnection(connectionId).recordTableOpen(
-                database: databaseName, schema: schemaName, name: tableName
+                database: databaseName, schema: schemaName, name: tableName, isView: isView, isPreview: isPreview
             )
         }
         let changeMgr = DataChangeManager()
@@ -105,14 +105,16 @@ enum SessionStateFactory {
                                     tableName: tableName,
                                     databaseType: connection.type,
                                     databaseName: payload.databaseName ?? activeDatabaseName,
-                                    schemaName: resolvedSchemaName
+                                    schemaName: resolvedSchemaName,
+                                    isView: payload.isView
                                 )
                             } else {
                                 try tabMgr.addTableTab(
                                     tableName: tableName,
                                     databaseType: connection.type,
                                     databaseName: payload.databaseName ?? activeDatabaseName,
-                                    schemaName: resolvedSchemaName
+                                    schemaName: resolvedSchemaName,
+                                    isView: payload.isView
                                 )
                             }
                         } catch {

@@ -35,32 +35,43 @@ final class SharedSidebarState {
         recentTables.filter { $0.database == normalizedDatabase(database) }
     }
 
-    func recordTableOpen(database: String?, schema: String?, name: String) {
-        let normalizedDb = normalizedDatabase(database)
+    func recordTableOpen(database: String?, schema: String?, name: String, isView: Bool, isPreview: Bool) {
+        guard isPreview else {
+            pendingRecordTask?.cancel()
+            pendingRecordTask = nil
+            commitTableOpen(database: database, schema: schema, name: name, isView: isView)
+            return
+        }
         pendingRecordTask?.cancel()
         pendingRecordTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 250_000_000)
             guard let self, !Task.isCancelled else { return }
-            QuickSwitcherFrecencyStore(connectionId: self.connectionId).recordAccess(
-                itemId: QuickSwitcherItem.tableItemId(schema: schema, name: name)
-            )
-            guard AppSettingsManager.shared.general.showRecentTables else { return }
-            self.recentTables = RecentTablesStore.shared.record(
-                connectionId: self.connectionId, database: normalizedDb, schema: schema, name: name
-            )
+            self.commitTableOpen(database: database, schema: schema, name: name, isView: isView)
         }
+    }
+
+    private func commitTableOpen(database: String?, schema: String?, name: String, isView: Bool) {
+        QuickSwitcherFrecencyStore(connectionId: connectionId).recordAccess(
+            itemId: QuickSwitcherItem.tableItemId(name: name, isView: isView)
+        )
+        guard AppSettingsManager.shared.general.showRecentTables else { return }
+        recentTables = RecentTablesStore.shared.record(
+            connectionId: connectionId, database: normalizedDatabase(database),
+            schema: schema, name: name, isView: isView
+        )
     }
 
     func removeRecentTable(database: String?, schema: String?, name: String) {
         let entry = RecentTableEntry(
-            database: normalizedDatabase(database), schema: schema, name: name, openedAt: Date()
+            database: normalizedDatabase(database), schema: schema, name: name, isView: false, openedAt: Date()
         )
         recentTables = RecentTablesStore.shared.remove(connectionId: connectionId, entry: entry)
     }
 
-    func clearRecentTables() {
-        RecentTablesStore.shared.clear(connectionId: connectionId)
-        recentTables = []
+    func clearRecentTables(inDatabase database: String?) {
+        recentTables = RecentTablesStore.shared.clear(
+            connectionId: connectionId, database: normalizedDatabase(database)
+        )
     }
 
     func reloadRecentTablesFromStore() {
@@ -160,6 +171,10 @@ final class SharedSidebarState {
         self.sidebarLayout = .flat
         self.databaseFilterSelected = []
         self.selectedFavorite = nil
+    }
+
+    deinit {
+        pendingRecordTask?.cancel()
     }
 
     private static var registry: [UUID: SharedSidebarState] = [:]

@@ -5,6 +5,7 @@ struct RecentTableEntry: Codable, Equatable, Identifiable {
     let database: String?
     let schema: String?
     let name: String
+    let isView: Bool
     let openedAt: Date
 
     static func identityKey(schema: String?, name: String) -> String {
@@ -16,6 +17,10 @@ struct RecentTableEntry: Codable, Equatable, Identifiable {
     var identityKey: String { Self.identityKey(schema: schema, name: name) }
 
     var id: String { "\(scopeKey)\u{1}\(identityKey)" }
+
+    var tableInfo: TableInfo {
+        TableInfo(name: name, type: isView ? .view : .table, rowCount: nil, schema: schema)
+    }
 }
 
 struct RecentTableRow: Identifiable {
@@ -43,8 +48,10 @@ final class RecentTablesStore {
     }
 
     @discardableResult
-    func record(connectionId: UUID, database: String?, schema: String?, name: String, at date: Date = Date()) -> [RecentTableEntry] {
-        let entry = RecentTableEntry(database: database, schema: schema, name: name, openedAt: date)
+    func record(
+        connectionId: UUID, database: String?, schema: String?, name: String, isView: Bool, at date: Date = Date()
+    ) -> [RecentTableEntry] {
+        let entry = RecentTableEntry(database: database, schema: schema, name: name, isView: isView, openedAt: date)
         let updated = Self.merged(entry, into: entries(connectionId: connectionId))
         persist(updated, connectionId: connectionId)
         return updated
@@ -57,8 +64,12 @@ final class RecentTablesStore {
         return updated
     }
 
-    func clear(connectionId: UUID) {
-        defaults.removeObject(forKey: storageKey(connectionId))
+    @discardableResult
+    func clear(connectionId: UUID, database: String?) -> [RecentTableEntry] {
+        let scope = database ?? ""
+        let updated = entries(connectionId: connectionId).filter { $0.scopeKey != scope }
+        persist(updated, connectionId: connectionId)
+        return updated
     }
 
     static func merged(_ entry: RecentTableEntry, into existing: [RecentTableEntry]) -> [RecentTableEntry] {
