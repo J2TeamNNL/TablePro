@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The Favorites sidebar **+** menu now includes **New Query**, which opens an empty SQL query tab.
+
 ## [0.56.0] - 2026-07-09
 
 ### Added
