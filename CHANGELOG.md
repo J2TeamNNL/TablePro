@@ -11,6 +11,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The Favorites sidebar **+** menu now includes **New Query**, which opens an empty SQL query tab.
 
+## [0.56.2] - 2026-07-10
+
+### Added
+
+- The JSON field in the row details inspector can now be resized by dragging the handle below it. The height is remembered across rows and app restarts. (#1849)
+
+### Changed
+
+- Data grid column comments now appear directly in column headers when object comments are enabled, instead of only being available from the header tooltip. (#1789)
+
+### Fixed
+
+- MySQL and MariaDB connections that prompt for a password at connect time now ask for a fresh password after an auto-reconnect hits an authentication failure such as `1045` / `SQLSTATE 28000`, instead of looping forever in Connecting with the expired session password.
+- Pressing Escape to dismiss the SQL autocomplete popup no longer moves focus out of the editor, so you can keep typing. (#1845)
+
+## [0.56.1] - 2026-07-09
+
+### Removed
+
+- The Oracle Native network encryption connection option. Encryption is now offered to every server and used only when the server requires it, so the option is no longer needed. (#483)
+
+### Fixed
+
+- Oracle now connects to servers that require native network encryption (`SQLNET.ENCRYPTION_SERVER = REQUIRED`), negotiating AES with a SHA checksum automatically like SQL Developer and DBeaver. (#483)
+- MongoDB filters and generated edit statements now quote numeric-looking values that would not round-trip, such as `.5`, `1.`, `+7`, `01`, integers larger than 64 bits, and exponents that overflow a double like `1e400`, instead of emitting invalid or lossy JSON. A row whose `_id` is a decimal or exponent string is matched as that string, so delete and update target the right document. Update the MongoDB plugin to get the fix. (#1813)
+- Reading a connection password from a command, 1Password, Vault, or AWS Secrets Manager no longer occasionally returns corrupted output from a race while reading the command's output. (#1841)
+- The Structure tab filter and column sort now update the grid instead of leaving stale rows on screen.
+- The row details inspector now shows the selected row's values, including JSON, when a column value filter is active, and a JSON or serialized value you open now follows the selected row as you move between rows. (#1837)
+- Copying, duplicating, and deleting rows now act on the rows you selected when a column value filter is active, instead of the rows sitting at those positions in the unfiltered result. (#1837)
+
 ## [0.56.0] - 2026-07-09
 
 ### Added
@@ -2458,7 +2488,9 @@ TablePro is a native macOS database client built with SwiftUI and AppKit, design
     - Custom SQL query templates
     - Performance optimized for large datasets
 
-[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.56.0...HEAD
+[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.56.2...HEAD
+[0.56.2]: https://github.com/TableProApp/TablePro/compare/v0.56.1...v0.56.2
+[0.56.1]: https://github.com/TableProApp/TablePro/compare/v0.56.0...v0.56.1
 [0.56.0]: https://github.com/TableProApp/TablePro/compare/v0.55.0...v0.56.0
 [0.55.0]: https://github.com/TableProApp/TablePro/compare/v0.54.0...v0.55.0
 [0.54.0]: https://github.com/TableProApp/TablePro/compare/v0.53.0...v0.54.0
