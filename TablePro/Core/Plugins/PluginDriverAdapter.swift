@@ -136,6 +136,16 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable {
         try await pluginDriver.applyQueryTimeout(seconds)
     }
 
+    func resolveQueryCompletionProfile(
+        databaseTypeId: String,
+        base: QueryCompletionProfile
+    ) async throws -> QueryCompletionProfile {
+        try await pluginDriver.resolveQueryCompletionProfile(
+            databaseTypeId: databaseTypeId,
+            base: base
+        )
+    }
+
     // MARK: - Query Execution
 
     func execute(query: String) async throws -> QueryResult {

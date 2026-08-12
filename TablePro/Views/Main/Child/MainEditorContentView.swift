@@ -339,6 +339,7 @@ struct MainEditorContentView: View {
     private func queryTabContent(tab: QueryTab) -> some View {
         @Bindable var bindableCoordinator = coordinator
         let claimFocus = coordinator.tabManager.pendingFocusTabId == tab.id
+        let queryScope = coordinator.scope(for: tab)
         QuerySplitView(
             isBottomCollapsed: Binding(
                 get: { tab.display.isResultsCollapsed },
@@ -365,8 +366,10 @@ struct MainEditorContentView: View {
                         isParameterPanelVisible: parameterVisibilityBinding(for: tab),
                         onExecute: { coordinator.runQuery() },
                         onExecuteWithoutLimit: { coordinator.runQuery(bypassRowLimit: true) },
-                        schemaProvider: SchemaProviderRegistry.shared.getOrCreate(for: coordinator.connection.id),
+                        schemaProvider: queryScope.map { SchemaProviderRegistry.shared.getOrCreate(for: $0) },
                         databaseType: coordinator.connection.type,
+                        databaseScope: queryScope,
+                        serverVersion: DatabaseManager.shared.driver(for: coordinator.connection.id)?.serverVersion,
                         connectionId: coordinator.connection.id,
                         connectionAIPolicy: coordinator.connection.aiPolicy ?? AppSettingsManager.shared.ai.defaultConnectionPolicy,
                         tabID: tab.id,

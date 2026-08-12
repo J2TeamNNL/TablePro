@@ -110,6 +110,10 @@ public protocol PluginDatabaseDriver: AnyObject, Sendable {
     func applyQueryTimeout(_ seconds: Int) async throws
     var serverVersion: String? { get }
     var parameterStyle: ParameterStyle { get }
+    func resolveQueryCompletionProfile(
+        databaseTypeId: String,
+        base: QueryCompletionProfile
+    ) async throws -> QueryCompletionProfile
 
     var requiresBackslashEscapingInLiterals: Bool { get }
 
@@ -269,6 +273,13 @@ public extension PluginDatabaseDriver {
     var serverVersion: String? { nil }
 
     var parameterStyle: ParameterStyle { .questionMark }
+
+    func resolveQueryCompletionProfile(
+        databaseTypeId: String,
+        base: QueryCompletionProfile
+    ) async throws -> QueryCompletionProfile {
+        base
+    }
 
     var requiresBackslashEscapingInLiterals: Bool { false }
 

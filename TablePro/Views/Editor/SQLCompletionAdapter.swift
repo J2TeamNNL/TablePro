@@ -10,6 +10,7 @@ import CodeEditSourceEditor
 import CodeEditTextView
 import os
 import SwiftUI
+import TableProPluginKit
 
 /// Adapts the existing CompletionEngine to CodeEditSourceEditor's suggestion system
 @MainActor
@@ -27,6 +28,7 @@ final class SQLCompletionAdapter: CodeSuggestionDelegate {
     }
 
     private var completionEngine: CompletionEngine
+    private(set) var profileRevision = QueryCompletionProfile.defaultRevision
     private var favoriteKeywords: [String: (name: String, query: String)] = [:]
     private var session: CompletionSession?
     private let debounceNanoseconds: UInt64 = 50_000_000
@@ -45,8 +47,17 @@ final class SQLCompletionAdapter: CodeSuggestionDelegate {
     }
 
     /// Rebuild the completion engine for the current connection (nil schema still yields keyword completion)
-    func configure(schemaProvider: SQLSchemaProvider?, databaseType: DatabaseType?) {
-        completionEngine = Self.makeEngine(schemaProvider: schemaProvider, databaseType: databaseType)
+    func configure(
+        schemaProvider: SQLSchemaProvider?,
+        databaseType: DatabaseType?,
+        profile: QueryCompletionProfile? = nil
+    ) {
+        profileRevision = profile?.revision ?? QueryCompletionProfile.defaultRevision
+        completionEngine = Self.makeEngine(
+            schemaProvider: schemaProvider,
+            databaseType: databaseType,
+            profile: profile
+        )
         completionEngine.updateFavoriteKeywords(favoriteKeywords)
     }
 
@@ -58,10 +69,14 @@ final class SQLCompletionAdapter: CodeSuggestionDelegate {
 
     private static func makeEngine(
         schemaProvider: SQLSchemaProvider?,
-        databaseType: DatabaseType?
+        databaseType: DatabaseType?,
+        profile: QueryCompletionProfile? = nil
     ) -> CompletionEngine {
-        let dialect = databaseType.flatMap { PluginManager.shared.sqlDialect(for: $0) }
-        let completions = databaseType.flatMap { PluginManager.shared.statementCompletions(for: $0) } ?? []
+        let dialect = profile?.resolvedDialect
+            ?? databaseType.flatMap { PluginManager.shared.sqlDialect(for: $0) }
+        let completions = profile?.statementCompletions
+            ?? databaseType.flatMap { PluginManager.shared.statementCompletions(for: $0) }
+            ?? []
         return CompletionEngine(
             schemaProvider: schemaProvider, databaseType: databaseType,
             dialect: dialect, statementCompletions: completions

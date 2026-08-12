@@ -81,22 +81,23 @@ final class SchemaRefreshService {
             )
             return
         }
-        guard let provider = providerRegistry.provider(for: connectionId) else {
-            Self.logger.debug(
-                "[schema] autocomplete sync skipped, no provider connId=\(connectionId, privacy: .public)"
-            )
-            return
-        }
-        guard let browseDatabase = metadataDriverProvider.browseScope(for: connectionId)?.database else {
+        guard let browseScope = metadataDriverProvider.browseScope(for: connectionId) else {
             Self.logger.debug(
                 "[schema] autocomplete sync skipped, no browse scope connId=\(connectionId, privacy: .public)"
             )
             return
         }
+        guard let provider = providerRegistry.provider(for: browseScope) else {
+            Self.logger.debug(
+                "[schema] autocomplete sync skipped, no provider connId=\(connectionId, privacy: .public)"
+            )
+            return
+        }
+        let browseDatabase = browseScope.database
         let tables = schemaService.allLoadedTables(for: connectionId)
         let schemas = schemaService.schemas(for: connectionId)
         do {
-            try await metadataDriverProvider.withBrowseMetadataDriver(connectionId: connectionId) { driver in
+            try await metadataDriverProvider.withMetadataDriver(scope: browseScope) { driver in
                 await provider.resetForDatabase(browseDatabase, tables: tables, driver: driver)
                 await provider.setNamespaces(schemas: schemas, databases: [browseDatabase])
             }

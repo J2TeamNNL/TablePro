@@ -20,6 +20,8 @@ struct QueryEditorView: View {
     var onExecuteWithoutLimit: (() -> Void)?
     var schemaProvider: SQLSchemaProvider?
     var databaseType: DatabaseType?
+    var databaseScope: DatabaseScope?
+    var serverVersion: String?
     var connectionId: UUID?
     var connectionAIPolicy: AIConnectionPolicy?
     var tabID: UUID?
@@ -64,6 +66,8 @@ struct QueryEditorView: View {
                 cursorPositions: $cursorPositions,
                 schemaProvider: schemaProvider,
                 databaseType: databaseType,
+                databaseScope: databaseScope,
+                serverVersion: serverVersion,
                 connectionId: connectionId,
                 connectionAIPolicy: connectionAIPolicy,
                 tabID: tabID,

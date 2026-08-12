@@ -210,8 +210,7 @@ extension PluginManager {
     }
 
     func sqlDialect(for databaseType: DatabaseType) -> SQLDialectDescriptor? {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: databaseType.pluginTypeId)?
-            .editor.sqlDialect
+        metadataSnapshot(for: databaseType)?.editor.sqlDialect
     }
 
     /// How this engine can express case-insensitive matching. SQL engines answer from their
@@ -225,8 +224,7 @@ extension PluginManager {
     }
 
     func statementCompletions(for databaseType: DatabaseType) -> [CompletionEntry] {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: databaseType.pluginTypeId)?
-            .editor.statementCompletions ?? []
+        metadataSnapshot(for: databaseType)?.editor.statementCompletions ?? []
     }
 
     func additionalConnectionFields(for databaseType: DatabaseType) -> [ConnectionField] {
@@ -317,8 +315,12 @@ extension PluginManager {
     }
 
     func editorLanguage(for databaseType: DatabaseType) -> EditorLanguage {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: databaseType.pluginTypeId)?
-            .editorLanguage ?? .sql
+        metadataSnapshot(for: databaseType)?.editorLanguage ?? .sql
+    }
+
+    private func metadataSnapshot(for databaseType: DatabaseType) -> PluginMetadataSnapshot? {
+        PluginMetadataRegistry.shared.snapshot(forTypeId: databaseType.rawValue)
+            ?? PluginMetadataRegistry.shared.snapshot(forTypeId: databaseType.pluginTypeId)
     }
 
     func queryLanguageName(for databaseType: DatabaseType) -> String {

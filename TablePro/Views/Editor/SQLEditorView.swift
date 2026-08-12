@@ -11,6 +11,7 @@ import CodeEditSourceEditor
 import CodeEditTextView
 import Combine
 import SwiftUI
+import TableProPluginKit
 
 // MARK: - SQLEditorView
 
@@ -20,6 +21,8 @@ struct SQLEditorView: View {
     @Binding var cursorPositions: [CursorPosition]
     var schemaProvider: SQLSchemaProvider?
     var databaseType: DatabaseType?
+    var databaseScope: DatabaseScope?
+    var serverVersion: String?
     var connectionId: UUID?
     var connectionAIPolicy: AIConnectionPolicy?
     var tabID: UUID?
@@ -90,6 +93,9 @@ struct SQLEditorView: View {
             completionAdapter.configure(schemaProvider: schemaProvider, databaseType: databaseType)
             setupFavoritesObserver()
         }
+        .task(id: completionProfileRequest) {
+            await resolveCompletionProfile()
+        }
         .onChange(of: colorScheme) {
             editorConfiguration = Self.makeConfiguration()
         }
@@ -122,6 +128,33 @@ struct SQLEditorView: View {
         }
         completionAdapter.configure(schemaProvider: schemaProvider, databaseType: databaseType)
         setupFavoritesObserver()
+    }
+
+    private var completionProfileRequest: CompletionProfileRequest? {
+        guard let databaseScope, let databaseType else { return nil }
+        return CompletionProfileRequest(
+            scope: databaseScope,
+            databaseType: databaseType,
+            serverVersion: serverVersion,
+            profileRevision: QueryCompletionProfileRegistry.shared.revision(for: databaseScope)
+        )
+    }
+
+    private func resolveCompletionProfile() async {
+        guard let request = completionProfileRequest else { return }
+        let profile = try? await DatabaseManager.shared.withMetadataDriver(scope: request.scope) { driver in
+            await QueryCompletionProfileRegistry.shared.profile(
+                for: request.scope,
+                databaseType: request.databaseType,
+                driver: driver
+            )
+        }
+        guard !Task.isCancelled, let profile else { return }
+        completionAdapter.configure(
+            schemaProvider: schemaProvider,
+            databaseType: databaseType,
+            profile: profile
+        )
     }
 
     // MARK: - Favorites
@@ -188,6 +221,13 @@ struct SQLEditorView: View {
             )
         )
     }
+}
+
+private struct CompletionProfileRequest: Hashable {
+    let scope: DatabaseScope
+    let databaseType: DatabaseType
+    let serverVersion: String?
+    let profileRevision: Int
 }
 
 // MARK: - Preview

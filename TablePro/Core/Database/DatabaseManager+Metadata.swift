@@ -9,7 +9,7 @@ import Foundation
 /// no connection-only overload: a connection reaches many databases, so resolving the
 /// database from ambient session state is how a tab's read lands on another database.
 @MainActor
-protocol ScopedMetadataProviding: AnyObject {
+protocol ScopedMetadataProviding: AnyObject, Sendable {
     func withMetadataDriver<T: Sendable>(
         scope: DatabaseScope,
         workload: MetadataConnectionPool.Workload,

@@ -45,6 +45,11 @@ protocol DatabaseDriver: AnyObject, Sendable {
     /// Apply query execution timeout (seconds, 0 = no limit)
     func applyQueryTimeout(_ seconds: Int) async throws
 
+    func resolveQueryCompletionProfile(
+        databaseTypeId: String,
+        base: QueryCompletionProfile
+    ) async throws -> QueryCompletionProfile
+
     // MARK: - Query Execution
 
     /// Execute a SQL query and return results
@@ -245,6 +250,13 @@ extension DatabaseDriver {
 
     func connectReporting(stage report: @escaping ConnectionStageReporter) async throws {
         try await connect()
+    }
+
+    func resolveQueryCompletionProfile(
+        databaseTypeId: String,
+        base: QueryCompletionProfile
+    ) async throws -> QueryCompletionProfile {
+        base
     }
 
     var queryBuildingPluginDriver: (any PluginDatabaseDriver)? { nil }
