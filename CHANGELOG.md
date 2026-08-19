@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Table maintenance from the object browser (OPTIMIZE, ANALYZE, CHECK, REPAIR, and VACUUM on PostgreSQL) now runs against the database the table you picked lives in. It ran on whichever database the connection happened to be on, which a tab from another database moves for the length of its query, so the command could maintain the same-named table in the wrong database and still report success.
 - A table that exists in two databases can be opened in both. The object browser marked the row for a table you had open in another database, so clicking it did nothing at all: the row was already selected and the click changed nothing. The browser now marks a row only while the tab you are looking at belongs to the database on screen. (#2217)
 - Server Dashboard, Users & Roles, Query Insights, ER Diagram and a linked SQL file now select the tab they already opened instead of doing nothing when another tab is in front. (#2217)
 - The empty Favorites sidebar fits its width on macOS 15. The description and the New Favorite, New Folder and Link a Folder buttons ran past both edges of the sidebar and were cut off, so the buttons could not be read or reached. They now wrap and stack inside the sidebar.
