@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Opening the date picker on an empty date or timestamp cell now starts at your own clock and writes your own time. It used to read the picked instant as UTC, so the value written was your clock shifted by your time zone offset, and for the hours after local midnight a date column got the previous day. (#2241)
+- A time value that carries a UTC offset, such as a PostgreSQL `time with time zone` column, now follows your chosen date format instead of showing as raw text. The grid and the cell editor disagreed about which spellings counted as a date, so the same value was editable as a date but never formatted as one. (#2241)
 - **Open in New Tab** opens a second tab for a table that is already open. It reselected the existing tab and said nothing, so there was no way to browse one table under two different filters. (#2235)
 - Following a foreign key into a new tab no longer overwrites the filters on a tab already showing that table. The jump reused the open tab, replaced its filters with the foreign key's, and left the grid on the rows it had before, so the filters were gone and the rows did not match what the panel said.
 - Opening a table from the sidebar while the object list is still loading opens it. The click was dropped with no tab, no error, and no retry when the load finished, which was most visible right after relaunching with tabs restored.
