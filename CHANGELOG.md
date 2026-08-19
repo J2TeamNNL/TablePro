@@ -31,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `Cmd+F` no longer opens a find bar in JSON result mode. It searched the data grid's cells through the grid, which is not mounted there, so it always reported no matches whatever you typed. The Tree view keeps its own search field. (#2244)
+- The Filters button and `Cmd+Option+F` now open the filter panel in JSON result mode, where they used to flip a switch and draw nothing. Applying a filter re-runs the query, so the JSON shows the filtered rows. (#2244)
+- Add Row, Duplicate Row, Paste and Delete no longer collapse the JSON view to the single row they touched. Each command selected that row so the grid could scroll to it, and JSON mode reads the same selection as "show only these rows", so the document appeared to empty out. (#2244)
 - Opening the date picker on an empty date or timestamp cell now starts at your own clock and writes your own time. It used to read the picked instant as UTC, so the value written was your clock shifted by your time zone offset, and for the hours after local midnight a date column got the previous day. (#2241)
 - A time value that carries a UTC offset, such as a PostgreSQL `time with time zone` column, now follows your chosen date format instead of showing as raw text. The grid and the cell editor disagreed about which spellings counted as a date, so the same value was editable as a date but never formatted as one. (#2241)
 - **Open in New Tab** opens a second tab for a table that is already open. It reselected the existing tab and said nothing, so there was no way to browse one table under two different filters. (#2235)
