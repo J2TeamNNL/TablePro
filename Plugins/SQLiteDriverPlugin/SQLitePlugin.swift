@@ -15,7 +15,9 @@ final class SQLitePlugin: NSObject, TableProPlugin, DriverPlugin {
     static let capabilities: [PluginCapability] = [.databaseDriver]
 
     static let explainVariants: [ExplainVariant] = [
-        ExplainVariant(id: "explain", label: "Explain", sqlPrefix: "EXPLAIN QUERY PLAN")
+        ExplainVariant(
+            id: "explain", label: "Explain", sqlPrefix: "EXPLAIN QUERY PLAN", format: .sqliteQueryPlan
+        )
     ]
 
     static let databaseTypeId = "SQLite"
@@ -710,6 +712,8 @@ final class SQLitePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
         return allColumns
     }
+
+    var providesBulkForeignKeyFetch: Bool { true }
 
     func fetchAllForeignKeys(schema: String?) async throws -> [String: [PluginForeignKeyInfo]] {
         let query = """

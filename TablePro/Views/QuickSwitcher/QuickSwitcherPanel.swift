@@ -19,6 +19,11 @@ internal final class QuickSwitcherPanel: NSPanel {
             backing: .buffered,
             defer: false
         )
+        /// Named on the window, the same way the main window is: AppKit publishes `identifier` as
+        /// the window's accessibility identifier, so a client can scope a search to this panel
+        /// instead of walking the whole application. A SwiftUI modifier could not do it, because an
+        /// identifier on the content view overwrites the one every control inside it publishes.
+        identifier = NSUserInterfaceItemIdentifier("quick-switcher-panel")
         isFloatingPanel = true
         level = .floating
         collectionBehavior.insert(.fullScreenAuxiliary)
@@ -112,36 +117,5 @@ internal final class QuickSwitcherPanelController: NSObject, NSWindowDelegate {
             x: anchor.centerX - size.width / 2,
             y: anchor.top - size.height
         ))
-    }
-}
-
-internal struct QuickSwitcherPanelBackground: NSViewRepresentable {
-    let cornerRadius: CGFloat
-
-    func makeNSView(context: Context) -> NSView {
-        if #available(macOS 26.0, *) {
-            let glassView = NSGlassEffectView()
-            glassView.cornerRadius = cornerRadius
-            return glassView
-        }
-        let effectView = NSVisualEffectView()
-        effectView.material = .popover
-        effectView.blendingMode = .behindWindow
-        effectView.state = .active
-        effectView.wantsLayer = true
-        effectView.layer?.cornerRadius = cornerRadius
-        effectView.layer?.cornerCurve = .continuous
-        effectView.layer?.masksToBounds = true
-        return effectView
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        if #available(macOS 26.0, *), let glassView = nsView as? NSGlassEffectView {
-            glassView.cornerRadius = cornerRadius
-            return
-        }
-        if let effectView = nsView as? NSVisualEffectView {
-            effectView.layer?.cornerRadius = cornerRadius
-        }
     }
 }

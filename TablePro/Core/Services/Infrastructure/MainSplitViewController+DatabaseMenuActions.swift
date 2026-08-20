@@ -47,6 +47,12 @@ extension MainSplitViewController {
         commandActions?.runMaintenanceOperation(operation)
     }
 
+    @objc func switchToSchema(_ sender: Any?) {
+        guard let schema = (sender as? NSMenuItem)?.representedObject as? String,
+              let coordinator = commandActions?.coordinator else { return }
+        Task { await coordinator.switchSchema(to: schema) }
+    }
+
     @objc func truncateTable(_ sender: Any?) {
         commandActions?.truncateTables()
     }
@@ -61,5 +67,9 @@ extension MainSplitViewController {
 
     @objc func showUsersAndRoles(_ sender: Any?) {
         commandActions?.showUsersAndRoles()
+    }
+
+    @objc func showQueryInsights(_ sender: Any?) {
+        commandActions?.showQueryInsights()
     }
 }

@@ -25,7 +25,7 @@ enum ViewMenuBuilder {
                 keyboard: keyboard
             ),
             MenuItemFactory.item(
-                String(localized: "Show Workspace Rail"),
+                String(localized: "Show Connections"),
                 action: #selector(MainSplitViewController.toggleWorkspaceRail(_:)),
                 shortcut: .toggleWorkspaceRail,
                 keyboard: keyboard
@@ -37,6 +37,14 @@ enum ViewMenuBuilder {
                 action: #selector(MainSplitViewController.focusSidebarFilter(_:)),
                 shortcut: .focusSidebarSearch,
                 keyboard: keyboard
+            ),
+            MenuItemFactory.item(
+                String(localized: "Filter Databases..."),
+                action: #selector(MainSplitViewController.filterDatabases(_:))
+            ),
+            MenuItemFactory.item(
+                String(localized: "Show All Databases"),
+                action: #selector(MainSplitViewController.showAllDatabases(_:))
             ),
             MenuItemFactory.separator,
             MenuItemFactory.item(
@@ -84,13 +92,13 @@ enum ViewMenuBuilder {
             ),
             MenuItemFactory.separator,
             MenuItemFactory.item(
-                String(localized: "Show Previous Workspace"),
+                String(localized: "Show Previous Connection"),
                 action: #selector(MainSplitViewController.showPreviousWorkspace(_:)),
                 shortcut: .showPreviousWorkspace,
                 keyboard: keyboard
             ),
             MenuItemFactory.item(
-                String(localized: "Show Next Workspace"),
+                String(localized: "Show Next Connection"),
                 action: #selector(MainSplitViewController.showNextWorkspace(_:)),
                 shortcut: .showNextWorkspace,
                 keyboard: keyboard

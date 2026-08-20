@@ -91,6 +91,10 @@ protocol DatabaseDriver: AnyObject, Sendable {
     /// Default implementation falls back to per-table fetchColumns.
     func fetchAllColumns() async throws -> [String: [ColumnInfo]]
 
+    /// Dotted field paths a document store exposes for a collection, for query authoring.
+    /// Default implementation returns nothing, which is correct for every SQL driver.
+    func sampleFieldPaths(table: String, limit: Int) async throws -> [PluginFieldPath]
+
     /// Fetch indexes for a specific table
     func fetchIndexes(table: String) async throws -> [IndexInfo]
 
@@ -110,6 +114,10 @@ protocol DatabaseDriver: AnyObject, Sendable {
     /// Fetch foreign keys for all tables in the current database/schema in bulk.
     /// Default implementation falls back to per-table fetchForeignKeys.
     func fetchAllForeignKeys() async throws -> [String: [ForeignKeyInfo]]
+
+    /// Whether `fetchAllForeignKeys` is a single query. False means it degrades to one round trip
+    /// per table, which is too expensive to run ahead of the user.
+    var providesBulkForeignKeyFetch: Bool { get }
 
     /// Fetch foreign keys for a specific set of tables.
     /// Default implementation calls fetchAllForeignKeys and filters, or falls back to per-table.
@@ -174,6 +182,8 @@ protocol DatabaseDriver: AnyObject, Sendable {
     func createDatabase(_ request: CreateDatabaseRequest) async throws
 
     func dropDatabase(name: String) async throws
+
+    func dropSchema(name: String) async throws
 
     func fetchSessionContexts() async throws -> [PluginSessionContext]?
 
@@ -240,6 +250,13 @@ protocol SchemaSwitchable: DatabaseDriver {
     var currentSchema: String? { get }
     var escapedSchema: String? { get }
     func switchSchema(to schema: String) async throws
+}
+
+/// Protocol for drivers that know which database they are on. An embedded engine names
+/// its database from the file it opened, so the session cannot derive it from the
+/// connection definition the way a networked engine can.
+protocol DatabaseReporting: DatabaseDriver {
+    var currentDatabase: String? { get }
 }
 
 /// Default implementation for common operations
@@ -313,6 +330,11 @@ extension DatabaseDriver {
                       userInfo: [NSLocalizedDescriptionKey: "Drop database is not supported by this driver"])
     }
 
+    func dropSchema(name: String) async throws {
+        throw NSError(domain: "DatabaseDriver", code: -1,
+                      userInfo: [NSLocalizedDescriptionKey: "Drop schema is not supported by this driver"])
+    }
+
     func createDatabaseFormSpec() async throws -> CreateDatabaseFormSpec? { nil }
 
     func fetchSessionContexts() async throws -> [PluginSessionContext]? { nil }
@@ -342,6 +364,8 @@ extension DatabaseDriver {
         }
         return results
     }
+
+    var providesBulkForeignKeyFetch: Bool { false }
 
     func fetchAllForeignKeys() async throws -> [String: [ForeignKeyInfo]] {
         let allTables = try await fetchTables()
@@ -390,6 +414,10 @@ extension DatabaseDriver {
             }
         }
         return result
+    }
+
+    func sampleFieldPaths(table: String, limit: Int) async throws -> [PluginFieldPath] {
+        []
     }
 
     /// Default fetchAllColumns: falls back to per-table fetchColumns (N+1).

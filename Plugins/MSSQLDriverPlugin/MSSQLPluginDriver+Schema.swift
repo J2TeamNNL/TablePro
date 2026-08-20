@@ -332,6 +332,8 @@ extension MSSQLPluginDriver {
         return columnsByTable
     }
 
+    var providesBulkForeignKeyFetch: Bool { true }
+
     func fetchAllForeignKeys(schema: String?) async throws -> [String: [PluginForeignKeyInfo]] {
         let esc = effectiveSchemaEscaped(schema)
         let sql = """
@@ -567,6 +569,11 @@ extension MSSQLPluginDriver {
     func dropDatabase(name: String) async throws {
         let quotedName = "[\(name.replacingOccurrences(of: "]", with: "]]"))]"
         _ = try await execute(query: "DROP DATABASE \(quotedName)")
+    }
+
+    func dropSchema(name: String) async throws {
+        let quotedName = "[\(name.replacingOccurrences(of: "]", with: "]]"))]"
+        _ = try await execute(query: "DROP SCHEMA \(quotedName)")
     }
 
     // MARK: - All Tables Metadata

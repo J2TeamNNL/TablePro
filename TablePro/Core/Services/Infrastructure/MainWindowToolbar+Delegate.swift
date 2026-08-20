@@ -16,20 +16,19 @@ extension MainWindowToolbar {
         Self.lifecycleLogger.info(
             "[open] toolbar delegate buildItem id=\(itemIdentifier.rawValue, privacy: .public) hasCoordinator=\(self.coordinator != nil)"
         )
-        guard let coordinator else { return nil }
-
         switch itemIdentifier {
         case Self.sidebarToggle:
-            return makeSidebarToggleItem()
+            return makeSidebarToggleItem(claimsSlot: Self.claimsItemSlot(willBeInsertedIntoToolbar: flag))
         case Self.connectionGroup:
             let group = makeGroup(
                 id: itemIdentifier,
                 label: String(localized: "Connection"),
                 subitems: [subitemConnection(), subitemDatabase()],
+                retainsController: Self.claimsItemSlot(willBeInsertedIntoToolbar: flag),
                 content: HStack(spacing: 4) {
-                    ConnectionToolbarButton(coordinator: coordinator)
-                    DatabaseToolbarButton(coordinator: coordinator)
-                    SessionContextToolbarButton(coordinator: coordinator)
+                    ConnectionToolbarSubjectButton(subject: subject)
+                    DatabaseToolbarSubjectButton(subject: subject)
+                    SessionContextToolbarSubjectButton(subject: subject)
                 }
             )
             group.isNavigational = true
@@ -37,104 +36,85 @@ extension MainWindowToolbar {
         case Self.principal:
             let item = hostingItem(
                 id: itemIdentifier,
-                label: "",
+                label: String(localized: "Status"),
                 symbol: nil,
                 action: nil,
                 keyEquivalent: "",
                 modifiers: [],
-                content: ToolbarPrincipalContent(
-                    state: coordinator.toolbarState,
-                    onSwitchDatabase: { [weak coordinator] in coordinator?.commandActions?.openDatabaseSwitcher() },
-                    onCancelQuery: { [weak coordinator] in coordinator?.cancelCurrentQuery() },
-                    onSafeModeChange: { [weak coordinator] level in coordinator?.setSafeModeLevel(level) }
-                )
+                retainsController: Self.claimsItemSlot(willBeInsertedIntoToolbar: flag),
+                content: ToolbarPrincipalSubjectContent(subject: subject)
             )
             item.visibilityPriority = .high
+            item.toolTip = String(localized: "Connection status")
             return item
         case Self.quickSwitcher:
-            return hostingItem(
+            return menuOnlyItem(
                 id: itemIdentifier,
-                label: String(localized: "Quick Switcher"),
+                label: String(localized: "Open Quickly"),
                 symbol: "magnifyingglass",
                 action: #selector(performOpenQuickSwitcher(_:)),
-                keyEquivalent: "o",
-                modifiers: [.command, .shift],
-                content: QuickSwitcherToolbarButton(coordinator: coordinator)
+                shortcut: .quickSwitcher
             )
         case Self.newTab:
-            return hostingItem(
+            return menuOnlyItem(
                 id: itemIdentifier,
                 label: String(localized: "New Tab"),
                 symbol: "plus.rectangle",
                 action: #selector(performNewTab(_:)),
-                keyEquivalent: "t",
-                modifiers: .command,
-                content: NewTabToolbarButton(coordinator: coordinator)
+                shortcut: .newTab,
+                description: String(localized: "New Query Tab")
             )
         case Self.previewSQL:
-            return hostingItem(
+            return menuOnlyItem(
                 id: itemIdentifier,
                 label: String(localized: "Preview"),
                 symbol: "eye",
                 action: #selector(performPreviewSQL(_:)),
-                keyEquivalent: "p",
-                modifiers: [.command, .shift],
-                content: PreviewSQLToolbarButton(coordinator: coordinator)
+                shortcut: .previewSQL,
+                description: previewDescription
             )
         case Self.results:
-            return hostingItem(
+            return menuOnlyItem(
                 id: itemIdentifier,
                 label: String(localized: "Results"),
                 symbol: "rectangle.bottomhalf.inset.filled",
                 action: #selector(performToggleResults(_:)),
-                keyEquivalent: "r",
-                modifiers: [.command, .option],
-                content: ResultsToolbarButton(coordinator: coordinator)
+                shortcut: .toggleResults,
+                description: String(localized: "Toggle Results"),
+                symbolProvider: { [weak self] in
+                    self?.coordinator?.toolbarState.isResultsCollapsed == false
+                        ? "rectangle.inset.filled"
+                        : "rectangle.bottomhalf.inset.filled"
+                }
             )
-        case Self.inspector:
-            let item = NSToolbarItem(itemIdentifier: Self.inspector)
-            item.label = String(localized: "Inspector")
-            item.paletteLabel = String(localized: "Inspector")
-            return item
         case Self.dashboard:
-            return hostingItem(
+            return menuOnlyItem(
                 id: itemIdentifier,
                 label: String(localized: "Dashboard"),
                 symbol: "gauge.with.dots.needle.33percent",
                 action: #selector(performShowDashboard(_:)),
-                keyEquivalent: "",
-                modifiers: [],
-                content: DashboardToolbarButton(coordinator: coordinator)
+                description: String(localized: "Server Dashboard")
             )
         case Self.history:
-            return hostingItem(
+            return menuOnlyItem(
                 id: itemIdentifier,
                 label: String(localized: "History"),
                 symbol: "clock",
                 action: #selector(performToggleHistory(_:)),
-                keyEquivalent: "y",
-                modifiers: .command,
-                content: HistoryToolbarButton(coordinator: coordinator)
+                shortcut: .toggleHistory,
+                description: String(localized: "Toggle Query History")
             )
         case Self.refreshSaveGroup:
-            return makeGroup(
+            return makeNativeGroup(
                 id: itemIdentifier,
                 label: String(localized: "Refresh & Save"),
-                subitems: [subitemRefresh(), subitemSaveChanges()],
-                content: HStack(spacing: 4) {
-                    RefreshToolbarButton(coordinator: coordinator)
-                    SaveChangesToolbarButton(coordinator: coordinator)
-                }
+                subitems: [subitemRefresh(), subitemSaveChanges()]
             )
         case Self.exportImportGroup:
-            return makeGroup(
+            return makeNativeGroup(
                 id: itemIdentifier,
                 label: String(localized: "Export & Import"),
-                subitems: [subitemExport(), subitemImport()],
-                content: HStack(spacing: 4) {
-                    ExportToolbarButton(coordinator: coordinator)
-                    ImportToolbarButton(coordinator: coordinator)
-                }
+                subitems: [subitemExport(), subitemImport()]
             )
         default:
             return nil

@@ -40,7 +40,7 @@ final class ConnectionStorage {
         userDefaults: UserDefaults = .standard,
         syncTracker: SyncChangeTracker = .shared,
         appSettings: @escaping @autoclosure () -> AppSettingsStorage = .shared,
-        keychain: any KeychainStoring = KeychainHelper.shared
+        keychain: any KeychainStoring = AppStorageEnvironment.shared.keychain
     ) {
         self.fileURL = fileURL
         self.defaults = userDefaults
@@ -52,10 +52,7 @@ final class ConnectionStorage {
     }
 
     nonisolated static func defaultFileURL() -> URL {
-        let appSupport = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first ?? FileManager.default.temporaryDirectory
+        let appSupport = AppStorageEnvironment.shared.applicationSupportRoot
         let dir = appSupport.appendingPathComponent("TablePro", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("connections.json")
@@ -297,8 +294,13 @@ final class ConnectionStorage {
         FilterSettingsStorage.shared.removeFilters(for: connection.id)
         DatabaseTreeFilterStorage.shared.removeFilter(for: connection.id)
         RecentlyClosedTabStore.shared.removeEntries(for: connection.id)
+        HistoryPanelPreferencesStorage.remove(for: connection.id)
+        QueryInsightsPreferencesStorage.remove(for: connection.id)
         Task {
             await SQLFavoriteManager.shared.removeFavoritesAndFolders(for: connection.id)
+            await QueryHistoryManager.shared.clear(
+                matching: QueryHistoryFilter(scope: .connection(connection.id))
+            )
         }
     }
 
@@ -334,9 +336,16 @@ final class ConnectionStorage {
         FilterSettingsStorage.shared.removeFilters(for: idsToDelete)
         DatabaseTreeFilterStorage.shared.removeFilters(for: idsToDelete)
         RecentlyClosedTabStore.shared.removeEntries(for: idsToDelete)
+        for id in idsToDelete {
+            HistoryPanelPreferencesStorage.remove(for: id)
+            QueryInsightsPreferencesStorage.remove(for: id)
+        }
         Task {
             for conn in connectionsToDelete {
                 await SQLFavoriteManager.shared.removeFavoritesAndFolders(for: conn.id)
+                await QueryHistoryManager.shared.clear(
+                    matching: QueryHistoryFilter(scope: .connection(conn.id))
+                )
             }
         }
     }

@@ -164,7 +164,16 @@ Libs/.downloaded
 Libs/dylibs/
 Libs/ios/
 
+# Rust driver build outputs. The vendored crates are workspace members, so the bridge
+# lockfile is the only one cargo writes. lib/ holds the staticlib slices build-dameng.sh
+# links into the plugin; they stay out of Libs/, which download-libs.sh checksum-verifies.
+Native/DamengBridge/**/target/
+Native/DamengBridge/lib/
+
 # Issue analysis blueprints (local only)
 .analysis/
 .docs/
 /plans/reports
+
+# Working copies produced by scripts/localization.py; the catalog is the source of truth
+Localization/

@@ -21,6 +21,11 @@ private struct TabLoadKey: Hashable {
 }
 
 struct MainEditorContentView: View {
+    /// A query tab nests its own editor/results split, whose two minimums are required constraints.
+    /// The drawer's own minimum has to clear their sum, or dragging the drawer down asks AppKit to
+    /// satisfy a height the content it contains cannot reach.
+    static let tabContentMinimumHeight = VerticalCollapsibleSplitView<EmptyView, EmptyView>.combinedMinimumThickness
+
     // MARK: - Dependencies
 
     var tabManager: QueryTabManager
@@ -57,6 +62,7 @@ struct MainEditorContentView: View {
     @State private var erDiagramViewModels: [UUID: ERDiagramViewModel] = [:]
     @State private var serverDashboardViewModels: [UUID: ServerDashboardViewModel] = [:]
     @State private var usersRolesViewModels: [UUID: UsersRolesViewModel] = [:]
+    @State private var queryInsightsViewModels: [UUID: QueryInsightsViewModel] = [:]
     @State private var dataTabDelegate = DataTabGridDelegate()
 
     @Bindable private var treeService = DatabaseTreeMetadataService.shared
@@ -79,23 +85,29 @@ struct MainEditorContentView: View {
     // MARK: - Body
 
     var body: some View {
-        let isHistoryVisible = coordinator.toolbarState.isHistoryPanelVisible
+        @Bindable var historyState = HistoryPanelState.forConnection(connectionId)
 
-        VStack(spacing: 0) {
-            // Native macOS window tabs replace the custom tab bar.
-            // Each window-tab contains a single tab — no ZStack keep-alive needed.
-            if let tab = tabManager.selectedTab {
-                tabContent(for: tab)
-            } else {
-                emptyStateView
+        VerticalCollapsibleSplitView(
+            isBottomCollapsed: Binding(
+                get: { !historyState.isVisible },
+                set: { historyState.isVisible = !$0 }
+            ),
+            autosaveName: "HistoryDrawer-\(connectionId)",
+            topMinimumThickness: Self.tabContentMinimumHeight,
+            bottomMinimumThickness: 180,
+            topContent: {
+                // Native macOS window tabs replace the custom tab bar.
+                // Each window-tab contains a single tab, so no ZStack keep-alive is needed.
+                if let tab = tabManager.selectedTab {
+                    tabContent(for: tab)
+                } else {
+                    emptyStateView
+                }
+            },
+            bottomContent: {
+                HistoryPanelView(coordinator: coordinator)
             }
-
-            if isHistoryVisible {
-                Divider()
-                HistoryPanelView(connectionId: connectionId)
-                    .frame(height: 300)
-            }
-        }
+        )
         .background(.background)
         .sheet(item: Binding(
             get: { coordinator.favoriteDialogQuery },
@@ -139,6 +151,7 @@ struct MainEditorContentView: View {
             erDiagramViewModels = erDiagramViewModels.filter { openTabIds.contains($0.key) }
             serverDashboardViewModels = serverDashboardViewModels.filter { openTabIds.contains($0.key) }
             usersRolesViewModels = usersRolesViewModels.filter { openTabIds.contains($0.key) }
+            queryInsightsViewModels = queryInsightsViewModels.filter { openTabIds.contains($0.key) }
         }
         .onChange(of: tabManager.selectedTabId) { _, _ in
             updateHasQueryText()
@@ -207,18 +220,38 @@ struct MainEditorContentView: View {
         case .table:
             tableTabContent(tab: tab)
         case .createTable:
-            CreateTableView(
-                connection: connection,
-                coordinator: coordinator,
-                selectionState: selectionState
-            )
+            createTableContent(tab: tab)
         case .erDiagram:
             erDiagramContent(tab: tab)
         case .serverDashboard:
             serverDashboardContent(tab: tab)
         case .usersRoles:
             usersRolesContent(tab: tab)
+        case .insights:
+            queryInsightsContent(tab: tab)
         }
+    }
+
+    // MARK: - Query Insights Tab Content
+
+    @ViewBuilder
+    private func queryInsightsContent(tab: QueryTab) -> some View {
+        Group {
+            if let vm = queryInsightsViewModels[tab.id] {
+                QueryInsightsView(viewModel: vm, coordinator: coordinator)
+            } else {
+                ProgressView(String(localized: "Loading insights..."))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .onAppear {
+                        guard queryInsightsViewModels[tab.id] == nil else { return }
+                        queryInsightsViewModels[tab.id] = QueryInsightsViewModel(
+                            connectionId: connection.id,
+                            history: QueryHistoryManager.shared
+                        )
+                    }
+            }
+        }
+        .id(tab.id)
     }
 
     // MARK: - Users & Roles Tab Content
@@ -227,7 +260,7 @@ struct MainEditorContentView: View {
     private func usersRolesContent(tab: QueryTab) -> some View {
         Group {
             if let vm = usersRolesViewModels[tab.id] {
-                UsersRolesTabView(viewModel: vm, coordinator: coordinator)
+                UsersRolesTabView(viewModel: vm, coordinator: coordinator, tabID: tab.id)
             } else {
                 ProgressView(String(localized: "Loading users and roles..."))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -340,7 +373,7 @@ struct MainEditorContentView: View {
         @Bindable var bindableCoordinator = coordinator
         let claimFocus = coordinator.tabManager.pendingFocusTabId == tab.id
         let queryScope = coordinator.scope(for: tab)
-        QuerySplitView(
+        VerticalCollapsibleSplitView(
             isBottomCollapsed: Binding(
                 get: { tab.display.isResultsCollapsed },
                 set: { collapsed in
@@ -366,6 +399,7 @@ struct MainEditorContentView: View {
                         isParameterPanelVisible: parameterVisibilityBinding(for: tab),
                         onExecute: { coordinator.runQuery() },
                         onExecuteWithoutLimit: { coordinator.runQuery(bypassRowLimit: true) },
+                        onExecuteAllStatements: { coordinator.runAllStatements() },
                         schemaProvider: queryScope.map { SchemaProviderRegistry.shared.getOrCreate(for: $0) },
                         databaseType: coordinator.connection.type,
                         databaseScope: queryScope,
@@ -374,21 +408,21 @@ struct MainEditorContentView: View {
                         connectionAIPolicy: coordinator.connection.aiPolicy ?? AppSettingsManager.shared.ai.defaultConnectionPolicy,
                         tabID: tab.id,
                         claimFocusOnAppear: claimFocus,
-                        restoredCursorRange: coordinator.restoredCursorRange(for: tab.id),
-                        onCloseTab: {
-                            NSApp.keyWindow?.close()
-                        },
-                        onExecuteQuery: { coordinator.runQuery() },
-                        onExplain: { variant in
-                            if let variant {
-                                coordinator.runClickHouseExplain(variant: variant)
-                            } else {
-                                coordinator.runExplainQuery()
+                        onFocusClaimed: {
+                            if coordinator.tabManager.pendingFocusTabId == tab.id {
+                                coordinator.tabManager.pendingFocusTabId = nil
                             }
                         },
-                        onExplainVariant: { variant in
-                            coordinator.runVariantExplain(variant)
+                        restoredCursorRange: coordinator.restoredCursorRange(for: tab.id),
+                        restoredFoldRanges: coordinator.foldRanges(for: tab.id),
+                        onFoldRangesChanged: { ranges in
+                            coordinator.recordFoldRanges(ranges, for: tab.id)
                         },
+                        onCloseTab: {
+                            coordinator.commandActions?.closeTab()
+                        },
+                        onExecuteQuery: { coordinator.runQuery() },
+                        onExplain: { variant in coordinator.runExplain(variant: variant) },
                         onAIExplain: { text in
                             coordinator.showAIChatPanel()
                             coordinator.aiViewModel?.handleExplainSelection(text)
@@ -418,9 +452,6 @@ struct MainEditorContentView: View {
         )
         .onAppear {
             coordinator.clearRestoredCursor(for: tab.id)
-            if coordinator.tabManager.pendingFocusTabId == tab.id {
-                coordinator.tabManager.pendingFocusTabId = nil
-            }
         }
     }
 
@@ -474,7 +505,7 @@ struct MainEditorContentView: View {
                 guard tabId == tabManager.selectedTabId,
                       let index = tabManager.tabs.firstIndex(where: { $0.id == tabId }),
                       let window = coordinator.contentWindow else { return }
-                let showsIndicator = tabManager.tabs[index].showsUnsavedIndicator
+                let showsIndicator = coordinator.showsUnsavedIndicator(for: tabManager.tabs[index])
                 Task { @MainActor in
                     window.isDocumentEdited = showsIndicator
                 }
@@ -535,6 +566,57 @@ struct MainEditorContentView: View {
         coordinator.scope(for: tab)
     }
 
+    /// A Create Table tab holds nothing but unsaved work, so its draft is cached here rather than
+    /// left in the view, which is destroyed the moment the tab is deselected.
+    @ViewBuilder
+    private func createTableContent(tab: QueryTab) -> some View {
+        Group {
+            if let draft = coordinator.createTableDrafts[tab.id] {
+                CreateTableView(
+                    connection: connection,
+                    coordinator: coordinator,
+                    selectionState: selectionState,
+                    draft: draft
+                )
+            } else {
+                Color.clear
+                    .onAppear { coordinator.createTableDrafts[tab.id] = CreateTableDraft() }
+            }
+        }
+        .id(tab.id)
+    }
+
+    /// The structure editor is rebuilt whenever the tab is deselected or switched to Data, so its
+    /// staged ALTERs live in a session cached here by tab, the same way the Users & Roles, ER
+    /// diagram and dashboard view models do. Creating it in `onAppear` rather than inline keeps the
+    /// write out of the view-update pass.
+    @ViewBuilder
+    private func structureContent(tab: QueryTab, tableName: String) -> some View {
+        let scope = structureScope(for: tab)
+        let identity = "\(scope?.qualifiedDescription ?? "").\(tableName)"
+        Group {
+            if let session = coordinator.structureSessions[tab.id], session.identity == identity {
+                TableStructureView(
+                    tableName: tableName,
+                    connection: connection,
+                    databaseName: scope?.database ?? "",
+                    schemaName: scope?.schema,
+                    toolbarState: coordinator.toolbarState,
+                    coordinator: coordinator,
+                    selectionState: selectionState,
+                    session: session
+                )
+                .id(identity)
+            } else {
+                Color.clear
+                    .onAppear {
+                        coordinator.structureSessions[tab.id] = StructureEditingSession(identity: identity)
+                    }
+            }
+        }
+        .frame(maxHeight: .infinity)
+    }
+
     @ViewBuilder
     private func resultsSection(tab: QueryTab) -> some View {
         VStack(spacing: 0) {
@@ -542,37 +624,59 @@ struct MainEditorContentView: View {
             switch tab.display.resultsViewMode {
             case .structure:
                 if let tableName = tab.tableContext.tableName {
-                    let scope = structureScope(for: tab)
-                    TableStructureView(
-                        tableName: tableName,
-                        connection: connection,
-                        databaseName: scope?.database ?? "",
-                        schemaName: scope?.schema,
-                        toolbarState: coordinator.toolbarState,
-                        coordinator: coordinator,
-                        selectionState: selectionState
-                    )
-                    .id("\(scope?.qualifiedDescription ?? "").\(tableName)")
-                    .frame(maxHeight: .infinity)
+                    structureContent(tab: tab, tableName: tableName)
                 }
             case .json:
                 resultTabBarSection(tab: tab)
+                rowFilterChrome(tab: tab, rows: resolvedTableRows(for: tab))
                 ResultsJsonView(
                     tableRows: resolvedTableRows(for: tab),
                     selectedRowIndices: selectionState.indices,
-                    displayIDs: coordinator.activeGridDisplayIDs,
+                    displayIDs: coordinator.displayIDs(forTab: tab.id),
+                    deletedRowIndices: changeManager.deletedRowIndices,
+                    valueFilter: tab.valueFilter,
                     dataRevision: coordinator.tabSessionRegistry.session(for: tab.id)?.dataRevision ?? 0,
                     displayRevision: coordinator.gridDisplayRevision,
                     columnLayout: tab.columnLayout
                 )
                 .id(tab.id)
-            case .data:
-                if let explainText = tab.display.explainText {
-                    ExplainResultView(text: explainText, executionTime: tab.display.explainExecutionTime, plan: tab.display.explainPlan)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .chart:
+                resultTabBarSection(tab: tab)
+                if let explain = tab.display.activeExplainResult {
+                    QueryPlanResultView(
+                        rawText: explain.explainRawText ?? "",
+                        executionTime: explain.executionTime,
+                        plan: explain.queryPlan
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let resultSet = tab.display.activeResultSet {
+                    ResultChartView(
+                        configuration: chartConfigurationBinding(for: tab),
+                        tableRows: resolvedTableRows(for: tab),
+                        primaryKeyColumns: Set(tab.tableContext.primaryKeyColumns),
+                        tabId: tab.id,
+                        resultSetId: resultSet.id,
+                        dataRevision: coordinator.tabSessionRegistry.session(for: tab.id)?.dataRevision ?? 0,
+                        isUnlocked: LicenseManager.shared.isFeatureAvailable(.resultCharts)
+                    )
                 } else {
-                    resultTabBarSection(tab: tab)
+                    ContentUnavailableView(
+                        String(localized: "No Data"),
+                        systemImage: "chart.bar.xaxis",
+                        description: Text(String(localized: "Execute a query to chart its loaded rows."))
+                    )
+                }
+            case .data:
+                resultTabBarSection(tab: tab)
 
+                if let explain = tab.display.activeExplainResult {
+                    QueryPlanResultView(
+                        rawText: explain.explainRawText ?? "",
+                        executionTime: explain.executionTime,
+                        plan: explain.queryPlan
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
                     let resolvedRows = resolvedTableRows(for: tab)
                     if let rs = tab.display.activeResultSet, rs.resultColumns.isEmpty,
                        rs.errorMessage == nil, tab.execution.lastExecutedAt != nil,
@@ -596,20 +700,18 @@ struct MainEditorContentView: View {
                             )
                         }
                     } else {
-                        if tab.filterState.isVisible && tab.tabType == .table {
-                            if let descriptor = coordinator.browseFilterDescriptor {
-                                KeyPatternSearchBar(coordinator: coordinator, descriptor: descriptor)
-                            } else {
-                                FilterPanelView(
-                                    coordinator: coordinator,
-                                    columns: resolvedRows.columns,
-                                    primaryKeyColumn: changeManager.primaryKeyColumn,
-                                    databaseType: connection.type,
-                                    enumValuesByColumn: resolvedRows.columnEnumValues,
-                                    onApply: onApplyFilters,
-                                    onUnset: onClearFilters
-                                )
-                            }
+                        rowFilterChrome(tab: tab, rows: resolvedRows)
+
+                        if tab.findState.isVisible && tab.tabType == .table {
+                            FindBarView(
+                                coordinator: coordinator,
+                                findState: tab.findState,
+                                rowsRevision: tab.loadEpoch
+                                    &+ tab.pagination.currentPage
+                                    &+ tab.paginationVersion
+                                    &+ resolvedRows.rows.count,
+                                onSearchAllRows: { coordinator.findCoordinator.escalateToAllRows() }
+                            )
                             Divider()
                         }
 
@@ -625,12 +727,36 @@ struct MainEditorContentView: View {
                 }
             }
 
-            if tab.display.explainText == nil {
+            if tab.display.activeExplainResult == nil {
                 Divider()
                 statusBar(tab: tab)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Shared by every mode whose `showsRowFilters` is true. Filtering rebuilds the query and
+    /// re-runs it, so a mode that renders this panel shows filtered rows without knowing about it.
+    @ViewBuilder
+    private func rowFilterChrome(tab: QueryTab, rows: TableRows) -> some View {
+        if tab.filterState.isVisible && tab.tabType == .table
+            && tab.display.resultsViewMode.showsRowFilters
+        {
+            if let descriptor = coordinator.browseFilterDescriptor {
+                KeyPatternSearchBar(coordinator: coordinator, descriptor: descriptor)
+            } else {
+                FilterPanelView(
+                    coordinator: coordinator,
+                    columns: rows.columns,
+                    primaryKeyColumn: changeManager.primaryKeyColumn,
+                    databaseType: connection.type,
+                    enumValuesByColumn: rows.columnEnumValues,
+                    onApply: onApplyFilters,
+                    onUnset: onClearFilters
+                )
+            }
+            Divider()
+        }
     }
 
     @ViewBuilder
@@ -673,7 +799,8 @@ struct MainEditorContentView: View {
 
     @ViewBuilder
     private func dataGridView(tab: QueryTab) -> some View {
-        let isEditable = tab.tableContext.isEditable && !tab.tableContext.isView && !coordinator.safeModeLevel.blocksAllWrites
+        let refusal = coordinator.activeResultEditRefusal
+        let isEditable = coordinator.canEditActiveResult
 
         let tabId = tab.id
         DataGridView(
@@ -700,18 +827,20 @@ struct MainEditorContentView: View {
                 primaryKeyColumns: changeManager.primaryKeyColumns,
                 tabType: tab.tabType,
                 showRowNumbers: AppSettingsManager.shared.dataGrid.showRowNumbers,
-                hiddenColumns: tab.columnLayout.hiddenColumns
+                hiddenColumns: tab.columnLayout.hiddenColumns,
+                editRefusalMessage: refusal?.message
             ),
-            sortedIDs: nil,
-            displayFormats: displayFormats(for: tab),
+            displayFormats: coordinator.displayFormats(for: tab),
             delegate: dataTabDelegate,
             selectedRowIndices: Binding(
                 get: { selectionState.indices },
                 set: { selectionState.indices = $0 }
             ),
             sortState: sortStateBinding(for: tab),
-            columnLayout: columnLayoutBinding(for: tab)
+            columnLayout: columnLayoutBinding(for: tab),
+            valueFilter: valueFilterBinding(for: tab)
         )
+        .id(tabId)
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
@@ -719,67 +848,12 @@ struct MainEditorContentView: View {
         coordinator.tabSessionRegistry.existingTableRows(for: tab.id) ?? TableRows()
     }
 
-    private func displayFormats(for tab: QueryTab) -> [ValueDisplayFormat?] {
-        let settings = AppSettingsManager.shared.dataGrid
-        let service = ValueDisplayFormatService.shared
-        let smartDetectionEnabled = settings.enableSmartValueDetection
-        let overridesVersion = service.overridesVersion
-
-        if let cached = coordinator.displayFormatsCache[tab.id],
-           cached.schemaVersion == tab.schemaVersion,
-           cached.smartDetectionEnabled == smartDetectionEnabled,
-           cached.overridesVersion == overridesVersion {
-            return cached.formats
-        }
-
-        let tableRows = coordinator.tabSessionRegistry.existingTableRows(for: tab.id)
-        let columns = tableRows?.columns ?? []
-        let columnTypes = tableRows?.columnTypes ?? []
-        guard !columns.isEmpty else { return [] }
-
-        var detected: [ValueDisplayFormat?] = Array(repeating: nil, count: columns.count)
-        if smartDetectionEnabled {
-            let sampleRows: [[PluginCellValue]]? = {
-                let rows: [[PluginCellValue]] = tableRows?.rows.prefix(10).map { Array($0.values) } ?? []
-                return rows.isEmpty ? nil : rows
-            }()
-            detected = ValueDisplayDetector.detect(
-                columns: columns,
-                columnTypes: columnTypes,
-                sampleValues: sampleRows
-            )
-
-            var autoMap: [String: ValueDisplayFormat] = [:]
-            for (i, format) in detected.enumerated() where i < columns.count {
-                if let format {
-                    autoMap[columns[i]] = format
-                }
-            }
-            service.setAutoDetectedFormats(autoMap, scope: tab.tableContext.scope(connectionId: connectionId))
-        } else {
-            service.clearAutoDetectedFormats(scope: tab.tableContext.scope(connectionId: connectionId))
-        }
-
-        var merged = detected
-
-        if let scope = tab.tableContext.scope(connectionId: connectionId),
-           let overrides = ValueDisplayFormatStorage.shared.load(for: scope) {
-            for (i, colName) in columns.enumerated() {
-                if let overrideFormat = overrides[colName] {
-                    while merged.count <= i { merged.append(nil) }
-                    merged[i] = overrideFormat
-                }
-            }
-        }
-
-        let result = merged.contains(where: { $0 != nil }) ? merged : []
-        coordinator.displayFormatsCache[tab.id] = DisplayFormatsCacheEntry(
-            schemaVersion: tab.schemaVersion,
-            smartDetectionEnabled: smartDetectionEnabled,
-            overridesVersion: overridesVersion,
-            formats: result
+    private func valueFilterBinding(for tab: QueryTab) -> Binding<GridValueFilterState> {
+        let tabId = tab.id
+        return Binding(
+            get: { tab.valueFilter },
+            set: { coordinator.setValueFilter($0, forTab: tabId) }
         )
-        return result
     }
 
     private func sortStateBinding(for tab: QueryTab) -> Binding<SortState> {
@@ -788,6 +862,19 @@ struct MainEditorContentView: View {
             set: { newValue in
                 if let index = tabManager.selectedTabIndex {
                     tabManager.mutate(at: index) { $0.sortState = newValue }
+                }
+            }
+        )
+    }
+
+    /// The chart's choices belong to the tab, not to the result set: a page turn, a sort or a
+    /// re-execute builds a new `ResultSet`, and the axes have to outlive it.
+    private func chartConfigurationBinding(for tab: QueryTab) -> Binding<ResultChartConfiguration> {
+        Binding(
+            get: { tab.chartConfiguration },
+            set: { newValue in
+                if let index = tabManager.selectedTabIndex {
+                    tabManager.mutate(at: index) { $0.chartConfiguration = newValue }
                 }
             }
         )

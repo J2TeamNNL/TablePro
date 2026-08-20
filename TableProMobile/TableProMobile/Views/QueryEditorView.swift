@@ -160,7 +160,7 @@ struct QueryEditorView: View {
             }
 
             if resultRowCount > 0 {
-                Text(verbatim: "\(resultRowCount) rows")
+                Text("\(resultRowCount) rows")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -440,6 +440,14 @@ struct QueryEditorView: View {
         if case .error(let err) = viewModel.phase {
             appError = err
             hapticError.toggle()
+            coordinator.addHistoryItem(
+                QueryHistoryItem(
+                    query: trimmed,
+                    connectionId: connectionId,
+                    wasSuccessful: false,
+                    errorMessage: err.localizedDescription
+                )
+            )
             return
         }
 

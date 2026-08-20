@@ -127,16 +127,16 @@ internal enum SampleDatabaseLauncher {
         connectionId: UUID,
         onError: @MainActor @escaping (Error) -> Void
     ) {
-        for window in WindowLifecycleMonitor.shared.windows(for: connectionId) {
-            window.close()
-        }
+        /// Closes this connection only. The window hosts every open connection, so closing it
+        /// would take the rest down over a sample database that failed to open.
+        WindowManager.shared.closeWindow(for: connectionId)
         onError(error)
         WindowOpener.shared.openWelcome()
     }
 
     private static func bumpSampleOpenedCounter() {
-        let next = UserDefaults.standard.integer(forKey: sampleOpenedCountKey) + 1
-        UserDefaults.standard.set(next, forKey: sampleOpenedCountKey)
+        let next = AppStorageEnvironment.shared.defaults.integer(forKey: sampleOpenedCountKey) + 1
+        AppStorageEnvironment.shared.defaults.set(next, forKey: sampleOpenedCountKey)
     }
 
     private static func performReset(

@@ -14,7 +14,7 @@ struct GeneralSettingsView: View {
 
     @State private var initialLanguage: AppLanguage?
     @State private var showResetConfirmation = false
-    @AppStorage(SidebarPersistenceKey.defaultLayout) private var defaultSidebarLayout: SidebarLayout = .flat
+    @AppStorage(SidebarPersistenceKey.defaultLayout, store: AppStorageEnvironment.shared.defaults) private var defaultSidebarLayout: SidebarLayout = .flat
 
     private static let standardTimeouts = [10, 20, 30, 40, 50, 60, 90, 120, 180, 300, 600]
 
@@ -52,7 +52,7 @@ struct GeneralSettingsView: View {
             }
 
             Section("Sidebar") {
-                Toggle("Show workspace rail", isOn: $settings.showWorkspaceRail)
+                Toggle("Show connections", isOn: $settings.showWorkspaceRail)
                     .help("Adds a narrow strip on the window's leading edge listing every connection and database you have open, so one click switches to it.")
 
                 Toggle("Show recent tables", isOn: $settings.showRecentTables)
@@ -63,6 +63,16 @@ struct GeneralSettingsView: View {
 
                 Toggle("Show object comments", isOn: $settings.showObjectComments)
                     .help("Shows database object comments next to tables in the sidebar and in grid column headers.")
+
+                Picker("Row size:", selection: $settings.sidebarRowSize) {
+                    ForEach(SidebarRowSizePreference.allCases, id: \.self) { size in
+                        Text(size.title).tag(size)
+                    }
+                }
+                .help(String(localized: """
+                    Match System follows Sidebar icon size in System Settings > Appearance. \
+                    Choose a size to fit more objects on screen than the rest of the system shows.
+                    """))
 
                 Picker("Default layout for new connections:", selection: $defaultSidebarLayout) {
                     Text("List").tag(SidebarLayout.flat)

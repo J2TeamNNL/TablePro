@@ -18,6 +18,10 @@ struct GeneralPaneView: View {
         PluginManager.shared.connectionMode(for: type)
     }
 
+    private var showsBuiltInDatabaseField: Bool {
+        coordinator.network.showsBuiltInDatabaseField
+    }
+
     var body: some View {
         Form {
             if let parsed = coordinator.clipboardCandidate {
@@ -38,6 +42,7 @@ struct GeneralPaneView: View {
                     prompt: Text(String(localized: "Connection name"))
                 )
                 .focused($nameFocused)
+                .accessibilityIdentifier("connection-form-name")
             }
 
             connectionSection
@@ -70,6 +75,7 @@ struct GeneralPaneView: View {
                         text: $coordinator.network.database,
                         prompt: Text(filePathPrompt)
                     )
+                    .accessibilityIdentifier("connection-form-file-path")
                     Button(String(localized: "Browse...")) {
                         browseForFile()
                     }
@@ -77,7 +83,7 @@ struct GeneralPaneView: View {
                 }
             }
         case .apiOnly:
-            if PluginManager.shared.supportsDatabaseSwitching(for: type) {
+            if showsBuiltInDatabaseField {
                 Section(String(localized: "Connection")) {
                     TextField(
                         containerEntityName,
@@ -91,7 +97,7 @@ struct GeneralPaneView: View {
         case .network:
             Section(String(localized: "Connection")) {
                 hostFieldsView
-                if PluginManager.shared.requiresAuthentication(for: type) {
+                if showsBuiltInDatabaseField {
                     TextField(
                         containerEntityName,
                         text: $coordinator.network.database,

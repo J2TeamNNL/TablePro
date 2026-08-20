@@ -35,6 +35,9 @@ final class MockDatabaseDriver: DatabaseDriver, SchemaSwitchable, @unchecked Sen
     var hangsUntilDisconnect = false
     var schemasToReturn: [String] = []
     var fetchSchemasError: Error?
+    var databasesToReturn: [String] = []
+    var fetchDatabasesError: Error?
+    var fetchTablesError: Error?
     private var hangContinuation: CheckedContinuation<Void, Never>?
 
     init(connection: DatabaseConnection = TestFixtures.makeConnection()) {
@@ -82,10 +85,16 @@ final class MockDatabaseDriver: DatabaseDriver, SchemaSwitchable, @unchecked Sen
 
     func fetchTables() async throws -> [TableInfo] {
         fetchTablesCallCount += 1
+        if let fetchTablesError {
+            throw fetchTablesError
+        }
         return tablesToReturn
     }
 
     func fetchTables(schema: String?) async throws -> [TableInfo] {
+        if let fetchTablesError {
+            throw fetchTablesError
+        }
         guard let schema else { return tablesToReturn }
         fetchSchemaTablesCalls.append(schema)
         return schemaTablesToReturn[schema] ?? tablesToReturn
@@ -116,7 +125,12 @@ final class MockDatabaseDriver: DatabaseDriver, SchemaSwitchable, @unchecked Sen
         )
     }
 
-    func fetchDatabases() async throws -> [String] { [] }
+    func fetchDatabases() async throws -> [String] {
+        if let fetchDatabasesError {
+            throw fetchDatabasesError
+        }
+        return databasesToReturn
+    }
     func fetchDatabaseMetadata(_ database: String) async throws -> DatabaseMetadata {
         DatabaseMetadata(
             id: database, name: database, tableCount: nil, sizeBytes: nil,

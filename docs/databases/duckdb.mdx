@@ -13,6 +13,8 @@ DuckDB is an embedded analytical database built for OLAP workloads. TablePro ope
   </Step>
   <Step title="Keep Connection Type set to Local File">
     Click **Browse...** to select an existing `.duckdb` file, or enter a path to create a new database.
+
+    Enter `:memory:` instead of a path for an in-memory database. It holds nothing on disk, so everything in it is gone when you disconnect.
   </Step>
   <Step title="Connect">
     Click **Save & Connect** to open the database.
@@ -60,9 +62,21 @@ See [Connection URL Reference](/databases/connection-urls) for all parameters.
 
 Double-click a `.duckdb` or `.ddb` file in Finder to open it directly in TablePro.
 
-## Schemas
+## Databases and schemas
 
-DuckDB supports multiple schemas per database; the default is `main`. Browse them in the sidebar. DuckDB has no toolbar schema switcher.
+A DuckDB connection opens one database, named after the file (`analytics.duckdb` becomes `analytics`). Each database holds one or more schemas, and the default is `main`.
+
+The sidebar shows both levels. Switch it to Tree layout from View > Sidebar Layout to get database > schema > object folders; in the default Flat layout it lists the current schema's objects and the active schema sits at the foot of that list. The toolbar shows the active database and schema side by side; click either to switch it, or press `⌘K` for the database list.
+
+`ATTACH` a second file and it appears as a sibling database after a sidebar refresh:
+
+```sql
+ATTACH 'warehouse.duckdb' AS warehouse;
+```
+
+Attachments last for the session. DuckDB does not persist them, so they are gone after a reconnect.
+
+DuckDB's built-in `system` and `temp` catalogs are hidden, and with them `information_schema` and `pg_catalog`, which live inside `system`.
 
 ## Querying files directly
 

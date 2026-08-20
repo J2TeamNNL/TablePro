@@ -32,7 +32,7 @@ internal final class SettingsWindowController: NSWindowController {
         let window = NSWindow(contentViewController: panes)
         window.title = String(localized: "Settings")
         window.identifier = NSUserInterfaceItemIdentifier(WindowIdentifier.settings)
-        window.styleMask = [.titled, .closable]
+        window.styleMask = [.titled, .closable, .resizable]
         window.toolbarStyle = .preference
         window.isRestorable = false
         window.setContentSize(SettingsPaneTabViewController.paneSize)
@@ -42,6 +42,14 @@ internal final class SettingsWindowController: NSWindowController {
         if !window.setFrameUsingName(WindowIdentifier.settings) {
             window.center()
         }
+        /// A frame saved before the window became resizable can be smaller than any pane can
+        /// draw, so a restored frame is grown back to the pane minimum.
+        window.setContentSize(
+            NSSize(
+                width: max(window.contentLayoutRect.width, SettingsPaneTabViewController.paneSize.width),
+                height: max(window.contentLayoutRect.height, SettingsPaneTabViewController.paneSize.height)
+            )
+        )
         self.init(window: window)
     }
 }
@@ -54,7 +62,7 @@ private final class SettingsPaneTabViewController: NSTabViewController {
     ]
 
     private var persistedPane: SettingsPane {
-        let stored = UserDefaults.standard.string(forKey: PreferenceKeys.selectedSettingsPane.name)
+        let stored = AppStorageEnvironment.shared.defaults.string(forKey: PreferenceKeys.selectedSettingsPane.name)
         guard let stored, let pane = SettingsPane(rawValue: stored) else { return .general }
         return pane
     }
@@ -80,7 +88,7 @@ private final class SettingsPaneTabViewController: NSTabViewController {
         super.tabView(tabView, didSelect: tabViewItem)
         guard let identifier = tabViewItem?.identifier as? String,
               let pane = SettingsPane(rawValue: identifier) else { return }
-        UserDefaults.standard.set(pane.rawValue, forKey: PreferenceKeys.selectedSettingsPane.name)
+        AppStorageEnvironment.shared.defaults.set(pane.rawValue, forKey: PreferenceKeys.selectedSettingsPane.name)
         view.window?.title = pane.title
     }
 
@@ -92,7 +100,12 @@ private final class SettingsPaneTabViewController: NSTabViewController {
 
     private func makeTabViewItem(for pane: SettingsPane) -> NSTabViewItem {
         let content = SettingsPaneContent(pane: pane)
-            .frame(width: Self.paneSize.width, height: Self.paneSize.height)
+            .frame(
+                minWidth: Self.paneSize.width,
+                maxWidth: .infinity,
+                minHeight: Self.paneSize.height,
+                maxHeight: .infinity
+            )
             .environment(UpdaterBridge.shared)
             .environment(\.appServices, .live)
         let hosting = NSHostingController(rootView: content)

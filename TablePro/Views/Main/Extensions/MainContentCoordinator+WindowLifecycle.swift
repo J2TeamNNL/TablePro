@@ -33,7 +33,8 @@ extension MainContentCoordinator {
 
         consumeDeferredRestoreLoadIfNeeded()
 
-        syncSidebarToSelectedTab()
+        recordSelectedTabContainer()
+        syncSidebarObjectSelection()
         announceActiveTabToVoiceOver()
 
         Self.lifecycleLogger.debug(
@@ -71,8 +72,12 @@ extension MainContentCoordinator {
             "[close] coordinator.handleWindowWillClose connId=\(self.connectionId, privacy: .public) tabs=\(self.tabManager.tabs.count)"
         )
 
+        /// Never clears: a window closing says nothing about whether the user wants these tabs
+        /// kept, and every connection in the window reaches here. Discarding saved state is
+        /// `closeTabsByUser`'s job alone.
+        dataTabDelegate?.tableViewCoordinator?.flushPendingColumnLayoutPersistence()
         if !MainContentCoordinator.isAppTerminating, !isTearingDown {
-            persistence.saveOrClearAggregatedSync()
+            persistence.saveAggregatedSync()
         }
 
         evictionTask?.cancel()
@@ -103,6 +108,10 @@ extension MainContentCoordinator {
 
     func selectTabAndFocusWindow(_ tabId: UUID) {
         tabManager.selectedTabId = tabId
+        focusWindow()
+    }
+
+    func focusWindow() {
         guard let windowId,
               let window = WindowLifecycleMonitor.shared.window(for: windowId) else { return }
         window.makeKeyAndOrderFront(nil)
@@ -110,23 +119,24 @@ extension MainContentCoordinator {
 
     // MARK: - Sidebar Sync
 
-    /// Update the window-scoped sidebar selection so the active table tab
-    /// is highlighted. Reads tables fresh from the DatabaseManager because the
-    /// schema load is async and may complete after focus changes.
-    func syncSidebarToSelectedTab() {
-        let liveTables = DatabaseManager.shared
-            .session(for: connectionId)?.tables ?? []
-        let target: Set<TableInfo>
-        if let currentTableName = tabManager.selectedTab?.tableContext.tableName,
-           let match = liveTables.first(where: { $0.name == currentTableName }) {
-            target = [match]
-        } else {
-            target = []
-        }
-        if windowSidebarState.selectedTables != target {
-            if target.isEmpty && liveTables.isEmpty { return }
-            windowSidebarState.selectedTables = target
-        }
+    /// Mark the object the selected tab is showing in this window's object tree, or nothing when
+    /// that tab belongs to a container the tree is not listing. Reads tables fresh from the
+    /// DatabaseManager because the schema load is async and may complete after focus changes.
+    ///
+    /// The mark is a function of four inputs, so every one of them calls this: the selected tab,
+    /// the browsed container, the object list, and the window becoming key. Recomputing on only
+    /// some of them is what left a stale mark on a row in another database (#2217).
+    func syncSidebarObjectSelection() {
+        let selectedTab = tabManager.selectedTab
+        let selection = SidebarObjectSelection.resolve(
+            tabTableName: selectedTab?.tableContext.tableName,
+            tabScope: selectedTab.flatMap { scope(for: $0) },
+            browseScope: browseScope,
+            tables: services.databaseManager.session(for: connectionId)?.tables ?? []
+        )
+        guard case .mark(let target) = selection,
+              windowSidebarState.selectedTables != target else { return }
+        windowSidebarState.selectTables(target)
     }
 
     // MARK: - Lazy Load

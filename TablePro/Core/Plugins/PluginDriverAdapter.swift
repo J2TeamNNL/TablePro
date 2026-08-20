@@ -7,7 +7,7 @@ import Foundation
 import os
 import TableProPluginKit
 
-final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable {
+final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseReporting {
     private struct State {
         var status: ConnectionStatus = .disconnected
         var columnTypeCache: [String: ColumnType] = [:]
@@ -474,6 +474,10 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable {
         try await pluginDriver.dropDatabase(name: name)
     }
 
+    func dropSchema(name: String) async throws {
+        try await pluginDriver.dropSchema(name: name)
+    }
+
     func fetchSessionContexts() async throws -> [PluginSessionContext]? {
         try await pluginDriver.fetchSessionContexts()
     }
@@ -483,6 +487,10 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable {
     }
 
     // MARK: - Batch Operations
+
+    func sampleFieldPaths(table: String, limit: Int) async throws -> [PluginFieldPath] {
+        try await pluginDriver.sampleFieldPaths(table: table, schema: pluginDriver.currentSchema, limit: limit)
+    }
 
     func fetchAllColumns() async throws -> [String: [ColumnInfo]] {
         let pluginResult = try await pluginDriver.fetchAllColumns(schema: pluginDriver.currentSchema)
@@ -497,6 +505,8 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable {
         }
         return result
     }
+
+    var providesBulkForeignKeyFetch: Bool { pluginDriver.providesBulkForeignKeyFetch }
 
     func fetchAllForeignKeys() async throws -> [String: [ForeignKeyInfo]] {
         let pluginResult = try await pluginDriver.fetchAllForeignKeys(schema: pluginDriver.currentSchema)
@@ -559,6 +569,10 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable {
 
     func switchDatabase(to database: String) async throws {
         try await pluginDriver.switchDatabase(to: database)
+    }
+
+    var currentDatabase: String? {
+        pluginDriver.currentDatabase
     }
 
     // MARK: - DDL Schema Generation

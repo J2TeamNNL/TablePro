@@ -157,6 +157,38 @@ struct MainMenuValidationTests {
         #expect(enabled(#selector(MainSplitViewController.executeQuery(_:)), context))
     }
 
+    /// #2172: `paste:` had no window-level implementation at all, so with focus anywhere that does
+    /// not paste, AppKit disabled the item, and a disabled item still owns its key equivalent, so
+    /// Command+V was swallowed for the whole window. Adding the handler without an explicit arm
+    /// here would have been just as wrong in the other direction: `isEnabled` ends in
+    /// `default: return true`, which would have shipped Paste permanently lit.
+    @Test("Paste needs a connection and somewhere for the rows to land")
+    func pasteNeedsSomewhereToLand() {
+        var context = MenuValidationContext()
+        context.canPasteRows = true
+        #expect(!enabled(#selector(MainSplitViewController.paste(_:)), context))
+        context.isConnected = true
+        #expect(enabled(#selector(MainSplitViewController.paste(_:)), context))
+        context.canPasteRows = false
+        #expect(!enabled(#selector(MainSplitViewController.paste(_:)), context))
+    }
+
+    /// A database view opens as a `.table` tab with `tableContext.isEditable` false, so tab type
+    /// alone would light Paste over content the row paste must never write to.
+    @Test("Paste needs the tab to be editable, not merely a table tab")
+    func pasteNeedsAnEditableTab() {
+        var context = MenuValidationContext()
+        context.isConnected = true
+        context.canPasteRows = false
+        #expect(!enabled(#selector(MainSplitViewController.paste(_:)), context))
+    }
+
+    @Test("Paste is answered by its own arm, never by the default that enables everything else")
+    func pasteIsNotAnsweredByTheDefaultArm() {
+        let context = MenuValidationContext(hasSelectedWorkspace: true, isConnected: true)
+        #expect(!enabled(#selector(MainSplitViewController.paste(_:)), context))
+    }
+
     @Test("Save needs pending changes and a writable connection")
     func saveNeedsPendingChanges() {
         var context = MenuValidationContext()
@@ -165,6 +197,35 @@ struct MainMenuValidationTests {
         #expect(enabled(#selector(MainSplitViewController.saveDocument(_:)), context))
         context.isReadOnly = true
         #expect(!enabled(#selector(MainSplitViewController.saveDocument(_:)), context))
+    }
+
+    /// Both handlers return at their first guard in states the old validation called enabled, so
+    /// the item stayed lit and the click did nothing at all.
+    @Test("Save As needs a query tab, not just a connection")
+    func saveAsNeedsAQueryTab() {
+        var context = MenuValidationContext()
+        context.isConnected = true
+        #expect(!enabled(#selector(MainSplitViewController.saveDocumentAs(_:)), context))
+        context.isQueryTab = true
+        #expect(enabled(#selector(MainSplitViewController.saveDocumentAs(_:)), context))
+    }
+
+    @Test("Export Results needs rows to export")
+    func exportResultsNeedsRows() {
+        var context = MenuValidationContext()
+        context.isConnected = true
+        #expect(!enabled(#selector(MainSplitViewController.exportQueryResults(_:)), context))
+        context.hasResultRows = true
+        #expect(enabled(#selector(MainSplitViewController.exportQueryResults(_:)), context))
+    }
+
+    @Test("Neither survives losing the connection")
+    func bothStillNeedAConnection() {
+        var context = MenuValidationContext()
+        context.isQueryTab = true
+        context.hasResultRows = true
+        #expect(!enabled(#selector(MainSplitViewController.saveDocumentAs(_:)), context))
+        #expect(!enabled(#selector(MainSplitViewController.exportQueryResults(_:)), context))
     }
 
     @Test("Read-only connections block destructive commands")
@@ -187,12 +248,12 @@ struct MainMenuValidationTests {
         #expect(enabled(#selector(MainSplitViewController.cancelQuery(_:)), context))
     }
 
-    @Test("Filter bar is a table-tab command")
-    func filterBarNeedsTableTab() {
+    @Test("Filter bar needs an active table result grid")
+    func filterBarNeedsTableResultGrid() {
         var context = MenuValidationContext()
         context.isConnected = true
         #expect(!enabled(#selector(MainSplitViewController.toggleFilterBar(_:)), context))
-        context.isTableTab = true
+        context.canUseTableResultCommands = true
         #expect(enabled(#selector(MainSplitViewController.toggleFilterBar(_:)), context))
     }
 
@@ -221,7 +282,9 @@ struct MainMenuValidationTests {
 
     private func capableContext() -> MenuValidationContext {
         var context = MenuValidationContext()
-        context.isTableTab = true
+        context.canUseTableResultCommands = true
+        context.isQueryTab = true
+        context.hasResultRows = true
         context.hasQueryText = true
         context.hasPendingChanges = true
         context.hasDataPendingChanges = true
@@ -344,17 +407,20 @@ struct MainMenuValidationTests {
         ))
     }
 
-    @Test("Find needs somewhere to search: an editor, or a table tab to filter")
+    @Test("Find needs an editor or a mounted data grid, not merely a result that can be filtered")
     func findNeedsAnEditor() {
         var context = MenuValidationContext()
         context.isConnected = true
         #expect(!enabled(#selector(MainSplitViewController.performFind(_:)), context))
         #expect(!enabled(#selector(MainSplitViewController.findNext(_:)), context))
         #expect(!enabled(#selector(MainSplitViewController.findPrevious(_:)), context))
-        context.isTableTab = true
+        context.canUseTableResultCommands = true
+        #expect(!enabled(#selector(MainSplitViewController.performFind(_:)), context))
+        context.canUseGridFindCommands = true
         #expect(enabled(#selector(MainSplitViewController.performFind(_:)), context))
         #expect(!enabled(#selector(MainSplitViewController.findNext(_:)), context))
-        context.isTableTab = false
+        context.canUseTableResultCommands = false
+        context.canUseGridFindCommands = false
         context.hasEditorForFind = true
         #expect(enabled(#selector(MainSplitViewController.performFind(_:)), context))
         #expect(enabled(#selector(MainSplitViewController.findNext(_:)), context))

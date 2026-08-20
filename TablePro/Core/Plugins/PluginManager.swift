@@ -142,7 +142,7 @@ final class PluginManager {
     }
 
     nonisolated static func defaultUserPluginsDir() -> URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        AppStorageEnvironment.shared.applicationSupportRoot
             .appendingPathComponent("TablePro/Plugins", isDirectory: true)
     }
 
@@ -550,7 +550,11 @@ final class PluginManager {
         try validateBundleVersions(bundle)
 
         if source != .builtIn {
-            try PluginCodeSignatureVerifier.verify(bundle: bundle)
+            let trust = try PluginCodeSignatureVerifier.evaluate(bundle: bundle)
+            if case .developerID(let identity) = trust,
+               !PluginDeveloperTrustStore.shared.isTrusted(identity) {
+                throw PluginError.developerNotTrusted(identity: identity)
+            }
         }
 
         try PluginBundleLoader.load(bundle)

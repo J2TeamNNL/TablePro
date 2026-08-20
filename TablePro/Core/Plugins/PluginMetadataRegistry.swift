@@ -48,6 +48,7 @@ struct PluginMetadataSnapshot: Sendable {
         let requiresReconnectForDatabaseSwitch: Bool
         let supportsDropDatabase: Bool
         // `var` with defaults so existing call sites compile without passing these fields
+        var supportsDropSchema: Bool = false
         var supportsAddColumn: Bool = true
         var supportsModifyColumn: Bool = true
         var supportsDropColumn: Bool = true
@@ -173,6 +174,11 @@ struct PluginMetadataSnapshot: Sendable {
         let category: DatabaseCategory
         let tagline: String
         let hidesBuiltInPassword: Bool
+        /// The driver takes no container name on the connection, so the built-in field would
+        /// be a second, meaningless place to type one: an embedded engine reads it from the
+        /// file it opens, Redis numbers its databases through its own field, and a key-value
+        /// store may have no container at all.
+        let hidesBuiltInDatabase: Bool
         let defaultUnixSocketPath: String?
         let defaultHost: String?
 
@@ -181,6 +187,7 @@ struct PluginMetadataSnapshot: Sendable {
             category: DatabaseCategory = .other,
             tagline: String = "",
             hidesBuiltInPassword: Bool = false,
+            hidesBuiltInDatabase: Bool = false,
             defaultUnixSocketPath: String? = nil,
             defaultHost: String? = nil
         ) {
@@ -188,6 +195,7 @@ struct PluginMetadataSnapshot: Sendable {
             self.category = category
             self.tagline = tagline
             self.hidesBuiltInPassword = hidesBuiltInPassword
+            self.hidesBuiltInDatabase = hidesBuiltInDatabase
             self.defaultUnixSocketPath = defaultUnixSocketPath
             self.defaultHost = defaultHost
         }
@@ -642,6 +650,7 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                     supportsQueryProgress: false,
                     requiresReconnectForDatabaseSwitch: true,
                     supportsDropDatabase: true,
+                    supportsDropSchema: true,
                     supportsRenameColumn: true,
                     supportsTriggers: true,
                     supportsTriggerEditing: true,
@@ -695,6 +704,7 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                     supportsQueryProgress: false,
                     requiresReconnectForDatabaseSwitch: true,
                     supportsDropDatabase: true,
+                    supportsDropSchema: true,
                     defaultSSLMode: .preferred
                 ),
                 schema: PluginMetadataSnapshot.SchemaInfo(
@@ -727,8 +737,15 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                 isDownloadable: false, primaryUrlScheme: "cockroachdb", parameterStyle: .dollar,
                 navigationModel: .standard,
                 explainVariants: [
-                    ExplainVariant(id: "explain", label: "EXPLAIN", sqlPrefix: "EXPLAIN"),
-                    ExplainVariant(id: "analyze", label: "EXPLAIN ANALYZE", sqlPrefix: "EXPLAIN ANALYZE"),
+                    ExplainVariant(
+                        id: "explain", label: "EXPLAIN", sqlPrefix: "EXPLAIN", format: .cockroachText
+                    ),
+                    ExplainVariant(
+                        id: "analyze",
+                        label: "EXPLAIN ANALYZE",
+                        sqlPrefix: "EXPLAIN ANALYZE",
+                        format: .cockroachText
+                    ),
                 ],
                 pathFieldRole: .database,
                 supportsHealthMonitor: true, urlSchemes: ["cockroachdb", "cockroach"],
@@ -749,6 +766,7 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                     supportsQueryProgress: false,
                     requiresReconnectForDatabaseSwitch: true,
                     supportsDropDatabase: true,
+                    supportsDropSchema: true,
                     supportsAddColumn: false,
                     supportsModifyColumn: false,
                     supportsDropColumn: false,
@@ -805,6 +823,7 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                     supportsQueryProgress: false,
                     requiresReconnectForDatabaseSwitch: true,
                     supportsDropDatabase: true,
+                    supportsDropSchema: true,
                     supportsRenameColumn: true,
                     supportsTriggers: true,
                     supportsTriggerEditing: true,
@@ -1066,9 +1085,10 @@ final class PluginMetadataRegistry: @unchecked Sendable {
         let schemes = driverType.urlSchemes
         let primaryScheme = schemes.first ?? driverType.databaseTypeId.lowercased()
 
-        // Preserve supportsColumnReorder from existing built-in snapshot.
-        // Cannot read from driverType directly — stale plugins without the
-        // property crash with EXC_BAD_INSTRUCTION (missing witness table entry).
+        // A capability with no DriverPlugin static is curated per type, so it has to be carried
+        // over from the built-in snapshot or plugin registration silently resets it to the
+        // struct default. Cannot read these from driverType directly: stale plugins without
+        // the property crash with EXC_BAD_INSTRUCTION (missing witness table entry).
         let existingSnapshot = snapshot(forTypeId: driverType.databaseTypeId)
 
         return PluginMetadataSnapshot(
@@ -1105,6 +1125,7 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                 supportsQueryProgress: driverType.supportsQueryProgress,
                 requiresReconnectForDatabaseSwitch: driverType.requiresReconnectForDatabaseSwitch,
                 supportsDropDatabase: driverType.supportsDropDatabase,
+                supportsDropSchema: driverType.supportsDropSchema,
                 supportsAddColumn: driverType.supportsAddColumn,
                 supportsModifyColumn: driverType.supportsModifyColumn,
                 supportsDropColumn: driverType.supportsDropColumn,
@@ -1117,7 +1138,10 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                 defaultSSLMode: existingSnapshot?.capabilities.defaultSSLMode ?? .disabled,
                 supportsOpportunisticTLS: existingSnapshot?.capabilities.supportsOpportunisticTLS ?? true,
                 supportsCloudflareTunnel: driverType.supportsSSH,
-                supportsClientKeyPassphrase: existingSnapshot?.capabilities.supportsClientKeyPassphrase ?? false
+                supportsClientKeyPassphrase: existingSnapshot?.capabilities.supportsClientKeyPassphrase ?? false,
+                supportsConnectionPooling: existingSnapshot?.capabilities.supportsConnectionPooling ?? true,
+                authenticationIsDatabaseScoped: existingSnapshot?.capabilities
+                    .authenticationIsDatabaseScoped ?? false
             ),
             schema: PluginMetadataSnapshot.SchemaInfo(
                 defaultSchemaName: driverType.defaultSchemaName,
@@ -1145,6 +1169,7 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                 tagline: existingSnapshot?.connection.tagline
                     ?? Self.fallbackTagline(forTypeId: driverType.databaseTypeId),
                 hidesBuiltInPassword: existingSnapshot?.connection.hidesBuiltInPassword ?? false,
+                hidesBuiltInDatabase: existingSnapshot?.connection.hidesBuiltInDatabase ?? false,
                 defaultUnixSocketPath: existingSnapshot?.connection.defaultUnixSocketPath,
                 defaultHost: existingSnapshot?.connection.defaultHost
             )

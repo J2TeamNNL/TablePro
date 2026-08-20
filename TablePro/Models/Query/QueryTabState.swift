@@ -19,6 +19,7 @@ enum TabType: Equatable, Codable, Hashable {
     case erDiagram
     case serverDashboard
     case usersRoles
+    case insights
 }
 
 /// Minimal representation of a tab for persistence
@@ -36,9 +37,12 @@ struct PersistedTab: Codable {
     var queryParameters: [QueryParameter]?
     var sortColumns: [PersistedSortColumn]?
     var restoredPage: Int?
+    var restoredPageSize: Int?
     var cursorOffset: Int?
     var cursorLength: Int?
+    var collapsedFoldRanges: [Int]?
     var columnWidths: [String: CGFloat]?
+    var columnContentWidths: [String: CGFloat]?
     var windowGroupIndex: Int?
 
     /// Set when the query was too large for the tab-state JSON and lives in a sidecar file.
@@ -58,9 +62,12 @@ struct PersistedTab: Codable {
         queryParameters: [QueryParameter]? = nil,
         sortColumns: [PersistedSortColumn]? = nil,
         restoredPage: Int? = nil,
+        restoredPageSize: Int? = nil,
         cursorOffset: Int? = nil,
         cursorLength: Int? = nil,
+        collapsedFoldRanges: [Int]? = nil,
         columnWidths: [String: CGFloat]? = nil,
+        columnContentWidths: [String: CGFloat]? = nil,
         windowGroupIndex: Int? = nil
     ) {
         self.id = id
@@ -76,16 +83,20 @@ struct PersistedTab: Codable {
         self.queryParameters = queryParameters
         self.sortColumns = sortColumns
         self.restoredPage = restoredPage
+        self.restoredPageSize = restoredPageSize
         self.cursorOffset = cursorOffset
         self.cursorLength = cursorLength
+        self.collapsedFoldRanges = collapsedFoldRanges
         self.columnWidths = columnWidths
+        self.columnContentWidths = columnContentWidths
         self.windowGroupIndex = windowGroupIndex
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, title, query, tabType, tableName, isView, databaseName, schemaName
         case sourceFileURL, erDiagramSchemaKey, queryParameters
-        case sortColumns, restoredPage, cursorOffset, cursorLength, columnWidths, windowGroupIndex
+        case sortColumns, restoredPage, restoredPageSize, cursorOffset, cursorLength, collapsedFoldRanges
+        case columnWidths, columnContentWidths, windowGroupIndex
         case overflowFileName
     }
 
@@ -104,9 +115,12 @@ struct PersistedTab: Codable {
         queryParameters = try container.decodeIfPresent([QueryParameter].self, forKey: .queryParameters)
         sortColumns = try container.decodeIfPresent([PersistedSortColumn].self, forKey: .sortColumns)
         restoredPage = try container.decodeIfPresent(Int.self, forKey: .restoredPage)
+        restoredPageSize = try container.decodeIfPresent(Int.self, forKey: .restoredPageSize)
         cursorOffset = try container.decodeIfPresent(Int.self, forKey: .cursorOffset)
         cursorLength = try container.decodeIfPresent(Int.self, forKey: .cursorLength)
+        collapsedFoldRanges = try container.decodeIfPresent([Int].self, forKey: .collapsedFoldRanges)
         columnWidths = try container.decodeIfPresent([String: CGFloat].self, forKey: .columnWidths)
+        columnContentWidths = try container.decodeIfPresent([String: CGFloat].self, forKey: .columnContentWidths)
         windowGroupIndex = try container.decodeIfPresent(Int.self, forKey: .windowGroupIndex)
         overflowFileName = try container.decodeIfPresent(String.self, forKey: .overflowFileName)
     }
@@ -330,12 +344,55 @@ struct PaginationState: Equatable {
 /// Stores column layout (widths and order) within a tab session
 struct ColumnLayoutState: Equatable {
     var columnWidths: [String: CGFloat] = [:]
+    var columnContentWidths: [String: CGFloat]?
     var columnOrder: [String]?
     var hiddenColumns: Set<String> = []
 
+    /// Splices a captured order into the stored one, keeping names the capture never saw.
+    ///
+    /// A capture only lists the columns the query returned, and hiding a column takes it out of
+    /// that projection. Overwriting with the capture therefore drops the hidden column's position,
+    /// and showing it again appends it at the end, which reorders a grid the user never touched.
+    /// Names the capture does cover take its order; the rest hold their slots.
+    static func mergedColumnOrder(current: [String]?, incoming: [String]?) -> [String]? {
+        guard let incoming else { return current }
+        guard let current, !current.isEmpty else { return incoming }
+
+        let incomingSet = Set(incoming)
+        // Only a narrowing of the same column set is a partial capture worth splicing. Anything
+        // else is a different result, and merging there would accumulate names from a table the
+        // layout no longer describes.
+        guard incomingSet.isSubset(of: Set(current)) else { return incoming }
+        var remaining = incoming.makeIterator()
+        var merged: [String] = []
+        merged.reserveCapacity(max(current.count, incoming.count))
+
+        for name in current {
+            if incomingSet.contains(name) {
+                guard let next = remaining.next() else { continue }
+                merged.append(next)
+            } else {
+                merged.append(name)
+            }
+        }
+
+        let placed = Set(merged)
+        merged.append(contentsOf: incoming.filter { !placed.contains($0) })
+        return merged
+    }
+
     mutating func applyGeometry(from other: ColumnLayoutState) {
         columnWidths = other.columnWidths
-        columnOrder = other.columnOrder
+        columnContentWidths = other.columnContentWidths
+        columnOrder = Self.mergedColumnOrder(current: columnOrder, incoming: other.columnOrder)
+    }
+
+    /// Drops the geometry outright. Reset is not a capture, so it must not go through the merge,
+    /// which deliberately keeps a stored order when a capture carries none.
+    mutating func resetGeometry() {
+        columnWidths = [:]
+        columnContentWidths = nil
+        columnOrder = nil
     }
 
     func mergingWidths(_ liveWidths: [String: CGFloat]) -> ColumnLayoutState {
@@ -373,6 +430,12 @@ struct TabTableContext: Equatable {
     var isView: Bool = false
 
     var primaryKeyColumn: String? { primaryKeyColumns.first }
+
+    /// A tab opened without an explicit database carries an empty name and follows the window's
+    /// browse cursor, so comparing the stored value against a real database name never matches.
+    func resolvedDatabaseName(browsing browseDatabaseName: String) -> String {
+        databaseName.isEmpty ? browseDatabaseName : databaseName
+    }
 }
 
 struct TabQueryContent: Equatable {
@@ -455,9 +518,6 @@ struct TabQueryContent: Equatable {
 struct TabDisplayState: Equatable {
     var resultsViewMode: ResultsViewMode = .data
     var erDiagramSchemaKey: String?
-    var explainText: String?
-    var explainExecutionTime: TimeInterval?
-    var explainPlan: QueryPlan?
     var isResultsCollapsed: Bool = false
     var resultSets: [ResultSet] = []
     var activeResultSetId: UUID?
@@ -479,6 +539,12 @@ struct TabDisplayState: Equatable {
     mutating func removeUnpinnedResults() {
         resultSets = resultSets.filter(\.isPinned)
         activeResultSetId = resultSets.last?.id
+    }
+
+    @MainActor
+    var activeExplainResult: ResultSet? {
+        guard let activeResultSet, activeResultSet.isExplainResult else { return nil }
+        return activeResultSet
     }
 
     @MainActor

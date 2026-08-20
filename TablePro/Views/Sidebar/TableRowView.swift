@@ -81,11 +81,11 @@ struct TableRow: View {
         if isPendingDelete {
             Image(systemName: "minus.circle.fill")
                 .font(.caption)
-                .foregroundStyle(.red)
+                .selectionAwareTint(.red)
         } else if isPendingTruncate {
             Image(systemName: "exclamationmark.circle.fill")
                 .font(.caption)
-                .foregroundStyle(.orange)
+                .selectionAwareTint(.orange)
         }
     }
 
@@ -108,7 +108,7 @@ struct TableRow: View {
             } icon: {
                 if showsObjectIcon {
                     Image(systemName: TableRowLogic.iconName(for: table.type))
-                        .sidebarTint(Color.accentColor)
+                        .selectionAwareTint(Color.accentColor)
                         .frame(width: 16)
                         .overlay(alignment: .bottomTrailing) {
                             pendingStateBadge
@@ -127,9 +127,9 @@ struct TableRow: View {
                 Button(action: onToggleFavorite) {
                     Image(systemName: isFavorite ? "star.fill" : "star")
                         .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(isFavorite ? Color.yellow : Color.secondary)
-                        .contentShape(Rectangle())
+                        .selectionAwareTint(isFavorite ? Color.yellow : Color.secondary)
                         .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .opacity(starVisible ? 1 : 0)

@@ -26,6 +26,9 @@ final class SQLEditorCoordinator: TextViewCoordinator, TextViewDelegate {
     private static let languageServiceLengthLimit = EditorHighlighting.maxHighlightableCharacters
 
     @ObservationIgnored weak var controller: TextViewController?
+    @ObservationIgnored private lazy var diagnosticsController = QueryDiagnosticsController(
+        databaseType: databaseType
+    )
     /// Shared schema provider for inline AI suggestions (avoids duplicate schema fetches)
     @ObservationIgnored var schemaProvider: SQLSchemaProvider?
     /// Connection-level AI policy for inline suggestions
@@ -46,7 +49,7 @@ final class SQLEditorCoordinator: TextViewCoordinator, TextViewDelegate {
     @ObservationIgnored private var didDestroy = false
     @ObservationIgnored private var focusClaimPending = false
 
-    /// Test-only accessor for destroy state
+    /// One way. `destroy()` runs when the editor is dismantled, which it never comes back from.
     var isDestroyed: Bool { didDestroy }
 
     @ObservationIgnored private var hasInstalledEditorServices = false
@@ -71,6 +74,27 @@ final class SQLEditorCoordinator: TextViewCoordinator, TextViewDelegate {
     func scheduleCursorRestore(_ range: NSRange) {
         guard !hasInstalledEditorServices else { return }
         cursorRestorePending = range
+    }
+
+    @ObservationIgnored private var foldRestorePending: [Range<Int>]?
+
+    /// Collapsed folds are replayed once, the same way the cursor is, because the fold state the editor reports back
+    /// is written on every collapse the user makes.
+    func scheduleFoldRestore(_ ranges: [Range<Int>]) {
+        guard !hasInstalledEditorServices, !ranges.isEmpty else { return }
+        foldRestorePending = ranges
+    }
+
+    /// Query tabs share one editor, so a tab switch replays the incoming tab's collapsed regions over a document the
+    /// editor has just been handed. The outgoing tab's folds are already gone: replacing the document drops them,
+    /// which is what keeps this from having to clear anything and from reporting a collapse the reader never made.
+    func repointFolds(to ranges: [Range<Int>]?) {
+        guard let controller else {
+            foldRestorePending = ranges
+            return
+        }
+        guard let ranges, !ranges.isEmpty else { return }
+        controller.restoreCollapsedFolds(ranges)
     }
 
     /// Vim mode for UI observation
@@ -143,7 +167,10 @@ final class SQLEditorCoordinator: TextViewCoordinator, TextViewDelegate {
         hasInstalledEditorServices = true
 
         installAIContextMenu(controller: controller)
+        installFoldPreview(controller: controller)
         installInlineSuggestionManager(controller: controller)
+        diagnosticsController.configure(databaseType: databaseType)
+        diagnosticsController.scheduleRefresh(for: controller)
         installVimModeIfEnabled(controller: controller)
         installEditorSettingsObserver(controller: controller)
 
@@ -169,10 +196,16 @@ final class SQLEditorCoordinator: TextViewCoordinator, TextViewDelegate {
         } else if controller.cursorPositions.isEmpty {
             controller.setCursorPositions([CursorPosition(range: NSRange(location: 0, length: 0))])
         }
+
+        if let folds = foldRestorePending {
+            foldRestorePending = nil
+            controller.restoreCollapsedFolds(folds)
+        }
     }
 
     func textView(_ textView: TextView, didReplaceContentsIn range: NSRange, with string: String) {
         vimEngine?.invalidateLineCache()
+        foldPreview.dismiss()
 
         let isLargeDocument = textView.textStorage.length > Self.languageServiceLengthLimit
 
@@ -196,6 +229,10 @@ final class SQLEditorCoordinator: TextViewCoordinator, TextViewDelegate {
         }
 
         uppercaseKeywordIfNeeded(textView: textView, range: range, string: string)
+
+        if !isLargeDocument {
+            diagnosticsController.scheduleRefresh(for: controller)
+        }
     }
 
     func textViewDidChangeSelection(controller: TextViewController, newPositions: [CursorPosition]) {
@@ -215,6 +252,10 @@ final class SQLEditorCoordinator: TextViewCoordinator, TextViewDelegate {
         }
     }
 
+    func textViewDidChangeHoveredFold(controller: TextViewController, hit: CollapsedFoldHit?) {
+        foldPreview.hoverDidChange(to: hit)
+    }
+
     func destroy() {
         didDestroy = true
         focusClaimPending = false
@@ -226,6 +267,7 @@ final class SQLEditorCoordinator: TextViewCoordinator, TextViewDelegate {
             Task { await sync.didCloseTab(tabID: id) }
         }
 
+        foldPreview.destroy()
         inlineSuggestionManager?.uninstall()
         inlineSuggestionManager = nil
         copilotDocumentSync = nil
@@ -245,31 +287,19 @@ final class SQLEditorCoordinator: TextViewCoordinator, TextViewDelegate {
         vimEngine = nil
         vimCursorManager = nil
 
-        controller?.releaseHeavyState()
-
         EditorEventRouter.shared.unregister(self)
         Self.logger.debug("SQLEditorCoordinator destroyed")
         cleanupMonitors()
     }
 
-    func revive() {
-        guard didDestroy else { return }
-        didDestroy = false
-        if let controller, let textView = controller.textView {
-            EditorEventRouter.shared.register(self, textView: textView)
-        }
-        if contextMenu == nil, let controller {
-            installAIContextMenu(controller: controller)
-        }
-        if inlineSuggestionManager == nil, let controller {
-            installInlineSuggestionManager(controller: controller)
-        }
-        if let controller {
-            installEditorSettingsObserver(controller: controller)
-        }
-    }
-
     // MARK: - AI Context Menu
+
+    private func installFoldPreview(controller: TextViewController) {
+        foldPreview.language = PluginManager.shared
+            .editorLanguage(for: databaseType ?? .mysql)
+            .treeSitterLanguage
+        foldPreview.install(controller: controller)
+    }
 
     private func installAIContextMenu(controller: TextViewController) {
         guard controller.textView != nil else { return }
@@ -291,29 +321,44 @@ final class SQLEditorCoordinator: TextViewCoordinator, TextViewDelegate {
         menu.onOptimizeWithAI = { [weak self] text in self?.onAIOptimize?(text) }
         menu.onSaveAsFavorite = { [weak self] text in self?.onSaveAsFavorite?(text) }
         menu.onFormatSQL = { [weak self] in self?.performFormatSQL() }
+        menu.foldStateAtCursor = { [weak controller] in controller?.foldStateAtCursor() }
+        menu.onToggleFold = { [weak controller] in controller?.toggleFoldAtCursor() }
         contextMenu = menu
         controller.textView?.menu = menu
     }
 
+    @ObservationIgnored private let foldPreview = FoldPreviewController()
+
+    func toggleFoldAtCursor() {
+        controller?.toggleFoldAtCursor()
+    }
+
+    func foldAll() {
+        controller?.foldAll()
+    }
+
+    func unfoldAll() {
+        controller?.unfoldAll()
+    }
+
+    /// Whether the fold containing the cursor is collapsed. `nil` when the cursor is not inside a fold.
+    func foldStateAtCursor() -> Bool? {
+        controller?.foldStateAtCursor()
+    }
+
     func performFormatSQL() {
         guard let textView = controller?.textView else { return }
-        let dialect = databaseType ?? .mysql
-        let formatter = SQLFormatterService()
+        let formatter = QueryFormatterFactory.make(for: databaseType)
         let scope = FormatScopeResolver.resolve(
             fullText: textView.string,
             selectedRange: textView.selectedRange()
         )
 
         do {
-            let result = try formatter.format(
-                scope.sql,
-                dialect: dialect,
-                cursorOffset: scope.cursorOffset,
-                options: .default
-            )
+            let result = try formatter.format(scope.sql, cursorOffset: scope.cursorOffset)
             let replacement = scope.isSelection
-                ? FormatScopeResolver.reapplyBoundaryWhitespace(from: scope.sql, to: result.formattedSQL)
-                : result.formattedSQL
+                ? FormatScopeResolver.reapplyBoundaryWhitespace(from: scope.sql, to: result.text)
+                : result.text
             textView.replaceCharacters(in: scope.range, with: replacement)
             let replacementLength = (replacement as NSString).length
             let caretLocation: Int

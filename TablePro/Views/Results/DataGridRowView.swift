@@ -45,8 +45,10 @@ class DataGridRowView: NSTableRowView {
         "hidden": NSNull(),
     ]
 
+    /// The tint derives from the row state and the active theme, so it is recomputed on every call
+    /// and the colour comparison below decides whether anything needs redrawing. Returning early on
+    /// an unchanged state would ignore the theme, which is the input a theme change moves.
     func applyVisualState(_ state: RowVisualState) {
-        guard state != visualState else { return }
         visualState = state
         let nextTint: NSColor? = if state.isDeleted {
             ThemeEngine.shared.colors.dataGrid.deleted
@@ -64,6 +66,7 @@ class DataGridRowView: NSTableRowView {
         didSet {
             guard isSelected != oldValue else { return }
             propagateEmphasisToCells()
+            needsDisplay = true
         }
     }
 
@@ -71,6 +74,7 @@ class DataGridRowView: NSTableRowView {
         didSet {
             guard isEmphasized != oldValue else { return }
             propagateEmphasisToCells()
+            needsDisplay = true
         }
     }
 
@@ -98,18 +102,18 @@ class DataGridRowView: NSTableRowView {
         drawCellSelectionFill(in: dirtyRect)
     }
 
+    /// A cell range on a row the table has selected is already covered by `NSTableRowView`'s own
+    /// selection fill, which runs after this, so only the remaining rows are painted here.
     private func drawCellSelectionFill(in dirtyRect: NSRect) {
-        guard let coordinator,
+        guard !isSelected,
+              let coordinator,
               let tableView = coordinator.tableView else { return }
         let selection = coordinator.selectionController.selection
         guard !selection.isEmpty else { return }
         let columns = selection.columns(in: rowIndex)
         guard !columns.isEmpty else { return }
 
-        let fillColor: NSColor = isSelected
-            ? NSColor.unemphasizedSelectedContentBackgroundColor
-            : NSColor.selectedContentBackgroundColor.withAlphaComponent(0.28)
-        fillColor.setFill()
+        cellSelectionFill.setFill()
 
         for dataColumn in columns {
             guard let tableColumnIndex = coordinator.tableColumnIndex(for: dataColumn) else { continue }
@@ -119,6 +123,18 @@ class DataGridRowView: NSTableRowView {
             localRect.fill()
         }
     }
+
+    /// `unemphasizedSelectedContentBackgroundColor` is a background colour and is used as one, the
+    /// way AppKit fills a selection in a view that does not hold focus. Thinning it out instead
+    /// left the range at 1.09:1 against a white grid, which is no visible selection at all. The
+    /// emphasized accent is far too dark to sit behind text these rows do not recolour, so that
+    /// one goes on as a tint.
+    private var cellSelectionFill: NSColor {
+        guard isEmphasized else { return .unemphasizedSelectedContentBackgroundColor }
+        return NSColor.selectedContentBackgroundColor.withAlphaComponent(Self.emphasizedCellSelectionAlpha)
+    }
+
+    private static let emphasizedCellSelectionAlpha: CGFloat = 0.28
 
     private func colorsEqual(_ lhs: NSColor?, _ rhs: NSColor?) -> Bool {
         switch (lhs, rhs) {

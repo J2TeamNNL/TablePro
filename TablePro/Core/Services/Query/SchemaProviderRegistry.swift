@@ -81,9 +81,10 @@ final class SchemaProviderRegistry {
         if let existing = providers[scope] {
             return existing
         }
+        let metadataProvider = metadataDriverProvider
         let source = SQLSchemaProvider.ColumnMetadataSource(
             fetchColumns: { table, schema in
-                try await metadataDriverProvider.withMetadataDriver(scope: scope) { driver in
+                try await metadataProvider.withMetadataDriver(scope: scope) { driver in
                     if let schema {
                         return try await driver.fetchColumns(table: table, schema: schema)
                     }
@@ -91,13 +92,18 @@ final class SchemaProviderRegistry {
                 }
             },
             fetchAllColumns: {
-                try await metadataDriverProvider.withMetadataDriver(scope: scope, workload: .bulk) { driver in
+                try await metadataProvider.withMetadataDriver(scope: scope, workload: .bulk) { driver in
                     try await driver.fetchAllColumns()
                 }
             },
             fetchSchemaTables: { schema in
-                try await metadataDriverProvider.withMetadataDriver(scope: scope) { driver in
+                try await metadataProvider.withMetadataDriver(scope: scope) { driver in
                     try await driver.fetchTables(schema: schema)
+                }
+            },
+            sampleFieldPaths: { table, limit in
+                try await DatabaseManager.shared.withBrowseMetadataDriver(connectionId: connectionId) { driver in
+                    try await driver.sampleFieldPaths(table: table, limit: limit)
                 }
             }
         )

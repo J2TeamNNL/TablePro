@@ -24,7 +24,7 @@ struct DatabaseTreeTableRef: Hashable, Identifiable {
     }
 }
 
-struct DatabaseTreeRoutineRef: Identifiable {
+struct DatabaseTreeRoutineRef: Identifiable, Equatable {
     let database: String
     let schema: String?
     let routine: RoutineInfo
@@ -46,7 +46,7 @@ struct DatabaseTreeView: View {
     let coordinator: MainContentCoordinator?
     let sidebarState: SharedSidebarState
 
-    @State private var searchText: String = ""
+    @State private var settingsManager = AppSettingsManager.shared
 
     private var activeDatabase: String? {
         let name = coordinator?.toolbarState.currentDatabase ?? ""
@@ -59,10 +59,6 @@ struct DatabaseTreeView: View {
 
     private var isConnected: Bool {
         DatabaseManager.shared.session(for: connectionId)?.status == .connected
-    }
-
-    private var connectionToken: String {
-        isConnected ? "connected" : "down"
     }
 
     private var databases: [DatabaseMetadata] {
@@ -92,20 +88,44 @@ struct DatabaseTreeView: View {
             case .loaded where isFilterHidingEverything:
                 filteredEmptyState
             case .loaded:
-                outline
+                VStack(spacing: 0) {
+                    filterBanner
+                    outline
+                }
             case .idle, .loading:
                 loadingState
             }
         }
-        .task(id: connectionToken) {
+        .task(id: isConnected) {
             await treeService.loadDatabases(connectionId: connectionId, databaseType: databaseType)
         }
-        .task(id: viewModel.searchText) {
-            let live = viewModel.searchText
-            guard !live.isEmpty else { searchText = ""; return }
-            try? await Task.sleep(nanoseconds: 250_000_000)
-            guard !Task.isCancelled else { return }
-            searchText = live
+    }
+
+    /// A filtered list looks exactly like a short one, so it has to say it is filtered. The button
+    /// that used to carry that state, at the bottom of the sidebar, is gone.
+    @ViewBuilder
+    private var filterBanner: some View {
+        if DatabaseTreeVisibility.isFiltering(selected: sidebarState.databaseFilterSelected) {
+            HStack(spacing: 6) {
+                Image(systemName: "line.3.horizontal.decrease.circle.fill")
+                    .foregroundStyle(.tint)
+                Text(String(
+                    format: String(localized: "Showing %lld of %lld"),
+                    filteredDatabases.count,
+                    databases.count
+                ))
+                .lineLimit(1)
+                Spacer(minLength: 4)
+                Button(String(localized: "Show All")) {
+                    sidebarState.databaseFilterSelected = []
+                }
+                .buttonStyle(.link)
+            }
+            .font(.caption)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .accessibilityElement(children: .combine)
+            Divider()
         }
     }
 
@@ -119,10 +139,13 @@ struct DatabaseTreeView: View {
             viewModel: viewModel,
             pendingTruncates: pendingTruncates,
             pendingDeletes: pendingDeletes,
-            searchText: searchText,
-            connectionToken: connectionToken,
+            searchText: viewModel.filterQuery,
+            isConnected: isConnected,
             activeDatabase: activeDatabase,
-            activeSchema: activeSchema
+            activeSchema: activeSchema,
+            selectedTables: windowState.selectedTables,
+            showRecentTables: settingsManager.general.showRecentTables,
+            rowSizePreference: settingsManager.general.sidebarRowSize
         )
     }
 

@@ -43,10 +43,9 @@ extension TableViewCoordinator {
         let columnName = tableRows.columns[columnIndex]
         let columnType = columnIndex < tableRows.columnTypes.count ? tableRows.columnTypes[columnIndex] : nil
         let immutable = databaseType.map { PluginManager.shared.immutableColumns(for: $0) } ?? []
-        let override = ValueDisplayFormatService.shared.effectiveFormat(
-            columnName: columnName,
-            scope: tableScope
-        )
+        let override = columnIndex < columnDisplayFormats.count
+            ? columnDisplayFormats[columnIndex]
+            : nil
 
         return CellContext(
             columnType: columnType,
@@ -86,6 +85,8 @@ extension TableViewCoordinator {
 
         if columnType.isBooleanType {
             showDropdownMenu(tableView: tableView, row: row, column: column, columnIndex: columnIndex)
+        } else if columnType.supportsElementEditing {
+            showArrayEditorPopover(tableView: tableView, row: row, column: column, columnIndex: columnIndex)
         } else if let values = tableRows.columnEnumValues[columnName], !values.isEmpty {
             if columnType.isSetType {
                 showSetPopover(tableView: tableView, row: row, column: column, columnIndex: columnIndex)
@@ -131,7 +132,8 @@ extension TableViewCoordinator {
         let dbType = databaseType ?? .mysql
 
         let cellRect = tableView.rect(ofRow: row).intersection(tableView.rect(ofColumn: column))
-        PopoverPresenter.show(
+        dismissActiveCellEditorPopover()
+        activeCellEditorPopover = PopoverPresenter.show(
             relativeTo: cellRect,
             of: tableView
         ) { [weak self] dismiss in

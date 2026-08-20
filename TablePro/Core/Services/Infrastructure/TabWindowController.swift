@@ -7,31 +7,46 @@ import AppKit
 import os
 import SwiftUI
 
+/// The conformance is what makes the drag methods reachable. `NSWindow` does not adopt
+/// `NSDraggingDestination`, so without it Swift emits no selector for these and AppKit, which
+/// dispatches a drag by selector, runs `NSWindow`'s own refusal instead.
 @MainActor
-private final class EditorWindow: NSWindow {
+private final class EditorWindow: NSWindow, NSDraggingDestination {
+    /// A window that draws its own tabs says so by redefining the close command, which is the
+    /// mechanism AppKit gives native tabbed windows for free. The editor's meaning of Close lives
+    /// in one place behind it, so the menu, the keyboard and any other sender cannot disagree.
     override func performClose(_ sender: Any?) {
-        if let coordinator = MainContentCoordinator.coordinator(forWindow: self),
-           let actions = coordinator.commandActions {
-            actions.closeTab()
-        } else {
-            super.performClose(sender)
-        }
+        let editor = contentViewController as? MainSplitViewController
+        guard editor?.closeFrontmostTab() != true else { return }
+        super.performClose(sender)
     }
 
-    override func newWindowForTab(_ sender: Any?) {
-        guard let coordinator = MainContentCoordinator.coordinator(forWindow: self),
-              let actions = coordinator.commandActions else { return }
-        actions.newTab()
+    /// Hiding the toolbar is what drops the content pane's top safe area, so the titlebar has to be
+    /// reconsidered every time the user sends this from View > Show Toolbar.
+    override func toggleToolbarShown(_ sender: Any?) {
+        super.toggleToolbarShown(sender)
+        TabWindowController.applyTitlebarChrome(to: self)
     }
 
-    /// `NSWindow` implements `newWindowForTab:`, so the responder chain stops here and
-    /// never reaches the split view controller's validation. Without this the item
-    /// stays enabled on a window that is connecting, failed, or disconnected.
-    override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        guard menuItem.action == #selector(newWindowForTab(_:)) else {
-            return super.validateMenuItem(menuItem)
-        }
-        return MainContentCoordinator.coordinator(forWindow: self)?.commandActions?.isConnected == true
+    func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        FileDropDestination.acceptedURLs(from: sender.draggingPasteboard).isEmpty ? [] : .copy
+    }
+
+    func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        draggingEntered(sender)
+    }
+
+    func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        let urls = FileDropDestination.acceptedURLs(from: sender.draggingPasteboard)
+        guard !urls.isEmpty else { return false }
+        FileDropDestination.open(urls)
+        return true
+    }
+}
+
+extension EditorWindow: CloseCommandNaming {
+    var closeCommandTitle: String? {
+        (contentViewController as? MainSplitViewController)?.closeCommandTitle
     }
 }
 
@@ -39,10 +54,6 @@ private final class EditorWindow: NSWindow {
 internal final class TabWindowController: NSWindowController, NSWindowDelegate {
     private static let lifecycleLogger = Logger(subsystem: "com.TablePro", category: "NativeTabLifecycle")
 
-    /// Deliberately one shared slot for every connection. The rail switches workspaces, so
-    /// every connection's window must occupy the same frame: a rail click then reads as the
-    /// window changing content rather than a different window being raised. Offsetting them
-    /// per connection, or cascading, breaks that illusion.
     internal static let frameAutosaveName: NSWindow.FrameAutosaveName = "MainEditorWindow"
 
     internal let payload: EditorTabPayload
@@ -51,46 +62,38 @@ internal final class TabWindowController: NSWindowController, NSWindowDelegate {
 
     private var activity: NSUserActivity?
 
+    /// `adopting` carries a connection that is moving here from another window, whole. Everything
+    /// the user has in it lives on that object, so the window takes it rather than building a
+    /// second one around the same connection.
     internal init(
         payload: EditorTabPayload,
         sessionState: SessionStateFactory.SessionState? = nil,
-        autoConnect: Bool = false
+        autoConnect: Bool = false,
+        adopting workspace: ConnectionWorkspace? = nil
     ) {
         self.payload = payload
         self.controllerId = UUID()
 
-        let window = EditorWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1_200, height: 800),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        window.identifier = NSUserInterfaceItemIdentifier("main")
-        window.minSize = NSSize(width: 720, height: 480)
-        window.isRestorable = false
-        window.toolbarStyle = .unified
-        window.titleVisibility = .visible
-        window.tabbingMode = .preferred
-        window.tabbingIdentifier = WindowManager.tabbingIdentifier(for: payload.connectionId)
-        window.collectionBehavior.insert([.fullScreenPrimary, .managed])
+        let window = Self.makeEditorWindow()
 
         let splitVC = MainSplitViewController(
             payload: payload,
             sessionState: sessionState,
-            autoConnect: autoConnect
+            autoConnect: autoConnect,
+            adopting: workspace
         )
         window.contentViewController = splitVC
+        FileDropDestination.register(on: window)
         window.title = splitVC.windowTitle
         window.subtitle = splitVC.windowSubtitle
+        splitVC.installTabStripAccessory(on: window)
 
         super.init(window: window)
 
         window.isReleasedWhenClosed = false
         window.delegate = self
 
-        if let sibling = NSApp.windows.first(where: { WindowManager.isMainWindow($0) && $0.isVisible }) {
-            window.setFrame(sibling.frame, display: false)
-        } else if !window.setFrameUsingName(Self.frameAutosaveName) {
+        if !window.setFrameUsingName(Self.frameAutosaveName) {
             let visibleSize = (window.screen ?? NSScreen.main)?.visibleFrame.size
                 ?? NSSize(width: 1_440, height: 900)
             window.setContentSize(NSSize(
@@ -110,6 +113,56 @@ internal final class TabWindowController: NSWindowController, NSWindowDelegate {
         fatalError("TabWindowController does not support NSCoder init")
     }
 
+    /// The one place an editor window's chrome is configured, so a test can hold the whole shape.
+    internal static func makeEditorWindow() -> NSWindow {
+        let window = EditorWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1_200, height: 800),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.identifier = NSUserInterfaceItemIdentifier("main")
+        window.minSize = NSSize(width: 720, height: 480)
+        window.isRestorable = false
+        window.toolbarStyle = .unified
+        window.titleVisibility = .visible
+        applyTitlebarChrome(to: window)
+        /// `.automatic` is AppKit reading the user's own tabbing preference. Hard-coding
+        /// `.preferred` overrode that setting, which an app that draws its own editor tabs has no
+        /// reason to do.
+        window.tabbingMode = .automatic
+        window.tabbingIdentifier = WindowManager.mainTabbingIdentifier
+        window.collectionBehavior.insert([.fullScreenPrimary, .managed])
+        return window
+    }
+
+    /// AppKit rules a line between the toolbar and the content pane, and stops it at the sidebar
+    /// divider, so a window whose toolbar and content are the same colour gets a half-width rule
+    /// separating nothing. `titlebarSeparatorStyle` is the property for that, and it stopped
+    /// reaching the rule in macOS 26: the content section's titlebar background now draws it
+    /// through a scroll pocket, and `.none`, `.line` and `.shadow` all render identically there.
+    ///
+    /// `isFullScreen` is passed in for the transition hooks, which run either side of the style
+    /// mask changing rather than at the moment it does.
+    internal static func applyTitlebarChrome(to window: NSWindow, isFullScreen: Bool? = nil) {
+        window.titlebarSeparatorStyle = .none
+        guard #available(macOS 26.0, *) else { return }
+        window.titlebarAppearsTransparent = titlebarIsTransparent(
+            isFullScreen: isFullScreen ?? window.styleMask.contains(.fullScreen),
+            toolbarVisible: window.toolbar?.isVisible ?? false
+        )
+    }
+
+    /// A transparent titlebar is what removes that rule, and it is free while the content pane is
+    /// inset below the titlebar, which it is in every state but one. A full-screen window with its
+    /// toolbar hidden has a top safe area of zero, so its content owns the whole screen, and the
+    /// titlebar AppKit slides back down over that content needs a background of its own to stay
+    /// legible. Nothing is lost by making it opaque there, because a titlebar that only appears on
+    /// demand has no rule to suppress.
+    internal static func titlebarIsTransparent(isFullScreen: Bool, toolbarVisible: Bool) -> Bool {
+        isFullScreen ? toolbarVisible : true
+    }
+
     // MARK: - NSWindowDelegate
 
     internal func windowDidResize(_ notification: Notification) {
@@ -126,6 +179,19 @@ internal final class TabWindowController: NSWindowController, NSWindowDelegate {
     internal func windowDidMove(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         window.saveFrame(usingName: Self.frameAutosaveName)
+    }
+
+    /// Both hooks name the state they are moving to, because neither runs at the moment the style
+    /// mask flips: `willEnter` still reads windowed, and `didExit` is the first point that reads
+    /// windowed again.
+    internal func windowWillEnterFullScreen(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        Self.applyTitlebarChrome(to: window, isFullScreen: true)
+    }
+
+    internal func windowDidExitFullScreen(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        Self.applyTitlebarChrome(to: window, isFullScreen: false)
     }
 
     internal func windowDidBecomeKey(_ notification: Notification) {
@@ -154,6 +220,15 @@ internal final class TabWindowController: NSWindowController, NSWindowDelegate {
         Self.lifecycleLogger.debug("[switch] windowDidBecomeKey seq=\(seq) userActivity ms=\(Int(Date().timeIntervalSince(t0) * 1_000))")
         coordinator.handleWindowDidBecomeKey()
         Self.lifecycleLogger.debug("[switch] windowDidBecomeKey seq=\(seq) total ms=\(Int(Date().timeIntervalSince(t0) * 1_000))")
+    }
+
+    /// `NSWindow.undoManager` resolves through here, so every undo domain that registers on the
+    /// window (the data grid's change manager, and the query editor's text view) lands in the
+    /// selected connection's own history. One window hosts every connection now, so sharing the
+    /// window's manager let Cmd+Z in one connection roll back an edit made in another.
+    internal func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? {
+        guard let host = window.contentViewController as? MainSplitViewController else { return nil }
+        return host.workspaces.selected?.undoManager
     }
 
     internal func windowDidResignKey(_ notification: Notification) {
@@ -192,25 +267,37 @@ internal final class TabWindowController: NSWindowController, NSWindowDelegate {
             splitVC.invalidateToolbar()
         }
 
-        MainContentCoordinator.coordinator(forWindow: window)?.handleWindowWillClose()
+        /// Every connection the window hosts closes with it, so each one saves and tears down.
+        /// Resolving a single coordinator from the window persisted whichever one happened to
+        /// answer and lost the rest since their last periodic save.
+        if let splitVC = window.contentViewController as? MainSplitViewController {
+            for workspace in splitVC.workspaces.workspaces {
+                workspace.sessionState?.coordinator.handleWindowWillClose()
+            }
+        }
         Self.lifecycleLogger.info("[close] windowWillClose seq=\(seq) handleWindowWillClose ms=\(Int(Date().timeIntervalSince(t0) * 1_000))")
         activity?.invalidate()
         activity = nil
         Self.lifecycleLogger.info("[close] windowWillClose seq=\(seq) total ms=\(Int(Date().timeIntervalSince(t0) * 1_000))")
     }
 
+    /// Every connection the window hosts, not just the one it was opened for: a connect still
+    /// dialing in a background workspace has to be called off too, or it completes into a window
+    /// that no longer exists.
     private func cancelPendingConnectionIfNeeded() {
-        let connectionId = payload.connectionId
-        let session = DatabaseManager.shared.activeSessions[connectionId]
-        guard session?.driver == nil else { return }
-        DatabaseManager.shared.invalidateConnectionAttempt(connectionId)
-        SessionRecoveryTracker.sync()
-        Task {
-            await DatabaseManager.shared.cancelEnsureConnected(connectionId)
-            guard !WindowManager.shared.hasOpenWindow(for: connectionId) else { return }
-            guard DatabaseManager.shared.activeSessions[connectionId]?.driver != nil else { return }
-            await DatabaseManager.shared.disconnectSession(connectionId)
+        guard let splitVC = window?.contentViewController as? MainSplitViewController else { return }
+        for connectionId in splitVC.workspaces.connectionIds {
+            let session = DatabaseManager.shared.activeSessions[connectionId]
+            guard session?.driver == nil else { continue }
+            DatabaseManager.shared.invalidateConnectionAttempt(connectionId)
+            Task {
+                await DatabaseManager.shared.cancelEnsureConnected(connectionId)
+                guard !WindowManager.shared.hasOpenWindow(for: connectionId) else { return }
+                guard DatabaseManager.shared.activeSessions[connectionId]?.driver != nil else { return }
+                await DatabaseManager.shared.disconnectSession(connectionId)
+            }
         }
+        SessionRecoveryTracker.sync()
     }
 
     // MARK: - NSUserActivity

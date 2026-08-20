@@ -18,6 +18,7 @@ struct QueryEditorView: View {
     @Binding var isParameterPanelVisible: Bool
     var onExecute: () -> Void
     var onExecuteWithoutLimit: (() -> Void)?
+    var onExecuteAllStatements: (() -> Void)?
     var schemaProvider: SQLSchemaProvider?
     var databaseType: DatabaseType?
     var databaseScope: DatabaseScope?
@@ -26,11 +27,13 @@ struct QueryEditorView: View {
     var connectionAIPolicy: AIConnectionPolicy?
     var tabID: UUID?
     var claimFocusOnAppear: Bool = false
+    var onFocusClaimed: (() -> Void)?
     var restoredCursorRange: NSRange?
+    var restoredFoldRanges: [Range<Int>]?
+    var onFoldRangesChanged: (([Range<Int>]) -> Void)?
     var onCloseTab: (() -> Void)?
     var onExecuteQuery: (() -> Void)?
-    var onExplain: ((ClickHouseExplainVariant?) -> Void)?
-    var onExplainVariant: ((ExplainVariant) -> Void)?
+    var onExplain: ((ExplainVariant?) -> Void)?
     var onAIExplain: ((String) -> Void)?
     var onAIOptimize: ((String) -> Void)?
     var onSaveAsFavorite: ((String) -> Void)?
@@ -72,7 +75,10 @@ struct QueryEditorView: View {
                 connectionAIPolicy: connectionAIPolicy,
                 tabID: tabID,
                 claimFocusOnAppear: claimFocusOnAppear,
+                onFocusClaimed: onFocusClaimed,
                 restoredCursorRange: restoredCursorRange,
+                restoredFoldRanges: restoredFoldRanges,
+                onFoldRangesChanged: onFoldRangesChanged,
                 vimMode: $vimMode,
                 onCloseTab: onCloseTab,
                 onExecuteQuery: onExecuteQuery,
@@ -143,6 +149,13 @@ struct QueryEditorView: View {
             explainButton(hasQueryText: hasQueryText)
 
             Menu {
+                Button(String(localized: "Execute All Statements")) {
+                    onExecuteAllStatements?()
+                }
+                .optionalKeyboardShortcut(
+                    AppSettingsManager.shared.keyboard.keyboardShortcut(for: .executeAllStatements)
+                )
+
                 Button(String(localized: "Execute Without Limit")) {
                     onExecuteWithoutLimit?()
                 }
@@ -163,6 +176,7 @@ struct QueryEditorView: View {
             .fixedSize()
             .help(shortcutHint(String(localized: "Execute"), for: .executeQuery))
             .optionalKeyboardShortcut(AppSettingsManager.shared.keyboard.keyboardShortcut(for: .executeQuery))
+            .accessibilityIdentifier("query-execute-menu")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -181,15 +195,7 @@ struct QueryEditorView: View {
 
         if variants.count <= 1 {
             Button {
-                if let variant = variants.first {
-                    if let handler = onExplainVariant {
-                        handler(variant)
-                    } else {
-                        onExplain?(nil)
-                    }
-                } else {
-                    onExplain?(nil)
-                }
+                onExplain?(variants.first)
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "chart.bar.doc.horizontal")
@@ -203,13 +209,7 @@ struct QueryEditorView: View {
         } else {
             Menu {
                 ForEach(variants) { variant in
-                    Button(variant.label) {
-                        if let handler = onExplainVariant {
-                            handler(variant)
-                        } else if let legacy = ClickHouseExplainVariant(rawValue: variant.label) {
-                            onExplain?(legacy)
-                        }
-                    }
+                    Button(variant.label) { onExplain?(variant) }
                 }
             } label: {
                 HStack(spacing: 4) {

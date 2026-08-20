@@ -17,6 +17,14 @@ import UniformTypeIdentifiers
 struct TableStructureView: View {
     static let logger = Logger(subsystem: "com.TablePro", category: "TableStructureView")
     static let structurePasteboardType = NSPasteboard.PasteboardType("com.TablePro.structure")
+
+    /// Whether the clipboard holds structure rows this view can paste. Structure paste reads its
+    /// own pasteboard type and nothing else, so the plain text a structure copy also writes is not
+    /// enough. Menu validation and the grid delegate both ask here rather than each spelling out
+    /// the same check.
+    static var canPasteStructureRows: Bool {
+        NSPasteboard.general.data(forType: structurePasteboardType) != nil
+    }
     let tableName: String
     let connection: DatabaseConnection
     let databaseName: String
@@ -24,6 +32,8 @@ struct TableStructureView: View {
     let toolbarState: ConnectionToolbarState
     let coordinator: MainContentCoordinator?
     let selectionState: GridSelectionState
+
+    @Environment(\.appServices) private var services
 
     /// Derived from the tab's own binding on every render so it can never go stale.
     var scope: DatabaseScope {
@@ -34,23 +44,56 @@ struct TableStructureView: View {
         TableStructureLoader(scope: scope, tableName: tableName)
     }
 
+    /// Everything the user has staged, plus the baseline it is staged against. Held outside this
+    /// view because the view is destroyed whenever the tab is deselected or switched to Data.
+    let session: StructureEditingSession
+
     @State var selectedTab: StructureTab = .columns
-    @State var columns: [ColumnInfo] = []
-    @State var indexes: [IndexInfo] = []
-    @State var foreignKeys: [ForeignKeyInfo] = []
-    @State var triggers: [TriggerInfo] = []
-    @State var ddlStatement: String = ""
-    @AppStorage("structureCodeFontSize") var ddlFontSize: Double = 13
+
+    /// The loaded schema, forwarded to the session so a rebuild adopts it instead of refetching.
+    /// Refetching would re-baseline `structureChangeManager` and clear the staged edits.
+    var columns: [ColumnInfo] {
+        get { session.columns }
+        nonmutating set { session.columns = newValue }
+    }
+
+    var indexes: [IndexInfo] {
+        get { session.indexes }
+        nonmutating set { session.indexes = newValue }
+    }
+
+    var foreignKeys: [ForeignKeyInfo] {
+        get { session.foreignKeys }
+        nonmutating set { session.foreignKeys = newValue }
+    }
+
+    var triggers: [TriggerInfo] {
+        get { session.triggers }
+        nonmutating set { session.triggers = newValue }
+    }
+
+    var ddlStatement: String {
+        get { session.ddlStatement }
+        nonmutating set { session.ddlStatement = newValue }
+    }
+
+    var tabData: StructureTabDataState {
+        get { session.tabData }
+        nonmutating set { session.tabData = newValue }
+    }
+
+    var structureChangeManager: StructureChangeManager { session.changeManager }
+
+    @AppStorage("structureCodeFontSize", store: AppStorageEnvironment.shared.defaults) var ddlFontSize: Double = 13
     @State var showCopyConfirmation = false
     @State var copyResetTask: Task<Void, Never>?
     @State var isLoading = true
     @State var isInitialLoading = true
     @State var errorMessage: String?
-    @State var tabData = StructureTabDataState()
     @State var partsReloadToken = 0
     @State var isReloadingAfterSave = false  // Prevent onChange loops during save reload
     @State var lastSaveTime: Date?
-    @AppStorage("skipSchemaPreview") var skipSchemaPreview = false
+    @AppStorage("skipSchemaPreview", store: AppStorageEnvironment.shared.defaults) var skipSchemaPreview = false
 
     // Search and sort state
     @State var searchText = ""
@@ -58,7 +101,6 @@ struct TableStructureView: View {
     @State var displayVersion: Int = 0
 
     // DataGridView state
-    @State var structureChangeManager: StructureChangeManager
     @State var wrappedChangeManager: AnyChangeManager
     @State var selectedRows: Set<Int> = []
     @State var sortState = SortState()
@@ -74,7 +116,9 @@ struct TableStructureView: View {
         schemaName: String?,
         toolbarState: ConnectionToolbarState,
         coordinator: MainContentCoordinator?,
-        selectionState: GridSelectionState
+        selectionState: GridSelectionState,
+        session: StructureEditingSession,
+        initialSelectedTab: StructureTab = .columns
     ) {
         self.tableName = tableName
         self.connection = connection
@@ -83,13 +127,14 @@ struct TableStructureView: View {
         self.toolbarState = toolbarState
         self.coordinator = coordinator
         self.selectionState = selectionState
+        self.session = session
+        _selectedTab = State(initialValue: initialSelectedTab)
 
-        let manager = StructureChangeManager()
-        _structureChangeManager = State(wrappedValue: manager)
+        let manager = session.changeManager
         _wrappedChangeManager = State(wrappedValue: AnyChangeManager(manager))
         _gridDelegate = State(wrappedValue: StructureGridDelegate(
             structureChangeManager: manager,
-            selectedTab: .columns,
+            selectedTab: initialSelectedTab,
             connection: connection,
             tableName: tableName,
             coordinator: coordinator
@@ -101,6 +146,7 @@ struct TableStructureView: View {
             toolbar
             Divider()
             contentArea
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .task(loadInitialData)
         .onChange(of: selectedRows) { _, newRows in
@@ -198,7 +244,7 @@ struct TableStructureView: View {
         HStack {
             Spacer()
 
-            Picker("", selection: $selectedTab) {
+            Picker("Structure", selection: $selectedTab) {
                 ForEach(availableTabs, id: \.self) { tab in
                     Text(tabLabel(for: tab)).tag(tab)
                 }
@@ -206,6 +252,7 @@ struct TableStructureView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .monospacedDigit()
+            .accessibilityIdentifier("structure-tab-picker")
 
             Spacer()
         }
@@ -376,6 +423,7 @@ struct TableStructureView: View {
             }
             return { [self] fromIndex, toIndex in
                 let columnsSnapshot = structureChangeManager.workingColumns
+                let columnLayoutClearTarget = coordinator?.selectedColumnLayoutClearTarget()
                 Task { @MainActor in
                     do {
                         let executedSQL = try await StructureColumnReorderHandler.moveColumn(
@@ -385,19 +433,25 @@ struct TableStructureView: View {
                             tableName: tableName,
                             connectionId: connection.id
                         )
-                        QueryHistoryManager.shared.recordQuery(
-                            query: executedSQL.hasSuffix(";") ? executedSQL : executedSQL + ";",
-                            connectionId: connection.id,
-                            databaseName: DatabaseManager.shared.browseDatabaseName(for: connection),
-                            executionTime: 0,
-                            rowCount: 0,
-                            wasSuccessful: true
+                        await services.queryHistoryManager.record(
+                            QueryHistoryRecordRequest(
+                                query: executedSQL.hasSuffix(";") ? executedSQL : executedSQL + ";",
+                                connectionId: connection.id,
+                                databaseName: DatabaseManager.shared.browseDatabaseName(for: connection),
+                                databaseType: connection.type,
+                                source: .structureDDL,
+                                executionTime: 0,
+                                rowCount: -1,
+                                wasSuccessful: true
+                            )
                         )
                         isReloadingAfterSave = true
                         await loadColumns()
                         loadSchemaForEditing()
                         isReloadingAfterSave = false
-                        coordinator?.clearColumnLayoutForSelectedTable()
+                        if let columnLayoutClearTarget {
+                            coordinator?.clearColumnLayout(columnLayoutClearTarget)
+                        }
                         AppCommands.shared.refreshData.send(DataRefreshRequest(connectionId: connection.id))
                     } catch {
                         AlertHelper.showErrorSheet(
@@ -497,7 +551,8 @@ struct TableStructureView: View {
         schemaName: nil,
         toolbarState: ConnectionToolbarState(),
         coordinator: nil,
-        selectionState: GridSelectionState()
+        selectionState: GridSelectionState(),
+        session: StructureEditingSession(identity: "test.users")
     )
     .frame(width: 800, height: 600)
 }

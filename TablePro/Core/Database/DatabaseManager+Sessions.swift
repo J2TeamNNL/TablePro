@@ -134,6 +134,10 @@ extension DatabaseManager {
             if let schemaDriver = driver as? SchemaSwitchable {
                 activeSessions[connection.id]?.browseSchema = schemaDriver.currentSchema
             }
+            if let reportingDriver = driver as? DatabaseReporting,
+               let openedDatabase = reportingDriver.currentDatabase, !openedDatabase.isEmpty {
+                activeSessions[connection.id]?.browseDatabase = openedDatabase
+            }
 
             await executePostConnectActions(
                 for: connection, resolvedConnection: resolvedConnection, driver: driver
@@ -432,6 +436,8 @@ extension DatabaseManager {
 
         SharedSidebarState.removeConnection(sessionId)
         SidebarViewModel.removeConnection(sessionId)
+        HistoryPanelState.removeConnection(sessionId)
+        QuickSwitcherCatalogStore.shared.removeConnection(sessionId)
 
         if lastActiveSessionId == sessionId {
             if let nextSessionId = activeSessions.keys.first {

@@ -268,14 +268,34 @@ final class KeyHandlingTableView: NSTableView {
 
     @objc func paste(_ sender: Any?) {
         guard coordinator?.isEditable == true else { return }
-        if focusedRow >= 0,
-           DataGridView.isDataTableColumn(focusedColumn),
-           let schema = coordinator?.identitySchema,
-           let dataCol = DataGridView.dataColumnIndex(for: focusedColumn, in: self, schema: schema),
-           coordinator?.pasteCellsFromClipboard(anchorRow: focusedRow, anchorColumn: dataCol) == true {
+        if let anchor = pasteAnchorCell(),
+           coordinator?.pasteCellsFromClipboard(anchorRow: anchor.row, anchorColumn: anchor.column) == true {
             return
         }
         coordinator?.delegate?.dataGridPasteRows()
+    }
+
+    /// The cell a paste would land in. Deliberately looser than `focusedDataCell()`, which also
+    /// requires a single selected row: a paste anchors on the focused cell alone.
+    private func pasteAnchorCell() -> (row: Int, column: Int)? {
+        guard focusedRow >= 0,
+              DataGridView.isDataTableColumn(focusedColumn),
+              let schema = coordinator?.identitySchema,
+              let dataCol = DataGridView.dataColumnIndex(for: focusedColumn, in: self, schema: schema) else {
+            return nil
+        }
+        return (focusedRow, dataCol)
+    }
+
+    /// Both routes `paste(_:)` can take, asked before the menu item is enabled. The item used to be
+    /// enabled whenever the grid was editable and had a delegate, which lit it over query-result
+    /// tabs where `pasteRows()` returns at its first guard. AppKit gives a disabled item its key
+    /// equivalent anyway, so an enabled-but-dead item swallows Command+V in silence.
+    private var canPaste: Bool {
+        guard let coordinator, coordinator.isEditable else { return false }
+        if coordinator.delegate?.dataGridCanPasteRows() == true { return true }
+        guard let anchor = pasteAnchorCell() else { return false }
+        return coordinator.canPasteCellsFromClipboard(anchorRow: anchor.row, anchorColumn: anchor.column)
     }
 
     override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
@@ -290,7 +310,7 @@ final class KeyHandlingTableView: NSTableView {
             let hasGridSelection = gridSelection?.isEmpty == false
             return hasGridSelection || !selectedRowIndexes.isEmpty
         case #selector(paste(_:)):
-            return coordinator?.isEditable == true && coordinator?.delegate != nil
+            return canPaste
         case #selector(insertNewline(_:)):
             return selectedRow >= 0 && DataGridView.isDataTableColumn(focusedColumn)
         case #selector(selectAll(_:)):
@@ -303,15 +323,6 @@ final class KeyHandlingTableView: NSTableView {
     override func keyDown(with event: NSEvent) {
         guard let key = KeyCode(rawValue: event.keyCode) else {
             super.keyDown(with: event)
-            return
-        }
-
-        if key == .tab {
-            if event.modifierFlags.contains(.shift) {
-                handleShiftTabKey()
-            } else {
-                handleTabKey()
-            }
             return
         }
 
@@ -491,53 +502,92 @@ final class KeyHandlingTableView: NSTableView {
     private func isVisibleDataColumn(at index: Int) -> Bool {
         guard index >= 0, index < numberOfColumns else { return false }
         let column = tableColumns[index]
-        return !column.isHidden && column.identifier != ColumnIdentitySchema.rowNumberIdentifier
+        return coordinator?.presentsColumn(column) ?? !column.isHidden
     }
 
-    private func handleTabKey() {
-        let row = selectedRow
-        guard row >= 0, DataGridView.isDataTableColumn(focusedColumn) else { return }
+    /// `NSResponder` declares these two but does not implement them, so calling `super` raises
+    /// `doesNotRecognizeSelector`. With no cell cursor to move, Tab has to leave the grid the way
+    /// it leaves any other view, or focus is trapped here for the rest of the session.
+    /// VoiceOver follows the focused element, and a table view reports itself rather than the
+    /// cell the grid's own cursor is on, so the cursor was invisible to it. The selected-cells
+    /// override is clamped to the visible rows: AppKit will happily ask for every cell in a
+    /// million-row selection otherwise.
+    /// The cursor moved, so assistive technology is told to re-read where focus now is. The
+    /// element itself stays the table: `NSTableView`'s own focused-element resolution already
+    /// walks to the cell, and overriding it in Swift is not available on this type.
+    internal func postCellCursorMoved() {
+        guard selectedRow >= 0, DataGridView.isDataTableColumn(focusedColumn) else { return }
+        guard let cell = view(atColumn: focusedColumn, row: selectedRow, makeIfNecessary: false) else { return }
+        NSAccessibility.post(element: cell, notification: .focusedUIElementChanged)
+    }
 
-        var nextColumn = focusedColumn + 1
+    override func accessibilitySelectedCells() -> [Any]? {
+        guard let controller = gridSelection, !controller.isEmpty else {
+            return super.accessibilitySelectedCells()
+        }
+        let visible = rows(in: visibleRect)
+        guard visible.length > 0 else { return [] }
+        var cells: [Any] = []
+        for rectangle in controller.selection.rectangles {
+            for row in rectangle.rows where NSLocationInRange(row, visible) {
+                for column in rectangle.columns {
+                    guard let cell = view(atColumn: column, row: row, makeIfNecessary: false) else { continue }
+                    cells.append(cell)
+                }
+            }
+        }
+        return cells
+    }
+
+    override func insertTab(_ sender: Any?) {
+        guard !moveFocusToNextCell() else { return }
+        window?.selectKeyView(following: self)
+    }
+
+    override func insertBacktab(_ sender: Any?) {
+        guard !moveFocusToPreviousCell() else { return }
+        window?.selectKeyView(preceding: self)
+    }
+
+    private func moveFocusToNextCell() -> Bool {
+        let row = selectedRow
+        guard row >= 0, DataGridView.isDataTableColumn(focusedColumn) else { return false }
+
+        var nextColumn = nextVisibleDataColumn(after: focusedColumn)
         var nextRow = row
-
-        if nextColumn >= numberOfColumns {
-            nextColumn = DataGridView.firstDataTableColumnIndex
-            nextRow += 1
+        if nextColumn < 0 {
+            let wrapped = firstVisibleDataColumn()
+            guard wrapped >= 0, row + 1 < numberOfRows else { return true }
+            nextColumn = wrapped
+            nextRow = row + 1
         }
-        if nextRow >= numberOfRows {
-            nextRow = numberOfRows - 1
-            nextColumn = numberOfColumns - 1
-        }
-
-        selectRowIndexes(IndexSet(integer: nextRow), byExtendingSelection: false)
-        focusedRow = nextRow
-        focusedColumn = nextColumn
-        scrollRowToVisible(nextRow)
-        scrollColumnToVisible(nextColumn)
+        focusCell(row: nextRow, column: nextColumn)
+        return true
     }
 
-    private func handleShiftTabKey() {
+    private func moveFocusToPreviousCell() -> Bool {
         let row = selectedRow
-        guard row >= 0, DataGridView.isDataTableColumn(focusedColumn) else { return }
+        guard row >= 0, DataGridView.isDataTableColumn(focusedColumn) else { return false }
 
-        var prevColumn = focusedColumn - 1
-        var prevRow = row
-
-        if !DataGridView.isDataTableColumn(prevColumn) {
-            prevColumn = numberOfColumns - 1
-            prevRow -= 1
+        var previousColumn = previousVisibleDataColumn(before: focusedColumn)
+        var previousRow = row
+        if previousColumn < 0 {
+            let wrapped = lastVisibleDataColumn()
+            guard wrapped >= 0, row > 0 else { return true }
+            previousColumn = wrapped
+            previousRow = row - 1
         }
-        if prevRow < 0 {
-            prevRow = 0
-            prevColumn = DataGridView.firstDataTableColumnIndex
-        }
+        focusCell(row: previousRow, column: previousColumn)
+        return true
+    }
 
-        selectRowIndexes(IndexSet(integer: prevRow), byExtendingSelection: false)
-        focusedRow = prevRow
-        focusedColumn = prevColumn
-        scrollRowToVisible(prevRow)
-        scrollColumnToVisible(prevColumn)
+    private func focusCell(row: Int, column: Int) {
+        selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        focusedRow = row
+        focusedColumn = column
+        scrollRowToVisible(row)
+        scrollColumnToVisible(column)
+        postCellCursorMoved()
     }
 
     override func rightMouseDown(with event: NSEvent) {

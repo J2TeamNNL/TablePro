@@ -119,13 +119,16 @@ public protocol PluginDatabaseDriver: AnyObject, Sendable {
 
     func fetchApproximateRowCount(table: String, schema: String?) async throws -> Int?
     func fetchAllColumns(schema: String?) async throws -> [String: [PluginColumnInfo]]
+    func sampleFieldPaths(table: String, schema: String?, limit: Int) async throws -> [PluginFieldPath]
     func fetchAllForeignKeys(schema: String?) async throws -> [String: [PluginForeignKeyInfo]]
+    var providesBulkForeignKeyFetch: Bool { get }
     func fetchAllDatabaseMetadata() async throws -> [PluginDatabaseMetadata]
     func fetchDependentTypes(table: String, schema: String?) async throws -> [(name: String, labels: [String])]
     func fetchDependentSequences(table: String, schema: String?) async throws -> [(name: String, ddl: String)]
     func createDatabaseFormSpec() async throws -> PluginCreateDatabaseFormSpec?
     func createDatabase(_ request: PluginCreateDatabaseRequest) async throws
     func dropDatabase(name: String) async throws
+    func dropSchema(name: String) async throws
     func executeParameterized(query: String, parameters: [PluginCellValue]) async throws -> PluginQueryResult
 
     // Session contexts (optional, switchable session dimensions such as a warehouse or role)
@@ -151,6 +154,12 @@ public protocol PluginDatabaseDriver: AnyObject, Sendable {
 
     // Database switching (SQL Server USE, ClickHouse database switch, etc.)
     func switchDatabase(to database: String) async throws
+
+    /// The database the connection is currently on, when the driver rather than the
+    /// connection definition is the authority on that. An embedded engine names its
+    /// database from the file it opened, so nothing outside the driver can derive it.
+    /// Drivers whose database comes from the connection definition return nil.
+    var currentDatabase: String? { get }
 
     // DDL schema generation (optional, plugins return nil to use default fallback)
     func generateAddColumnSQL(table: String, column: PluginColumnDefinition) -> String?
@@ -296,6 +305,19 @@ public extension PluginDatabaseDriver {
         return result
     }
 
+    /// Default: no nested field paths. Document stores override this to sample documents and
+    /// report the dotted paths their nested structure exposes, which a flat column list cannot.
+    func sampleFieldPaths(table: String, schema: String?, limit: Int) async throws -> [PluginFieldPath] {
+        []
+    }
+
+    /// Answers whether `fetchAllForeignKeys` is a single query rather than the N+1 default below.
+    /// The app reads this before fetching a whole schema's foreign keys up front, so a driver that
+    /// has not overridden the default is never asked to make one round trip per table. It belongs
+    /// on the driver rather than on the database type, because the PostgreSQL plugin registers
+    /// CockroachDB and Redshift as variants of its own type and neither has the bulk query.
+    var providesBulkForeignKeyFetch: Bool { false }
+
     /// Default: fetches foreign keys per-table sequentially (N+1 round-trips).
     /// SQL drivers should override with a single bulk query (e.g. INFORMATION_SCHEMA.KEY_COLUMN_USAGE).
     func fetchAllForeignKeys(schema: String?) async throws -> [String: [PluginForeignKeyInfo]] {
@@ -339,6 +361,11 @@ public extension PluginDatabaseDriver {
                       userInfo: [NSLocalizedDescriptionKey: "Drop database is not supported by this driver"])
     }
 
+    func dropSchema(name: String) async throws {
+        throw NSError(domain: "PluginDatabaseDriver", code: -1,
+                      userInfo: [NSLocalizedDescriptionKey: "Drop schema is not supported by this driver"])
+    }
+
     func switchDatabase(to database: String) async throws {
         throw NSError(
             domain: "TableProPluginKit",
@@ -346,6 +373,8 @@ public extension PluginDatabaseDriver {
             userInfo: [NSLocalizedDescriptionKey: "This driver does not support database switching"]
         )
     }
+
+    var currentDatabase: String? { nil }
 
     func buildBrowseQuery(table: String, sortColumns: [(columnIndex: Int, ascending: Bool)], columns: [String], limit: Int, offset: Int) -> String? { nil }
     func buildFilteredQuery(table: String, filters: [(column: String, op: String, value: String)], logicMode: String, sortColumns: [(columnIndex: Int, ascending: Bool)], columns: [String], limit: Int, offset: Int) -> String? { nil }

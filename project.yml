@@ -69,6 +69,7 @@ targetTemplates:
       - path: Plugins/${folder}
         excludes:
           - Info.plist
+          - README.md
     dependencies:
       - target: TableProPluginKit
         embed: false
@@ -104,6 +105,12 @@ targets:
           - CLI/BridgeMain.swift
           - CLI/BridgeProxy.swift
           - CLI/Handshake.swift
+          # Copied whole below. A plain glob flattens it into Resources/ and the
+          # inventory then cannot find its texts/ directory.
+          - Resources/ThirdPartyLicenses
+      - path: TablePro/Resources/ThirdPartyLicenses
+        type: folder
+        buildPhase: resources
     configFiles:
       Debug: Configs/Version.xcconfig
       Release: Configs/Version.xcconfig
@@ -299,6 +306,7 @@ targets:
       # Plugin logic under test. Plugin bundles load at runtime, so the test bundle
       # compiles the pure-logic files its suites cover.
       - Plugins/BeancountDriverPlugin/BeancountIncludeResolver.swift
+      - Plugins/BeancountDriverPlugin/BeancountPluginDriver+Projection.swift
       - Plugins/BeancountDriverPlugin/BeancountPluginDriver+PythonScript.swift
       - Plugins/BeancountDriverPlugin/BeancountPluginDriver.swift
       - Plugins/BigQueryDriverPlugin/BigQueryAuth.swift
@@ -316,6 +324,10 @@ targets:
       - Plugins/ClickHouseDriverPlugin/ClickHouseCredentials.swift
       - Plugins/ClickHouseDriverPlugin/ClickHouseGeneratedColumnClassification.swift
       - Plugins/ClickHouseDriverPlugin/ClickHouseTableOperations.swift
+      - Plugins/DamengDriverPlugin/DamengParameterBinder.swift
+      - Plugins/DamengDriverPlugin/DamengStatementClassifier.swift
+      - Plugins/DuckDBDriverPlugin/DuckDBSchemaQueries.swift
+      - Plugins/DuckDBDriverPlugin/DuckDBTypeRendering.swift
       - Plugins/DuckDBDriverPlugin/QuackConnectBuilder.swift
       - Plugins/DynamoDBDriverPlugin/DynamoDBQueryBuilder.swift
       - Plugins/DynamoDBDriverPlugin/DynamoDBStatementGenerator.swift
@@ -691,6 +703,61 @@ targets:
       folder: DynamoDBDriverPlugin
       principalClass: DynamoDBPlugin
 
+  DamengDriver:
+    templates: [DriverPlugin]
+    templateAttributes:
+      folder: DamengDriverPlugin
+      principalClass: DamengPlugin
+    settings:
+      base:
+        HEADER_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/Plugins/DamengDriverPlugin/CDameng
+        LIBRARY_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/Native/DamengBridge/lib
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - -force_load
+          - $(SRCROOT)/Native/DamengBridge/lib/libdameng_bridge.a
+          - -framework
+          - Security
+          - -framework
+          - CoreFoundation
+          - -liconv
+        SWIFT_INCLUDE_PATHS: $(SRCROOT)/Plugins/DamengDriverPlugin/CDameng
+
+  DamengDriverTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Plugins/DamengDriverPlugin
+        excludes:
+          - Info.plist
+          - README.md
+      - Plugins/DamengDriverPluginTests
+    dependencies:
+      - target: TableProPluginKit
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        HEADER_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/Plugins/DamengDriverPlugin/CDameng
+        LIBRARY_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/Native/DamengBridge/lib
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - -force_load
+          - $(SRCROOT)/Native/DamengBridge/lib/libdameng_bridge.a
+          - -framework
+          - Security
+          - -framework
+          - CoreFoundation
+          - -liconv
+        SWIFT_INCLUDE_PATHS: $(SRCROOT)/Plugins/DamengDriverPlugin/CDameng
+
   ElasticsearchDriverPlugin:
     templates: [DriverPlugin]
     templateAttributes:
@@ -831,6 +898,7 @@ aggregateTargets:
       - CassandraDriver
       - ClickHouseDriver
       - CloudflareD1DriverPlugin
+      - DamengDriver
       - DuckDBDriver
       - DynamoDBDriverPlugin
       - ElasticsearchDriverPlugin
@@ -856,6 +924,16 @@ aggregateTargets:
     scheme: {}
 
 schemes:
+  DamengDriverTests:
+    build:
+      targets:
+        DamengDriverTests: test
+      buildImplicitDependencies: true
+    test:
+      config: Debug
+      targets:
+        - name: DamengDriverTests
+
   TablePro:
     build:
       targets:

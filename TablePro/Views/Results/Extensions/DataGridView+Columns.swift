@@ -61,50 +61,31 @@ extension TableViewCoordinator {
             return true
         }()
 
-        let isDropdown = dropdownColumns?.contains(columnIndex) == true
-        let isTypePicker = typePickerColumns?.contains(columnIndex) == true
-        let isEnumOrSet = enumOrSetColumns.contains(columnIndex)
-        let isFKColumn = fkColumns.contains(columnIndex)
-        let resolvedFK = isFKColumn && !isDropdown && !isTypePicker
-        let resolvedDropdown = isEditable && (isDropdown || isTypePicker || isEnumOrSet)
-
-        let kind = cellRegistry.resolveKind(
-            columnIndex: columnIndex,
-            columnType: columnType,
-            isFKColumn: resolvedFK,
-            isDropdownColumn: resolvedDropdown
-        )
+        let presentation = columnPresentation(for: columnIndex, in: tableRows)
 
         let content = DataGridCellContent(
             displayText: formattedValue ?? "",
             rawValue: rawValue.asText,
-            placeholder: placeholderKind(for: rawValue)
+            placeholder: DataGridCellContent.placeholder(for: rawValue)
         )
         let cellState = DataGridCellState(
             visualState: state,
             isFocused: isFocused,
             isEditable: isEditable,
             isLargeDataset: isLargeDataset,
+            isCurrentFindMatch: currentFindMatch == FindMatch(displayRow: row, columnIndex: columnIndex),
             row: row,
             columnIndex: columnIndex
         )
 
         let cell = cellRegistry.dequeueCell(in: tableView)
-        cell.configure(kind: kind, content: content, state: cellState, palette: cellRegistry.palette)
+        cell.configure(
+            kind: presentation.kind,
+            content: content,
+            state: cellState,
+            palette: cellRegistry.palette
+        )
         return cell
-    }
-
-    private func placeholderKind(for rawValue: PluginCellValue) -> DataGridCellPlaceholder? {
-        switch rawValue {
-        case .null:
-            return .null
-        case .text(let s):
-            if s == "__DEFAULT__" { return .defaultMarker }
-            if s.isEmpty { return .empty }
-            return nil
-        case .bytes:
-            return nil
-        }
     }
 
     func tableView(_ tableView: NSTableView, typeSelectStringFor tableColumn: NSTableColumn?, row: Int) -> String? {

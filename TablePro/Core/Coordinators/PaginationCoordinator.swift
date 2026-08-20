@@ -252,11 +252,16 @@ final class PaginationCoordinator {
 
     /// Only the driver work runs inside the lease. Applying the rows to the tab stays
     /// outside it, because the connection's driver gate is not reentrant.
+    ///
+    /// The rows belong to the result the fetch was started on. A result switch leaves the content
+    /// epoch alone, so the fetch is fenced on the result set as well, or the full row set lands on
+    /// whichever result is showing when it arrives, normalized to that result's column count.
     private func performFetchAll(tabId: UUID, baseQuery: String, scope: DatabaseScope) {
         guard let idx = parent.tabManager.tabs.firstIndex(where: { $0.id == tabId }) else { return }
         guard !parent.tabManager.tabs[idx].pagination.isLoadingMore else { return }
 
         let contentEpoch = parent.tabExecution.contentEpoch(for: tabId)
+        let resultSetId = parent.tabManager.tabs[idx].display.activeResultSetId
         let storedParamValues = parent.tabManager.tabs[idx].pagination.baseQueryParameterValues
 
         parent.tabManager.mutate(at: idx) { $0.pagination.isLoadingMore = true }
@@ -264,7 +269,7 @@ final class PaginationCoordinator {
 
         let route = DatabaseManager.shared.executionRoute(for: scope)
 
-        parent.currentQueryTask = Task { [weak self, parent] in
+        let fetchAllTask = Task { [weak self, parent] in
             guard let self, !parent.isTearingDown else { return }
 
             do {
@@ -289,13 +294,15 @@ final class PaginationCoordinator {
 
                 await MainActor.run { [weak self] in
                     guard let self, !parent.isTearingDown else { return }
-                    guard parent.tabExecution.isSameContent(contentEpoch, for: tabId) else {
+                    let stillSameResult = parent.tabManager.tabs
+                        .contains { $0.id == tabId && $0.display.activeResultSetId == resultSetId }
+                    guard parent.tabExecution.isSameContent(contentEpoch, for: tabId), stillSameResult else {
                         parent.tabManager.mutate(tabId: tabId) { $0.pagination.isLoadingMore = false }
-                        parent.toolbarState.setExecuting(false)
+                        parent.retireQueryTask(for: nil)
                         return
                     }
                     guard let idx = parent.tabManager.tabs.firstIndex(where: { $0.id == tabId }) else {
-                        parent.toolbarState.setExecuting(false)
+                        parent.retireQueryTask(for: nil)
                         return
                     }
 
@@ -309,9 +316,8 @@ final class PaginationCoordinator {
                         tab.display.activeResultSet?.isTruncated = false
                     }
                     parent.dataTabDelegate?.tableViewCoordinator?.applyDelta(replaceDelta)
-                    parent.toolbarState.setExecuting(false)
+                    parent.retireQueryTask(for: nil)
                     parent.toolbarState.lastQueryDuration = result.executionTime
-                    parent.currentQueryTask = nil
 
                     let totalTime = CFAbsoluteTimeGetCurrent() - start
                     progressLog.info("[fetchAll] DONE rows=\(result.rows.count) fetchTime=\(String(format: "%.3f", fetchTime))s totalTime=\(String(format: "%.3f", totalTime))s")
@@ -326,13 +332,11 @@ final class PaginationCoordinator {
                         guard !isStale, !isCancelled else { return }
                         tab.execution.errorMessage = DatabaseWriteRejectionDiagnosis.formatted(error)
                     }
-                    parent.toolbarState.setExecuting(false)
-                    if !isStale {
-                        parent.currentQueryTask = nil
-                    }
+                    parent.retireQueryTask(for: nil)
                     MainContentCoordinator.logger.error("Fetch all failed: \(error.localizedDescription, privacy: .public)")
                 }
             }
         }
+        parent.installQueryTask(fetchAllTask, for: nil)
     }
 }

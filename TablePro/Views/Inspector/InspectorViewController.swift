@@ -130,7 +130,7 @@ final class InspectorViewController: NSViewController, NSUserInterfaceValidation
 
     fileprivate func handlePasteRows() {
         guard let inspectorDocument else { return }
-        guard let raw = NSPasteboard.general.string(forType: .string), !raw.isEmpty else { return }
+        guard let raw = ClipboardService.shared.readText(), !raw.isEmpty else { return }
         let lines = raw.split(omittingEmptySubsequences: false, whereSeparator: { $0 == "\n" || $0 == "\r\n" })
         var rows: [[String]] = []
         rows.reserveCapacity(lines.count)
@@ -450,6 +450,7 @@ final class InspectorViewController: NSViewController, NSUserInterfaceValidation
             action: nil
         )
         mode.selectedSegment = 0
+        mode.setAccessibilityLabel(String(localized: "Split mode"))
         let stack = accessoryStack(with: [field, mode])
         alert.accessoryView = stack
         alert.window.initialFirstResponder = field
@@ -513,6 +514,8 @@ final class InspectorViewController: NSViewController, NSUserInterfaceValidation
         alert.beginSheetModal(for: window)
     }
 
+    /// A fixed width truncates a longer localized segment label, and a row count times a guessed
+    /// row height is not the height the stack actually lays out to.
     private func accessoryStack(with views: [NSView]) -> NSStackView {
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
@@ -520,9 +523,10 @@ final class InspectorViewController: NSViewController, NSUserInterfaceValidation
         stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
         for view in views {
-            view.widthAnchor.constraint(equalToConstant: 260).isActive = true
+            view.widthAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
         }
-        stack.frame = NSRect(x: 0, y: 0, width: 260, height: CGFloat(views.count) * 32)
+        stack.layoutSubtreeIfNeeded()
+        stack.frame = NSRect(origin: .zero, size: stack.fittingSize)
         return stack
     }
 
@@ -558,6 +562,9 @@ final class InspectorViewController: NSViewController, NSUserInterfaceValidation
         if let width = state.columnLayout.columnWidths.removeValue(forKey: oldName) {
             state.columnLayout.columnWidths[newName] = width
         }
+        if let width = state.columnLayout.columnContentWidths?.removeValue(forKey: oldName) {
+            state.columnLayout.columnContentWidths?[newName] = width
+        }
         if state.columnLayout.hiddenColumns.remove(oldName) != nil {
             state.columnLayout.hiddenColumns.insert(newName)
         }
@@ -568,6 +575,7 @@ final class InspectorViewController: NSViewController, NSUserInterfaceValidation
             state.columnLayout.columnOrder = state.columnLayout.columnOrder?.filter { $0 != name }
         }
         state.columnLayout.columnWidths.removeValue(forKey: name)
+        state.columnLayout.columnContentWidths?.removeValue(forKey: name)
         state.columnLayout.hiddenColumns.remove(name)
     }
 
@@ -584,6 +592,7 @@ final class InspectorViewController: NSViewController, NSUserInterfaceValidation
             state.columnLayout.columnOrder = order
         }
         state.columnLayout.columnWidths.removeValue(forKey: oldName)
+        state.columnLayout.columnContentWidths?.removeValue(forKey: oldName)
         state.columnLayout.hiddenColumns.remove(oldName)
     }
 
@@ -985,6 +994,10 @@ private final class InspectorGridDelegate: DataGridViewDelegate {
 
     func dataGridPasteRows() {
         owner?.handlePasteRows()
+    }
+
+    func dataGridCanPasteRows() -> Bool {
+        ClipboardService.shared.hasText
     }
 
     func dataGridSortStateChanged(_ state: SortState) {

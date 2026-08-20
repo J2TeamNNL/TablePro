@@ -6,20 +6,10 @@
 import SwiftUI
 import TableProPluginKit
 
+/// What a row can do on its own. Everything a menu item does now goes through
+/// `SidebarMenuCommand`, so this is only the star, which is a control inside the row.
 struct DatabaseTreeRowActions {
-    let coordinator: MainContentCoordinator?
-    let isReadOnly: Bool
-    let selectedTables: () -> Set<TableInfo>
-    let activate: (DatabaseTreeTableRef) async -> Void
-    let setActiveDatabase: (String) -> Void
-    let setActiveSchema: (_ database: String, _ schema: String) -> Void
-    let refreshDatabase: (String) -> Void
-    let refreshObjects: (_ database: String, _ schema: String?) -> Void
-    let showRoutineDDL: (RoutineInfo) -> Void
-    let batchToggleTruncate: ([String]) -> Void
-    let batchToggleDelete: ([String]) -> Void
-    let removeRecent: (DatabaseTreeTableRef) -> Void
-    let clearRecents: () -> Void
+    let toggleFavorite: (DatabaseTreeTableRef) -> Void
 }
 
 struct DatabaseTreeRowContext {
@@ -29,37 +19,33 @@ struct DatabaseTreeRowContext {
     let systemSchemas: Set<String>
     let pendingTruncates: Set<String>
     let pendingDeletes: Set<String>
+    /// AppKit sizes the row, but it lays out `NSTableCellView.textField` and `imageView` to do it,
+    /// and this cell hosts SwiftUI instead. The size has to reach the content or the text stays one
+    /// size inside three different row heights.
+    var rowSize: SidebarRowSize = .medium
     var isExternalSchema: @MainActor (String, String) -> Bool = { _, _ in false }
+    /// The plugin decides what a table is called, so a section header cannot hardcode "Tables".
+    var objectKindTitle: @MainActor (SidebarObjectKind) -> String = { $0.pluralDisplayName }
 }
 
 struct DatabaseTreeRowView: View {
     let node: DatabaseTreeNode
-    let isEmphasized: Bool
+    let isFavorite: Bool
     let context: DatabaseTreeRowContext
     let actions: DatabaseTreeRowActions
 
-    private var containerEntityName: String {
-        PluginManager.shared.containerEntityName(for: context.databaseType)
-    }
-
-    private var schemaEntityName: String {
-        PluginManager.shared.schemaEntityName(for: context.databaseType)
-    }
-
+    /// No `.contextMenu` here. A menu on the hosted view answers the right-click before the outline
+    /// view ever sees it, which cost the clicked-row highlight, `clickedRow`, and any menu at all in
+    /// the empty area below the last row. The outline owns the menu now; see
+    /// `DatabaseTreeOutlineCoordinator+Menu`.
     var body: some View {
-        if hasContextMenu {
-            row.contextMenu {
-                menuItems
-                Divider()
-                SidebarViewOptionsMenu()
-            }
-        } else {
-            row
-        }
+        row
     }
 
     private var row: some View {
         rowContent
+            .font(context.rowSize.rowFont)
+            .imageScale(.medium)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
     }
@@ -68,19 +54,9 @@ struct DatabaseTreeRowView: View {
     private var rowContent: some View {
         switch node.kind {
         case .recentSection:
-            header(
-                text: String(localized: "Recent"),
-                systemImage: "clock.arrow.circlepath",
-                isActive: false,
-                isSystem: false
-            )
+            sectionHeader(String(localized: "Recent"))
         case .recentTable(let ref):
-            TableRow(
-                table: ref.table,
-                isPendingTruncate: context.pendingTruncates.contains(ref.table.name),
-                isPendingDelete: context.pendingDeletes.contains(ref.table.name)
-            )
-            .foregroundStyle(isEmphasized ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+            tableRow(ref)
         case .database(let metadata):
             header(
                 text: metadata.name,
@@ -97,17 +73,85 @@ struct DatabaseTreeRowView: View {
                 caption: context.isExternalSchema(database, schema) ? String(localized: "External") : nil
             )
         case .table(let ref):
-            TableRow(
-                table: ref.table,
-                isPendingTruncate: context.pendingTruncates.contains(ref.table.name),
-                isPendingDelete: context.pendingDeletes.contains(ref.table.name)
-            )
-            .foregroundStyle(isEmphasized ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+            tableRow(ref)
         case .routine(let ref):
             RoutineRowView(routine: ref.routine)
-                .foregroundStyle(isEmphasized ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
         case .status(let status):
             statusRow(status)
+        case .objectKindSection(let kind):
+            sectionHeader(context.objectKindTitle(kind))
+        case .containerObjectKindSection(let group):
+            objectGroupRow(group.kind)
+        case .hierarchicalSchemaSection(let schema):
+            header(
+                text: schema,
+                systemImage: "folder",
+                isActive: schema == context.activeSchema,
+                isSystem: false
+            )
+        case .redisKeysSection:
+            sectionHeader(String(localized: "Keys"))
+        case .redisNode(let redisNode):
+            redisRow(redisNode)
+        }
+    }
+
+    /// A source list section title carries no icon and no chevron of its own: AppKit draws the
+    /// group row's background and its collapse control, and an icon here would be a second glyph
+    /// competing with the one on every object below it.
+    private func sectionHeader(_ text: String) -> some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+    }
+
+    private func objectGroupRow(_ kind: SidebarObjectKind) -> some View {
+        Label(context.objectKindTitle(kind), systemImage: kind.iconName)
+            .sidebarRowIcon(visible: AppSettingsManager.shared.general.showObjectIcons)
+            .lineLimit(1)
+    }
+
+    private func tableRow(_ ref: DatabaseTreeTableRef) -> some View {
+        TableRow(
+            table: ref.table,
+            isPendingTruncate: context.pendingTruncates.contains(ref.table.name),
+            isPendingDelete: context.pendingDeletes.contains(ref.table.name),
+            isFavorite: isFavorite,
+            onToggleFavorite: { actions.toggleFavorite(ref) }
+        )
+    }
+
+    /// Redis rows carry their own count and type rather than reusing `TableRow`, which is built
+    /// around a `TableInfo` a key does not have.
+    @ViewBuilder
+    private func redisRow(_ node: RedisKeyNode) -> some View {
+        switch node {
+        case .namespace(let name, _, _, let keyCount):
+            Label {
+                HStack(spacing: 6) {
+                    Text(name)
+                        .lineLimit(1)
+                    Text(verbatim: "\(keyCount)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } icon: {
+                Image(systemName: "folder")
+            }
+        case .key(let name, _, let keyType):
+            Label {
+                HStack(spacing: 6) {
+                    Text(name)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(keyType)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } icon: {
+                Image(systemName: RedisKeyNode.iconName(forKeyType: keyType))
+            }
         }
     }
 
@@ -133,7 +177,7 @@ struct DatabaseTreeRowView: View {
         }
         .sidebarRowIcon(visible: AppSettingsManager.shared.general.showObjectIcons)
         .lineLimit(1)
-        .foregroundStyle(foreground(isActive: isActive, isSystem: isSystem))
+        .sidebarRowForeground(isActive: isActive, isSystem: isSystem)
     }
 
     @ViewBuilder
@@ -155,75 +199,11 @@ struct DatabaseTreeRowView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
+        case .truncated(let message):
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
         }
-    }
-
-    private var hasContextMenu: Bool {
-        switch node.kind {
-        case .status, .recentSection: return false
-        default: return true
-        }
-    }
-
-    @ViewBuilder
-    private var menuItems: some View {
-        switch node.kind {
-        case .recentSection:
-            EmptyView()
-        case .recentTable(let ref):
-            SidebarContextMenu(
-                clickedTable: ref.table,
-                selectedTables: [ref.table],
-                isReadOnly: actions.isReadOnly,
-                onBatchToggleTruncate: actions.batchToggleTruncate,
-                onBatchToggleDelete: actions.batchToggleDelete,
-                coordinator: actions.coordinator,
-                activateBeforeAction: { await actions.activate(ref) }
-            )
-            Divider()
-            Button(String(localized: "Remove from Recent")) {
-                actions.removeRecent(ref)
-            }
-            Button(String(localized: "Clear Recent Tables")) {
-                actions.clearRecents()
-            }
-        case .database(let metadata):
-            Button(String(format: String(localized: "Use as Active %@"), containerEntityName)) {
-                actions.setActiveDatabase(metadata.name)
-            }
-            .disabled(metadata.name == context.activeDatabase)
-            Button(String(localized: "Refresh")) {
-                actions.refreshDatabase(metadata.name)
-            }
-        case .schema(let database, let schema):
-            Button(String(format: String(localized: "Use as Active %@"), schemaEntityName)) {
-                actions.setActiveSchema(database, schema)
-            }
-            .disabled(database == context.activeDatabase && schema == context.activeSchema)
-            Button(String(localized: "Refresh")) {
-                actions.refreshObjects(database, schema)
-            }
-        case .table(let ref):
-            SidebarContextMenu(
-                clickedTable: ref.table,
-                selectedTables: actions.selectedTables(),
-                isReadOnly: actions.isReadOnly,
-                onBatchToggleTruncate: actions.batchToggleTruncate,
-                onBatchToggleDelete: actions.batchToggleDelete,
-                coordinator: actions.coordinator,
-                activateBeforeAction: { await actions.activate(ref) }
-            )
-        case .routine(let ref):
-            RoutineContextMenu(routine: ref.routine, onShowDDL: actions.showRoutineDDL)
-        case .status:
-            EmptyView()
-        }
-    }
-
-    private func foreground(isActive: Bool, isSystem: Bool) -> AnyShapeStyle {
-        if isEmphasized { return AnyShapeStyle(.white) }
-        if isActive { return AnyShapeStyle(.tint) }
-        if isSystem { return AnyShapeStyle(.secondary) }
-        return AnyShapeStyle(.primary)
     }
 }

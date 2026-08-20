@@ -35,13 +35,15 @@ Connect to RDS or Aurora with your AWS identity instead of a static password: se
 
 ## Features
 
-**Schemas**: The sidebar shows all accessible schemas and tables. Cmd+K switches databases; pick the active schema from the schema menu at the bottom of the sidebar. Table info shows columns, indexes, constraints, and DDL.
+**Schemas**: The sidebar shows all accessible schemas and tables. The toolbar shows the active database and schema side by side; click either to switch it, or press Cmd+K for the database list. In Flat sidebar layout the active schema is also at the foot of the object list, and Database > Schema does the same job from the menu bar. Table info shows columns, indexes, constraints, and DDL. Right-click a schema for **Drop Schema...**, which runs `DROP SCHEMA ... CASCADE`, so objects in other schemas that depend on it are dropped too. Select several databases or schemas with Shift-click or Cmd-click and the menu covers all of them. See [Work on Several Databases at Once](/features/table-operations#work-on-several-databases-at-once).
 
 **Databases**: Every database on the server is listed, including `postgres`. It is an ordinary database that `initdb` creates for users and applications, not a system database. `template0` and `template1` are not listed.
 
 **Partitioned tables**: A partitioned table is listed once, under its own icon. Its partitions are not listed beside it; expand the table in the sidebar to see them, and expand a partition again if it is subpartitioned. Opening a partition works like opening any other table. Tables that use the older `INHERITS` inheritance are listed normally, since a child there is a table in its own right. Requires PostgreSQL 10 or later, which is where declarative partitioning was added.
 
-**Types**: `jsonb` renders as formatted JSON. `array`, `uuid`, `inet`, `timestamp with time zone`, `interval`, and `bytea` display natively.
+**Types**: `jsonb` renders as formatted JSON. `uuid`, `inet`, `timestamp with time zone`, `interval`, and `bytea` display natively.
+
+**Arrays**: An array column whose elements are a simple type (`text[]`, `integer[]`, `uuid[]`, `timestamptz[]`, and enum arrays such as `mood[]`) opens a list editor, one row per element. Reorder rows with the arrows, add and remove elements, and set any single element to NULL. An empty array and a NULL column are separate values and the editor keeps them apart. Elements of an enum array pick from the labels the type declares, in declaration order; a value the type no longer lists stays selectable and is flagged. Switch to **Edit as Text** for the raw `{...}` literal. Arrays of `jsonb`, `bytea`, or composite types, and multi-dimensional values, keep the plain text editor, since their quoting cannot round-trip through a per-element list.
 
 **EXPLAIN**: `EXPLAIN` and `EXPLAIN ANALYZE` run with `FORMAT JSON` and render as a plan diagram or tree. See [EXPLAIN Visualization](/features/explain-visualization).
 

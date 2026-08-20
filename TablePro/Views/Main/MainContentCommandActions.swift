@@ -2,7 +2,7 @@
 //  MainContentCommandActions.swift
 //  TablePro
 //
-//  Provides command actions for MainContentView, accessible via @FocusedValue.
+//  Provides command actions for MainContentView, reached through MainContentCoordinator.
 //  Menu commands and toolbar buttons call methods directly instead of posting notifications.
 //  Retains NotificationCenter subscribers only for legitimate multi-listener broadcasts.
 //
@@ -16,7 +16,7 @@ import SwiftUI
 import TableProPluginKit
 import UniformTypeIdentifiers
 
-/// Provides command actions for MainContentView, accessible via @FocusedValue
+/// Provides command actions for MainContentView, reached through `MainContentCoordinator.commandActions`.
 @MainActor
 @Observable
 final class MainContentCommandActions {
@@ -117,10 +117,13 @@ final class MainContentCommandActions {
         notificationTasks.append(task)
     }
 
-    /// Returns true if this instance's window is the current key window.
-    private func isKeyWindow() -> Bool {
-        guard let window = self.window else { return false }
-        return window.isKeyWindow
+    /// The window being key is no longer enough: every connection it hosts shares that window, so
+    /// a broadcast gated on it alone ran once per connection and opened a file in all of them.
+    /// Only the connection on screen answers.
+    private func isVisibleInKeyWindow() -> Bool {
+        guard let window = self.window, window.isKeyWindow else { return false }
+        guard let host = window.contentViewController as? MainSplitViewController else { return true }
+        return host.workspaces.selected?.sessionState?.coordinator === coordinator
     }
 
     /// Like `observe(_:handler:)` but only runs the handler when this instance's window is key.
@@ -129,7 +132,7 @@ final class MainContentCommandActions {
         handler: @escaping @MainActor (Notification) -> Void
     ) {
         observe(name) { [weak self] notification in
-            guard self?.isKeyWindow() == true else { return }
+            guard self?.isVisibleInKeyWindow() == true else { return }
             handler(notification)
         }
     }
@@ -142,7 +145,7 @@ final class MainContentCommandActions {
         publisher
             .receive(on: RunLoop.main)
             .sink { [weak self] payload in
-                guard self?.isKeyWindow() == true else { return }
+                guard self?.isVisibleInKeyWindow() == true else { return }
                 handler(payload)
             }
             .store(in: &eventCancellables)
@@ -174,7 +177,6 @@ final class MainContentCommandActions {
     private func setupObservers() {
         setupNonMenuNotificationObservers()
         setupDataBroadcastObservers()
-        setupTabBroadcastObservers()
         setupDatabaseBroadcastObservers()
         setupWindowObservers()
         setupFileOpenObservers()
@@ -191,10 +193,10 @@ final class MainContentCommandActions {
         // a column / index / FK row depending on the active Structure sub-tab.
         // The data tab routes through MainContentCoordinator.addNewRow which
         // calls RowEditingCoordinator.addNewRow (data-only).
-        if coordinator?.tabManager.selectedTab?.display.resultsViewMode == .structure {
-            coordinator?.structureActions?.addRow?()
-        } else {
-            coordinator?.addNewRow()
+        switch selectionOwner {
+        case .schemaGrid: coordinator?.structureActions?.addRow?()
+        case .dataGrid: coordinator?.addNewRow()
+        case .none: break
         }
     }
 
@@ -202,24 +204,33 @@ final class MainContentCommandActions {
         coordinator?.dataTabDelegate?.tableViewCoordinator?.currentRowSelection() ?? selectionState.indices
     }
 
-    /// `selectionState` is shared with the structure and new-table grids, so a row command
-    /// has to confirm the data grid owns the selection before it acts on data rows.
-    private var dataGridOwnsSelection: Bool {
-        GridSelectionOwner.resolve(
+    /// `selectionState` is shared with the structure and new-table grids, and nothing clears it when
+    /// the result mode changes, so its indices only mean something once this says whose grid they
+    /// came from. Every row command routes through it rather than re-deriving the answer.
+    ///
+    /// A Create Table tab publishes into the same channel but has no structure handler behind it,
+    /// so claiming ownership there would make its commands silently inert and would shadow the
+    /// table-deletion fallback the sidebar still needs. Ownership counts only where someone can act.
+    private var selectionOwner: GridSelectionOwner {
+        let owner = GridSelectionOwner.resolve(
             tabType: coordinator?.tabManager.selectedTab?.tabType,
             resultsViewMode: coordinator?.tabManager.selectedTab?.display.resultsViewMode
-        ) == .dataGrid
+        )
+        guard owner == .schemaGrid, coordinator?.structureActions == nil else { return owner }
+        return .none
     }
+
+    private var dataGridOwnsSelection: Bool { selectionOwner == .dataGrid }
 
     func deleteSelectedRows(rowIndices: Set<Int>? = nil) {
         let fromDataGrid = rowIndices != nil
 
-        if coordinator?.tabManager.selectedTab?.display.resultsViewMode == .structure {
+        if selectionOwner == .schemaGrid {
             coordinator?.structureActions?.removeRow?()
             return
         }
 
-        let indices = rowIndices ?? resolvedRowSelection()
+        let indices = dataGridOwnsSelection ? (rowIndices ?? resolvedRowSelection()) : []
         if !indices.isEmpty {
             coordinator?.deleteSelectedRows(indices: indices)
         } else if !fromDataGrid, !selectedTables.wrappedValue.isEmpty {
@@ -250,10 +261,10 @@ final class MainContentCommandActions {
     }
 
     func copySelectedRows() {
-        if coordinator?.tabManager.selectedTab?.display.resultsViewMode == .structure {
-            coordinator?.structureActions?.copyRows?()
-        } else {
-            coordinator?.copySelectedRowsToClipboard(indices: resolvedRowSelection())
+        switch selectionOwner {
+        case .schemaGrid: coordinator?.structureActions?.copyRows?()
+        case .dataGrid: coordinator?.copySelectedRowsToClipboard(indices: resolvedRowSelection())
+        case .none: break
         }
     }
 
@@ -263,14 +274,15 @@ final class MainContentCommandActions {
     }
 
     func copySelectedRowsAsJson() {
+        guard dataGridOwnsSelection else { return }
         coordinator?.copySelectedRowsAsJson(indices: resolvedRowSelection())
     }
 
     func pasteRows() {
-        if coordinator?.tabManager.selectedTab?.display.resultsViewMode == .structure {
-            coordinator?.structureActions?.pasteRows?()
-        } else {
-            coordinator?.pasteRows()
+        switch selectionOwner {
+        case .schemaGrid: coordinator?.structureActions?.pasteRows?()
+        case .dataGrid: coordinator?.pasteRows()
+        case .none: break
         }
     }
 
@@ -295,6 +307,10 @@ final class MainContentCommandActions {
 
     var connectionId: UUID { connection.id }
 
+    /// Whether Close has a tab to act on. With none, it ends the connection instead, and the menu
+    /// has to say so rather than offering to close a tab that is not there.
+    var hasOpenTab: Bool { coordinator?.tabManager.selectedTab != nil }
+
     var browseDatabaseName: String { coordinator?.browseDatabaseName ?? "" }
 
     var openTabCount: Int { coordinator?.tabManager.tabs.count ?? 0 }
@@ -303,8 +319,41 @@ final class MainContentCommandActions {
         PluginManager.shared.supportsContainerSwitching(for: connection.type)
     }
 
+    /// Picks between the two spellings a container command has. Each one is a whole localized
+    /// string rather than a noun dropped into a format, because System Settings binds an App
+    /// Shortcut to a menu item's exact literal title, and because the driver's own entity name
+    /// would make the set open-ended. Both callers live in other files, so this is not private.
+    func containerSwitchTitle(schema: String, database: String) -> String {
+        switch PluginManager.shared.containerSwitchTarget(for: currentDatabaseType) {
+        case .schema: return schema
+        case .database, .none: return database
+        }
+    }
+
+    var openContainerSwitcherTitle: String {
+        containerSwitchTitle(
+            schema: String(localized: "Open Schema..."),
+            database: String(localized: "Open Database...")
+        )
+    }
+
     var canSwitchSidebarLayout: Bool {
         PluginManager.shared.supportsDatabaseTree(for: connection.type)
+    }
+
+    var supportsSchemaSwitching: Bool {
+        PluginManager.shared.supportsSchemaSwitching(for: connection.type)
+    }
+
+    /// Filtering the database list only means anything on a connection whose sidebar can show one,
+    /// which is the same rule the tree layout itself is gated on.
+    var canFilterDatabases: Bool {
+        PluginManager.shared.supportsDatabaseTree(for: connection.type)
+            && sidebarLayout == .tree
+    }
+
+    var hasDatabaseFilter: Bool {
+        !SharedSidebarState.forConnection(connection.id).databaseFilterSelected.isEmpty
     }
 
     var sidebarLayout: SidebarLayout {
@@ -316,15 +365,76 @@ final class MainContentCommandActions {
     }
 
     var isCurrentTabEditable: Bool {
-        coordinator?.tabManager.selectedTab?.tableContext.isEditable == true
+        guard let coordinator, coordinator.tabManager.selectedTab != nil, selectionOwner != .none else {
+            return false
+        }
+        return coordinator.canEditActiveResult
     }
 
-    var isTableTab: Bool {
-        coordinator?.toolbarState.isTableTab ?? false
+    /// Find and the filter panel act on the result grid, so they need a table tab that is showing
+    /// one. Chart mode is not, and neither is Structure, whose own grid has its own commands.
+    var canUseTableResultCommands: Bool {
+        guard coordinator?.toolbarState.isTableTab == true,
+              let viewMode = coordinator?.tabManager.selectedTab?.display.resultsViewMode
+        else {
+            return false
+        }
+        return viewMode.showsRowFilters
+    }
+
+    var canUseGridFindCommands: Bool {
+        guard coordinator?.toolbarState.isTableTab == true,
+              let viewMode = coordinator?.tabManager.selectedTab?.display.resultsViewMode
+        else {
+            return false
+        }
+        return viewMode.showsFindBar
+    }
+
+    var hasActiveGridFind: Bool {
+        guard canUseGridFindCommands,
+              let findState = coordinator?.tabManager.selectedTab?.findState else { return false }
+        return findState.isVisible && !findState.matches.isEmpty
+    }
+
+    /// What `pasteRows()` will actually do, so the Edit menu's Paste item is enabled only when it
+    /// leads somewhere. AppKit gives a disabled item its key equivalent all the same, so an item
+    /// enabled over a handler that returns at its first guard swallows Command+V in silence.
+    var canPasteRows: Bool {
+        guard !safeModeLevel.blocksAllWrites, let tab = coordinator?.tabManager.selectedTab else {
+            return false
+        }
+        switch selectionOwner {
+        case .schemaGrid:
+            return coordinator?.structureActions?.pasteRows != nil && TableStructureView.canPasteStructureRows
+        case .dataGrid:
+            return tab.tabType == .table && isCurrentTabEditable && ClipboardService.shared.hasText
+        case .none:
+            return false
+        }
+    }
+
+    /// The two facts Save As and Export Results actually turn on. Their menu items used to be
+    /// validated on `isConnected` alone, so both stayed lit in states where the handler returns at
+    /// its first guard and the click does nothing at all.
+    var isQueryTab: Bool {
+        coordinator?.tabManager.selectedTab?.tabType == .query
+    }
+
+    var hasResultRows: Bool {
+        guard let coordinator, let tab = coordinator.tabManager.selectedTab else { return false }
+        return !coordinator.tabSessionRegistry.tableRows(for: tab.id).rows.isEmpty
     }
 
     var hasRowSelection: Bool {
-        !resolvedRowSelection().isEmpty
+        selectionOwner != .none && !resolvedRowSelection().isEmpty
+    }
+
+    /// Copy with headers and copy as JSON read the data grid's columns, so they are only meaningful
+    /// when the data grid owns the indices. The structure grid has its own plain copy and nothing
+    /// else; handing it these would read a structure row's position into the result rows.
+    var hasDataGridRowSelection: Bool {
+        dataGridOwnsSelection && !resolvedRowSelection().isEmpty
     }
 
     var hasTableSelection: Bool {
@@ -364,7 +474,21 @@ final class MainContentCommandActions {
 
     /// Scoped to the whole window, not the selected tab: closing a window closes every tab in it,
     /// so a tab the user is not looking at must still get its prompt.
-    private var hasUnsavedWorkInWindow: Bool {
+    /// Every connection the window hosts, because closing the window closes all of them. Asking
+    /// only about the one on screen let a background connection's unsaved edits go without a
+    /// prompt, which is silent data loss rather than a missing confirmation.
+    internal var hasUnsavedWorkInWindow: Bool {
+        guard let host = window?.contentViewController as? MainSplitViewController else {
+            return coordinator?.hasAnyUnsavedWork() ?? false
+        }
+        return host.workspaces.workspaces.contains { workspace in
+            workspace.sessionState?.coordinator.hasAnyUnsavedWork() == true
+        }
+    }
+
+    /// This connection only. Closing its tabs says nothing about what another connection in the
+    /// same window has pending, so prompting about that would ask the wrong question.
+    internal var hasUnsavedWorkInConnection: Bool {
         coordinator?.hasAnyUnsavedWork() ?? false
     }
 
@@ -398,25 +522,93 @@ final class MainContentCommandActions {
 
     // MARK: - Tab Operations (Group A — Called Directly)
 
+    /// A new tab joins the connection's own tab list. It used to open another window whenever
+    /// the list was not empty, which is why two tables meant two windows.
     func newTab(initialQuery: String? = nil) {
-        if let coordinator, coordinator.tabManager.tabs.isEmpty {
-            coordinator.tabManager.addTab(
-                initialQuery: initialQuery,
-                databaseName: coordinator.browseDatabaseName,
-                claimFocus: true
-            )
-            return
-        }
-        let payload = EditorTabPayload(
-            connectionId: connection.id,
+        guard let coordinator else { return }
+        coordinator.tabManager.addTab(
             initialQuery: initialQuery,
-            intent: .newEmptyTab
+            databaseName: coordinator.browseDatabaseName,
+            claimFocus: true
         )
-        WindowManager.shared.openTab(payload: payload)
     }
 
+    /// Closing the last tab leaves the connection open on its empty state, the same state it is
+    /// in right after connecting. The window hosts every open connection now, so closing it here
+    /// would take the other connections' tabs and their unsaved edits with it.
+    func closeTab(id: UUID) {
+        Task { await closeTabAwaiting(id: id) }
+    }
+
+    /// A tab holding work only a save can recover asks before it goes, which is what the window
+    /// close and the batch closes already do and what the HIG requires of an app that does not
+    /// autosave: "present a save dialog when people choose to close the document, quit your app,
+    /// log out, or restart".
+    ///
+    /// Save proceeds with the close, per `NSDocument.canCloseDocumentWithDelegate`: "shouldClose
+    /// will be YES if ... the user chose to discard modifications, or chose to save and the saving
+    /// was successful". `saveSelectedTabWork` returns false for the one case where saving cannot
+    /// finish on its own, staged principals, whose review sheet is now up and owns the decision.
+    func closeTabAwaiting(id: UUID) async {
+        guard let coordinator,
+              let tab = coordinator.tabManager.tabs.first(where: { $0.id == id }) else { return }
+        guard coordinator.hasUnsavedWork(in: tab) else {
+            coordinator.closeTabsByUser(ids: [id])
+            return
+        }
+        guard coordinator.tabClosesInFlight.insert(id).inserted else { return }
+        defer { coordinator.tabClosesInFlight.remove(id) }
+
+        let previousSelection = coordinator.tabManager.selectedTabId
+        revealTab(id)
+
+        switch await AlertHelper.confirmSaveChanges(
+            message: String(localized: "Your changes will be lost if you don't save them."),
+            window: closeAnchorWindow
+        ) {
+        case .save:
+            guard await saveSelectedTabWork() else { return }
+            coordinator.closeTabsByUser(ids: [id])
+        case .dontSave:
+            coordinator.closeTabsByUser(ids: [id])
+        case .cancel:
+            restoreSelection(previousSelection)
+        }
+    }
+
+    /// Shown, then asked. The save and discard machinery reads the selected tab, so the tab being
+    /// closed has to be the selected one before the question is put; naming work the user cannot
+    /// see would also ask them to decide about something they have no way to look at first.
+    private func revealTab(_ id: UUID) {
+        guard let coordinator, coordinator.tabManager.selectedTabId != id else { return }
+        coordinator.tabManager.selectedTabId = id
+    }
+
+    /// Cancel puts everything back, including a selection that only moved so the sheet had
+    /// somewhere honest to point.
+    private func restoreSelection(_ id: UUID?) {
+        guard let coordinator,
+              let id,
+              coordinator.tabManager.selectedTabId != id,
+              coordinator.tabManager.tabs.contains(where: { $0.id == id }) else { return }
+        coordinator.tabManager.selectedTabId = id
+    }
+
+    /// Cmd+W closes the tab in front. Pressed again with no tabs left it closes the connection,
+    /// and the window itself only once that was the last connection open in it.
     func closeTab() {
-        Task { await closeWindowAwaiting() }
+        guard let coordinator else {
+            Task { await closeWindowAwaiting() }
+            return
+        }
+        if let selected = coordinator.tabManager.selectedTab {
+            closeTab(id: selected.id)
+            return
+        }
+        Task {
+            guard await confirmDiscardingUnsavedWork() else { return }
+            WindowManager.shared.closeWindow(for: connectionId)
+        }
     }
 
     /// The single close primitive. `asBatchSurvivor` is `nil` for a lone close gesture, which lets
@@ -516,15 +708,15 @@ final class MainContentCommandActions {
         coordinator.toolbarState.isTableTab = false
     }
 
-    private func saveAndClose(asBatchSurvivor: Bool?) async -> Bool {
-        guard let coordinator = coordinator else {
-            finish(asBatchSurvivor: asBatchSurvivor)
-            return true
-        }
+    /// The save half of a close, shared by the tab close, the window close and the batch close so
+    /// the three cannot drift on what Save means. Returns whether the caller may go on to close.
+    ///
+    /// False comes back for exactly one case: user and role changes can only be applied after the
+    /// SQL is reviewed, so Save opens the review sheet and stands the close down. Falling through
+    /// there would close over the sheet and destroy every staged change.
+    func saveSelectedTabWork() async -> Bool {
+        guard let coordinator = coordinator else { return true }
 
-        // User and role changes can only be applied after the SQL is reviewed, so Save opens the
-        // review sheet and cancels the close. Falling through here would close the window and
-        // destroy every staged change.
         if isUsersRolesTab, coordinator.usersRolesActions?.hasChanges() == true {
             coordinator.usersRolesActions?.reviewAndApply()
             return false
@@ -533,7 +725,6 @@ final class MainContentCommandActions {
         // Structure view saves via direct coordinator call
         if coordinator.tabManager.selectedTab?.display.resultsViewMode == .structure {
             coordinator.structureActions?.saveChanges?()
-            finish(asBatchSurvivor: asBatchSurvivor)
             return true
         }
 
@@ -542,30 +733,33 @@ final class MainContentCommandActions {
             || !pendingTruncates.wrappedValue.isEmpty
             || !pendingDeletes.wrappedValue.isEmpty
         if hasDataChanges {
-            let saved = await withCheckedContinuation { continuation in
+            return await withCheckedContinuation { continuation in
                 coordinator.saveCompletionContinuation = continuation
                 saveChanges()
             }
-            if saved {
-                finish(asBatchSurvivor: asBatchSurvivor)
-            }
-            return saved
         }
 
         // Sidebar-only edits (made directly in the inspector panel)
         if rightPanelState.editState.hasEdits {
             rightPanelState.onSave?()
-            finish(asBatchSurvivor: asBatchSurvivor)
             return true
         }
 
         // File save (query editor with source file)
         if coordinator.tabManager.selectedTab?.content.isFileDirty == true {
             saveFileToSourceURL()
-            finish(asBatchSurvivor: asBatchSurvivor)
             return true
         }
 
+        return true
+    }
+
+    private func saveAndClose(asBatchSurvivor: Bool?) async -> Bool {
+        guard coordinator != nil else {
+            finish(asBatchSurvivor: asBatchSurvivor)
+            return true
+        }
+        guard await saveSelectedTabWork() else { return false }
         finish(asBatchSurvivor: asBatchSurvivor)
         return true
     }
@@ -672,6 +866,10 @@ final class MainContentCommandActions {
         coordinator?.showServerDashboard()
     }
 
+    func showQueryInsights() {
+        coordinator?.showQueryInsights()
+    }
+
     var supportsServerDashboard: Bool {
         guard let type = coordinator?.connection.type else { return false }
         return ServerDashboardQueryProviderFactory.provider(for: type) != nil
@@ -690,33 +888,34 @@ final class MainContentCommandActions {
 
     // MARK: - Tab Navigation (Group A — Called Directly)
 
-    /// Selects the Nth native window tab. Wrapping the `selectedWindow`
-    /// assignment in `NSAnimationContext.runAnimationGroup` with `duration = 0`
-    /// suppresses AppKit's tab-transition animation, so rapid Cmd+Number
-    /// presses don't queue up CAAnimations that drain visibly after the user
-    /// releases the keys.
-    ///
-    /// Per-switch AppKit overhead (window-focus change, NSHostingView layout,
-    /// Window Server roundtrip) is platform-inherent to one-NSWindow-per-tab
-    /// and is intentionally not coalesced. See `docs/architecture/tab-subsystem-rewrite.md` D2.
+    /// Selects the Nth editor tab of the connection on screen. It used to index the window's
+    /// native tab group, which named windows rather than tabs.
     func selectTab(number: Int) {
-        guard let keyWindow = NSApp.keyWindow,
-              let tabGroup = keyWindow.tabGroup else { return }
-        let windows = tabGroup.windows
-        guard windows.indices.contains(number - 1) else { return }
-        let target = windows[number - 1]
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0
-            tabGroup.selectedWindow = target
-        }
+        coordinator?.tabManager.selectTab(at: number - 1)
+    }
+
+    func selectTab(offsetBy offset: Int) {
+        coordinator?.tabManager.selectTab(offsetBy: offset)
     }
 
     // MARK: - Filter Operations (Group A — Called Directly)
 
     func toggleFilterPanel() {
-        guard let coordinator = coordinator,
-              coordinator.tabManager.selectedTab?.tabType == .table else { return }
+        guard canUseTableResultCommands, let coordinator else { return }
         coordinator.toggleFilterPanel()
+    }
+
+    func showFindBar() {
+        guard canUseGridFindCommands, let coordinator else { return }
+        coordinator.findCoordinator.show()
+    }
+
+    func stepFindForward() {
+        coordinator?.findCoordinator.stepForward()
+    }
+
+    func stepFindBackward() {
+        coordinator?.findCoordinator.stepBackward()
     }
 
     // MARK: - Data Operations (Group A — Called Directly)
@@ -796,7 +995,7 @@ final class MainContentCommandActions {
     }
 
     func explainQuery() {
-        coordinator?.runExplainQuery()
+        coordinator?.runExplain()
     }
 
     func aiExplainQuery() {
@@ -911,10 +1110,24 @@ final class MainContentCommandActions {
         EditorEventRouter.shared.performFormatSQLForKeyWindow()
     }
 
+    func toggleFold() {
+        EditorEventRouter.shared.performToggleFoldForKeyWindow()
+    }
+
+    func foldAll() {
+        EditorEventRouter.shared.performFoldAllForKeyWindow()
+    }
+
+    func unfoldAll() {
+        EditorEventRouter.shared.performUnfoldAllForKeyWindow()
+    }
+
     // MARK: - UI Operations (Group A — Called Directly)
 
     func toggleHistoryPanel() {
-        coordinator?.toolbarState.isHistoryPanelVisible.toggle()
+        guard let connectionId = coordinator?.connectionId else { return }
+        let state = HistoryPanelState.forConnection(connectionId)
+        state.isVisible.toggle()
     }
 
     func toggleRightSidebar() {
@@ -1021,7 +1234,20 @@ final class MainContentCommandActions {
         guard PluginManager.shared.supportsContainerSwitching(for: type) else { return }
         guard PluginManager.shared.connectionMode(for: type) != .fileBased else { return }
         coordinator.contentWindow?.makeFirstResponder(nil)
+        coordinator.presentedScopeSwitcher = nil
         coordinator.isDatabaseSwitcherShown = true
+    }
+
+    /// The same chooser, opened from the toolbar chip so it appears against the scope it switches.
+    /// Clearing first responder is what lets the popover's search field take focus, which is why
+    /// the chip cannot just flip its own presentation flag.
+    func openScopeSwitcher(_ target: ContainerSwitchTarget) {
+        guard let coordinator else { return }
+        let type = coordinator.connection.type
+        guard PluginManager.shared.switchableContainers(for: type).contains(target) else { return }
+        coordinator.contentWindow?.makeFirstResponder(nil)
+        coordinator.isDatabaseSwitcherShown = false
+        coordinator.presentedScopeSwitcher = target
     }
 
     func openQuickSwitcher() {
@@ -1099,13 +1325,6 @@ final class MainContentCommandActions {
             .store(in: &eventCancellables)
     }
 
-    // MARK: Tab Broadcasts
-
-    private func setupTabBroadcastObservers() {
-        // All tab notifications (newQueryTab, loadQueryIntoEditor, insertQueryFromAI)
-        // have been replaced with direct method calls via @FocusedValue.
-    }
-
     // MARK: Database Broadcasts
 
     private func setupDatabaseBroadcastObservers() {
@@ -1162,18 +1381,5 @@ final class MainContentCommandActions {
                 try? await TabRouter.shared.route(.openSQLFile(url))
             }
         }
-    }
-}
-
-// MARK: - Focused Value Key
-
-private struct CommandActionsKey: FocusedValueKey {
-    typealias Value = MainContentCommandActions
-}
-
-extension FocusedValues {
-    var commandActions: MainContentCommandActions? {
-        get { self[CommandActionsKey.self] }
-        set { self[CommandActionsKey.self] = newValue }
     }
 }

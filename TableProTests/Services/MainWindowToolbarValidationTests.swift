@@ -10,6 +10,22 @@ import TableProPluginKit
 import Testing
 
 @MainActor
+private final class RecordingToolbar: NSToolbar {
+    typealias PendingSnapshot = (hasPendingChanges: Bool, hasDataPendingChanges: Bool)
+
+    private(set) var validationCount = 0
+    private(set) var pendingSnapshots: [PendingSnapshot] = []
+    var pendingSnapshotProvider: (() -> PendingSnapshot)?
+
+    override func validateVisibleItems() {
+        validationCount += 1
+        if let snapshot = pendingSnapshotProvider?() {
+            pendingSnapshots.append(snapshot)
+        }
+    }
+}
+
+@MainActor
 struct MainWindowToolbarValidationTests {
     private let sessionScopedIdentifiers: [NSToolbarItem.Identifier] = [
         MainWindowToolbar.refresh,
@@ -47,6 +63,25 @@ struct MainWindowToolbarValidationTests {
             supportsImport: supportsImport,
             supportsServerDashboard: supportsServerDashboard
         )
+    }
+
+    private func makeRecordingOwner() -> (owner: MainWindowToolbar, toolbar: RecordingToolbar) {
+        let identifier = NSToolbar.Identifier("com.TablePro.tests.toolbar.\(UUID().uuidString)")
+        let toolbar = RecordingToolbar(identifier: identifier)
+        return (MainWindowToolbar(managedToolbar: toolbar), toolbar)
+    }
+
+    private func waitForValidation(_ toolbar: RecordingToolbar, after baseline: Int) async {
+        for _ in 0..<10 {
+            guard toolbar.validationCount <= baseline else { return }
+            await Task.yield()
+        }
+    }
+
+    private func drainMainActor() async {
+        for _ in 0..<10 {
+            await Task.yield()
+        }
     }
 
     @Test("Save Changes disabled when safe mode blocks writes")
@@ -209,7 +244,8 @@ struct MainWindowToolbarValidationTests {
     func validateToolbarItemFollowsLiveSession() {
         let coordinator = makeCoordinator()
         defer { coordinator.teardown() }
-        let owner = MainWindowToolbar(coordinator: coordinator)
+        let owner = MainWindowToolbar()
+        owner.repoint(to: coordinator)
         let refresh = NSToolbarItem(itemIdentifier: MainWindowToolbar.refresh)
 
         coordinator.toolbarState.connectionState = .connected
@@ -223,6 +259,131 @@ struct MainWindowToolbarValidationTests {
         #expect(owner.validateToolbarItem(refresh) == false)
     }
 
+    @Test("Pending changes revalidate native items with the final state")
+    func pendingChangesRevalidateNativeItems() async throws {
+        let coordinator = makeCoordinator()
+        let (owner, toolbar) = makeRecordingOwner()
+        defer {
+            owner.invalidate()
+            coordinator.teardown()
+        }
+        coordinator.toolbarState.connectionState = .connected
+        toolbar.pendingSnapshotProvider = {
+            (
+                coordinator.toolbarState.hasPendingChanges,
+                coordinator.toolbarState.hasDataPendingChanges
+            )
+        }
+        owner.repoint(to: coordinator)
+
+        let dirtyBaseline = toolbar.validationCount
+        coordinator.toolbarState.hasDataPendingChanges = true
+        coordinator.toolbarState.hasPendingChanges = true
+        await waitForValidation(toolbar, after: dirtyBaseline)
+
+        #expect(toolbar.validationCount > dirtyBaseline)
+        let dirtySnapshot = try #require(toolbar.pendingSnapshots.last)
+        #expect(dirtySnapshot.hasPendingChanges == true)
+        #expect(dirtySnapshot.hasDataPendingChanges == true)
+
+        let cleanBaseline = toolbar.validationCount
+        coordinator.toolbarState.hasDataPendingChanges = false
+        coordinator.toolbarState.hasPendingChanges = false
+        await waitForValidation(toolbar, after: cleanBaseline)
+
+        #expect(toolbar.validationCount > cleanBaseline)
+        let cleanSnapshot = try #require(toolbar.pendingSnapshots.last)
+        #expect(cleanSnapshot.hasPendingChanges == false)
+        #expect(cleanSnapshot.hasDataPendingChanges == false)
+    }
+
+    @Test("Overflow Save and Preview use the pending-change predicates")
+    func overflowPendingActionsValidateAgainstCurrentState() throws {
+        let coordinator = makeCoordinator()
+        let owner = MainWindowToolbar()
+        defer {
+            owner.invalidate()
+            coordinator.teardown()
+        }
+        coordinator.toolbarState.connectionState = .connected
+        owner.repoint(to: coordinator)
+
+        let saveGroup = try #require(
+            owner.toolbar(
+                owner.managedToolbar,
+                itemForItemIdentifier: MainWindowToolbar.refreshSaveGroup,
+                willBeInsertedIntoToolbar: true
+            ) as? NSToolbarItemGroup
+        )
+        let saveItem = try #require(
+            saveGroup.subitems.first { $0.itemIdentifier == MainWindowToolbar.saveChanges }
+        )
+        let saveMenuItem = try #require(saveItem.menuFormRepresentation)
+        let previewItem = try #require(
+            owner.toolbar(
+                owner.managedToolbar,
+                itemForItemIdentifier: MainWindowToolbar.previewSQL,
+                willBeInsertedIntoToolbar: true
+            )
+        )
+        let previewMenuItem = try #require(previewItem.menuFormRepresentation)
+
+        coordinator.toolbarState.hasPendingChanges = true
+        coordinator.toolbarState.hasDataPendingChanges = true
+        #expect(owner.validateMenuItem(saveMenuItem) == true)
+        #expect(owner.validateMenuItem(previewMenuItem) == true)
+
+        coordinator.toolbarState.hasPendingChanges = false
+        coordinator.toolbarState.hasDataPendingChanges = false
+        #expect(owner.validateMenuItem(saveMenuItem) == false)
+        #expect(owner.validateMenuItem(previewMenuItem) == false)
+    }
+
+    @Test("A queued validation cannot cross a toolbar repoint")
+    func queuedValidationCannotCrossRepoint() async {
+        let first = makeCoordinator()
+        let second = makeCoordinator()
+        let (owner, toolbar) = makeRecordingOwner()
+        defer {
+            owner.invalidate()
+            first.teardown()
+            second.teardown()
+        }
+
+        owner.repoint(to: first)
+        first.toolbarState.hasPendingChanges = true
+        owner.repoint(to: second)
+        let repointBaseline = toolbar.validationCount
+        await drainMainActor()
+        #expect(toolbar.validationCount == repointBaseline)
+
+        first.toolbarState.hasPendingChanges = false
+        await drainMainActor()
+        #expect(toolbar.validationCount == repointBaseline)
+
+        second.toolbarState.hasPendingChanges = true
+        await waitForValidation(toolbar, after: repointBaseline)
+        #expect(toolbar.validationCount > repointBaseline)
+    }
+
+    @Test("Invalidation drops queued and future pending-state callbacks")
+    func invalidationDropsPendingStateCallbacks() async {
+        let coordinator = makeCoordinator()
+        let (owner, toolbar) = makeRecordingOwner()
+        defer { coordinator.teardown() }
+
+        owner.repoint(to: coordinator)
+        coordinator.toolbarState.hasPendingChanges = true
+        owner.invalidate()
+        let invalidationBaseline = toolbar.validationCount
+        await drainMainActor()
+        #expect(toolbar.validationCount == invalidationBaseline)
+
+        coordinator.toolbarState.hasPendingChanges = false
+        await drainMainActor()
+        #expect(toolbar.validationCount == invalidationBaseline)
+    }
+
     @Test("Toolbar identifier is stable across instances so AppKit autosave can persist customizations")
     func toolbarIdentifierIsStable() {
         #expect(MainWindowToolbar.toolbarIdentifier == "com.TablePro.main.toolbar.v2")
@@ -232,7 +393,8 @@ struct MainWindowToolbarValidationTests {
     func toolbarConfigurationEnablesAutosave() {
         let coordinator = makeCoordinator()
         defer { coordinator.teardown() }
-        let owner = MainWindowToolbar(coordinator: coordinator)
+        let owner = MainWindowToolbar()
+        owner.repoint(to: coordinator)
         #expect(owner.managedToolbar.identifier == MainWindowToolbar.toolbarIdentifier)
         #expect(owner.managedToolbar.allowsUserCustomization == true)
         #expect(owner.managedToolbar.autosavesConfiguration == true)
@@ -242,7 +404,8 @@ struct MainWindowToolbarValidationTests {
     func allowedItemIdentifiersAreSupersetOfDefaults() {
         let coordinator = makeCoordinator()
         defer { coordinator.teardown() }
-        let owner = MainWindowToolbar(coordinator: coordinator)
+        let owner = MainWindowToolbar()
+        owner.repoint(to: coordinator)
         let toolbar = owner.managedToolbar
         let defaults = Set(owner.toolbarDefaultItemIdentifiers(toolbar))
         let allowed = Set(owner.toolbarAllowedItemIdentifiers(toolbar))
@@ -256,5 +419,106 @@ struct MainWindowToolbarValidationTests {
             changeManager: DataChangeManager(),
             toolbarState: ConnectionToolbarState()
         )
+    }
+}
+
+@MainActor
+struct MainWindowToolbarRepointTests {
+    private func makeCoordinator() -> MainContentCoordinator {
+        MainContentCoordinator(
+            connection: TestFixtures.makeConnection(database: "db_a"),
+            tabManager: QueryTabManager(),
+            changeManager: DataChangeManager(),
+            toolbarState: ConnectionToolbarState()
+        )
+    }
+
+    /// The window keeps one toolbar and points it at whichever connection it is showing, so a
+    /// switch has to change what the items are about without rebuilding them.
+    @Test("Repointing changes the subject the items read")
+    func repointChangesTheSubject() {
+        let first = makeCoordinator()
+        let second = makeCoordinator()
+        defer {
+            first.teardown()
+            second.teardown()
+        }
+        let owner = MainWindowToolbar()
+
+        owner.repoint(to: first)
+        #expect(owner.coordinator === first)
+
+        owner.repoint(to: second)
+        #expect(owner.coordinator === second)
+
+        owner.repoint(to: nil)
+        #expect(owner.coordinator == nil)
+    }
+
+    /// `windowDidBecomeKey` runs on every activation with the connection unchanged, and
+    /// `@Observable` generates no equality check, so a repoint to the same coordinator would
+    /// otherwise invalidate the hosted items every time the window came forward.
+    @Test("Repointing to the same coordinator is a no-op")
+    func repointToSameCoordinatorIsIgnored() {
+        let coordinator = makeCoordinator()
+        defer { coordinator.teardown() }
+        let owner = MainWindowToolbar()
+
+        owner.repoint(to: coordinator)
+        let subjectBefore = owner.subject.coordinator
+        owner.repoint(to: coordinator)
+        #expect(owner.subject.coordinator === subjectBefore)
+    }
+
+    /// The item is built once and outlives every connection the window shows, so anything it reads
+    /// has to be resolved when it is asked, not when it was vended. Capturing the coordinator left
+    /// the glyph reporting the results pane of the connection the user had switched away from, and
+    /// pinned it to the collapsed glyph for good once that coordinator went away.
+    @Test("The Results glyph follows the repointed connection")
+    func resultsSymbolFollowsTheRepointedConnection() throws {
+        let collapsed = makeCoordinator()
+        let expanded = makeCoordinator()
+        defer {
+            collapsed.teardown()
+            expanded.teardown()
+        }
+        collapsed.toolbarState.isResultsCollapsed = true
+        expanded.toolbarState.isResultsCollapsed = false
+
+        let owner = MainWindowToolbar()
+        owner.repoint(to: collapsed)
+        let item = try #require(
+            owner.toolbar(
+                owner.managedToolbar,
+                itemForItemIdentifier: MainWindowToolbar.results,
+                willBeInsertedIntoToolbar: true
+            ) as? StatefulToolbarItem
+        )
+        let provider = try #require(item.symbolProvider)
+        #expect(provider() == "rectangle.bottomhalf.inset.filled")
+
+        owner.repoint(to: expanded)
+        #expect(provider() == "rectangle.inset.filled")
+
+        owner.repoint(to: nil)
+        #expect(provider() == "rectangle.bottomhalf.inset.filled")
+    }
+
+    /// The delegate used to answer nil for every identifier when it had no coordinator. With
+    /// `autosavesConfiguration` on, a vend in that state pruned the user's saved arrangement for
+    /// good, which this project has already paid for once.
+    @Test("The delegate builds every advertised item with no subject")
+    func delegateNeverAnswersNil() {
+        let owner = MainWindowToolbar()
+        let buildable = MainWindowToolbar.allowedItemIdentifiers.filter { !$0.rawValue.hasPrefix("NSToolbar") }
+
+        for identifier in buildable {
+            let item = owner.toolbar(
+                owner.managedToolbar,
+                itemForItemIdentifier: identifier,
+                willBeInsertedIntoToolbar: true
+            )
+            #expect(item != nil, "\(identifier.rawValue) must still build with no connection")
+        }
     }
 }

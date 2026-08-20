@@ -27,7 +27,12 @@ struct SQLEditorView: View {
     var connectionAIPolicy: AIConnectionPolicy?
     var tabID: UUID?
     var claimFocusOnAppear: Bool = false
+    /// Called once the editor has latched a focus claim. The owner's one-shot intent is cleared
+    /// here rather than on its own `onAppear`, which fires before this subtree renders.
+    var onFocusClaimed: (() -> Void)?
     var restoredCursorRange: NSRange?
+    var restoredFoldRanges: [Range<Int>]?
+    var onFoldRangesChanged: (([Range<Int>]) -> Void)?
     @Binding var vimMode: VimMode
     var onCloseTab: (() -> Void)?
     var onExecuteQuery: (() -> Void)?
@@ -36,7 +41,7 @@ struct SQLEditorView: View {
     var onSaveAsFavorite: ((String) -> Void)?
 
     @State private var editorState = SourceEditorState()
-    @State private var completionAdapter = SQLCompletionAdapter(schemaProvider: nil, databaseType: nil)
+    @State private var completionAdapter = QueryCompletionAdapter(schemaProvider: nil, databaseType: nil)
     @State private var coordinator = SQLEditorCoordinator()
     @State private var editorConfiguration = makeConfiguration()
     @State private var favoritesCancellables: Set<AnyCancellable> = []
@@ -56,9 +61,13 @@ struct SQLEditorView: View {
         coordinator.connectionId = connectionId
         if claimFocusOnAppear {
             coordinator.scheduleEditorFocusClaim()
+            onFocusClaimed?()
         }
         if let restoredCursorRange {
             coordinator.scheduleCursorRestore(restoredCursorRange)
+        }
+        if let restoredFoldRanges {
+            coordinator.scheduleFoldRestore(restoredFoldRanges)
         }
 
         return SourceEditor(
@@ -66,6 +75,7 @@ struct SQLEditorView: View {
             language: PluginManager.shared.editorLanguage(for: databaseType ?? .mysql).treeSitterLanguage,
             configuration: editorConfiguration,
             state: $editorState,
+            foldProvider: FoldProviderResolver.provider(for: databaseType ?? .mysql),
             coordinators: [coordinator],
             completionDelegate: completionAdapter
         )
@@ -88,6 +98,12 @@ struct SQLEditorView: View {
                 }
             }
             cursorPositions = positions
+        }
+        .onChange(of: editorState.collapsedFoldRanges) { _, newValue in
+            onFoldRangesChanged?(newValue ?? [])
+        }
+        .onChange(of: tabID) { _, _ in
+            coordinator.repointFolds(to: restoredFoldRanges)
         }
         .onChange(of: connectionId) { _, _ in
             completionAdapter.configure(schemaProvider: schemaProvider, databaseType: databaseType)
@@ -113,7 +129,6 @@ struct SQLEditorView: View {
         }
         .onDisappear {
             teardownFavoritesObserver()
-            coordinator.destroy()
         }
         .onChange(of: coordinator.vimMode) { _, newMode in
             vimMode = newMode
@@ -123,9 +138,6 @@ struct SQLEditorView: View {
     // MARK: - Initialization
 
     private func initializeEditor() {
-        if coordinator.isDestroyed {
-            coordinator.revive()
-        }
         completionAdapter.configure(schemaProvider: schemaProvider, databaseType: databaseType)
         setupFavoritesObserver()
     }
@@ -214,10 +226,9 @@ struct SQLEditorView: View {
             layout: .init(
                 contentInsets: NSEdgeInsets(top: 0, left: 0, bottom: 8, right: 0)
             ),
-            peripherals: .init(
-                showGutter: ThemeEngine.shared.showLineNumbers,
-                showMinimap: false,
-                showFoldingRibbon: false
+            peripherals: EditorPeripherals.editor(
+                lineNumbers: ThemeEngine.shared.showLineNumbers,
+                folding: AppSettingsManager.shared.editor.codeFoldingEnabled
             )
         )
     }

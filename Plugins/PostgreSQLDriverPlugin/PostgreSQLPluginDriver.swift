@@ -51,6 +51,7 @@ class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
         core.onPostConnect = { [weak self] in
             await self?.probeCatalogPresence()
             await self?.probePostgisOids()
+            await self?.probeEnumOids()
         }
         try await core.connect()
     }
@@ -429,6 +430,8 @@ class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
     func generateDropTriggerSQL(name: String, table: String, schema: String?) -> String? {
         "DROP TRIGGER IF EXISTS \(quoteIdentifier(name)) ON \(qualifiedTable(table, schema: schema))"
     }
+
+    var providesBulkForeignKeyFetch: Bool { true }
 
     func fetchAllForeignKeys(schema: String?) async throws -> [String: [PluginForeignKeyInfo]] {
         let schemaLiteral = escapeLiteral(schema ?? core.currentSchema)
@@ -979,6 +982,10 @@ class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
 
     func dropDatabase(name: String) async throws {
         _ = try await execute(query: "DROP DATABASE \(quoteIdentifier(name))")
+    }
+
+    func dropSchema(name: String) async throws {
+        _ = try await execute(query: "DROP SCHEMA \(quoteIdentifier(name)) CASCADE")
     }
 
     private struct Template1Defaults {
