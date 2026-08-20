@@ -73,6 +73,37 @@ struct QueryTab: Identifiable, Equatable {
     var restoredPageSize: Int?
     var restoredCursorOffset: Int?
     var restoredCursorLength: Int?
+    /// The regions the reader has collapsed in this tab. The editor is a view onto this, not its owner.
+    var collapsedFoldRanges: [Range<Int>]?
+
+    /// A fold range that still fits the query it was recorded against, or `nil` when it does not.
+    ///
+    /// The bounds are checked before the range is formed. A persisted file can hold anything, and `30..<10` traps
+    /// rather than producing an empty range, so a saved pair that arrives inverted would bring the app down on load.
+    private static func foldRange(lower: Int, upper: Int, limit: Int) -> Range<Int>? {
+        guard lower >= 0, upper > lower, upper <= limit else { return nil }
+        return lower..<upper
+    }
+
+    /// Fold ranges survive a round trip as a flat list of bounds. A pair that no longer fits the query is dropped
+    /// rather than replayed onto text that changed while the tab was closed.
+    private static func clampedFoldRanges(_ bounds: [Int]?, in query: String) -> [Range<Int>]? {
+        guard let bounds, bounds.count >= 2 else { return nil }
+        let limit = (query as NSString).length
+        let ranges = stride(from: 0, to: bounds.count - 1, by: 2).compactMap {
+            foldRange(lower: bounds[$0], upper: bounds[$0 + 1], limit: limit)
+        }
+        return ranges.isEmpty ? nil : ranges
+    }
+
+    private static func foldBounds(_ ranges: [Range<Int>]?, in query: String) -> [Int]? {
+        guard let ranges else { return nil }
+        let limit = (query as NSString).length
+        let bounds = ranges
+            .compactMap { foldRange(lower: $0.lowerBound, upper: $0.upperBound, limit: limit) }
+            .flatMap { [$0.lowerBound, $0.upperBound] }
+        return bounds.isEmpty ? nil : bounds
+    }
 
     private static func clampedCursorOffset(_ offset: Int?, in query: String) -> Int? {
         guard let offset, offset >= 0 else { return nil }
@@ -168,6 +199,7 @@ struct QueryTab: Identifiable, Equatable {
             from: persisted.cursorOffset,
             in: persisted.query
         )
+        self.collapsedFoldRanges = Self.clampedFoldRanges(persisted.collapsedFoldRanges, in: persisted.query)
     }
 
     @MainActor static func buildBaseTableQuery(
@@ -276,6 +308,7 @@ struct QueryTab: Identifiable, Equatable {
                 from: restoredCursorOffset,
                 in: persistedQuery
             ),
+            collapsedFoldRanges: Self.foldBounds(collapsedFoldRanges, in: persistedQuery),
             columnWidths: widths,
             columnContentWidths: contentWidths
         )

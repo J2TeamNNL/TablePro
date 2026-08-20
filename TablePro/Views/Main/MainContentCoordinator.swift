@@ -443,6 +443,25 @@ final class MainContentCoordinator {
         return NSRange(location: clamped, length: max(0, selectionLength))
     }
 
+    /// The regions collapsed in a query tab.
+    ///
+    /// Folds live on the tab rather than on the window, so switching tabs cannot carry one tab's collapsed regions
+    /// onto another and nothing has to be cleared when a tab appears.
+    func foldRanges(for tabId: UUID) -> [Range<Int>]? {
+        guard let index = tabManager.tabs.firstIndex(where: { $0.id == tabId }),
+              tabManager.tabs[index].tabType == .query else { return nil }
+        return tabManager.tabs[index].collapsedFoldRanges
+    }
+
+    func recordFoldRanges(_ ranges: [Range<Int>], for tabId: UUID) {
+        let stored = ranges.isEmpty ? nil : ranges
+        guard let index = tabManager.tabs.firstIndex(where: { $0.id == tabId }),
+              tabManager.tabs[index].collapsedFoldRanges != stored else { return }
+        tabManager.mutate(at: index) {
+            $0.collapsedFoldRanges = stored
+        }
+    }
+
     func clearRestoredCursor(for tabId: UUID) {
         guard let index = tabManager.tabs.firstIndex(where: { $0.id == tabId }),
               tabManager.tabs[index].restoredCursorOffset != nil

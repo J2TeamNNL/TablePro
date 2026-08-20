@@ -40,6 +40,7 @@ struct PersistedTab: Codable {
     var restoredPageSize: Int?
     var cursorOffset: Int?
     var cursorLength: Int?
+    var collapsedFoldRanges: [Int]?
     var columnWidths: [String: CGFloat]?
     var columnContentWidths: [String: CGFloat]?
     var windowGroupIndex: Int?
@@ -64,6 +65,7 @@ struct PersistedTab: Codable {
         restoredPageSize: Int? = nil,
         cursorOffset: Int? = nil,
         cursorLength: Int? = nil,
+        collapsedFoldRanges: [Int]? = nil,
         columnWidths: [String: CGFloat]? = nil,
         columnContentWidths: [String: CGFloat]? = nil,
         windowGroupIndex: Int? = nil
@@ -84,6 +86,7 @@ struct PersistedTab: Codable {
         self.restoredPageSize = restoredPageSize
         self.cursorOffset = cursorOffset
         self.cursorLength = cursorLength
+        self.collapsedFoldRanges = collapsedFoldRanges
         self.columnWidths = columnWidths
         self.columnContentWidths = columnContentWidths
         self.windowGroupIndex = windowGroupIndex
@@ -92,7 +95,7 @@ struct PersistedTab: Codable {
     private enum CodingKeys: String, CodingKey {
         case id, title, query, tabType, tableName, isView, databaseName, schemaName
         case sourceFileURL, erDiagramSchemaKey, queryParameters
-        case sortColumns, restoredPage, restoredPageSize, cursorOffset, cursorLength
+        case sortColumns, restoredPage, restoredPageSize, cursorOffset, cursorLength, collapsedFoldRanges
         case columnWidths, columnContentWidths, windowGroupIndex
         case overflowFileName
     }
@@ -115,6 +118,7 @@ struct PersistedTab: Codable {
         restoredPageSize = try container.decodeIfPresent(Int.self, forKey: .restoredPageSize)
         cursorOffset = try container.decodeIfPresent(Int.self, forKey: .cursorOffset)
         cursorLength = try container.decodeIfPresent(Int.self, forKey: .cursorLength)
+        collapsedFoldRanges = try container.decodeIfPresent([Int].self, forKey: .collapsedFoldRanges)
         columnWidths = try container.decodeIfPresent([String: CGFloat].self, forKey: .columnWidths)
         columnContentWidths = try container.decodeIfPresent([String: CGFloat].self, forKey: .columnContentWidths)
         windowGroupIndex = try container.decodeIfPresent(Int.self, forKey: .windowGroupIndex)

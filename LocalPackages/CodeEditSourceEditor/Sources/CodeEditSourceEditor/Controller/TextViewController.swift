@@ -286,6 +286,7 @@ public class TextViewController: NSViewController {
     /// - Parameter text: The new contents of the editor.
     public func setText(_ text: String) {
         self.textView.setText(text)
+        self.foldModel?.documentDidReplace()
         self.setUpHighlighter()
         self.gutterView.setNeedsDisplay(self.gutterView.frame)
     }
@@ -300,6 +301,7 @@ public class TextViewController: NSViewController {
     /// its life. Discarding the text here blanked the editor whenever the call was reached on a
     /// controller that came back.
     public func releaseHeavyState() {
+        foldModel?.destroy()
         if let highlighter {
             textView?.removeStorageDelegate(highlighter)
         }
