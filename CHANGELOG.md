@@ -42,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Opening a table no longer puts up a "Switch Failed" alert on an engine that has no databases. Dameng, Oracle, BigQuery, Elasticsearch and etcd browse schemas or indexes instead, and every click asked the driver to switch to a database with no name, which it refused. Clicking a table on those connections now just opens it. (#2262)
+- Switching schema on Dameng, Oracle, BigQuery, Snowflake and Trino no longer reloads the whole object list. The switch re-read every schema you had expanded, one after another, on the same connection the table you clicked was waiting for, so opening a table took an extra round trip per expanded schema. Only the stored procedures and functions are re-read now, which are the only things a schema switch can change. (#2262)
+- Open Quickly lists each schema once on Dameng, Oracle and BigQuery. It showed every schema twice, once labelled Database, and choosing that copy failed with an error.
 - The Settings window is titled after the pane you are on. Switching panes used to leave it reading "Untitled" until the window was closed and reopened.
 - The Settings window refuses to be resized smaller than a pane can draw. It had no minimum, so it could be shrunk until the controls were cut off.
 - Redis Sentinel and Cluster connections show their nodes in the connection list. Because those modes leave Host blank, the list showed nothing but the word "Redis". A connection that names its servers in a host list now shows the first one and how many others there are, and it follows the list the connection's current mode actually uses.
