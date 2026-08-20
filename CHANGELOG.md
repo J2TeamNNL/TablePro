@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Autocomplete in a query tab follows that tab's own database and schema. A tab you rebound to another database used to keep suggesting the tables of the database the object browser was pointing at, so the names it offered belonged to a database the query was not running against. Suggestions are also cached per database, and refreshing or disconnecting drops the cache.
 - The iOS Shortcuts documentation says which app build each action needs and where to find the full action list, so a Mac release note no longer reads as though the iPhone app already has them.
 - `Cmd+F` on a table tab used to toggle the filter panel, which meant it closed the panel when it was already open and never searched anything. The filter panel keeps `Cmd+Option+F` and its funnel button in the status bar.
 - Find Next and Find Previous work on the data grid when its find bar is open, instead of staying dimmed on a table tab.
