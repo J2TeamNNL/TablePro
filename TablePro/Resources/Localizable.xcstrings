@@ -1912,7 +1912,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ requires a Pro license"
+            "value" : "%@ için Pro lisans gereklidir"
           }
         },
         "vi" : {
@@ -9399,7 +9399,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AWS Region"
+            "value" : "AWS Bölgesi"
           }
         },
         "vi" : {
@@ -17776,7 +17776,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bool False"
+            "value" : "Bool Yanlış"
           }
         },
         "vi" : {
@@ -17810,7 +17810,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bool True"
+            "value" : "Bool Doğru"
           }
         },
         "vi" : {
@@ -25037,7 +25037,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cloud SQL Auth Proxy"
+            "value" : "Cloud SQL Kimlik Doğrulama Proxy'si"
           }
         },
         "vi" : {
@@ -36089,7 +36089,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Debounce: %d ms"
+            "value" : "Bekleme: %d ms"
           }
         },
         "vi" : {
@@ -61455,7 +61455,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Keep entries for:"
+            "value" : "Kayıtları saklama süresi:"
           }
         },
         "vi" : {
@@ -61636,7 +61636,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Key File"
+            "value" : "Anahtar Dosyası"
           }
         },
         "vi" : {
@@ -72818,7 +72818,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No %@"
+            "value" : "%@ Yok"
           }
         },
         "vi" : {
@@ -72852,7 +72852,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No AI provider configured. Go to Settings > AI to add one."
+            "value" : "Yapılandırılmış AI sağlayıcısı yok. Eklemek için Ayarlar > AI bölümüne gidin."
           }
         },
         "vi" : {
@@ -72920,7 +72920,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No Check Constraints"
+            "value" : "Kontrol Kısıtlaması Yok"
           }
         },
         "vi" : {
@@ -72988,7 +72988,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No Columns Defined"
+            "value" : "Tanımlı Sütun Yok"
           }
         },
         "vi" : {
@@ -73022,7 +73022,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No Connections"
+            "value" : "Bağlantı Yok"
           }
         },
         "vi" : {
@@ -73090,7 +73090,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No DDL available"
+            "value" : "DDL mevcut değil"
           }
         },
         "vi" : {
@@ -73260,7 +73260,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No Favorites"
+            "value" : "Favori Yok"
           }
         },
         "vi" : {
@@ -73294,7 +73294,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No Foreign Keys Yet"
+            "value" : "Henüz Yabancı Anahtar Yok"
           }
         },
         "vi" : {
@@ -73328,7 +73328,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No Indexes Defined"
+            "value" : "Tanımlı Dizin Yok"
           }
         },
         "vi" : {
@@ -73362,7 +73362,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No Matching Connections"
+            "value" : "Eşleşen Bağlantı Yok"
           }
         },
         "vi" : {
@@ -73431,7 +73431,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No Matching Queries"
+            "value" : "Eşleşen Sorgu Yok"
           }
         },
         "vi" : {
@@ -73864,7 +73864,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No SSL encryption"
+            "value" : "SSL şifrelemesi yok"
           }
         },
         "vi" : {
@@ -73934,7 +73934,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No Selection"
+            "value" : "Seçim Yok"
           }
         },
         "vi" : {
@@ -74111,7 +74111,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No active connection"
+            "value" : "Etkin bağlantı yok"
           }
         },
         "vi" : {
@@ -74247,7 +74247,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No available local port for SSH tunnel"
+            "value" : "SSH tüneli için kullanılabilir yerel port yok"
           }
         },
         "vi" : {
@@ -74657,7 +74657,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No database connection"
+            "value" : "Veritabanı bağlantısı yok"
           }
         },
         "vi" : {
@@ -74863,7 +74863,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No export formats available. Enable export plugins in Settings > Plugins."
+            "value" : "Kullanılabilir dışa aktarma biçimi yok. Ayarlar > Eklentiler bölümünden dışa aktarma eklentilerini etkinleştirin."
           }
         },
         "vi" : {
@@ -74971,7 +74971,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No iCloud"
+            "value" : "iCloud Yok"
           }
         },
         "vi" : {
@@ -75325,7 +75325,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No matching fields"
+            "value" : "Eşleşen alan yok"
           }
         },
         "vi" : {
@@ -75672,7 +75672,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No parts found"
+            "value" : "Parça bulunamadı"
           }
         },
         "vi" : {
@@ -75706,7 +75706,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No pending changes"
+            "value" : "Bekleyen değişiklik yok"
           }
         },
         "vi" : {
@@ -75888,7 +75888,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No providers configured"
+            "value" : "Yapılandırılmış sağlayıcı yok"
           }
         },
         "vi" : {
@@ -76024,7 +76024,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No query executed yet"
+            "value" : "Henüz sorgu çalıştırılmadı"
           }
         },
         "vi" : {
@@ -76195,7 +76195,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No rows"
+            "value" : "Satır yok"
           }
         },
         "vi" : {
@@ -76541,7 +76541,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No selection"
+            "value" : "Seçim yok"
           }
         },
         "vi" : {
@@ -76712,7 +76712,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No tables selected for export"
+            "value" : "Dışa aktarma için tablo seçilmedi"
           }
         },
         "vi" : {
@@ -76746,7 +76746,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No tabs open"
+            "value" : "Açık sekme yok"
           }
         },
         "vi" : {
@@ -76814,7 +76814,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No valid rows found in clipboard data."
+            "value" : "Pano verisinde geçerli satır bulunamadı."
           }
         },
         "vi" : {
@@ -77053,7 +77053,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Not Available"
+            "value" : "Kullanılamıyor"
           }
         },
         "vi" : {
@@ -77686,7 +77686,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Not supported for TRUNCATE with this database"
+            "value" : "Bu veritabanında TRUNCATE için desteklenmiyor"
           }
         },
         "vi" : {
@@ -77720,7 +77720,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Not supported for this database."
+            "value" : "Bu veritabanında desteklenmiyor."
           }
         },
         "vi" : {
@@ -77754,7 +77754,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Not supported for this database. Use CASCADE instead."
+            "value" : "Bu veritabanında desteklenmiyor. Bunun yerine CASCADE kullanın."
           }
         },
         "vi" : {
@@ -78373,7 +78373,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "On Delete"
+            "value" : "Silindiğinde"
           }
         },
         "vi" : {
@@ -78475,7 +78475,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "On Update"
+            "value" : "Güncellendiğinde"
           }
         },
         "vi" : {
@@ -78631,7 +78631,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open %@ Editor"
+            "value" : "%@ Düzenleyicisini Aç"
           }
         },
         "vi" : {
@@ -78802,7 +78802,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open Connection"
+            "value" : "Bağlantıyı Aç"
           }
         },
         "vi" : {
@@ -78940,7 +78940,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open Database"
+            "value" : "Veritabanı Aç"
           }
         },
         "vi" : {
@@ -79009,7 +79009,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open Database…"
+            "value" : "Veritabanı Aç…"
           }
         },
         "vi" : {
@@ -80637,7 +80637,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Operation cancelled by user"
+            "value" : "İşlem kullanıcı tarafından iptal edildi"
           }
         },
         "vi" : {
@@ -80877,7 +80877,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Optimize with AI"
+            "value" : "AI ile İyileştir"
           }
         },
         "vi" : {
@@ -82154,7 +82154,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Panel State"
+            "value" : "Panel Durumu"
           }
         },
         "vi" : {
@@ -82807,7 +82807,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Password is sent via keyboard-interactive challenge-response."
+            "value" : "Parola, keyboard-interactive soru-cevap yöntemiyle gönderilir."
           }
         },
         "vi" : {
@@ -83770,7 +83770,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Please select a column"
+            "value" : "Lütfen bir sütun seçin"
           }
         },
         "vi" : {
@@ -83845,7 +83845,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Plugin '%@' has an invalid descriptor: %@"
+            "value" : "'%@' eklentisinin tanımlayıcısı geçersiz: %@"
           }
         },
         "vi" : {
@@ -83879,7 +83879,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Plugin Installation Failed"
+            "value" : "Eklenti Kurulumu Başarısız"
           }
         },
         "vi" : {
@@ -83913,7 +83913,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Plugin Not Installed"
+            "value" : "Eklenti Kurulu Değil"
           }
         },
         "vi" : {
@@ -83981,7 +83981,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Plugin checksum does not match expected value"
+            "value" : "Eklenti sağlama toplamı beklenen değerle eşleşmiyor"
           }
         },
         "vi" : {
@@ -84015,7 +84015,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Plugin code signature verification failed: %@"
+            "value" : "Eklenti kod imzası doğrulaması başarısız: %@"
           }
         },
         "vi" : {
@@ -84049,7 +84049,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Plugin does not contain a compatible binary for this architecture"
+            "value" : "Eklenti bu mimari için uyumlu bir ikili dosya içermiyor"
           }
         },
         "vi" : {
@@ -84151,7 +84151,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Plugin installation failed: %@"
+            "value" : "Eklenti kurulumu başarısız: %@"
           }
         },
         "vi" : {
@@ -84185,7 +84185,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Plugin not found"
+            "value" : "Eklenti bulunamadı"
           }
         },
         "vi" : {
@@ -84414,7 +84414,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Plugin requires app version %@ or later, but current version is %@"
+            "value" : "Eklenti %@ veya sonrası bir uygulama sürümü gerektiriyor, mevcut sürüm ise %@"
           }
         },
         "vi" : {
@@ -84820,7 +84820,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pre-Connect Script"
+            "value" : "Bağlantı Öncesi Betik"
           }
         },
         "vi" : {
@@ -84860,7 +84860,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pre-connect script failed (exit %d): %@"
+            "value" : "Bağlantı öncesi betik başarısız (çıkış %d): %@"
           }
         },
         "vi" : {
@@ -84929,7 +84929,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pre-connect script failed with exit code %d"
+            "value" : "Bağlantı öncesi betik %d çıkış koduyla başarısız oldu"
           }
         },
         "vi" : {
@@ -84998,7 +84998,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pre-connect script timed out after 10 seconds"
+            "value" : "Bağlantı öncesi betik 10 saniye sonra zaman aşımına uğradı"
           }
         },
         "vi" : {
@@ -85375,7 +85375,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Preset Name"
+            "value" : "Ön Ayar Adı"
           }
         },
         "vi" : {
@@ -85409,7 +85409,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pretty Print"
+            "value" : "Biçimlendirerek Göster"
           }
         },
         "vi" : {
@@ -85893,7 +85893,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Preview SQL"
+            "value" : "SQL Önizleme"
           }
         },
         "vi" : {
@@ -86386,7 +86386,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Primary Text"
+            "value" : "Birincil Metin"
           }
         },
         "vi" : {
@@ -86522,7 +86522,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Private Key"
+            "value" : "Özel Anahtar"
           }
         },
         "vi" : {
@@ -86795,7 +86795,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pro license required for iCloud Sync"
+            "value" : "iCloud Eşitlemesi için Pro lisans gereklidir"
           }
         },
         "vi" : {
@@ -87188,7 +87188,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Prompt at Connect"
+            "value" : "Bağlanırken Sor"
           }
         },
         "vi" : {
@@ -88119,7 +88119,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Query Execution"
+            "value" : "Sorgu Çalıştırma"
           }
         },
         "vi" : {
@@ -88465,7 +88465,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Query executed successfully"
+            "value" : "Sorgu başarıyla çalıştırıldı"
           }
         },
         "vi" : {
@@ -88499,7 +88499,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Query executing"
+            "value" : "Sorgu çalışıyor"
           }
         },
         "vi" : {
@@ -89543,7 +89543,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Rate limited. Please try again later."
+            "value" : "İstek sınırına ulaşıldı. Lütfen daha sonra tekrar deneyin."
           }
         },
         "vi" : {
@@ -89645,7 +89645,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Raw SQL cannot be empty"
+            "value" : "Ham SQL boş olamaz"
           }
         },
         "vi" : {
@@ -90572,7 +90572,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Recent Conversations"
+            "value" : "Son Konuşmalar"
           }
         },
         "vi" : {
@@ -90948,7 +90948,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Recording shortcut"
+            "value" : "Kısayol kaydediliyor"
           }
         },
         "vi" : {
@@ -91119,7 +91119,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ref Columns"
+            "value" : "Referans Sütunlar"
           }
         },
         "vi" : {
@@ -91187,7 +91187,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ref Table"
+            "value" : "Referans Tablo"
           }
         },
         "vi" : {
@@ -91640,7 +91640,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Refreshing will discard all unsaved changes."
+            "value" : "Yenileme, kaydedilmemiş tüm değişiklikleri siler."
           }
         },
         "vi" : {
@@ -92289,7 +92289,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remove Filter"
+            "value" : "Filtreyi Kaldır"
           }
         },
         "vi" : {
@@ -92632,7 +92632,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remove filter"
+            "value" : "Filtreyi kaldır"
           }
         },
         "vi" : {
@@ -92940,7 +92940,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remove license from this machine"
+            "value" : "Lisansı bu makineden kaldır"
           }
         },
         "vi" : {
@@ -93215,7 +93215,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Rename Group"
+            "value" : "Grubu Yeniden Adlandır"
           }
         },
         "vi" : {
@@ -93364,7 +93364,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Renew License…"
+            "value" : "Lisansı Yenile…"
           }
         },
         "vi" : {
@@ -93705,7 +93705,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Require SSL, skip verification"
+            "value" : "SSL zorunlu, doğrulamayı atla"
           }
         },
         "vi" : {
@@ -94727,7 +94727,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Restart TablePro to fully unload removed plugins."
+            "value" : "Kaldırılan eklentilerin tamamen bellekten çıkması için TablePro'yu yeniden başlatın."
           }
         },
         "vi" : {
@@ -95461,7 +95461,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Retry Install"
+            "value" : "Kurulumu Yeniden Dene"
           }
         },
         "vi" : {
@@ -96014,7 +96014,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Root Level"
+            "value" : "Kök Seviye"
           }
         },
         "vi" : {
@@ -96370,7 +96370,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Row Number"
+            "value" : "Satır Numarası"
           }
         },
         "vi" : {
@@ -96438,7 +96438,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Row height:"
+            "value" : "Satır yüksekliği:"
           }
         },
         "vi" : {
@@ -96507,7 +96507,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Row number"
+            "value" : "Satır numarası"
           }
         },
         "vi" : {
@@ -96885,7 +96885,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Run a query to see execution time"
+            "value" : "Çalışma süresini görmek için bir sorgu çalıştırın"
           }
         },
         "vi" : {
@@ -97021,7 +97021,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Run in New Tab"
+            "value" : "Yeni Sekmede Çalıştır"
           }
         },
         "vi" : {
@@ -97327,7 +97327,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "SAVED CONNECTIONS"
+            "value" : "KAYITLI BAĞLANTILAR"
           }
         },
         "vi" : {
@@ -97737,7 +97737,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "SQL Functions"
+            "value" : "SQL Fonksiyonları"
           }
         },
         "vi" : {
@@ -97805,7 +97805,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "SQL Preview"
+            "value" : "SQL Önizleme"
           }
         },
         "vi" : {
@@ -97942,7 +97942,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "SQL commands to run after connecting, e.g. SET time_zone = 'Asia/Ho_Chi_Minh'. One per line or separated by semicolons."
+            "value" : "Bağlandıktan sonra çalıştırılacak SQL komutları, örneğin SET time_zone = 'Asia/Ho_Chi_Minh'. Her satıra bir tane yazın veya noktalı virgülle ayırın."
           }
         },
         "vi" : {
@@ -98187,7 +98187,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "SQLite is file-based"
+            "value" : "SQLite dosya tabanlıdır"
           }
         },
         "vi" : {
@@ -98255,7 +98255,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "SSH Agent"
+            "value" : "SSH Aracısı"
           }
         },
         "vi" : {
@@ -98745,7 +98745,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "SSH authentication failed. Check your credentials or private key."
+            "value" : "SSH kimlik doğrulaması başarısız. Kimlik bilgilerinizi veya özel anahtarınızı kontrol edin."
           }
         },
         "vi" : {
@@ -98814,7 +98814,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "SSH connection timed out"
+            "value" : "SSH bağlantısı zaman aşımına uğradı"
           }
         },
         "vi" : {
@@ -98882,7 +98882,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "SSH host key verification failed"
+            "value" : "SSH sunucu anahtarı doğrulaması başarısız"
           }
         },
         "vi" : {
@@ -99052,7 +99052,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "SSH tunnel already exists for connection: %@"
+            "value" : "Bu bağlantı için zaten bir SSH tüneli var: %@"
           }
         },
         "vi" : {
@@ -99086,7 +99086,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "SSH tunnel creation failed: %@"
+            "value" : "SSH tüneli oluşturulamadı: %@"
           }
         },
         "vi" : {
@@ -99326,7 +99326,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "SSL Mode"
+            "value" : "SSL Modu"
           }
         },
         "vi" : {
@@ -99428,7 +99428,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Safe Mode"
+            "value" : "Güvenli Mod"
           }
         },
         "vi" : {
@@ -99462,7 +99462,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Safe Mode (Full)"
+            "value" : "Güvenli Mod (Tam)"
           }
         },
         "vi" : {
@@ -99565,7 +99565,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Safe Mode: %@"
+            "value" : "Güvenli Mod: %@"
           }
         },
         "vi" : {
@@ -99599,7 +99599,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Same options will be applied to all selected tables."
+            "value" : "Aynı seçenekler seçili tüm tablolara uygulanır."
           }
         },
         "vi" : {
@@ -99736,7 +99736,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Save Anyway"
+            "value" : "Yine de Kaydet"
           }
         },
         "vi" : {
@@ -99981,7 +99981,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Save Failed"
+            "value" : "Kaydetme Başarısız"
           }
         },
         "vi" : {
@@ -100015,7 +100015,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Save Filter Preset"
+            "value" : "Filtre Ön Ayarını Kaydet"
           }
         },
         "vi" : {
@@ -100083,7 +100083,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Save Sidebar Changes"
+            "value" : "Kenar Çubuğu Değişikliklerini Kaydet"
           }
         },
         "vi" : {
@@ -100187,7 +100187,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Save as Favorite"
+            "value" : "Favori Olarak Kaydet"
           }
         },
         "vi" : {
@@ -100255,7 +100255,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Save as Preset…"
+            "value" : "Ön Ayar Olarak Kaydet…"
           }
         },
         "vi" : {
@@ -100538,7 +100538,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Saved Connections"
+            "value" : "Kayıtlı Bağlantılar"
           }
         },
         "vi" : {
@@ -101540,7 +101540,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Search columns…"
+            "value" : "Sütunlarda ara…"
           }
         },
         "vi" : {
@@ -101711,7 +101711,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Search for connection…"
+            "value" : "Bağlantı ara…"
           }
         },
         "vi" : {
@@ -101780,7 +101780,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Search or type…"
+            "value" : "Arayın veya yazın…"
           }
         },
         "vi" : {
@@ -101953,7 +101953,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Search shortcuts…"
+            "value" : "Kısayollarda ara…"
           }
         },
         "vi" : {
@@ -102192,7 +102192,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Second value is required for BETWEEN"
+            "value" : "BETWEEN için ikinci değer gereklidir"
           }
         },
         "vi" : {
@@ -102296,7 +102296,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Secondary Text"
+            "value" : "İkincil Metin"
           }
         },
         "vi" : {
@@ -102370,7 +102370,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Section Header"
+            "value" : "Bölüm Başlığı"
           }
         },
         "vi" : {
@@ -102642,7 +102642,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Select Plugin"
+            "value" : "Eklenti Seç"
           }
         },
         "vi" : {
@@ -102814,7 +102814,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Select a Plugin"
+            "value" : "Bir Eklenti Seçin"
           }
         },
         "vi" : {
@@ -102917,7 +102917,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Select a plugin to view details"
+            "value" : "Ayrıntıları görmek için bir eklenti seçin"
           }
         },
         "vi" : {
@@ -102985,7 +102985,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Select a row or table to view details"
+            "value" : "Ayrıntıları görmek için bir satır veya tablo seçin"
           }
         },
         "vi" : {
@@ -103433,7 +103433,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Selected Item"
+            "value" : "Seçili Öğe"
           }
         },
         "vi" : {
@@ -103575,7 +103575,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Send Message"
+            "value" : "Mesaj Gönder"
           }
         },
         "vi" : {
@@ -104685,7 +104685,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Set Value"
+            "value" : "Değer Ata"
           }
         },
         "vi" : {
@@ -105096,7 +105096,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Shadows the SQL keyword '%@'"
+            "value" : "'%@' SQL anahtar sözcüğünü gölgeliyor"
           }
         },
         "vi" : {
@@ -105164,7 +105164,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Share anonymous usage data"
+            "value" : "Anonim kullanım verilerini paylaş"
           }
         },
         "vi" : {
@@ -105232,7 +105232,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Shell script to run before connecting. Non-zero exit aborts connection."
+            "value" : "Bağlanmadan önce çalıştırılacak kabuk betiği. Sıfırdan farklı çıkış kodu bağlantıyı iptal eder."
           }
         },
         "vi" : {
@@ -105300,7 +105300,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Shortcut recorder"
+            "value" : "Kısayol kaydedici"
           }
         },
         "vi" : {
@@ -105334,7 +105334,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show All"
+            "value" : "Tümünü Göster"
           }
         },
         "vi" : {
@@ -105368,7 +105368,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show All %@"
+            "value" : "Tüm %@ Göster"
           }
         },
         "vi" : {
@@ -105471,7 +105471,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show All Databases"
+            "value" : "Tüm Veritabanlarını Göster"
           }
         },
         "vi" : {
@@ -105851,7 +105851,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show Next Tab"
+            "value" : "Sonraki Sekmeyi Göster"
           }
         },
         "vi" : {
@@ -105991,7 +105991,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show Previous Tab"
+            "value" : "Önceki Sekmeyi Göster"
           }
         },
         "vi" : {
@@ -106162,7 +106162,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show Structure"
+            "value" : "Yapıyı Göster"
           }
         },
         "vi" : {
@@ -106402,7 +106402,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show Welcome Window"
+            "value" : "Karşılama Penceresini Göster"
           }
         },
         "vi" : {
@@ -106506,7 +106506,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show alternate row backgrounds"
+            "value" : "Satırları dönüşümlü arka planla göster"
           }
         },
         "vi" : {
@@ -106644,7 +106644,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show line numbers"
+            "value" : "Satır numaralarını göster"
           }
         },
         "vi" : {
@@ -107572,7 +107572,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sign in to iCloud in System Settings to enable sync."
+            "value" : "Eşitlemeyi açmak için Sistem Ayarları'ndan iCloud'a giriş yapın."
           }
         },
         "vi" : {
@@ -107606,7 +107606,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sign in to iCloud to enable sync"
+            "value" : "Eşitlemeyi açmak için iCloud'a giriş yapın"
           }
         },
         "vi" : {
@@ -108360,7 +108360,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Single-clicking a table opens a temporary tab that gets replaced on next click."
+            "value" : "Bir tabloya tek tıklamak, sonraki tıklamada yerini bırakan geçici bir sekme açar."
           }
         },
         "vi" : {
@@ -108942,7 +108942,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Software Update"
+            "value" : "Yazılım Güncellemesi"
           }
         },
         "vi" : {
@@ -109351,7 +109351,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sorting will reload data and discard all unsaved changes."
+            "value" : "Sıralama verileri yeniden yükler ve kaydedilmemiş tüm değişiklikleri siler."
           }
         },
         "vi" : {
@@ -110036,7 +110036,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Startup Commands"
+            "value" : "Başlangıç Komutları"
           }
         },
         "vi" : {
@@ -110285,7 +110285,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Status Colors"
+            "value" : "Durum Renkleri"
           }
         },
         "vi" : {
@@ -110871,7 +110871,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stop Generating"
+            "value" : "Üretmeyi Durdur"
           }
         },
         "vi" : {
@@ -111037,7 +111037,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Streaming failed: %@"
+            "value" : "Akış başarısız: %@"
           }
         },
         "vi" : {
@@ -111585,7 +111585,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Switch Connection"
+            "value" : "Bağlantı Değiştir"
           }
         },
         "vi" : {
@@ -111654,7 +111654,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Switch Connection…"
+            "value" : "Bağlantı Değiştir…"
           }
         },
         "vi" : {
@@ -111688,7 +111688,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Switch Database"
+            "value" : "Veritabanı Değiştir"
           }
         },
         "vi" : {
@@ -112278,7 +112278,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sync Categories"
+            "value" : "Eşitleme Kategorileri"
           }
         },
         "vi" : {
@@ -112347,7 +112347,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sync Error"
+            "value" : "Eşitleme Hatası"
           }
         },
         "vi" : {
@@ -112381,7 +112381,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sync Now"
+            "value" : "Şimdi Eşitle"
           }
         },
         "vi" : {
@@ -112415,7 +112415,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sync Off"
+            "value" : "Eşitleme Kapalı"
           }
         },
         "vi" : {
@@ -112631,7 +112631,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sync zone not found. A full sync will be performed."
+            "value" : "Eşitleme bölgesi bulunamadı. Tam eşitleme yapılacak."
           }
         },
         "vi" : {
@@ -112699,7 +112699,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Syncing with iCloud…"
+            "value" : "iCloud ile eşitleniyor…"
           }
         },
         "vi" : {
@@ -112913,7 +112913,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Syntax Colors"
+            "value" : "Sözdizimi Renkleri"
           }
         },
         "vi" : {
@@ -113049,7 +113049,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "System Table"
+            "value" : "Sistem Tablosu"
           }
         },
         "vi" : {
@@ -113151,7 +113151,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TLS Mode"
+            "value" : "TLS Modu"
           }
         },
         "vi" : {
@@ -113435,7 +113435,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tab width:"
+            "value" : "Sekme genişliği:"
           }
         },
         "vi" : {
@@ -114498,7 +114498,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tag name"
+            "value" : "Etiket adı"
           }
         },
         "vi" : {
@@ -115083,7 +115083,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tertiary Text"
+            "value" : "Üçüncül Metin"
           }
         },
         "vi" : {
@@ -116784,7 +116784,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The folder \"%@\" will be deleted. Items inside will be moved to the parent level."
+            "value" : "\"%@\" klasörü silinecek. İçindeki öğeler bir üst seviyeye taşınacak."
           }
         },
         "vi" : {
@@ -117989,7 +117989,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The text is not valid JSON. Save anyway?"
+            "value" : "Metin geçerli bir JSON değil. Yine de kaydedilsin mi?"
           }
         },
         "vi" : {
@@ -119633,7 +119633,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This is a built-in theme."
+            "value" : "Bu, yerleşik bir temadır."
           }
         },
         "vi" : {
@@ -119667,7 +119667,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This is a registry theme."
+            "value" : "Bu, kayıt defterinden gelen bir temadır."
           }
         },
         "vi" : {
@@ -119771,7 +119771,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This keyword is already in use"
+            "value" : "Bu anahtar sözcük zaten kullanımda"
           }
         },
         "vi" : {
@@ -120043,7 +120043,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This operation is not supported"
+            "value" : "Bu işlem desteklenmiyor"
           }
         },
         "vi" : {
@@ -120191,7 +120191,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This plugin requires TablePro %@ or later"
+            "value" : "Bu eklenti TablePro %@ veya sonrasını gerektiriyor"
           }
         },
         "vi" : {
@@ -120574,7 +120574,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This shortcut is reserved by macOS and cannot be assigned."
+            "value" : "Bu kısayol macOS tarafından ayrılmıştır ve atanamaz."
           }
         },
         "vi" : {
@@ -121093,7 +121093,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This will permanently delete all query history entries. This action cannot be undone."
+            "value" : "Bu işlem tüm sorgu geçmişi kayıtlarını kalıcı olarak siler. Bu işlem geri alınamaz."
           }
         },
         "vi" : {
@@ -121127,7 +121127,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This will remove the license from this machine. You can reactivate later."
+            "value" : "Bu işlem lisansı bu makineden kaldırır. Daha sonra yeniden etkinleştirebilirsiniz."
           }
         },
         "vi" : {
@@ -121858,7 +121858,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Toggle Filters"
+            "value" : "Filtreleri Aç/Kapat"
           }
         },
         "vi" : {
@@ -121997,7 +121997,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Toggle History"
+            "value" : "Geçmişi Aç/Kapat"
           }
         },
         "vi" : {
@@ -122031,7 +122031,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Toggle Inspector"
+            "value" : "Denetçiyi Aç/Kapat"
           }
         },
         "vi" : {
@@ -122308,7 +122308,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Toggle Table Browser"
+            "value" : "Tablo Tarayıcısını Aç/Kapat"
           }
         },
         "vi" : {
@@ -122897,7 +122897,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Total Size"
+            "value" : "Toplam Boyut"
           }
         },
         "vi" : {
@@ -123204,7 +123204,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Truncate Table"
+            "value" : "Tabloyu Boşalt"
           }
         },
         "vi" : {
@@ -123238,7 +123238,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Truncate all tables linked by foreign keys"
+            "value" : "Yabancı anahtarlarla bağlı tüm tabloları boşalt"
           }
         },
         "vi" : {
@@ -123507,7 +123507,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Try Again"
+            "value" : "Tekrar Dene"
           }
         },
         "vi" : {
@@ -123747,7 +123747,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Two-Factor Authentication"
+            "value" : "İki Aşamalı Doğrulama"
           }
         },
         "vi" : {
@@ -123849,7 +123849,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Type shortcut…"
+            "value" : "Kısayolu yazın…"
           }
         },
         "vi" : {
@@ -124499,7 +124499,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Undo Delete"
+            "value" : "Silmeyi Geri Al"
           }
         },
         "vi" : {
@@ -124635,7 +124635,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Uninstall %@"
+            "value" : "%@ Kaldır"
           }
         },
         "vi" : {
@@ -124669,7 +124669,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Uninstall Failed"
+            "value" : "Kaldırma Başarısız"
           }
         },
         "vi" : {
@@ -124703,7 +124703,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Uninstall Plugin?"
+            "value" : "Eklenti kaldırılsın mı?"
           }
         },
         "vi" : {
@@ -124737,7 +124737,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Uninstall plugin"
+            "value" : "Eklentiyi kaldır"
           }
         },
         "vi" : {
@@ -125009,7 +125009,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unknown error"
+            "value" : "Bilinmeyen hata"
           }
         },
         "vi" : {
@@ -125353,7 +125353,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unsupported database scheme: %@"
+            "value" : "Desteklenmeyen veritabanı şeması: %@"
           }
         },
         "vi" : {
@@ -125592,7 +125592,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unsupported schema operation: %@"
+            "value" : "Desteklenmeyen şema işlemi: %@"
           }
         },
         "vi" : {
@@ -126238,7 +126238,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Use Default"
+            "value" : "Varsayılanı Kullan"
           }
         },
         "vi" : {
@@ -126443,7 +126443,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Use SSL if available"
+            "value" : "Varsa SSL kullan"
           }
         },
         "vi" : {
@@ -127228,7 +127228,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Validation Failed"
+            "value" : "Doğrulama Başarısız"
           }
         },
         "vi" : {
@@ -127433,7 +127433,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Value is required"
+            "value" : "Değer gereklidir"
           }
         },
         "vi" : {
@@ -127776,7 +127776,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Verify certificate and hostname"
+            "value" : "Sertifikayı ve sunucu adını doğrula"
           }
         },
         "vi" : {
@@ -127810,7 +127810,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Verify server certificate"
+            "value" : "Sunucu sertifikasını doğrula"
           }
         },
         "vi" : {
@@ -127912,7 +127912,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Version %@"
+            "value" : "Sürüm %@"
           }
         },
         "vi" : {
@@ -128124,7 +128124,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "View Mode"
+            "value" : "Görünüm Modu"
           }
         },
         "vi" : {
@@ -128296,7 +128296,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vim mode"
+            "value" : "Vim modu"
           }
         },
         "vi" : {
@@ -128371,7 +128371,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "WARNING: The host key for '%@' has changed!\n\nThis could mean someone is doing something malicious, or the server was reinstalled.\n\nPrevious fingerprint: %@\nCurrent fingerprint: %@"
+            "value" : "UYARI: '%@' sunucusunun anahtarı değişti!\n\nBu, birinin kötü niyetli bir şey yaptığı anlamına gelebilir veya sunucu yeniden kurulmuş olabilir.\n\nÖnceki parmak izi: %@\nGeçerli parmak izi: %@"
           }
         },
         "vi" : {
@@ -128714,7 +128714,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Welcome to TablePro"
+            "value" : "TablePro'ya Hoş Geldiniz"
           }
         },
         "vi" : {
@@ -128748,7 +128748,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "What you can do"
+            "value" : "Neler yapabilirsiniz"
           }
         },
         "vi" : {
@@ -129093,7 +129093,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Window Background"
+            "value" : "Pencere Arka Planı"
           }
         },
         "vi" : {
@@ -129161,7 +129161,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "With Headers"
+            "value" : "Başlıklarla"
           }
         },
         "vi" : {
@@ -129195,7 +129195,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Word wrap"
+            "value" : "Sözcük kaydırma"
           }
         },
         "vi" : {
@@ -131526,7 +131526,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "greater or equal"
+            "value" : "büyük veya eşit"
           }
         },
         "vi" : {
@@ -131560,7 +131560,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "greater than"
+            "value" : "büyüktür"
           }
         },
         "vi" : {
@@ -131733,7 +131733,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iCloud Connected"
+            "value" : "iCloud Bağlı"
           }
         },
         "vi" : {
@@ -131767,7 +131767,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iCloud Sync"
+            "value" : "iCloud Eşitlemesi"
           }
         },
         "vi" : {
@@ -131801,7 +131801,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iCloud Sync is active"
+            "value" : "iCloud Eşitlemesi etkin"
           }
         },
         "vi" : {
@@ -131835,7 +131835,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iCloud Sync:"
+            "value" : "iCloud Eşitlemesi:"
           }
         },
         "vi" : {
@@ -131869,7 +131869,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iCloud account is not available. Sign in to iCloud in System Settings."
+            "value" : "iCloud hesabı kullanılamıyor. Sistem Ayarları'ndan iCloud'a giriş yapın."
           }
         },
         "vi" : {
@@ -131919,7 +131919,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iCloud server error: %@"
+            "value" : "iCloud sunucu hatası: %@"
           }
         },
         "vi" : {
@@ -131998,7 +131998,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "in list"
+            "value" : "listede"
           }
         },
         "vi" : {
@@ -132066,7 +132066,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "is empty"
+            "value" : "boş"
           }
         },
         "vi" : {
@@ -132134,7 +132134,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "is not empty"
+            "value" : "boş değil"
           }
         },
         "vi" : {
@@ -132168,7 +132168,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "keyword: %@"
+            "value" : "anahtar sözcük: %@"
           }
         },
         "vi" : {
@@ -132202,7 +132202,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "less or equal"
+            "value" : "küçük veya eşit"
           }
         },
         "vi" : {
@@ -132236,7 +132236,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "less than"
+            "value" : "küçüktür"
           }
         },
         "vi" : {
@@ -132372,7 +132372,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "matches regex"
+            "value" : "regex ile eşleşir"
           }
         },
         "vi" : {
@@ -132475,7 +132475,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "not contains"
+            "value" : "içermez"
           }
         },
         "vi" : {
@@ -132509,7 +132509,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "not equals"
+            "value" : "eşit değil"
           }
         },
         "vi" : {
@@ -132543,7 +132543,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "not in list"
+            "value" : "listede değil"
           }
         },
         "vi" : {
@@ -132681,7 +132681,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "pending delete"
+            "value" : "silinmeyi bekliyor"
           }
         },
         "vi" : {
@@ -132715,7 +132715,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "pending truncate"
+            "value" : "boşaltılmayı bekliyor"
           }
         },
         "vi" : {
@@ -133093,7 +133093,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "starts with"
+            "value" : "ile başlar"
           }
         },
         "vi" : {
@@ -133402,7 +133402,7 @@
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "to view data"
+            "value" : "veriyi görüntülemek için"
           }
         },
         "vi" : {
