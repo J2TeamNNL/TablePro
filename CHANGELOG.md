@@ -71,6 +71,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Opening an Oracle connection for the first time no longer leaves the object list spinning forever. TablePro was asking the metadata connection to switch to the schema it had just opened on, and that spare statement was the one that timed out. It is no longer sent, on any database. (#2294)
+- An object list that cannot load now says so and offers Retry, instead of spinning. A metadata failure on a connected session was treated as "still connecting", so TablePro retried it silently every 15 seconds with nothing on screen and nothing you could act on. This affected every database type, not only Oracle. (#2294)
+- A metadata connection whose startup commands stall now gives up after a minute and reports it. It used to wait with no deadline, and everything else that needed that database waited behind it with nothing in the log.
+- Oracle reports a connection that dropped during setup as failed instead of reporting success and then quietly dialling again on the next statement, which made the real error look like a schema switch timing out. Oracle also closes a connection it has given up on, rather than leaving the session open on the server. Needs the updated Oracle plugin.
 - Filtering a DuckDB table on iPhone and iPad matches the same rows the Mac matches. A "contains" filter ran case-sensitively there, so searching for "john" missed "John", and the case sensitivity control was never offered to correct it.
 - Deleting a connection now removes its saved SQL queries and their folders from iCloud too. They were deleted on the Mac but never marked deleted for sync, so they stayed in iCloud for good and came back on the next device to sync or on a fresh install.
 - A database type is drawn in one colour everywhere. The type chooser read a hand-written colour table in the app while the toolbar and the connection list read the colour each plugin declares, and the two had drifted apart on 12 of the 23 types they both named, so the same MySQL connection was teal in one place and orange in another. The plugin's own colour is now the only one.
