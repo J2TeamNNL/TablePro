@@ -42,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Plugins installed from the registry are notarized, so macOS stops refusing to load them. Gatekeeper had been showing "could not verify this is free of malware" and blocking the driver, which read as a database TablePro could not connect to, and reinstalling made no difference. Every plugin needs to be published again to pick this up.
+- Installing a plugin from a ZIP you downloaded yourself clears the quarantine flag from the whole bundle. Only the top level was cleared, so the file macOS actually checks kept the flag and the plugin would not load.
 - A DuckDB connection lists its databases, schemas, tables and columns on a Mac that cannot reach the internet. Every metadata query was anchored on a function DuckDB fetches from its extension registry the first time it is used, so behind a firewall, on a filtered network or offline the object browser came up completely empty and reinstalling the plugin changed nothing. The queries now use only what the bundled engine already carries. (#2285)
 - A DuckDB statement that returns a UUID, ENUM, list, struct, map or time zone aware timestamp column no longer crashes TablePro. `INSERT ... RETURNING` on a table with a UUID column took the whole app down as soon as the next column was read.
 - A DuckDB view's definition opens as a statement you can run. DuckDB returns the whole `CREATE VIEW` it stored, and TablePro wrapped a second `CREATE VIEW` header around it, so what you saw was two statements spliced together. It now opens as `CREATE OR REPLACE VIEW`, so editing and running it updates the view instead of failing because it already exists.
