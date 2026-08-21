@@ -43,23 +43,6 @@ final class SchemaProviderRegistry {
             .store(in: &cancellables)
     }
 
-    func invalidateColumnCache(for connectionId: UUID) {
-        let matchingProviders = providers.compactMap { scope, provider in
-            scope.connectionId == connectionId ? provider : nil
-        }
-        for provider in matchingProviders {
-            Task { await provider.clearColumnCache() }
-        }
-    }
-
-    func provider(for connectionId: UUID) -> SQLSchemaProvider? {
-        if let scope = metadataDriverProvider.browseScope(for: connectionId), let provider = provider(for: scope) {
-            return provider
-        }
-        let fallback = DatabaseScope(connectionId: connectionId, database: "", schema: nil)
-        return provider(for: fallback)
-    }
-
     func getOrCreate(for connectionId: UUID) -> SQLSchemaProvider {
         guard let scope = metadataDriverProvider.browseScope(for: connectionId) else {
             let fallback = DatabaseScope(connectionId: connectionId, database: "", schema: nil)

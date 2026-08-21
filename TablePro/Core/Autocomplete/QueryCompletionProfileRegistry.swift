@@ -61,7 +61,7 @@ final class QueryCompletionProfileRegistry {
         databaseType: DatabaseType,
         serverVersion: String?,
         base: QueryCompletionProfile,
-        resolver: @escaping () async throws -> QueryCompletionProfile
+        resolver: @Sendable @escaping () async throws -> QueryCompletionProfile
     ) async -> QueryCompletionProfile {
         let key = CacheKey(scope: scope, databaseType: databaseType, serverVersion: serverVersion)
         if let profile = profiles[key] {
@@ -71,7 +71,7 @@ final class QueryCompletionProfileRegistry {
             return await task.value
         }
         let generation = generations[key, default: 0]
-        let task = Task { @MainActor in
+        let task = Task {
             (try? await resolver()) ?? base
         }
         inFlight[key] = task

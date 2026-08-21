@@ -6,7 +6,15 @@ import Testing
 @Suite("Query completion profile registry")
 @MainActor
 struct QueryCompletionProfileRegistryTests {
-    private func base(revision: String = "base") -> QueryCompletionProfile {
+    actor Counter {
+        private(set) var value = 0
+
+        func increment() {
+            value += 1
+        }
+    }
+
+    nonisolated private static func base(revision: String = "base") -> QueryCompletionProfile {
         QueryCompletionProfile(
             resolvedDialect: nil,
             statementCompletions: [CompletionEntry(label: "SELECT", insertText: "SELECT")],
@@ -21,62 +29,62 @@ struct QueryCompletionProfileRegistryTests {
         let connectionId = UUID()
         let firstScope = DatabaseScope(connectionId: connectionId, database: "first", schema: "public")
         let secondScope = DatabaseScope(connectionId: connectionId, database: "second", schema: "public")
-        var resolutions = 0
+        let resolutions = Counter()
 
         _ = await registry.resolve(
             scope: firstScope,
             databaseType: .postgresql,
             serverVersion: "15.2",
-            base: base()
+            base: Self.base()
         ) {
-            resolutions += 1
-            return base(revision: "first")
+            await resolutions.increment()
+            return Self.base(revision: "first")
         }
         _ = await registry.resolve(
             scope: firstScope,
             databaseType: .postgresql,
             serverVersion: "15.2",
-            base: base()
+            base: Self.base()
         ) {
-            resolutions += 1
-            return base(revision: "cached")
+            await resolutions.increment()
+            return Self.base(revision: "cached")
         }
         _ = await registry.resolve(
             scope: secondScope,
             databaseType: .postgresql,
             serverVersion: "15.2",
-            base: base()
+            base: Self.base()
         ) {
-            resolutions += 1
-            return base(revision: "second")
+            await resolutions.increment()
+            return Self.base(revision: "second")
         }
         _ = await registry.resolve(
             scope: firstScope,
             databaseType: .cockroachdb,
             serverVersion: "15.2",
-            base: base()
+            base: Self.base()
         ) {
-            resolutions += 1
-            return base(revision: "type")
+            await resolutions.increment()
+            return Self.base(revision: "type")
         }
         _ = await registry.resolve(
             scope: firstScope,
             databaseType: .postgresql,
             serverVersion: "16.1",
-            base: base()
+            base: Self.base()
         ) {
-            resolutions += 1
-            return base(revision: "version")
+            await resolutions.increment()
+            return Self.base(revision: "version")
         }
 
-        #expect(resolutions == 4)
+        #expect(await resolutions.value == 4)
     }
 
     @Test("resolution errors return and cache the conservative base profile")
     func resolutionFailureReturnsBase() async {
         let registry = QueryCompletionProfileRegistry()
         let scope = DatabaseScope(connectionId: UUID(), database: "shop", schema: nil)
-        let conservative = base(revision: "unknown-base")
+        let conservative = Self.base(revision: "unknown-base")
 
         let resolved = await registry.resolve(
             scope: scope,
@@ -95,30 +103,30 @@ struct QueryCompletionProfileRegistryTests {
     func concurrentRequestsJoinOneResolution() async {
         let registry = QueryCompletionProfileRegistry()
         let scope = DatabaseScope(connectionId: UUID(), database: "shop", schema: nil)
-        var resolutions = 0
+        let resolutions = Counter()
 
         async let first = registry.resolve(
             scope: scope,
             databaseType: .mysql,
             serverVersion: "8.0",
-            base: base()
+            base: Self.base()
         ) {
-            resolutions += 1
+            await resolutions.increment()
             await Task.yield()
-            return base(revision: "resolved")
+            return Self.base(revision: "resolved")
         }
         async let second = registry.resolve(
             scope: scope,
             databaseType: .mysql,
             serverVersion: "8.0",
-            base: base()
+            base: Self.base()
         ) {
-            resolutions += 1
-            return base(revision: "duplicate")
+            await resolutions.increment()
+            return Self.base(revision: "duplicate")
         }
 
         let revisions = await [first.revision, second.revision]
-        #expect(resolutions == 1)
+        #expect(await resolutions.value == 1)
         #expect(revisions == ["resolved", "resolved"])
     }
 
@@ -131,10 +139,10 @@ struct QueryCompletionProfileRegistryTests {
             scope: scope,
             databaseType: .mysql,
             serverVersion: "8.0",
-            base: base()
+            base: Self.base()
         ) {
             try? await Task.sleep(nanoseconds: 10_000_000)
-            return base(revision: "old")
+            return Self.base(revision: "old")
         }
         await Task.yield()
         registry.invalidate(scope: scope)
@@ -142,18 +150,18 @@ struct QueryCompletionProfileRegistryTests {
             scope: scope,
             databaseType: .mysql,
             serverVersion: "8.0",
-            base: base()
+            base: Self.base()
         ) {
-            base(revision: "current")
+            Self.base(revision: "current")
         }
         _ = await old
         let cached = await registry.resolve(
             scope: scope,
             databaseType: .mysql,
             serverVersion: "8.0",
-            base: base()
+            base: Self.base()
         ) {
-            base(revision: "unexpected")
+            Self.base(revision: "unexpected")
         }
 
         #expect(current.revision == "current")
