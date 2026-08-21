@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Case-insensitive filters and completion on Redshift use its own dialect, so they no longer fall back to PostgreSQL's ASCII-only ILIKE.
 - Fixed a crash on macOS 26 and later when the editor redrew a diagnostic underline or search highlight whose text had been edited away.
 - The XLSX, MQL and SQL Import plugins linked to a documentation page that did not exist. They now point at Import & Export.
 
