@@ -439,8 +439,8 @@ internal final class EtcdHttpClient: @unchecked Sendable {
         let candidates = ["v3", "v3beta", "v3alpha"]
 
         let session = try lock.withLock { () -> URLSession in
-            guard let session else { throw EtcdError.notConnected }
-            return session
+            guard let currentSession = self.session else { throw EtcdError.notConnected }
+            return currentSession
         }
 
         for candidate in candidates {
@@ -930,7 +930,7 @@ internal final class EtcdHttpClient: @unchecked Sendable {
 
     // MARK: - TLS Delegates
 
-    private class InsecureTlsDelegate: NSObject, URLSessionDelegate {
+    private final class InsecureTlsDelegate: NSObject, URLSessionDelegate {
         func urlSession(
             _ session: URLSession,
             didReceive challenge: URLAuthenticationChallenge,
@@ -945,7 +945,7 @@ internal final class EtcdHttpClient: @unchecked Sendable {
         }
     }
 
-    private class EtcdTlsDelegate: NSObject, URLSessionDelegate {
+    private final class EtcdTlsDelegate: NSObject, URLSessionDelegate {
         private let caCertPath: String?
         private let clientCertPath: String?
         private let clientKeyPath: String?
