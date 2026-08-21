@@ -76,6 +76,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Import and export results no longer flash and vanish before you can read them. The dialog put its result alert on whichever window was in front, which at that moment was the progress sheet closing behind it, so macOS took the alert down with it. Both the failure and the completion alerts are affected, in the SQL, CSV and JSON import dialogs and in export. (#2314)
+- A failed import now says what actually failed. When the rollback failed too, TablePro reported only the rollback and threw away the line number, the statement and the database's own message. An import you cancelled could also be reported as a rollback error, and an import that committed could be reported as failed when only the foreign key restore afterwards went wrong. (#2314)
+- The failed statement list is copyable again, with a Copy Details button on both the failure and the completed-with-errors alerts.
 - TablePro stays out of the Dock and the app switcher when an MCP client starts it. Adding the MCP server used to put TablePro in both the moment a client asked it a question, even though nothing was on screen and you had not opened it. It now runs in the background until it has a window to show you, takes its Dock icon and menu bar for as long as it does, and goes quiet again when you close it. Opening TablePro yourself works as it always has.
 - A confirmation TablePro cannot attach to a window now comes to the front instead of waiting behind other apps. An AI client asking to run a destructive statement while TablePro had no window open could leave the request waiting on a prompt nobody could see.
 - **Settings > Integrations** reports a running MCP server even when **Enable MCP Server** is off. The server can be started on demand by a client, and with the toggle off the status row was hidden, so the one place that could have said it was running showed nothing.
