@@ -37,22 +37,29 @@ final class QueryCompletionProfileRegistry {
         revisions[scope, default: 0]
     }
 
+    /// The metadata driver is leased inside the resolver rather than around this call, so a
+    /// cached profile costs nothing. An engine that cannot pool serves metadata from the
+    /// session driver, and leasing that for a profile the cache already holds would queue
+    /// behind, and ahead of, the statements the user is running.
     func profile(
         for scope: DatabaseScope,
         databaseType: DatabaseType,
-        driver: DatabaseDriver
+        serverVersion: String?,
+        metadataProvider: any ScopedMetadataProviding = DatabaseManager.shared
     ) async -> QueryCompletionProfile {
-        let base = baseProfile(for: databaseType, serverVersion: driver.serverVersion)
+        let base = baseProfile(for: databaseType, serverVersion: serverVersion)
         return await resolve(
             scope: scope,
             databaseType: databaseType,
-            serverVersion: driver.serverVersion,
+            serverVersion: serverVersion,
             base: base
         ) {
-            try await driver.resolveQueryCompletionProfile(
-                databaseTypeId: databaseType.rawValue,
-                base: base
-            )
+            try await metadataProvider.withMetadataDriver(scope: scope) { driver in
+                try await driver.resolveQueryCompletionProfile(
+                    databaseTypeId: databaseType.rawValue,
+                    base: base
+                )
+            }
         }
     }
 
@@ -85,36 +92,33 @@ final class QueryCompletionProfileRegistry {
 
     func invalidate(scope: DatabaseScope) {
         revisions[scope, default: 0] &+= 1
-        let profileKeys = profiles.keys.filter { $0.scope == scope }
-        let taskKeys = inFlight.keys.filter { $0.scope == scope }
-        for key in profileKeys {
-            generations[key, default: 0] &+= 1
-        }
-        for key in taskKeys {
-            generations[key, default: 0] &+= 1
-            inFlight[key]?.cancel()
-            inFlight.removeValue(forKey: key)
-        }
-        profiles = profiles.filter { $0.key.scope != scope }
+        discardEntries { $0 == scope }
     }
 
     func invalidate(connectionId: UUID) {
-        let scopes = Set(profiles.keys.map(\.scope) + inFlight.keys.map(\.scope))
-            .filter { $0.connectionId == connectionId }
-        for scope in scopes {
+        for scope in cachedScopes(of: connectionId) {
             revisions[scope, default: 0] &+= 1
         }
-        let profileKeys = profiles.keys.filter { $0.scope.connectionId == connectionId }
-        let taskKeys = inFlight.keys.filter { $0.scope.connectionId == connectionId }
-        for key in profileKeys {
+        discardEntries { $0.connectionId == connectionId }
+    }
+
+    private func cachedScopes(of connectionId: UUID) -> Set<DatabaseScope> {
+        Set(profiles.keys.map(\.scope) + inFlight.keys.map(\.scope))
+            .filter { $0.connectionId == connectionId }
+    }
+
+    /// The generation bump is what fences a resolution that is already running: it completes
+    /// against a key whose generation moved, so it discards its own result instead of writing
+    /// a profile the refresh was meant to replace.
+    private func discardEntries(matching matches: (DatabaseScope) -> Bool) {
+        for key in profiles.keys where matches(key.scope) {
             generations[key, default: 0] &+= 1
         }
-        for key in taskKeys {
+        for key in Array(inFlight.keys) where matches(key.scope) {
             generations[key, default: 0] &+= 1
-            inFlight[key]?.cancel()
-            inFlight.removeValue(forKey: key)
+            inFlight.removeValue(forKey: key)?.cancel()
         }
-        profiles = profiles.filter { $0.key.scope.connectionId != connectionId }
+        profiles = profiles.filter { !matches($0.key.scope) }
     }
 
     private func baseProfile(

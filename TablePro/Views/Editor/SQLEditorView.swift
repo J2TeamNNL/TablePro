@@ -170,14 +170,12 @@ struct SQLEditorView: View {
 
     private func resolveCompletionProfile() async {
         guard let request = completionProfileRequest else { return }
-        let profile = try? await DatabaseManager.shared.withMetadataDriver(scope: request.scope) { driver in
-            await QueryCompletionProfileRegistry.shared.profile(
-                for: request.scope,
-                databaseType: request.databaseType,
-                driver: driver
-            )
-        }
-        guard !Task.isCancelled, let profile else { return }
+        let profile = await QueryCompletionProfileRegistry.shared.profile(
+            for: request.scope,
+            databaseType: request.databaseType,
+            serverVersion: request.serverVersion
+        )
+        guard !Task.isCancelled else { return }
         completionAdapter.configure(
             schemaProvider: schemaProvider,
             databaseType: databaseType,

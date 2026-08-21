@@ -453,6 +453,10 @@ struct MainEditorContentView: View {
         .onAppear {
             coordinator.clearRestoredCursor(for: tab.id)
         }
+        .task(id: queryScope) {
+            guard let queryScope else { return }
+            _ = await SchemaProviderRegistry.shared.prepare(for: queryScope)
+        }
     }
 
     private func reloadFileForTab(tabId: UUID, url: URL) {

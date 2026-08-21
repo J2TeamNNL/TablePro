@@ -16,7 +16,7 @@ Mục tiêu: sửa SQL completion theo `DatabaseScope` từng query tab, thêm c
 ## Phases
 
 1. [Phase 01 - Foundation](./phase-01-foundation.md)
-   Status: implemented, awaiting executable Xcode verification and commit approval. Blocker cho toàn bộ Wave 2.
+   Status: implemented, đã review và bổ sung; chờ CI xanh trước khi merge. Blocker cho toàn bộ Wave 2.
 2. [Phase 02 - Parallel Profiles](./phase-02-parallel-profiles.md)
    Status: pending. Chỉ bắt đầu sau khi Phase 01 merge vào `main`.
 3. [Phase 03 - Docs & Acceptance](./phase-03-docs-acceptance.md)

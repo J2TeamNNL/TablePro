@@ -160,12 +160,7 @@ final class SchemaRefreshService {
             )
             return
         }
-        guard let provider = providerRegistry.provider(for: browseScope) else {
-            Self.logger.debug(
-                "[schema] autocomplete sync skipped, no provider connId=\(connectionId, privacy: .public)"
-            )
-            return
-        }
+        let provider = providerRegistry.getOrCreate(for: browseScope)
         let browseDatabase = browseScope.database
         let tables = schemaService.allLoadedTables(for: connectionId)
         let schemas = schemaService.schemas(for: connectionId)

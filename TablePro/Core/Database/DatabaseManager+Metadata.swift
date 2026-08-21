@@ -28,7 +28,8 @@ extension ScopedMetadataProviding {
     }
 
     /// For reads that belong to the sidebar rather than to a tab: the object list, the
-    /// database and quick switchers, autocomplete, and the AI schema context.
+    /// database and quick switchers, and the AI schema context. Completion is not one of
+    /// them any more: a query tab completes against its own scope.
     func withBrowseMetadataDriver<T: Sendable>(
         connectionId: UUID,
         workload: MetadataConnectionPool.Workload = .interactive,

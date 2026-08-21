@@ -610,7 +610,6 @@ final class MainContentCoordinator {
         )
         self.persistence = TabPersistenceCoordinator(connectionId: connection.id)
 
-        _ = services.schemaProviderRegistry.getOrCreate(for: connection.id)
         ConnectionDataCache.shared(for: connection.id).ensureLoaded()
         changeManager.undoManagerProvider = { [weak self] in self?.contentWindow?.undoManager }
         changeManager.onUndoApplied = { [weak self] result in self?.handleUndoResult(result) }

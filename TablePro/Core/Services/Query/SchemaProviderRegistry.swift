@@ -2,8 +2,8 @@
 //  SchemaProviderRegistry.swift
 //  TablePro
 //
-//  Manages shared SQLSchemaProvider instances across connections.
-//  Ref-counted with grace period removal to avoid redundant schema loads.
+//  Manages shared SQLSchemaProvider instances, one per DatabaseScope.
+//  Ref-counted per connection with grace period removal to avoid redundant schema loads.
 //
 
 import Combine
@@ -43,14 +43,6 @@ final class SchemaProviderRegistry {
             .store(in: &cancellables)
     }
 
-    func getOrCreate(for connectionId: UUID) -> SQLSchemaProvider {
-        guard let scope = metadataDriverProvider.browseScope(for: connectionId) else {
-            let fallback = DatabaseScope(connectionId: connectionId, database: "", schema: nil)
-            return getOrCreate(for: fallback)
-        }
-        return getOrCreate(for: scope)
-    }
-
     func provider(for scope: DatabaseScope) -> SQLSchemaProvider? {
         providers[scope]
     }
@@ -85,23 +77,23 @@ final class SchemaProviderRegistry {
                 }
             },
             sampleFieldPaths: { table, limit in
-                try await DatabaseManager.shared.withBrowseMetadataDriver(connectionId: connectionId) { driver in
+                try await metadataProvider.withMetadataDriver(scope: scope) { driver in
                     try await driver.sampleFieldPaths(table: table, limit: limit)
                 }
             }
         )
         let provider = SQLSchemaProvider(metadataSource: source)
         providers[scope] = provider
-        Task {
-            try? await metadataDriverProvider.withMetadataDriver(scope: scope) { driver in
-                await provider.loadSchema(using: driver)
-            }
-        }
         return provider
     }
 
+    /// Creates the provider for `scope` if it does not exist yet and loads its object list once.
+    /// A provider that already holds tables is left as it is, because a tab that reappears has
+    /// not changed database; `refresh(request:)` is the reload path.
     func prepare(for scope: DatabaseScope) async -> SQLSchemaProvider {
         let provider = getOrCreate(for: scope)
+        let isLoaded = await provider.isSchemaLoaded()
+        guard !isLoaded else { return provider }
         try? await metadataDriverProvider.withMetadataDriver(scope: scope) { driver in
             await provider.loadSchema(using: driver)
         }
@@ -110,7 +102,7 @@ final class SchemaProviderRegistry {
 
     func refresh(request: DataRefreshRequest) {
         let matchingProviders = providers.filter { scope, _ in
-            scope.connectionId == request.connectionId && (request.scope == nil || request.scope == scope)
+            scope.connectionId == request.connectionId && request.reaches(tabScope: scope)
         }
         for (scope, provider) in matchingProviders {
             Task {

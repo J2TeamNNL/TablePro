@@ -3,6 +3,29 @@ import Foundation
 import TableProPluginKit
 import Testing
 
+@MainActor
+private final class LeaseCountingMetadataProvider: ScopedMetadataProviding {
+    private let driver: MockDatabaseDriver
+    private let scope: DatabaseScope
+    private(set) var leaseCount = 0
+
+    init(driver: MockDatabaseDriver, browseScope: DatabaseScope) {
+        self.driver = driver
+        self.scope = browseScope
+    }
+
+    func withMetadataDriver<T: Sendable>(
+        scope: DatabaseScope,
+        workload: MetadataConnectionPool.Workload,
+        _ body: @Sendable @escaping (DatabaseDriver) async throws -> T
+    ) async throws -> T {
+        leaseCount += 1
+        return try await body(driver)
+    }
+
+    func browseScope(for connectionId: UUID) -> DatabaseScope? { scope }
+}
+
 @Suite("Query completion profile registry")
 @MainActor
 struct QueryCompletionProfileRegistryTests {
@@ -21,6 +44,42 @@ struct QueryCompletionProfileRegistryTests {
             tokenCasingPolicy: .preserveTypedToken,
             revision: revision
         )
+    }
+
+    @Test("a cached profile is served without leasing a metadata driver")
+    func cachedProfileSkipsTheDriverLease() async {
+        let registry = QueryCompletionProfileRegistry()
+        let connectionId = UUID()
+        let scope = DatabaseScope(connectionId: connectionId, database: "shop", schema: nil)
+        let metadataProvider = LeaseCountingMetadataProvider(
+            driver: MockDatabaseDriver(),
+            browseScope: scope
+        )
+
+        _ = await registry.profile(
+            for: scope,
+            databaseType: .postgresql,
+            serverVersion: "15.2",
+            metadataProvider: metadataProvider
+        )
+        _ = await registry.profile(
+            for: scope,
+            databaseType: .postgresql,
+            serverVersion: "15.2",
+            metadataProvider: metadataProvider
+        )
+
+        #expect(metadataProvider.leaseCount == 1)
+
+        registry.invalidate(scope: scope)
+        _ = await registry.profile(
+            for: scope,
+            databaseType: .postgresql,
+            serverVersion: "15.2",
+            metadataProvider: metadataProvider
+        )
+
+        #expect(metadataProvider.leaseCount == 2)
     }
 
     @Test("cache keys include scope, database type, and server version")

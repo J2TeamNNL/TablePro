@@ -100,7 +100,7 @@ struct SchemaRefreshServiceTests {
         _ = await (first, second, third)
 
         #expect(driver.fetchTablesCallCount == 1)
-        #expect(provider.acquisitionCount == 1)
+        #expect(provider.requestedWorkloads.filter { $0 == .bulk }.count == 1)
         #expect(schemaService.state(for: connection.id) == .loaded(driver.tablesToReturn))
     }
 
@@ -116,12 +116,12 @@ struct SchemaRefreshServiceTests {
 
         await service.refresh(connection: connection)
 
-        #expect(provider.requestedScopes.count == 1)
         let scope = try #require(provider.requestedScopes.first)
         #expect(scope.connectionId == connection.id)
         #expect(scope.database == "inventory")
         #expect(scope.schema == "dbo")
-        #expect(provider.requestedWorkloads == [.bulk])
+        #expect(Set(provider.requestedScopes) == [scope])
+        #expect(provider.requestedWorkloads.first == .bulk)
     }
 
     @Test("an empty browse database is server scoped, so the refresh still runs")
@@ -138,6 +138,7 @@ struct SchemaRefreshServiceTests {
         let scope = try #require(provider.requestedScopes.first)
         #expect(scope.isServerScoped)
         #expect(driver.fetchTablesCallCount == 1)
+        #expect(provider.requestedWorkloads.filter { $0 == .bulk }.count == 1)
         #expect(schemaService.state(for: connection.id) == .loaded(driver.tablesToReturn))
     }
 
@@ -183,6 +184,28 @@ struct SchemaRefreshServiceTests {
 
         let names = await schemaProvider.getTables().map(\.name)
         #expect(names.sorted() == ["customers", "orders"])
+    }
+
+    @Test("the sync creates the browse scope's provider when no tab has one yet")
+    func autocompleteSyncCreatesTheBrowseScopeProvider() async throws {
+        let driver = MockDatabaseDriver()
+        driver.tablesToReturn = [TableInfo(name: "orders", type: .table, rowCount: 0, schema: nil)]
+        let provider = FakeScopedMetadataProvider(driver: driver)
+        let registry = SchemaProviderRegistry(metadataDriverProvider: provider)
+        let connection = TestFixtures.makeConnection()
+        let service = makeService(
+            schemaService: SchemaService(),
+            provider: provider,
+            providerRegistry: registry
+        )
+
+        await service.refresh(connection: connection)
+
+        let scope = DatabaseScope(connectionId: connection.id, database: "testdb", schema: nil)
+        let schemaProvider = try #require(registry.provider(for: scope))
+        let names = await schemaProvider.getTables().map(\.name)
+        #expect(names == ["orders"])
+        #expect(driver.fetchTablesCallCount == 1)
     }
 
     @Test("no browse scope leaves the autocomplete provider untouched instead of clearing it")
