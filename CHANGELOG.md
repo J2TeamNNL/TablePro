@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fixed a crash on macOS 26 and later when the editor redrew a diagnostic underline or search highlight whose text had been edited away.
+- The toolbar can no longer sit on "Executing…" after a query has ended, so Stop is not the only way back. (#2342)
+- The session context buttons no longer empty out for the length of every query.
 - Fixed a crash when an input method, dictation or Look Up asked the editor about text that had already been edited away. (#2339)
 - A search highlight or diagnostic underline whose text you delete now disappears, instead of staying put or jumping to the end of the editor. (#2341)
 - Fixed crashes when the editor's layout, syntax highlighting or accessibility read text that a newer edit had already removed. (#2340)
