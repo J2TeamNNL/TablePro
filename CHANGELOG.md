@@ -7,17 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.67.1] - 2026-08-22
+
 ### Fixed
 
-- Fixed a crash on macOS 26 and later when the editor redrew a diagnostic underline or search highlight whose text had been edited away.
-- The toolbar can no longer sit on "Executing…" after a query has ended, so Stop is not the only way back. (#2342)
-- The session context buttons no longer empty out for the length of every query.
-- Fixed a crash when an input method, dictation or Look Up asked the editor about text that had already been edited away. (#2339)
-- A search highlight or diagnostic underline whose text you delete now disappears, instead of staying put or jumping to the end of the editor. (#2341)
-- Fixed crashes when the editor's layout, syntax highlighting or accessibility read text that a newer edit had already removed. (#2340)
-- A SQLite query that stops early, because the database is locked or the volume returns an error, now says so instead of showing an empty table.
-- Stop now ends a SQLite query that is waiting on a database another program has locked, instead of leaving it to wait out the query timeout.
-- The XLSX, MQL and SQL Import plugins linked to a documentation page that did not exist. They now point at Import & Export.
+- Editor crashes when layout, highlighting, accessibility, input methods, dictation or Look Up read text a newer edit had removed. (#2338, #2339, #2340)
+- A search highlight or diagnostic underline whose text you delete now disappears instead of moving elsewhere. (#2341)
+- The toolbar no longer sits on "Executing…" after a query ends, and the session context buttons no longer empty out while one runs. (#2342)
+- A SQLite query that stops early on a locked database or a volume error now says so instead of showing an empty table. (#2355)
+- Stop now ends a SQLite query waiting on a database another program has locked. (#2363)
+- The XLSX, MQL and SQL Import plugins now link to Import & Export instead of a page that does not exist.
 
 ## [0.67.0] - 2026-08-21
 
@@ -3281,7 +3280,8 @@ TablePro is a native macOS database client built with SwiftUI and AppKit, design
     - Custom SQL query templates
     - Performance optimized for large datasets
 
-[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.67.0...HEAD
+[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.67.1...HEAD
+[0.67.1]: https://github.com/TableProApp/TablePro/compare/v0.67.0...v0.67.1
 [0.67.0]: https://github.com/TableProApp/TablePro/compare/v0.66.0...v0.67.0
 [0.66.0]: https://github.com/TableProApp/TablePro/compare/v0.65.0...v0.66.0
 [0.65.0]: https://github.com/TableProApp/TablePro/compare/v0.64.0...v0.65.0
