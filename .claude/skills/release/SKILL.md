@@ -1,7 +1,7 @@
 ---
 name: release
 description: >
-  Prepares and ships a new TablePro release — bumps version numbers in
+  Prepares and ships a new TablePro release: bumps version numbers in
   Configs/Version.xcconfig, finalizes CHANGELOG.md, commits, tags, and pushes.
   Also handles separate plugin releases (Redis, Oracle, ClickHouse,
   DuckDB). Use this skill whenever the user says "release", "bump
@@ -14,9 +14,9 @@ description: >
 
 Automate the full release pipeline for TablePro. Supports two modes:
 
-- **App release**: `/release <version>` — bumps versions, finalizes
+- **App release**: `/release <version>` bumps versions, finalizes
   changelog, commits, tags, and pushes.
-- **Plugin release**: `/release plugin-<name> <version>` — tags and
+- **Plugin release**: `/release plugin-<name> <version>` tags and
   pushes a separate plugin bundle release.
 
 ## Usage
@@ -31,35 +31,56 @@ Automate the full release pipeline for TablePro. Supports two modes:
 Before making any changes, verify ALL of the following. If any check
 fails, stop and tell the user what's wrong.
 
-1. **Version argument exists** — the user must provide a semver version
+1. **Version argument exists**: the user must provide a semver version
    (e.g., `0.5.0`). If missing, ask for it.
 
-2. **Version is valid semver** — must match `X.Y.Z` where X, Y, Z are
+2. **Version is valid semver**: must match `X.Y.Z` where X, Y, Z are
    non-negative integers. Pre-release suffixes like `-beta.1` or `-rc.1`
    are allowed.
 
-3. **Version is newer** — compare against the current `MARKETING_VERSION`
+3. **Version is newer**: compare against the current `MARKETING_VERSION`
    in `Configs/Version.xcconfig`. The new version must be greater. Read the
    current value:
    ```
    Read Configs/Version.xcconfig
    ```
 
-4. **Tag doesn't exist** — run `git tag -l "v<version>"` to confirm the
+4. **Tag doesn't exist**: run `git tag -l "v<version>"` to confirm the
    tag is available.
 
-5. **Working tree is clean** — run `git status --porcelain`. If there are
+5. **Working tree is clean**: run `git status --porcelain`. If there are
    uncommitted changes, warn the user and ask whether to proceed (the
    release commit will include those changes).
 
-6. **Unreleased section has content** — read `CHANGELOG.md` and verify
+6. **Unreleased section has content**: read `CHANGELOG.md` and verify
    the `## [Unreleased]` section has entries. If empty, warn the user
    that the release will have no changelog entries.
 
-7. **On main branch** — run `git branch --show-current`. Warn (but don't
+7. **Unreleased entries are the right shape**: entries accumulate one PR
+   at a time and drift long, so check before finalizing rather than
+   shipping what is there. Per `CLAUDE.md` rule 1 and Keep a Changelog
+   1.1.0, an entry is one sentence, two at the outside, under 200
+   characters:
+
+   ```bash
+   awk '/^## \[Unreleased\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md \
+     | grep '^- ' | awk '{ t+=length($0); n++; if (length($0)>200) o++ } \
+       END { if (!n) { print "no entries"; exit } \
+             print n" entries, avg "int(t/n)" chars, "o+0" over 200" }'
+   ```
+
+   If entries run over, rewrite the whole section before Step 2: cut each
+   to the notable difference, merge entries that describe one change, and
+   keep every `(#1234)` reference. Verify none were dropped by diffing the
+   reference IDs before and after. The explanation moves to the PR body,
+   not into the changelog. At 0.67.0 this section arrived with 211 entries
+   averaging 300 characters, the longest 1,685, and was rewritten to 200
+   entries averaging 100.
+
+8. **On main branch**: run `git branch --show-current`. Warn (but don't
    block) if not on `main`.
 
-8. **SwiftLint passes** — run `swiftlint lint --strict`. If there are
+9. **SwiftLint passes**: run `swiftlint lint --strict`. If there are
    any warnings or errors, spawn a Task subagent to fix all issues
    before continuing with the release. The subagent should run
    `swiftlint --fix` first, then manually fix any remaining issues,
@@ -85,7 +106,7 @@ Leave all of those alone.
 
 Make these edits to `CHANGELOG.md`:
 
-1. **Convert Unreleased to versioned heading** — replace:
+1. **Convert Unreleased to versioned heading**: replace:
    ```
    ## [Unreleased]
    ```
@@ -97,7 +118,7 @@ Make these edits to `CHANGELOG.md`:
    ```
    where `<YYYY-MM-DD>` is today's date.
 
-2. **Update footer links** — at the bottom of the file:
+2. **Update footer links**: at the bottom of the file:
 
    Replace the `[Unreleased]` compare link:
    ```
@@ -111,6 +132,29 @@ Make these edits to `CHANGELOG.md`:
 
    `<old-version>` is the previous release version (the one currently in
    the `[Unreleased]` compare link).
+
+3. **Check the sections**: entries land one PR at a time, each appending
+   its own heading, so a version can end up with a type listed twice or
+   out of order. Keep a Changelog allows each type once per version, in
+   the order `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`,
+   `Security`:
+
+   ```bash
+   awk '/^## \[<version>\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md | grep '^### '
+   ```
+
+   A repeated heading means merging the two bodies into the first and
+   deleting the second; an out-of-order one means moving the whole block.
+   0.67.0 arrived with two `### Security` sections, one of them sitting
+   before `### Fixed`.
+
+4. **Confirm nothing was lost**: after any restructuring, check the
+   released headings survived and the entry count is what you expect:
+
+   ```bash
+   grep -n '^## \[' CHANGELOG.md | head -5
+   awk '/^## \[<version>\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md | grep -c '^- '
+   ```
 
 ### Step 3: Commit (main repo)
 
@@ -135,7 +179,7 @@ git tag v<version>
 
 ### Step 5: Push
 
-Push the commit and the tag **separately** — `--follow-tags` only pushes
+Push the commit and the tag **separately**: `--follow-tags` only pushes
 annotated tags, but `git tag` creates lightweight tags:
 
 ```bash
@@ -150,19 +194,19 @@ automatically:
 - Generates and commits `appcast.xml`
 - Creates the GitHub Release with release notes extracted from CHANGELOG.md
 
-### Step 6: Update Documentation Changelogs
+### Step 6: Update the Documentation Changelog
 
-The documentation lives in the main repo under `docs/`. Two changelog
-files need a new `<Update>` entry:
-
-- `docs/changelog.mdx` (English)
-- `docs/vi/changelog.mdx` (Vietnamese)
+The documentation lives in the main repo under `docs/`. One changelog
+file needs a new `<Update>` entry, `docs/changelog.mdx`. The docs site is
+English only: `docs/docs.json` declares no locales, and `docs/vi/` was
+deleted on 2026-03-22 in `5837cb597`. Do not recreate it. Confirm with
+`ls docs/` if a past release note still mentions a translated copy.
 
 **How to write the entry:**
 
 1. Read the new version's section from `CHANGELOG.md` (the entries you
    finalized in Step 2).
-2. Rewrite them as a user-friendly `<Update>` block — group entries
+2. Rewrite them as a user-friendly `<Update>` block, grouping entries
    under `### New Features`, `### Improvements`, `### Bug Fixes`, etc.
    (not the raw Added/Changed/Fixed/Removed from Keep a Changelog).
 3. Write concise, user-facing descriptions (not developer-internal
@@ -190,21 +234,20 @@ files need a new `<Update>` entry:
 Insert the new `<Update>` block at the top of the file, right after the
 frontmatter `---` closing delimiter (before the first existing `<Update>`).
 
-**Vietnamese format** (`docs/vi/changelog.mdx`):
+This is the one place the wording is allowed to grow past the `CHANGELOG.md`
+entry it comes from. The changelog states the change; the docs entry can
+name the feature and say what the reader does with it. It still groups by
+audience (`New Features`, `Improvements`, `Bug Fixes`), not by the Keep a
+Changelog types.
 
-Same structure but with Vietnamese text. Use the date format
-`<Day> tháng <Month>, <Year>` (e.g., `19 tháng 2, 2026`). Translate
-feature names and descriptions to Vietnamese. Follow the style of
-existing Vietnamese entries in the file.
-
-**Important:** These changelog files are staged and committed together
-with the release in Step 3 — no separate commit needed.
+**Important:** This file is staged and committed together with the
+release in Step 3, so it needs no separate commit.
 
 ### Step 7: Check for Separate Plugin Changes
 
 After the app release is pushed, check if any **separate plugin bundles**
 have changes since their last release. Also check
-`Plugins/TableProPluginKit/` — changes there affect all plugins.
+`Plugins/TableProPluginKit/`, because changes there affect all plugins.
 
 **Important**: Do NOT use a hardcoded plugin list. Dynamically discover
 all separate plugins by scanning the `Plugins/` directory and excluding
@@ -214,7 +257,7 @@ built-in plugins and the shared framework.
 each for changes:
 
 ```bash
-# Built-in plugins (bundled in app) and shared framework — skip these:
+# Built-in plugins (bundled in app) and shared framework, skip these:
 BUILTIN="MySQLDriverPlugin|PostgreSQLDriverPlugin|SQLiteDriverPlugin|CSVExportPlugin|JSONExportPlugin|SQLExportPlugin|XLSXExportPlugin|MQLExportPlugin|SQLImportPlugin|TableProPluginKit"
 
 # Discover all separate plugin directories dynamically:
@@ -254,7 +297,7 @@ bumping the patch version from the last tag (e.g., `1.0.0` → `1.0.1`).
 If the user confirms, proceed with the plugin release steps below for
 each plugin.
 
-**If no changes**: Skip — do not release plugins unnecessarily.
+**If no changes**: Skip. Do not release plugins unnecessarily.
 
 ## Post-release Summary
 
@@ -317,7 +360,7 @@ after the app tag left the release's own test suite queued for nine minutes
 and pushed one plugin build back by twenty. Check with
 `gh run list --workflow build.yml --limit 1` first.
 
-No version bumps or changelog edits needed — plugin bundles keep
+No version bumps or changelog edits are needed, because plugin bundles keep
 `MARKETING_VERSION = 1.0` and `CURRENT_PROJECT_VERSION = 1` in `project.yml`.
 The version is embedded via the tag only.
 

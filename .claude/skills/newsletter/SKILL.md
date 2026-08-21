@@ -73,6 +73,21 @@ finalisation pass often adds entries, and they are the ones nobody has read yet:
 git diff <last-pre-release-commit>..HEAD -- CHANGELOG.md | grep '^+-'
 ```
 
+**The changelog tells you what changed, not enough to write a section about it.** Entries are
+one sentence under 200 characters by `CLAUDE.md` rule 1, so the line names the change and stops.
+A section needs the specifics the line leaves out: what it replaced, what the reader does with
+it, the number that makes it concrete. Those come from the PR body, the issue, the docs page and
+the code, not from re-reading the entry. Two changelog entries can also describe one feature the
+newsletter should present whole, and one entry can bundle several the reader met separately.
+
+```bash
+gh api repos/TableProApp/TablePro/pulls/<n> --jq '.title, .body'   # what the entry left out
+gh api repos/TableProApp/TablePro/issues/<n> --jq '.title, .body'  # what the user asked for
+```
+
+Never pad a thin entry by guessing at the mechanism. An invented detail in the email is the one
+kind of error a reader can catch and you cannot take back.
+
 For every feature you might give a section to, confirm the docs page exists and note its
 published URL, because a section without a link is a section the reader cannot follow up on:
 

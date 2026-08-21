@@ -139,6 +139,12 @@ bullet count is a floor, not a total. "48 fixes" is defensible when 48 bullets s
 `### Fixed`; "48 bugs fixed" is not. The count also drifts while `[Unreleased]` is open, so
 recount just before sending.
 
+The floor is lower than it looks, because the release pass merges entries that describe one
+change. At 0.67.0 that took 211 entries to 200, and one merged bullet covers six separate fixes
+to the JSON and PHP tree filter. Never recover a bigger number by counting issue references or
+commits instead; count the bullets under `### Fixed` in the shipped file, and let the number be
+whatever it is.
+
 ## 11. Reference IDs
 
 Changelog entries carry issue numbers that sometimes point at the wrong thing: at 0.66, Query
