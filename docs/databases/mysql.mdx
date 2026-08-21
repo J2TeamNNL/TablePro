@@ -3,20 +3,20 @@ title: MySQL
 description: Connect to MySQL 5.7 and later with the bundled MariaDB Connector/C driver
 ---
 
-TablePro connects to MySQL 5.7 and later through its bundled driver, built on MariaDB Connector/C. MySQL 8's `caching_sha2_password` auth works out of the box. MariaDB uses the same driver; MariaDB-specific notes are on [MariaDB](/databases/mariadb).
+MySQL 8 accounts on `caching_sha2_password` connect on the first try, with no auth plugin to switch over. The same driver covers 5.7 and later, and MariaDB as well; MariaDB-specific notes are on [MariaDB](/databases/mariadb).
 
-## Quick Setup
+## Quick setup
 
 <Steps>
   <Step title="Create Connection">
-    Click **Create Connection...** on the welcome window, pick **MySQL**, and fill in host, port, and credentials
+    Click **Create Connection…** on the welcome window, pick **MySQL**, and fill in host, port, and credentials
   </Step>
   <Step title="Test and Save">
     Click **Test Connection** to verify, then **Save & Connect**
   </Step>
 </Steps>
 
-## Connection Settings
+## Connection settings
 
 | Field | Default | Notes |
 |-------|---------|-------|
@@ -33,7 +33,7 @@ mysql://user:password@host:3306/database
 
 Opening a URL connects directly. See [Connection URL Reference](/databases/connection-urls).
 
-## Common Setups
+## Common setups
 
 | Where | Settings |
 |-------|----------|
@@ -44,7 +44,7 @@ Opening a URL connects directly. See [Connection URL Reference](/databases/conne
 | Google Cloud SQL | [Cloud SQL Auth Proxy](/databases/cloud-sql-proxy) |
 | Remote production | [SSH tunnel](/databases/ssh-tunneling) |
 
-## AWS IAM Authentication
+## AWS IAM authentication
 
 RDS and Aurora connections can use your AWS identity instead of a static password: TablePro signs a fresh 15-minute token on every connect and reconnect. Setup and troubleshooting are on [AWS IAM Authentication](/databases/aws-iam).
 
@@ -54,9 +54,9 @@ Turn on **Cloud SQL Auth Proxy** in the connection form and enter the instance c
 
 ## Users & Roles
 
-**View > Users & Roles** manages users, roles, and privileges on MySQL servers. Changes are staged, undoable, and shown as SQL before they run. See [Users & Roles](/features/users-roles).
+**Database > Users & Roles** manages users, roles, and privileges on MySQL servers. Changes are staged, undoable, and shown as SQL before they run. See [Users & Roles](/features/users-roles).
 
-## Query Plans
+## Query plans
 
 **EXPLAIN FORMAT=JSON**, **EXPLAIN FORMAT=TREE**, and **EXPLAIN ANALYZE** results render as a visual plan diagram or tree. Plain multi-column **EXPLAIN** output stays in the results grid. See [EXPLAIN Visualization](/features/explain-visualization).
 
@@ -67,9 +67,9 @@ Turn on **Cloud SQL Auth Proxy** in the connection form and enter the instance c
 
 ## Browsing
 
-The sidebar lists all accessible databases with each table's structure (columns, indexes, foreign keys) and DDL. Switch databases with **Cmd+K**. JSON columns, window functions, and CTEs run and display like any other query.
+The sidebar lists all accessible databases with each table's structure (columns, indexes, foreign keys) and DDL. Switch databases with `Cmd+K`. JSON columns, window functions, and CTEs run and display like any other query.
 
-Table and column comments show in the UI: the sidebar dims a table's comment after its name, and the data grid header tooltip includes the column comment. Toggle this with **View > Show Object Comments**.
+Table and column comments show in the UI: the sidebar dims a table's comment after its name, and the data grid header tooltip includes the column comment. Toggle this by right-clicking the sidebar and choosing **View Options > Comments**.
 
 Set session variables (timezone, encoding) on connect with [Startup Commands](/databases/overview#startup-commands).
 

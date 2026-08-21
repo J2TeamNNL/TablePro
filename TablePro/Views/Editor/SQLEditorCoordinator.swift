@@ -12,6 +12,7 @@ import CodeEditTextView
 import Combine
 import Observation
 import os
+import TableProPluginKit
 
 /// Coordinator for the SQL editor — manages find panel, horizontal scrolling, and scroll-to-match
 @Observable
@@ -19,7 +20,7 @@ import os
 final class SQLEditorCoordinator: TextViewCoordinator, TextViewDelegate {
     // MARK: - Properties
 
-    private static let logger = Logger(subsystem: "com.TablePro", category: "SQLEditorCoordinator")
+    nonisolated private static let logger = Logger(subsystem: "com.TablePro", category: "SQLEditorCoordinator")
 
     /// Above this document length inline AI features are suspended, at the same cutoff where syntax highlighting stops,
     /// so a large document does not copy its whole contents to the assistant on every keystroke.
@@ -29,6 +30,7 @@ final class SQLEditorCoordinator: TextViewCoordinator, TextViewDelegate {
     @ObservationIgnored private lazy var diagnosticsController = QueryDiagnosticsController(
         databaseType: databaseType
     )
+    @ObservationIgnored private let statementRunController = StatementRunController()
     /// Shared schema provider for inline AI suggestions (avoids duplicate schema fetches)
     @ObservationIgnored var schemaProvider: SQLSchemaProvider?
     /// Connection-level AI policy for inline suggestions
@@ -93,6 +95,8 @@ final class SQLEditorCoordinator: TextViewCoordinator, TextViewDelegate {
             foldRestorePending = ranges
             return
         }
+        statementRunController.refreshControls(in: controller)
+        statementRunController.refreshHighlight(in: controller)
         guard let ranges, !ranges.isEmpty else { return }
         controller.restoreCollapsedFolds(ranges)
     }
@@ -105,6 +109,7 @@ final class SQLEditorCoordinator: TextViewCoordinator, TextViewDelegate {
     @ObservationIgnored private var vimCursorManager: VimCursorManager?
     @ObservationIgnored var onCloseTab: (() -> Void)?
     @ObservationIgnored var onExecuteQuery: (() -> Void)?
+    @ObservationIgnored var onRunStatement: ((String, Int) -> Bool)?
     @ObservationIgnored var onAIExplain: ((String) -> Void)?
     @ObservationIgnored var onAIOptimize: ((String) -> Void)?
     @ObservationIgnored var onSaveAsFavorite: ((String) -> Void)?
@@ -168,6 +173,7 @@ final class SQLEditorCoordinator: TextViewCoordinator, TextViewDelegate {
 
         installAIContextMenu(controller: controller)
         installFoldPreview(controller: controller)
+        installStatementRunControls(controller: controller)
         installInlineSuggestionManager(controller: controller)
         diagnosticsController.configure(databaseType: databaseType)
         diagnosticsController.scheduleRefresh(for: controller)
@@ -229,6 +235,7 @@ final class SQLEditorCoordinator: TextViewCoordinator, TextViewDelegate {
         }
 
         uppercaseKeywordIfNeeded(textView: textView, range: range, string: string)
+        statementRunController.scheduleControlsRefresh(in: controller)
 
         if !isLargeDocument {
             diagnosticsController.scheduleRefresh(for: controller)
@@ -238,6 +245,7 @@ final class SQLEditorCoordinator: TextViewCoordinator, TextViewDelegate {
     func textViewDidChangeSelection(controller: TextViewController, newPositions: [CursorPosition]) {
         inlineSuggestionManager?.handleSelectionChange()
         vimCursorManager?.updatePosition()
+        statementRunController.refreshHighlight(in: controller)
 
         // When the find panel navigates to a match, it changes the selection
         // but the editor is not first responder. Scroll to the match manually
@@ -278,6 +286,9 @@ final class SQLEditorCoordinator: TextViewCoordinator, TextViewDelegate {
         releaseWindowSentinel()
         onCloseTab = nil
         onExecuteQuery = nil
+        onRunStatement = nil
+        statementRunController.onRun = nil
+        statementRunController.clear(in: controller)
         onAIExplain = nil
         onAIOptimize = nil
         onSaveAsFavorite = nil
@@ -299,6 +310,67 @@ final class SQLEditorCoordinator: TextViewCoordinator, TextViewDelegate {
             .editorLanguage(for: databaseType ?? .mysql)
             .treeSitterLanguage
         foldPreview.install(controller: controller)
+    }
+
+    private func installStatementRunControls(controller: TextViewController) {
+        statementRunController.dialect = SqlDialect.from(databaseTypeId: (databaseType ?? .mysql).rawValue)
+        statementRunController.isHighlightEnabled = AppSettingsManager.shared.editor.highlightCurrentStatement
+        statementRunController.onRun = { [weak self] sql, offset in
+            self?.onRunStatement?(sql, offset) ?? false
+        }
+        statementRunController.install(on: controller)
+    }
+
+    /// Turns the run controls off for the length of a query, because a tab runs one at a time.
+    func setStatementRunControlsEnabled(_ isEnabled: Bool) {
+        statementRunController.setEnabled(isEnabled, in: controller)
+    }
+
+    /// Follows the Settings toggle, so turning the band off also stops resolving the caret's statement for it.
+    func setStatementHighlightEnabled(_ isEnabled: Bool) {
+        guard statementRunController.isHighlightEnabled != isEnabled else { return }
+        statementRunController.isHighlightEnabled = isEnabled
+        statementRunController.refreshHighlight(in: controller)
+    }
+
+    /// Moves the caret to the neighbouring statement.
+    func moveCursorToStatement(_ direction: StatementNavigationDirection) {
+        statementRunController.moveCursor(direction, in: controller)
+    }
+
+    /// Takes the reader to the statement a result came from.
+    ///
+    /// Resolved here rather than by the caller because the anchor has to be matched against the text this editor is
+    /// showing, which the tab's binding can lag behind by a keystroke. A statement that has since been edited away
+    /// resolves to nothing and the caret stays where it is, which is the right answer: there is nowhere to go.
+    ///
+    /// Reports whether it moved, so the caller can retire the request either way and a statement that is gone does
+    /// not leave one pending forever.
+    @discardableResult
+    func jumpToStatement(_ anchor: StatementAnchor) -> Bool {
+        guard let controller, let textView = controller.textView else { return false }
+        guard let range = anchor.resolve(in: textView.string, dialect: statementRunController.dialect) else {
+            return false
+        }
+        controller.moveCursor(to: range.location)
+        return true
+    }
+
+    /// Runs the statement the caret is in, then moves the caret to the next one.
+    ///
+    /// Both halves go through this one editor. Reading the SQL here and executing it somewhere else would let the two
+    /// name different editors: a window hosts a workspace per connection and their editors all stay registered, so a
+    /// command that resolves its text through the window and its execution through the selected workspace can send
+    /// one connection's statement to another connection's database. `onRunStatement` is the same callback the gutter
+    /// control uses, and the view binds it to the coordinator that owns this editor.
+    func runStatementAtCursorAndAdvance() {
+        guard let statement = statementRunController.statementAtCursor(in: controller),
+              let run = onRunStatement else {
+            return
+        }
+
+        guard run(statement.sql, statement.offset) else { return }
+        moveCursorToStatement(.next)
     }
 
     private func installAIContextMenu(controller: TextViewController) {

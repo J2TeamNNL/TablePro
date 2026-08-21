@@ -1,9 +1,9 @@
 ---
 title: Dameng DM8
-description: Connect to Dameng DM8 with TablePro
+description: Dameng DM8 over its native wire protocol, with no DM client stack to install
 ---
 
-TablePro connects directly to Dameng DM8 over its native wire protocol. The macOS driver is a downloadable plugin and does not require a local DM client installation.
+The plugin implements the DM8 wire protocol itself. Give it a host, a port and a login, the same as any server connection, and no part of the DM client stack has to be on your Mac.
 
 ## Install Plugin
 
@@ -11,7 +11,7 @@ TablePro connects directly to Dameng DM8 over its native wire protocol. The macO
 2. Find **Dameng Driver** and click **Install**
 3. Create a Dameng connection from the connection chooser
 
-## Connection Settings
+## Connection settings
 
 | Field | Default | Notes |
 |-------|---------|-------|
@@ -51,8 +51,10 @@ dm://user:password@host:5236/schema
 - The server keeps running a statement you stopped. TablePro stops waiting for it, but DM8 has no
   way to be told to abandon the work, so a heavy query still finishes on the server. Stopping can
   take a few seconds to take effect for the same reason.
-- Native binary and off-row LOB reads are not supported by the current transport. Use `RAWTOHEX` for binary
-  columns and cast `CLOB` values to `VARCHAR` when reading them.
-- The Database field selects an initial schema; DM8 database switching is not supported
+- A `CLOB` or `BLOB` value DM8 stored outside the row reads as empty. Small values, which DM8
+  keeps in the row, read normally. The column is listed either way and every other column in the
+  row is correct. Cast `CLOB` values to `VARCHAR`, or use `RAWTOHEX` for binary columns, when you
+  need the contents.
+- The Database field selects an initial schema, and leaving it empty is fine. A DM8 instance holds one database, so there is no database to switch; use the schema picker instead.
 
 If a server value fails to decode, include the DM8 version and column type in a [GitHub issue](https://github.com/TableProApp/TablePro/issues).

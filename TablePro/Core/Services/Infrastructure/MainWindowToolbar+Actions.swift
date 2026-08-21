@@ -15,6 +15,14 @@ extension MainWindowToolbar {
         coordinator?.commandActions?.openDatabaseSwitcher()
     }
 
+    @objc func performNavigateBack(_ sender: Any?) {
+        coordinator?.commandActions?.navigateBack()
+    }
+
+    @objc func performNavigateForward(_ sender: Any?) {
+        coordinator?.commandActions?.navigateForward()
+    }
+
     @objc func performRefresh(_ sender: Any?) {
         coordinator?.commandActions?.refresh()
     }
@@ -25,6 +33,10 @@ extension MainWindowToolbar {
 
     @objc func performOpenQuickSwitcher(_ sender: Any?) {
         coordinator?.commandActions?.openQuickSwitcher()
+    }
+
+    @objc func performAddRow(_ sender: Any?) {
+        NSApp.sendAction(#selector(MainSplitViewController.addRow(_:)), to: nil, from: nil)
     }
 
     @objc func performNewTab(_ sender: Any?) {

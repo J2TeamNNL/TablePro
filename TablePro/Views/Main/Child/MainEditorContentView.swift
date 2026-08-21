@@ -203,11 +203,7 @@ struct MainEditorContentView: View {
     }
 
     private var currentTabAllowsAddRow: Bool {
-        guard let tab = tabManager.selectedTab else { return false }
-        let isEditable = tab.tableContext.isEditable
-            && !tab.tableContext.isView
-            && !coordinator.safeModeLevel.blocksAllWrites
-        return isEditable && tab.tableContext.tableName != nil
+        coordinator.canAddRow
     }
 
     // MARK: - Tab Content
@@ -240,7 +236,7 @@ struct MainEditorContentView: View {
             if let vm = queryInsightsViewModels[tab.id] {
                 QueryInsightsView(viewModel: vm, coordinator: coordinator)
             } else {
-                ProgressView(String(localized: "Loading insights..."))
+                ProgressView(String(localized: "Loading insights…"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .onAppear {
                         guard queryInsightsViewModels[tab.id] == nil else { return }
@@ -262,7 +258,7 @@ struct MainEditorContentView: View {
             if let vm = usersRolesViewModels[tab.id] {
                 UsersRolesTabView(viewModel: vm, coordinator: coordinator, tabID: tab.id)
             } else {
-                ProgressView(String(localized: "Loading users and roles..."))
+                ProgressView(String(localized: "Loading users and roles…"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .onAppear {
                         guard usersRolesViewModels[tab.id] == nil else { return }
@@ -285,7 +281,7 @@ struct MainEditorContentView: View {
             if let vm = serverDashboardViewModels[tab.id] {
                 ServerDashboardView(viewModel: vm)
             } else {
-                ProgressView(String(localized: "Loading dashboard..."))
+                ProgressView(String(localized: "Loading dashboard…"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .onAppear {
                         guard serverDashboardViewModels[tab.id] == nil else { return }
@@ -308,7 +304,7 @@ struct MainEditorContentView: View {
             if let vm = erDiagramViewModels[tab.id] {
                 ERDiagramView(viewModel: vm)
             } else {
-                ProgressView(String(localized: "Loading schema..."))
+                ProgressView(String(localized: "Loading schema…"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .onAppear {
                         guard erDiagramViewModels[tab.id] == nil else { return }
@@ -414,6 +410,8 @@ struct MainEditorContentView: View {
                             }
                         },
                         restoredCursorRange: coordinator.restoredCursorRange(for: tab.id),
+                        pendingStatementJump: coordinator.pendingStatementJump(for: tab.id),
+                        onStatementJumpHandled: { coordinator.clearPendingStatementJump(for: tab.id) },
                         restoredFoldRanges: coordinator.foldRanges(for: tab.id),
                         onFoldRangesChanged: { ranges in
                             coordinator.recordFoldRanges(ranges, for: tab.id)
@@ -422,6 +420,8 @@ struct MainEditorContentView: View {
                             coordinator.commandActions?.closeTab()
                         },
                         onExecuteQuery: { coordinator.runQuery() },
+                        onRunStatement: { sql, offset in coordinator.runStatement(sql, sourceOffset: offset) },
+                        isExecuting: coordinator.tabExecution.isExecuting(tab.id),
                         onExplain: { variant in coordinator.runExplain(variant: variant) },
                         onAIExplain: { text in
                             coordinator.showAIChatPanel()
@@ -590,6 +590,13 @@ struct MainEditorContentView: View {
     /// staged ALTERs live in a session cached here by tab, the same way the Users & Roles, ER
     /// diagram and dashboard view models do. Creating it in `onAppear` rather than inline keeps the
     /// write out of the view-update pass.
+    ///
+    /// The identity is the tab, exactly as it is for every other builder that caches a view model
+    /// under `tab.id`. It used to be `"<database>.<schema>.<table>"`, which two tabs on one table
+    /// share, so switching between them updated the view in place instead of re-creating it: its
+    /// `@State` went on answering for whichever tab mounted first while `session` resolved to the
+    /// other. The `session.identity == identity` branch stays, because flipping it is what forces a
+    /// real remount when a tab is retargeted to a different table.
     @ViewBuilder
     private func structureContent(tab: QueryTab, tableName: String) -> some View {
         let scope = structureScope(for: tab)
@@ -606,14 +613,20 @@ struct MainEditorContentView: View {
                     selectionState: selectionState,
                     session: session
                 )
-                .id(identity)
             } else {
                 Color.clear
                     .onAppear {
-                        coordinator.structureSessions[tab.id] = StructureEditingSession(identity: identity)
+                        coordinator.structureSessions[tab.id] = StructureEditingSession(
+                            identity: identity,
+                            connection: connection,
+                            databaseName: scope?.database ?? "",
+                            schemaName: scope?.schema,
+                            tableName: tableName
+                        )
                     }
             }
         }
+        .id(tab.id)
         .frame(maxHeight: .infinity)
     }
 
@@ -668,7 +681,6 @@ struct MainEditorContentView: View {
                 }
             case .data:
                 resultTabBarSection(tab: tab)
-
                 if let explain = tab.display.activeExplainResult {
                     QueryPlanResultView(
                         rawText: explain.explainRawText ?? "",
@@ -728,7 +740,6 @@ struct MainEditorContentView: View {
             }
 
             if tab.display.activeExplainResult == nil {
-                Divider()
                 statusBar(tab: tab)
             }
         }
@@ -898,11 +909,30 @@ struct MainEditorContentView: View {
 
     private func statusBar(tab: QueryTab) -> some View {
         let resolvedRows = resolvedTableRows(for: tab)
-        return MainStatusBarView(
-            snapshot: StatusBarSnapshot(tab: tab, tableRows: resolvedRows),
+        let structureFooter = coordinator.structureSessions[tab.id]?.footer ?? StructureFooterCapability()
+        let snapshot = StatusBarSnapshot(
+            tab: tab,
+            tableRows: resolvedRows,
+            displayRowCount: coordinator.displayIDs(forTab: tab.id)?.count,
+            isFetching: coordinator.tabExecution.isExecuting(tab.id),
+            hasStructureActions: structureFooter.isActive
+        )
+        return ResultStatusBar(
+            model: ResultStatusModel(
+                snapshot: snapshot,
+                viewMode: tab.display.resultsViewMode,
+                selectedRowCount: selectionState.indices.count
+            ),
+            snapshot: snapshot,
             filterState: tab.filterState,
-            selectedRowIndices: selectionState.indices,
-            viewMode: resultsViewModeBinding(for: tab),
+            columnState: StatusBarColumnState(
+                hidden: tab.columnLayout.hiddenColumns,
+                all: coordinator.columnsForVisibilityPicker(for: tab, resultColumns: resolvedRows.columns),
+                onToggle: { coordinator.toggleColumnVisibility($0) },
+                onShowAll: { coordinator.showAllColumns() },
+                onHideAll: { coordinator.hideAllColumns($0) },
+                onReset: { coordinator.resetColumns() }
+            ),
             paginationCallbacks: PaginationCallbacks(
                 onFirst: onFirstPage,
                 onPrevious: onPreviousPage,
@@ -913,22 +943,12 @@ struct MainEditorContentView: View {
                 onGoToPage: onGoToPage,
                 onRequestExactCount: { coordinator.paginationCoordinator.requestExactRowCount() }
             ),
-            columnState: StatusBarColumnState(
-                hidden: tab.columnLayout.hiddenColumns,
-                all: coordinator.columnsForVisibilityPicker(for: tab, resultColumns: resolvedRows.columns),
-                onToggle: { coordinator.toggleColumnVisibility($0) },
-                onShowAll: { coordinator.showAllColumns() },
-                onHideAll: { coordinator.hideAllColumns($0) },
-                onReset: { coordinator.resetColumns() }
-            ),
-            structureState: StatusBarStructureState(
-                footer: coordinator.structureFooterState,
-                onAdd: { coordinator.structureActions?.addRow?() },
-                onRemove: { coordinator.structureActions?.removeRow?() }
-            ),
+            structureFooter: structureFooter,
+            viewMode: resultsViewModeBinding(for: tab),
             onToggleFilters: { coordinator.toggleFilterPanel() },
             onFetchAll: { coordinator.fetchAllRows() },
-            onAddRow: currentTabAllowsAddRow ? { onAddRow() } : nil
+            onStructureAdd: { coordinator.structureActions?.addRow?() },
+            onStructureRemove: { coordinator.structureActions?.removeRow?() }
         )
     }
 

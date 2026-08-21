@@ -3,12 +3,12 @@ title: Open Project Folder
 description: Create a connection from the database settings already in your project's config files
 ---
 
-Point TablePro at a project folder and it reads the database settings the project already has, so you do not have to copy them out of a `.env` file by hand.
+Each set of credentials found in the folder you pick becomes one row, showing the file and key behind it. Nothing is saved or connected until you review the filled-in form and click **Save**. The scan goes four levels deep and ignores `node_modules`, `.git`, `vendor`, similar directories, and any file over 1 MB.
 
 ## Open a folder
 
-- **File > Open Project Folder...**
-- **Add from Existing > Open Project Folder...** on the welcome screen
+- **Open Project Folder…**, in the welcome window's **Add from Existing** menu
+- **Add from Existing > Open Project Folder…** on the welcome window
 
 Pick the folder in the panel that appears. TablePro scans it and lists what it found.
 
@@ -36,8 +36,8 @@ A connection starts at the **Alert** [Safe Mode](/features/safe-mode) level inst
 |------|---------------|
 | `.env` and friends | `DATABASE_URL`, `MONGODB_URI`, `REDIS_URL`, `TURSO_DATABASE_URL` and similar URL keys; Laravel `DB_*` keys; Postgres, MySQL, MariaDB, Mongo and SQL Server container variables; `PG*` variables |
 | `wp-config.php` | `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST` |
-| `prisma/schema.prisma` | The `datasource` provider and url, including `env("...")` references |
-| `config/database.yml` | The Rails development section, following anchors and `<<` merge keys, and resolving `ENV["..."]` |
+| `prisma/schema.prisma` | The `datasource` provider and url, including `env("…")` references |
+| `config/database.yml` | The Rails development section, following anchors and `<<` merge keys, and resolving `ENV["…"]` |
 | `docker-compose.yml`, `compose.yaml` | Database services, using the published host port |
 | `application.properties`, `application.yml` | `spring.datasource.url`, username, and password |
 | `appsettings.json` | The `ConnectionStrings` entries |

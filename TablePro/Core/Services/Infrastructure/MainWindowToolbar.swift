@@ -12,7 +12,7 @@ import TableProPluginKit
 
 @MainActor
 internal final class MainWindowToolbar: NSObject, NSToolbarDelegate {
-    internal static let lifecycleLogger = Logger(subsystem: "com.TablePro", category: "NativeTabLifecycle")
+    nonisolated internal static let lifecycleLogger = Logger(subsystem: "com.TablePro", category: "NativeTabLifecycle")
 
     internal static let toolbarIdentifier = NSToolbar.Identifier("com.TablePro.main.toolbar.v2")
 
@@ -205,6 +205,7 @@ internal final class MainWindowToolbar: NSObject, NSToolbarDelegate {
     static let database = NSToolbarItem.Identifier("com.TablePro.toolbar.database")
     static let refresh = NSToolbarItem.Identifier("com.TablePro.toolbar.refresh")
     static let saveChanges = NSToolbarItem.Identifier("com.TablePro.toolbar.saveChanges")
+    static let addRow = NSToolbarItem.Identifier("com.TablePro.toolbar.addRow")
     static let principal = NSToolbarItem.Identifier("com.TablePro.toolbar.principal")
     static let quickSwitcher = NSToolbarItem.Identifier("com.TablePro.toolbar.quickSwitcher")
     static let newTab = NSToolbarItem.Identifier("com.TablePro.toolbar.newTab")
@@ -218,6 +219,9 @@ internal final class MainWindowToolbar: NSObject, NSToolbarDelegate {
     static let refreshSaveGroup = NSToolbarItem.Identifier("com.TablePro.toolbar.refreshSaveGroup")
     static let exportImportGroup = NSToolbarItem.Identifier("com.TablePro.toolbar.exportImportGroup")
     static let sidebarToggle = NSToolbarItem.Identifier("com.TablePro.toolbar.sidebarToggle")
+    static let backForwardGroup = NSToolbarItem.Identifier("com.TablePro.toolbar.backForwardGroup")
+    static let navigateBack = NSToolbarItem.Identifier("com.TablePro.toolbar.navigateBack")
+    static let navigateForward = NSToolbarItem.Identifier("com.TablePro.toolbar.navigateForward")
 
     // MARK: - NSToolbarDelegate
 
@@ -234,6 +238,7 @@ internal final class MainWindowToolbar: NSObject, NSToolbarDelegate {
     internal static let defaultItemIdentifiers: [NSToolbarItem.Identifier] = [
         sidebarToggle,
         .sidebarTrackingSeparator,
+        backForwardGroup,
         connectionGroup,
         principal,
         .flexibleSpace,

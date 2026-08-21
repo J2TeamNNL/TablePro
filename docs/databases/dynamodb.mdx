@@ -3,13 +3,13 @@ title: Amazon DynamoDB
 description: Connect to Amazon DynamoDB with PartiQL queries, GSI/LSI browsing, and DynamoDB Local support
 ---
 
-TablePro connects to Amazon DynamoDB over the AWS HTTP API. Sign in with IAM credentials, an AWS profile, or SSO. Browse tables, run PartiQL queries, inspect GSI and LSI indexes, and edit items in the data grid.
+Sign in with IAM keys, a named AWS profile, or an SSO session. Every request after that is a separate HTTPS call signed with SigV4, so nothing is held open and there is no SSH tunnel to configure.
 
-## Quick Setup
+## Quick setup
 
-Click **New Connection**, select **DynamoDB**, choose an auth method, enter your credentials and region, then click **Save & Connect**. The plugin auto-installs when you pick DynamoDB, or install it from **Settings > Plugins > Browse > DynamoDB Driver**.
+Click **Create Connection…**, select **DynamoDB**, choose an auth method, enter your credentials and region, then click **Save & Connect**. The plugin auto-installs when you pick DynamoDB, or install it from **Settings > Plugins > Browse > DynamoDB Driver**.
 
-## Authentication Methods
+## Authentication methods
 
 **Access Key + Secret Key**: IAM credentials. Add a session token if you are using temporary credentials from STS.
 
@@ -17,12 +17,12 @@ Click **New Connection**, select **DynamoDB**, choose an auth method, enter your
 
 **AWS SSO**: Reads the cached SSO token from `~/.aws/sso/cache/`. Run `aws sso login --profile my-sso-profile` before connecting. Tokens expire; the connection re-resolves credentials automatically and tells you to re-run `aws sso login` when the session has ended.
 
-## Connection Settings
+## Connection settings
 
 | Field | Description |
 |-------|-------------|
 | **Auth Method** | Access Key + Secret Key, AWS Profile, or AWS SSO |
-| **Access Key ID** | IAM access key, e.g. `AKIA...`. Access Key auth only |
+| **Access Key ID** | IAM access key, e.g. `AKIA…`. Access Key auth only |
 | **Secret Access Key** | The matching secret. Access Key auth only |
 | **Session Token** | Optional token for temporary STS credentials. Access Key auth only |
 | **Profile Name** | Profile to read from `~/.aws/config` or `~/.aws/credentials`. AWS Profile and AWS SSO only |
@@ -65,13 +65,13 @@ SELECT * FROM "Orders"
 WHERE customerId = 'cust001' AND orderDate BETWEEN '2024-01-01' AND '2024-12-31'
 ```
 
-<Tip>
+<Note>
 Table names in PartiQL must be quoted with double quotes: `"TableName"`. String values use single quotes: `'value'`.
-</Tip>
+</Note>
 
 **Data Types**: S (string), N (number), B (binary), BOOL, NULL, L (JSON array), M (JSON object), SS (string set), NS (number set), BS (binary set).
 
-**Data Editing**: Edit cells, insert rows, and delete rows. TablePro generates PartiQL: `INSERT INTO "Table" VALUE { ... }`, `UPDATE "Table" SET attr = 'val' WHERE pk = 'pkVal'`, and `DELETE FROM "Table" WHERE pk = 'pkVal'`. Key attributes cannot be changed, so delete the item and insert it again.
+**Data Editing**: Edit cells, insert rows, and delete rows. TablePro generates PartiQL: `INSERT INTO "Table" VALUE { … }`, `UPDATE "Table" SET attr = 'val' WHERE pk = 'pkVal'`, and `DELETE FROM "Table" WHERE pk = 'pkVal'`. Key attributes cannot be changed, so delete the item and insert it again.
 
 **Query Instead of Scan**: A filter that pins the partition key to a single value with `=` runs through the Query API instead of Scan. It returns faster and burns less read capacity.
 
@@ -79,7 +79,7 @@ Table names in PartiQL must be quoted with double quotes: `"TableName"`. String 
 
 **Export**: CSV, JSON, SQL, XLSX formats.
 
-## IAM Permissions
+## IAM permissions
 
 The IAM user or role needs these permissions at minimum:
 

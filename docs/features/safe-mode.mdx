@@ -20,7 +20,7 @@ Set the Safe Mode level in the **Customization** pane of the connection form.
 
 New connections default to **Silent**.
 
-## How It Works
+## How it works
 
 ### Silent
 
@@ -53,11 +53,11 @@ All write operations are blocked. The UI disables:
 
 Read queries (SELECT) execute normally.
 
-## Drivers Without Read-Only Support
+## Drivers without read-only support
 
 The Redis, MongoDB, and etcd drivers do not support read-only mode, so Safe Mode treats every query on these connections as a write. Alert and Safe Mode levels confirm every query; Read-Only blocks everything. Other non-SQL drivers (Cassandra, Elasticsearch, DynamoDB) classify reads and writes normally.
 
-## Toolbar Badge
+## Toolbar badge
 
 The current Safe Mode level appears as a badge in the toolbar (orange for Alert levels, red for Safe Mode and Read-Only). Click it to change levels.
 
@@ -72,7 +72,7 @@ Editing the level in the connection form works the same way round: the change re
 
 Safe Mode gates apply to query execution, saving cell edits, table operations, and sidebar changes.
 
-## Server Read-Only Is Not Safe Mode
+## Server read-only is not safe mode
 
 Safe Mode runs inside TablePro. It never changes anything on the database server, and it cannot make the server accept a write the server itself refuses.
 
@@ -93,7 +93,7 @@ SHOW SESSION VARIABLES WHERE Variable_name IN
 
 `innodb_read_only` set to `ON` means you are on a replica. Connect to the primary to write.
 
-## Execution Log
+## Execution log
 
 Every database operation goes through one authorization step, including the ones the AI assistant and the MCP tools ask for. TablePro records each decision, allowed or refused, to a local log.
 
@@ -107,7 +107,7 @@ This is tamper evident, not tamper proof. Anyone who can write the file can also
 
 The log is local, is not synced, and is not sent anywhere.
 
-## Managed by an Organization
+## Managed by an organization
 
 An administrator can set a minimum Safe Mode level through a macOS configuration profile, delivered by an MDM such as Jamf or Kandji. A connection set below that level is raised to it. A stricter choice is left alone, so the policy is a floor and never a ceiling: someone who wants Read-Only on a production connection still gets it.
 
@@ -117,12 +117,12 @@ The profile targets the `com.TablePro` preference domain with a flat key:
 |---|---|---|
 | `com.TablePro.policy.minimumSafeModeLevel` | String | `silent`, `alert`, `alertFull`, `safeMode`, `safeModeFull`, or `readOnly` |
 
-A value TablePro does not recognise imposes no floor at all. It never falls back to Read-Only, which would lock people out of a typo, and never to Silent, which would quietly drop the policy.
+A value TablePro does not recognize imposes no floor at all. It never falls back to Read-Only, which would lock people out of a typo, and never to Silent, which would quietly drop the policy.
 
-TablePro reads this the way macOS intends: a configuration profile already outranks the app's own preferences, so a forced key simply wins, and the app asks `CFPreferencesAppValueIsForced` only to know that the matching control should be disabled rather than merely preset.
+TablePro reads this the way macOS intends: a configuration profile already outranks the app's own preferences, so a forced key wins, and the app asks `CFPreferencesAppValueIsForced` only to know that the matching control should be disabled rather than merely preset.
 
 <Note>
-This is a floor on TablePro's own behaviour, not on the database. It stops the app issuing a write; it does not stop the same person connecting with `psql`. Pair it with server-side privileges for anything that has to hold. See [Server Read-Only Is Not Safe Mode](#server-read-only-is-not-safe-mode).
+This is a floor on TablePro's own behavior, not on the database. It stops the app issuing a write; it does not stop the same person connecting with `psql`. Pair it with server-side privileges for anything that has to hold. See [Server Read-Only Is Not Safe Mode](#server-read-only-is-not-safe-mode).
 </Note>
 
 ## External Clients
@@ -135,4 +135,4 @@ A write request from an external client clears three locks in this order:
 2. **Token scope** (per-integration, `readOnly` / `readWrite` / `fullAccess`). Issued by the [pairing flow](/external-api/pairing) and bounded by External Access: effective permission is `MIN(token.scope, connection.externalAccess)`.
 3. **Safe Mode** (per-query). The same rules on this page apply once the request has been routed to the connection. Touch ID prompts and confirmation dialogs still appear, even for queries originating from an external client.
 
-DROP and TRUNCATE always need an explicit confirmation phrase via the `confirm_destructive_operation` tool, regardless of token scope. See [External API security model](/external-api/index#security-model).
+DROP and TRUNCATE always go through the `confirm_destructive_operation` tool, which needs a `fullAccess` token and the user's approval every time: through the client's own elicitation prompt when it supports one, otherwise through TablePro's confirmation dialog. No token scope skips it. See [External API security model](/external-api/index#security-model).

@@ -268,10 +268,9 @@ extension DatabaseManager {
                 }
             case .selectSchemaFromLastSession:
                 if let schemaDriver = driver as? SchemaSwitchable,
-                   let savedSchema = appSettingsStorage.loadLastSchema(for: connection.id),
-                   savedSchema != schemaDriver.currentSchema {
+                   let savedSchema = appSettingsStorage.loadLastSchema(for: connection.id) {
                     do {
-                        try await schemaDriver.switchSchema(to: savedSchema)
+                        try await schemaDriver.switchSchemaIfNeeded(to: savedSchema)
                         activeSessions[connection.id]?.browseSchema = savedSchema
                     } catch {
                         Self.logger.warning("Failed to restore saved schema '\(savedSchema, privacy: .public)': \(error.localizedDescription, privacy: .public)")
@@ -284,6 +283,13 @@ extension DatabaseManager {
     // MARK: - Database / Schema Switching
 
     func switchDatabase(to database: String, for connectionId: UUID, persist: Bool = true) async throws {
+        /// An engine that browses no database has nothing to switch to, and asking anyway reached
+        /// the driver and surfaced its own "does not support database switching" as an alert on
+        /// every table click (#2262). Refusing rather than reporting success, because the caller
+        /// writes the toolbar's database on success.
+        guard !database.isEmpty else {
+            throw DatabaseError.unsupportedOperation
+        }
         guard let driver = driver(for: connectionId) else {
             throw DatabaseError.notConnected
         }
@@ -293,15 +299,7 @@ extension DatabaseManager {
         )
 
         if pm?.capabilities.requiresReconnectForDatabaseSwitch == true {
-            updateSession(connectionId) { session in
-                session.connection.database = database
-                session.browseDatabase = database
-                session.browseSchema = nil
-                session.status = .connecting
-            }
-            appSettingsStorage.saveLastSchema(nil, for: connectionId)
-            await SchemaService.shared.invalidate(connectionId: connectionId)
-            await reconnectSession(connectionId)
+            try await reconnectOntoDatabase(database, for: connectionId)
         } else if let adapter = driver as? PluginDriverAdapter {
             let grouping = pm?.schema.databaseGroupingStrategy ?? .byDatabase
             try await sessionDriverGate.withExclusiveAccess(connectionId) {
@@ -331,14 +329,51 @@ extension DatabaseManager {
         AppEvents.shared.browseContainerChanged.send(connectionId)
     }
 
+    /// Reopens the connection on `database`, for an engine that cannot change database on a live
+    /// connection.
+    ///
+    /// The session has to be pointed at the target before the attempt, because the reconnect
+    /// builds its connection from those very fields. A failed attempt therefore has to put them
+    /// back: leaving them on a database the connection never reached aims the next reconnect, and
+    /// the next launch, at a database the user only tried once and could not open.
+    private func reconnectOntoDatabase(_ database: String, for connectionId: UUID) async throws {
+        guard let previous = session(for: connectionId) else {
+            throw DatabaseError.notConnected
+        }
+        let previousDatabase = previous.connection.database
+        let previousBrowseDatabase = previous.browseDatabase
+        let previousBrowseSchema = previous.browseSchema
+        let previousSavedSchema = appSettingsStorage.loadLastSchema(for: connectionId)
+
+        updateSession(connectionId) { session in
+            session.connection.database = database
+            session.browseDatabase = database
+            session.browseSchema = nil
+            session.status = .connecting
+        }
+        appSettingsStorage.saveLastSchema(nil, for: connectionId)
+        await SchemaService.shared.invalidate(connectionId: connectionId)
+
+        do {
+            try await reconnectSession(connectionId)
+        } catch {
+            updateSession(connectionId) { session in
+                session.connection.database = previousDatabase
+                session.browseDatabase = previousBrowseDatabase
+                session.browseSchema = previousBrowseSchema
+            }
+            appSettingsStorage.saveLastSchema(previousSavedSchema, for: connectionId)
+            throw error
+        }
+    }
+
     /// Moves the driver to the engine's default schema after a database switch.
     /// Writing the session's schema without moving the driver leaves object listings
     /// (driver schema) and table queries (session schema) on different schemas.
     private func resetSchema(on driver: any SchemaSwitchable, to defaultSchemaName: String?) async {
         guard let defaultSchemaName, !defaultSchemaName.isEmpty else { return }
-        guard driver.currentSchema != defaultSchemaName else { return }
         do {
-            try await driver.switchSchema(to: defaultSchemaName)
+            try await driver.switchSchemaIfNeeded(to: defaultSchemaName)
         } catch {
             Self.logger.warning(
                 "Failed to reset schema to '\(defaultSchemaName, privacy: .public)' after a database switch: \(error.localizedDescription, privacy: .public)"

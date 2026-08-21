@@ -39,7 +39,7 @@ enum ViewMenuBuilder {
                 keyboard: keyboard
             ),
             MenuItemFactory.item(
-                String(localized: "Filter Databases..."),
+                String(localized: "Filter Databases…"),
                 action: #selector(MainSplitViewController.filterDatabases(_:))
             ),
             MenuItemFactory.item(
@@ -59,6 +59,7 @@ enum ViewMenuBuilder {
                 shortcut: .toggleHistory,
                 keyboard: keyboard
             ),
+            resultViewSubmenu(),
             MenuItemFactory.item(
                 String(localized: "Show Results"),
                 action: #selector(MainSplitViewController.toggleResults(_:)),
@@ -88,6 +89,19 @@ enum ViewMenuBuilder {
                 String(localized: "Close Result Tab"),
                 action: #selector(MainSplitViewController.closeResultTab(_:)),
                 shortcut: .closeResultTab,
+                keyboard: keyboard
+            ),
+            MenuItemFactory.separator,
+            MenuItemFactory.item(
+                String(localized: "Back"),
+                action: #selector(MainSplitViewController.navigateBack(_:)),
+                shortcut: .navigateBack,
+                keyboard: keyboard
+            ),
+            MenuItemFactory.item(
+                String(localized: "Forward"),
+                action: #selector(MainSplitViewController.navigateForward(_:)),
+                shortcut: .navigateForward,
                 keyboard: keyboard
             ),
             MenuItemFactory.separator,
@@ -124,7 +138,7 @@ enum ViewMenuBuilder {
                 modifiers: [.command, .option]
             ),
             MenuItemFactory.item(
-                String(localized: "Customize Toolbar..."),
+                String(localized: "Customize Toolbar…"),
                 action: #selector(NSWindow.runToolbarCustomizationPalette(_:))
             ),
             MenuItemFactory.separator,
@@ -136,6 +150,19 @@ enum ViewMenuBuilder {
             )
         ])
     }
+
+    private static func resultViewSubmenu() -> NSMenuItem {
+        MenuItemFactory.submenu(String(localized: "Result View"), items: allModes.map { mode in
+            let item = MenuItemFactory.item(
+                mode.displayName,
+                action: #selector(MainSplitViewController.setResultView(_:))
+            )
+            item.representedObject = mode.rawValue
+            return item
+        })
+    }
+
+    private static let allModes: [ResultsViewMode] = [.data, .structure, .json, .chart]
 
     private static func sidebarLayoutSubmenu() -> NSMenuItem {
         MenuItemFactory.submenu(String(localized: "Sidebar Layout"), items: [

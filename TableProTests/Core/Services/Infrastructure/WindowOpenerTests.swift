@@ -9,22 +9,26 @@ import XCTest
 @MainActor
 final class WindowOpenerTests: XCTestCase {
     private var openedRequests: [ConnectionFormRequest] = []
+    private var openedSettingsPanes: [SettingsPane?] = []
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         _ = WelcomeRouter.shared.consumePendingRequest()
         openedRequests = []
+        openedSettingsPanes = []
         WindowOpener.shared.setWelcomePresenter {}
         WindowOpener.shared.setConnectionFormPresenter { [weak self] request in
             self?.openedRequests.append(request)
         }
         WindowOpener.shared.setIntegrationsActivityPresenter {}
-        WindowOpener.shared.setSettingsPresenter {}
+        WindowOpener.shared.setSettingsPresenter { [weak self] pane in
+            self?.openedSettingsPanes.append(pane)
+        }
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         _ = WelcomeRouter.shared.consumePendingRequest()
-        super.tearDown()
+        try await super.tearDown()
     }
 
     func testNewConnectionRoutesTheChooserInsteadOfOpeningAWindow() {
@@ -153,6 +157,32 @@ final class WindowOpenerTests: XCTestCase {
         opener.setConnectionFormPresenter { opened.append($0) }
 
         XCTAssertEqual(opened, [.edit(connectionId: connectionId)])
+    }
+
+    func testTheRequestedSettingsPaneReachesThePresenter() {
+        WindowOpener.shared.openSettings(tab: .plugins)
+
+        XCTAssertEqual(openedSettingsPanes, [.plugins])
+    }
+
+    func testOpeningSettingsWithoutAPaneAsksForNone() {
+        WindowOpener.shared.openSettings()
+
+        XCTAssertEqual(openedSettingsPanes, [SettingsPane?.none])
+    }
+
+    /// The pane used to travel through UserDefaults, so a call made before the presenter existed
+    /// wrote the preference and then opened on whatever was stored.
+    func testASettingsCallQueuedBeforeItsPresenterKeepsItsPane() {
+        let opener = WindowOpener()
+        var opened: [SettingsPane?] = []
+
+        opener.openSettings(tab: .ai)
+        XCTAssertTrue(opened.isEmpty, "No presenter yet, so the call has to wait")
+
+        opener.setSettingsPresenter { opened.append($0) }
+
+        XCTAssertEqual(opened, [.ai])
     }
 
     func testEditingTheSameConnectionTwiceRequestsTheSameWindow() {

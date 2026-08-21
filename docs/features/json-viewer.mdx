@@ -1,11 +1,11 @@
 ---
 title: Cell and Row Viewers
-description: View and edit JSON, PHP serialized, and binary cell values, set per-column display formats, and inspect whole rows in the sidebar.
+description: View and edit JSON, PHP serialized, and binary cell values, set per-column display formats, and inspect whole rows in the sidebar
 ---
 
-Structured cell values open in dedicated viewers: JSON, PHP serialized data, and binary blobs. A per-column **Display As** format controls how a column renders and which viewer opens. The row details inspector shows every field of the selected row with the same editors.
+An editable JSON or blob cell carries a chevron, and clicking it opens the value in a popover anchored to that cell. Which viewer opens follows the column: its declared type, or the **Display As** choice on its header. That choice changes rendering only, never what is stored.
 
-## Display As formats
+## Display as formats
 
 Right-click a column header and pick **Display As**. The submenu lists the formats that fit the column type, with a checkmark on the active one. MongoDB binary columns are the one exception: they never offer UUID, because the driver already decodes them under its own Legacy UUID Encoding setting.
 
@@ -69,14 +69,14 @@ Values above 5 MB are not parsed; the tree shows a placeholder and Raw mode stil
 
 ## Blob and hex
 
-Blob cells render in the grid as compact hex (`0x48656C...`, first 64 bytes). Click the chevron or double-click to open the hex popover:
+Blob cells render in the grid as compact hex (`0x48656C…`, first 64 bytes). Click the chevron or double-click to open the hex popover:
 
 - A classic hex dump (offset, byte columns, ASCII), capped at 10 KB.
 - On editable tables, an editable hex field below it. It accepts spaced or continuous hex, with or without a `0x` prefix. Invalid hex disables **Save**; values over 10 KB open read-only.
 
 ## Row details inspector
 
-**View > Toggle Inspector** (`Cmd+Option+I`) opens the right sidebar. Select a row and every field appears with an editor matched to its content:
+**View > Show Inspector** (`Cmd+Option+I`) opens the right sidebar. Select a row and every field appears with an editor matched to its content:
 
 - JSON columns, and text values that parse as JSON, get the JSON editor. No Display As step needed.
 - PHP serialized values are auto-detected the same way and get the read-only tree.
@@ -89,4 +89,4 @@ Blob cells render in the grid as compact hex (`0x48656C...`, first 64 bytes). Cl
 
 JSON and PHP fields have buttons to expand inside the sidebar or pop out to a window. Hover over an editable field for a menu that sets NULL, the column default, an empty value, or a SQL function. With no row selected, the inspector shows table info instead.
 
-For whole-row JSON across a result set, switch the results pane to its JSON view mode with the segmented control in the status bar. Table tabs show Data / Structure / JSON; query tabs show Data / JSON.
+For whole-row JSON across a result set, switch the results pane to its JSON view mode with the switcher at the left of the status bar, or from **View > Result View**. Table tabs show Data / Structure / JSON; query tabs show Data / JSON.

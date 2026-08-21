@@ -12,6 +12,8 @@ import Foundation
 /// a 36pt titlebar accessory holding a 28pt bar, whose track is inset 8pt, then 4pt of gap, then a
 /// 28pt new-tab button, then 8pt to the trailing edge.
 internal enum EditorTabStripLayout {
+    internal static let unseenDotDiameter: CGFloat = 6
+
     /// The titlebar accessory's own height. The track is pinned to its top edge, flush against the
     /// toolbar, and what remains below is the clearance the system leaves before the content.
     internal static let bandHeight: CGFloat = 36
@@ -41,6 +43,10 @@ internal enum EditorTabStripLayout {
         let divisor = CGFloat(max(count, 1))
         return max(usable / divisor, minimumTabWidth)
     }
+
+    /// How far a tab fades while it is the one being dragged. Enough to read as lifted out of the
+    /// strip, not so far that its title stops being legible on the way past its neighbours.
+    internal static let draggingOpacity: CGFloat = 0.45
 
     /// A separator is drawn at the leading edge of a tab only when both it and its leading
     /// neighbour are plain and untouched. A line against the raised capsule reads as a seam in

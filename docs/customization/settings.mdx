@@ -3,7 +3,7 @@ title: Settings
 description: Every settings tab, its controls, and their defaults
 ---
 
-Open with `Cmd+,`. Settings are grouped into nine tabs.
+Open with `Cmd+,`. Settings are grouped into ten tabs.
 
 <CardGroup cols={2}>
   <Card title="General" icon="gear" href="/customization/settings#general">Language, startup, tabs, sidebar, query timeout, updates, reset.</Card>
@@ -11,8 +11,9 @@ Open with `Cmd+,`. Settings are grouped into nine tabs.
   <Card title="Editor" icon="code" href="/customization/editor-settings">SQL editor, Vim mode, line numbers, query parameters.</Card>
   <Card title="Data" icon="table" href="/customization/data-settings">Data grid, pagination, result cap, JSON viewer, and query history.</Card>
   <Card title="Keyboard" icon="keyboard" href="/features/keyboard-shortcuts#customizing-shortcuts">Custom shortcuts.</Card>
+  <Card title="Notifications" icon="bell" href="/customization/settings#notifications">Which finished operations notify you when TablePro is in the background.</Card>
   <Card title="AI" icon="sparkles" href="/customization/settings#ai">Providers, inline suggestions, context, slash commands.</Card>
-  <Card title="Integrations" icon="network-wired" href="/customization/settings#integrations">MCP server, tokens, remote access, activity.</Card>
+  <Card title="Integrations" icon="network-wired" href="/customization/settings#integrations">MCP server, tokens, clients, activity.</Card>
   <Card title="Plugins" icon="puzzle-piece" href="/customization/settings#plugins">Manage drivers, exporters, and themes.</Card>
   <Card title="Account" icon="user" href="/customization/settings#account">License, iCloud sync, linked folders.</Card>
 </CardGroup>
@@ -28,12 +29,12 @@ Open with `Cmd+,`. Settings are grouped into nine tabs.
 
 System (default), English, Tiếng Việt, 简体中文, 繁體中文, 한국어, Türkçe. Changing the language requires restarting TablePro.
 
-### Startup Behavior
+### Startup behavior
 
 | Option | Description |
 |--------|-------------|
 | **Reopen Last Session** (default) | Restore the windows, tabs, and view state from your last session |
-| **Show Welcome Screen** | Show the welcome screen with saved connections |
+| **Show Welcome Screen** | Show the welcome window with saved connections |
 
 Reopened tabs restore their SQL, cursor position, sort, filters, page, and column widths. The window you land on connects at launch; the others connect when you switch to them, so an unreachable database never blocks launch. A window that cannot reach its server shows the reason with a Try Again button and a way back to the connection list, and the other windows keep working. See [Tabs](/features/tabs).
 
@@ -54,7 +55,7 @@ Reopened tabs restore their SQL, cursor position, sort, filters, page, and colum
 | **Row size** | Match System | How tall sidebar rows are. Match System follows **Sidebar icon size** in System Settings > Appearance, so the sidebar matches Finder and Mail. Pick Small, Medium or Large to override it and fit more objects on screen. Also under **View Options** in the sidebar right-click menu |
 | **Default layout for new connections** | List | List or Tree, for servers that support a database tree. Switch the current connection from the **View** menu |
 
-### Query Execution
+### Query execution
 
 **Query timeout** sets the maximum seconds a query runs before cancellation. Default 60; choices from 10 to 600 seconds, plus **No limit**. Applies to new connections, so a change requires a reconnect.
 
@@ -72,20 +73,20 @@ Enforcement happens at the database level where supported:
 
 **No limit** raises the HTTP transport ceiling to 1 hour.
 
-### Command Line
+### Command line
 
 **Install** writes a `tablepro` command to `/usr/local/bin` that opens database URLs in TablePro. If TablePro cannot write there, it shows a command for you to run in Terminal. See [Terminal and DDEV](/external-api/terminal).
 
-### Trusted Links
+### Trusted links
 
 Lists external links you chose to always allow, with **Forget** per entry and **Forget All**. Only databases on this machine can be trusted; remote links ask for confirmation every time.
 
-### Software Update
+### Software update
 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | **Automatically check for updates** | On | Periodic background check |
-| **Check for Updates...** | - | Check now |
+| **Check for Updates…** | - | Check now |
 
 Powered by [Sparkle](https://sparkle-project.org/). Also available from the **TablePro** menu.
 
@@ -99,6 +100,32 @@ Powered by [Sparkle](https://sparkle-project.org/). Also available from the **Ta
 
 **Reset All Settings to Defaults** resets every settings tab after a confirmation. Saved connections and query history are not affected.
 
+## Notifications
+
+TablePro tells you when long-running work finishes while you are somewhere else. It only notifies when the result is not already in front of you: the app is in another Space or behind another window, the window is minimized, or the tab that ran the work is not the one on screen. Work you cancelled yourself never notifies.
+
+**Notify when long-running work finishes** is the master switch. **Only after** sets how long work has to run before it counts, from 5 seconds to 10 minutes; the default is 20 seconds. Set it below the query timeout in General, or a query that times out will finish before the notification is due.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| **Notify when long-running work finishes** | On | Master switch for every kind below |
+| **Only after** | 20 seconds | How long work must run to count, from 5 seconds to 10 minutes |
+| **Queries** | On | Editor queries, including Explain |
+| **Statement batches** | On | Execute All, as one notification for the batch |
+| **Row edits** | On | Saving edited rows |
+| **Structure changes** | On | Applying table structure changes |
+| **Imports** | On | File imports |
+| **Exports** | On | Exports, including streaming exports |
+| **Backups** | On | Database dumps |
+| **Fetch all rows** | On | Loading every row of a truncated result |
+| **AI and MCP queries** | On | Queries an AI assistant or MCP client runs |
+
+The notification says which connection and database, what happened, how much, and how long it took: "1,204 rows in 3m 12s", or "Failed after 2m 45s" with the reason. A failure offers Copy Error; an export or backup offers Show in Finder. Clicking it brings TablePro forward and selects the tab that ran the work. Notifications group by connection, and re-running the same tab replaces its previous notification instead of stacking a second one.
+
+Whatever the notification settings say, a tab whose work finished while you were looking elsewhere keeps a dot next to its name until you select it. That happens even if you never granted notification permission.
+
+macOS asks for notification permission the first time TablePro actually has something to tell you, not at launch. If you refuse, or turn TablePro's notifications off in System Settings, this section says so and links you there, and TablePro bounces its Dock icon instead. Notification sound and alert style are per-app System Settings options, so TablePro does not duplicate them.
+
 ## AI
 
 **Enable AI Features** is the master switch; turning it off hides the other AI sections and disables chat, inline suggestions, and editor actions. **Active Provider** picks the default provider; the chat composer's model picker can override it per turn.
@@ -111,7 +138,7 @@ Powered by [Sparkle](https://sparkle-project.org/). Also available from the **Ta
 
 API keys are stored in the macOS Keychain; removing a provider deletes its key.
 
-### Inline Suggestions
+### Inline suggestions
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -140,7 +167,7 @@ The Privacy section sets the default **Connection policy** (Ask Each Time) appli
 
 ## Integrations
 
-The **Integrations** tab runs the MCP server. **Enable MCP Server** (default off) starts it and shows a live status. See [MCP Server](/features/mcp) for a walkthrough and the [External API](/external-api/index) reference for the tool catalog.
+The **Integrations** tab runs the MCP server. **Enable MCP Server** (default off) starts it and shows a live status. See [MCP Server](/features/mcp) for a walkthrough and the [External API](/external-api) reference for the tool catalog. The server binds `127.0.0.1` only.
 
 <Frame caption="Integrations tab with the MCP server enabled">
   <img className="block dark:hidden" src="/images/mcp-settings.png" alt="Integrations settings" />
@@ -151,23 +178,21 @@ The **Integrations** tab runs the MCP server. **Enable MCP Server** (default off
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| **Port** | 23508 | TCP port the server listens on |
+| **Port** | 23508 | Loopback port the server listens on. If it is taken, TablePro binds a free one instead and records it in the handshake file. |
 | **Default row limit** | 500 | Rows returned when a tool call sets no limit, including `export_data` |
-| **Maximum row limit** | 10,000 | Hard cap on rows per tool call, including `export_data` |
-| **Query timeout** | 30 seconds | Per-query limit for MCP-issued queries |
+| **Maximum row limit** | 10,000 | Hard cap on rows per tool call, including `export_data`. Clamped to 1 to 500,000. |
+| **Query timeout** | 30 seconds | Per-query limit for MCP-issued queries. Clamped to 1 to 300 seconds. |
 | **Log MCP queries in history** | On | Record MCP queries in [query history](/features/query-history) |
 
 ### Authentication
 
 **Require authentication** defaults to on. If you switch it on with no tokens saved, TablePro generates a full-access token named "Default token" and shows it once. Copy it before closing the sheet. Generate, revoke, and delete tokens in the list below the toggle. See [Tokens](/external-api/tokens).
 
-### Network
+Switching it off accepts a local caller with no token, but only as a read-only one: it can read schema and run `SELECT`, and can never write, drop, or administer.
 
-**Allow remote connections** defaults to off. Enabling it makes the server reachable from other devices and turns on authentication and TLS automatically.
+### Clients and activity
 
-### Clients and Activity
-
-**Connect a Client…** shows setup steps and config snippets for Claude Code, Claude Desktop, Cursor, and Zed. **View Activity…** opens the Integrations Activity window with authentication events, tool calls, and connected clients.
+**Connect a Client…** shows setup steps and config snippets for Claude Code, Claude Desktop, Cursor, and Zed. **View Activity…** opens the Integrations Activity window with the activity log and the clients that have called in the last five minutes. **Disconnect** there revokes that client's token.
 
 ## Plugins
 
@@ -188,7 +213,7 @@ Activate, deactivate, or view your license here. TablePro checks the license sig
 
 iCloud sync and linked folders live on the same tab. See [iCloud Sync](/features/icloud-sync).
 
-## Settings Storage
+## Settings storage
 
 Settings live in `~/Library/Preferences/com.TablePro.plist`. Use **Reset All Settings to Defaults** on the General tab to reset them.
 

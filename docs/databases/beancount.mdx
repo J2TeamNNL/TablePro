@@ -1,9 +1,9 @@
 ---
 title: Beancount
-description: Open Beancount ledgers with TablePro
+description: Backend requirements, the table layout, source locations, includes, and BQL support
 ---
 
-TablePro opens `.beancount` ledgers as read-only, file-based connections. If the Beancount plugin is not installed yet, TablePro prompts you to download it before opening the ledger. The driver projects transactions, postings, accounts, prices, computed balances, balance assertions, the remaining directives, metadata, and source files into SQL tables for browsing and exports.
+Point TablePro at a `.beancount` file and you get a read-only SQL database over it. The driver projects the ledger into 17 tables: transactions, postings, accounts, prices, computed balances, balance assertions, the other directives, metadata, and the source files themselves. The plugin is not bundled with the app, so the first time you open a `.beancount` file you get a prompt to download it.
 
 The plugin uses either `rledger` (the rustledger project) or Python Beancount to parse ledgers. TablePro does not bundle either one, so install one yourself before opening a ledger. When both are available, TablePro uses `rledger`; Python Beancount is the fallback for browsing projected SQL tables.
 
@@ -55,13 +55,13 @@ launchctl setenv TABLEPRO_BEANCOUNT_BACKEND python
 
 <Steps>
   <Step title="Create a new connection">
-    Open TablePro and click **Create Connection...** or press **Cmd+N**.
+    Open TablePro and click **Create Connection…** or press `Cmd+N`.
   </Step>
   <Step title="Select Beancount">
     Choose **Beancount** from the database type list.
   </Step>
   <Step title="Choose your ledger file">
-    Click **Browse...** and select a `.beancount` file.
+    Click **Browse…** and select a `.beancount` file.
   </Step>
   <Step title="Connect">
     Click **Save & Connect** to open the ledger.
@@ -145,7 +145,7 @@ Table browsing, row counts, and pagination work for BQL results. BQL queries do 
 
 **BQL queries need rledger**: BQL always runs through `rledger`, even when the ledger opened on the Python backend. Install `rledger`, or drop the `BQL:` prefix and query the projected tables instead.
 
-**File does not exist**: The ledger moved or was renamed. Re-pick it with **Browse...** in the connection form.
+**File does not exist**: The ledger moved or was renamed. Re-pick it with **Browse…** in the connection form.
 
 **Beancount include cycle detected**: Two ledger files include each other. Break the loop in the source files.
 

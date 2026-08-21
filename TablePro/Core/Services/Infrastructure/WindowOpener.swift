@@ -12,12 +12,12 @@ import os
 internal final class WindowOpener {
     internal static let shared = WindowOpener()
 
-    private static let logger = Logger(subsystem: "com.TablePro", category: "WindowOpener")
+    nonisolated private static let logger = Logger(subsystem: "com.TablePro", category: "WindowOpener")
 
     @ObservationIgnored private var openWelcomeAction: (() -> Void)?
     @ObservationIgnored private var openConnectionFormAction: ((ConnectionFormRequest) -> Void)?
     @ObservationIgnored private var openIntegrationsActivityAction: (() -> Void)?
-    @ObservationIgnored private var openSettingsAction: (() -> Void)?
+    @ObservationIgnored private var openSettingsAction: ((SettingsPane?) -> Void)?
     @ObservationIgnored private var stagedDraftId: UUID?
     @ObservationIgnored private var pendingCalls: [() -> Void] = []
 
@@ -29,18 +29,15 @@ internal final class WindowOpener {
         perform { opener in
             guard let present = opener.openWelcomeAction else { return false }
             present()
-            NSApp.activate()
+            AppActivationPolicyController.shared.activate()
             return true
         }
     }
 
     internal func openSettings(tab: SettingsPane? = nil) {
-        if let tab {
-            AppStorageEnvironment.shared.defaults.set(tab.rawValue, forKey: PreferenceKeys.selectedSettingsPane.name)
-        }
         perform { opener in
             guard let present = opener.openSettingsAction else { return false }
-            present()
+            present(tab)
             return true
         }
     }
@@ -119,7 +116,7 @@ internal final class WindowOpener {
         drainPendingCalls()
     }
 
-    internal func setSettingsPresenter(_ present: @escaping () -> Void) {
+    internal func setSettingsPresenter(_ present: @escaping (SettingsPane?) -> Void) {
         openSettingsAction = present
         drainPendingCalls()
     }
@@ -128,6 +125,7 @@ internal final class WindowOpener {
     /// queues the call. Each window registers independently, so one that has already migrated
     /// to AppKit never waits on one that has not.
     private func perform(_ block: @escaping (WindowOpener) -> Bool) {
+        AppActivationPolicyController.shared.enterForeground()
         guard !block(self) else { return }
         Self.logger.notice("WindowOpener call queued; presenter not registered yet")
         pendingCalls.append { [weak self] in

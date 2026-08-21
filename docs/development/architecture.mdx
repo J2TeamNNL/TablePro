@@ -10,7 +10,7 @@ TablePro is built with:
 - **Swift Concurrency** (async/await, actors) for all async work
 - **Native C libraries** for database connectivity, linked as static `.a` files
 
-## Design Patterns
+## Design patterns
 
 ### MVVM
 
@@ -18,7 +18,7 @@ TablePro is built with:
 - **ViewModels**: `@Observable` classes
 - **Views**: SwiftUI, with AppKit bridging where needed
 
-### Protocol-Oriented Drivers
+### Protocol-oriented drivers
 
 All database connectivity goes through one protocol:
 
@@ -28,20 +28,20 @@ protocol DatabaseDriver: AnyObject {
     func disconnect()
     func execute(query: String) async throws -> QueryResult
     func fetchTables() async throws -> [TableInfo]
-    // ...
+    // …
 }
 ```
 
 No switch statements on database type. No hardcoded driver list. Plugins register themselves, and the factory resolves them by `DatabaseType.pluginTypeId`. `DatabaseType` is a string-based struct, not an enum, so unknown types from future plugins stay valid.
 
-### Actor Isolation
+### Actor isolation
 
 Thread-safe shared state uses Swift actors:
 
 ```swift
 actor SSHTunnelManager {
     private var tunnels: [UUID: SSHTunnel] = [:]
-    func createTunnel(connectionId: UUID, ...) async throws -> Int { ... }
+    func createTunnel(connectionId: UUID, …) async throws -> Int { … }
 }
 ```
 
@@ -51,13 +51,13 @@ actor SSHTunnelManager {
 |---------|--------|---------|
 | CodeEditSourceEditor | Vendored in `LocalPackages/` (with CodeEditTextView, CodeEditLanguages) | Tree-sitter code editor |
 | TableProCore | Local package in `Packages/` | Shared SwiftPM modules the macOS and iOS apps both use |
-| Sparkle | SPM, 2.9.0 | Auto-update with EdDSA signing |
+| Sparkle | SPM, 2.9.5+ | Auto-update with EdDSA signing |
 | OracleNIO | SPM, TablePro fork pinned by revision | Oracle wire protocol for OracleDriverPlugin |
 | rust-dameng | Cargo, TablePro fork pinned by revision | DM8 wire protocol for DamengDriverPlugin |
-| swift-certificates | SPM, 1.19.0 | Generates the MCP server's self-signed TLS certificate |
-| Yams | SPM, 5.4.0 | YAML parsing for project folder import |
+| swift-certificates | SPM, 1.19.0+ | X.509 types, linked by the app target |
+| Yams | SPM, 5.1.0+ | YAML parsing for project folder import |
 
-## Plugin System
+## Plugin system
 
 All database drivers are `.tableplugin` bundles loaded at runtime. This keeps the app binary small and makes adding new databases a matter of dropping in a bundle.
 
@@ -70,7 +70,7 @@ All database drivers are `.tableplugin` bundles loaded at runtime. This keeps th
 
 `Packages/TableProCore/Sources/TableProPluginKit` is a symlink to the same files, so edit only `Plugins/TableProPluginKit/`.
 
-### Driver Plugins
+### Driver plugins
 
 Five driver plugins ship inside the app bundle, covering nine database types:
 
@@ -110,9 +110,9 @@ The remaining 17 driver plugins are downloaded on demand from the [plugin regist
 
 TableProPluginKit builds with Swift Library Evolution (`BUILD_LIBRARY_FOR_DISTRIBUTION = YES`), so its public ABI is resilient. Plugins built against an older PluginKit keep loading under a newer app: the runtime fills unimplemented protocol requirements from their defaults.
 
-Additive changes (a new requirement with a default implementation, a new field added through a new initializer overload) need no version bump. Breaking changes bump `currentPluginKitVersion` (18, unchanged since 0.48.0) in `PluginManager.swift`, and the loader then rejects mismatched plugins cleanly. Run `scripts/check-pluginkit-abi.sh` before merging any change under `Plugins/TableProPluginKit/`. See [Plugin Development](/development/plugin-development) for the full rules.
+Additive changes (a new requirement with a default implementation, a new field added through a new initializer overload) need no version bump. Breaking changes bump `currentPluginKitVersion` in `PluginManager.swift`, and the loader then rejects mismatched plugins cleanly. Run `scripts/check-pluginkit-abi.sh` before merging any change under `Plugins/TableProPluginKit/`. See [Plugin Development](/development/plugin-development) for the full rules.
 
-### Opt-in Plugin Protocols
+### Opt-in plugin protocols
 
 Plugins can adopt protocols beyond `PluginDatabaseDriver` to expose extra capabilities. These are runtime-cast (`as?`), so plugins that do not conform keep working without an ABI bump.
 
@@ -124,7 +124,7 @@ Plugins can adopt protocols beyond `PluginDatabaseDriver` to expose extra capabi
 | `PluginPrincipalManagement` | Serve users, roles, and grants to the Users & Roles tab |
 | `PluginBrowseFilterProvider` | Describe how the sidebar's object filter behaves for this driver (glob, case sensitivity, type scopes) |
 
-## Key Components
+## Key components
 
 ### DatabaseManager
 
@@ -134,7 +134,7 @@ Connection pool and lifecycle management. Primary interface between UI and drive
 
 Pings active connections every 30 seconds. Auto-reconnects with exponential backoff on failure.
 
-### Change Tracking
+### Change tracking
 
 1. A cell edit is recorded by `DataChangeManager` as a pending change
 2. Save runs `SQLStatementGenerator`, which turns pending changes into INSERT, UPDATE, and DELETE statements
@@ -145,7 +145,7 @@ Pings active connections every 30 seconds. Auto-reconnects with exponential back
 
 The central coordinator for the main window. It is split across extension files in `Views/Main/Extensions/` (`MainContentCoordinator+Alerts`, `+Filtering`, `+Pagination`, and so on). New coordinator functionality goes in a new extension file, not the main file.
 
-### Autocomplete Engine
+### Autocomplete engine
 
 ```mermaid
 flowchart LR
@@ -160,11 +160,31 @@ flowchart LR
 - **SQLContextAnalyzer**: parses cursor position context (table ref, column ref, keyword)
 - **SQLSchemaProvider**: actor that caches and serves schema data
 
-### MCP Server
+### MCP server
 
-The MCP server lives under `Core/MCP/`. It layers up from Codable JSON-RPC 2.0 and SSE wire types. Two transports sit on top: an `NWListener` HTTP server bound to `127.0.0.1`, and a stdio bridge for the `tablepro-mcp` CLI. Above those are actor-based session, auth, and rate-limit stores, plus a dispatcher that runs each inbound request in its own task. Sessions expire after 15 minutes idle. The dispatcher serves 19 tools and accepts protocol versions `2025-03-26`, `2025-06-18`, and `2025-11-25`. See the [tool catalog](/external-api/mcp-tools) and [Versioning](/external-api/versioning).
+The MCP server lives under `Core/MCP/`, and it speaks Model Context Protocol revision `2026-07-28` plus two legacy revisions.
 
-## Data Flow
+| Layer | Directory | Role |
+|-------|-----------|------|
+| Wire | `Wire/` | Codable JSON-RPC 2.0, HTTP, and SSE types |
+| Transport | `Transport/` | `NWListener` HTTP server bound to `127.0.0.1`, plus the client transport the `tablepro-mcp` bridge uses |
+| Meta | `Meta/` | Protocol versions, per-request `_meta`, client and server capabilities |
+| Protocol | `Protocol/` | Dispatcher, method handlers, and the 46 tools |
+| Prompts, Completions, Subscriptions | `Prompts/`, `Completions/`, `Subscriptions/` | Prompt catalog rendered from the live schema, argument completion, and `subscriptions/listen` |
+| Legacy | `Legacy/` | `initialize`, `Mcp-Session-Id`, and the era adapter for older clients |
+| Auth and audit | `Auth/`, `RateLimit/`, `MCPAuditLogger.swift` | Bearer tokens, scopes, connection allowlists, lockouts, hash-chained audit log |
+
+`MCPProtocolDispatcher` is an actor. It resolves the era from the request (`_meta` declares the modern one, `Mcp-Session-Id` the legacy one), checks scopes, runs each handler in its own task under a 330-second deadline, and normalizes the result envelope: `resultType`, `serverInfo`, and the cache hints the six cacheable methods carry.
+
+The modern era is stateless, so it has no session store. Legacy sessions still live in `MCPLegacySessionStore`, capped at 16 with least-recently-used eviction, and are dropped when the server stops.
+
+`MCPServerManager` owns the lifecycle on the main actor: it binds a port (falling back to a kernel-assigned one), mints and rotates the bridge credential, writes the handshake file, and tears everything down through `MCPServerComposition`.
+
+Nothing in the server is reachable off the machine. It binds loopback and speaks plain HTTP, which the specification permits for a local server; there is no TLS and no remote mode.
+
+See [MCP Protocol](/external-api/mcp-protocol), the [tool catalog](/external-api/mcp-tools), and [Versioning](/external-api/versioning).
+
+## Data flow
 
 ### Connection
 
@@ -179,7 +199,7 @@ flowchart TD
     SSH --> Connected
 ```
 
-### Query Execution
+### Query execution
 
 ```mermaid
 flowchart TD
@@ -190,7 +210,7 @@ flowchart TD
     Result --> Grid["DataGridView"]
 ```
 
-## State Management
+## State management
 
 | Pattern | What | Where |
 |---------|------|-------|
@@ -198,6 +218,6 @@ flowchart TD
 | UserDefaults via `AppSettingsStorage` | User preferences | `Core/Storage`; a few view-local toggles use `@AppStorage` |
 | Keychain | Connection passwords | ConnectionStorage |
 | SQLite FTS5 | Query history (full-text search) | QueryHistoryStorage |
-| JSON files | Tab state persistence | TabStateStorage |
+| JSON files | Tab state persistence | `TabPersistenceCoordinator`, `TabDiskActor` |
 
 For the repository layout, see [Project Structure](/development/setup#project-structure).

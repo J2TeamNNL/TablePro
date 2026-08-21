@@ -7,18 +7,18 @@ Collections appear as tables in the sidebar. Documents display with top-level fi
 
 MongoDB is a registry plugin. Picking it in the **Choose a Database** sheet prompts to install; connecting to a saved MongoDB connection installs it without asking. You can also install **MongoDB Driver** from **Settings > Plugins > Browse**.
 
-## Quick Setup
+## Quick setup
 
 <Steps>
   <Step title="Create Connection">
-    Click **New Connection**, select **MongoDB**, enter hosts and credentials, and click **Create**
+    Click **Create Connection…**, select **MongoDB**, enter hosts and credentials, and click **Save & Connect**
   </Step>
   <Step title="Test Connection">
     Click **Test Connection** to verify
   </Step>
 </Steps>
 
-## Connection Settings
+## Connection settings
 
 | Field | Default | Notes |
 |-------|---------|-------|
@@ -28,7 +28,7 @@ MongoDB is a registry plugin. Picking it in the **Choose a Database** sheet prom
 | **Database** | - | The database to open on connect. Leave empty to browse them all |
 | **Auth Mechanism** | Default | SCRAM-SHA-1, SCRAM-SHA-256, X.509, or AWS IAM. In the Authentication section |
 
-Naming a **Database** opens straight into it and skips listing every database on the server, which is worth doing on a cluster with many of them. Leave it empty and TablePro opens the first non-system database it finds. **Cmd+K** switches to another either way. A database in a connection URL path (`mongodb://host:27017/mydb`) fills the same field.
+Naming a **Database** opens straight into it and skips listing every database on the server, which is worth doing on a cluster with many of them. Leave it empty and TablePro opens the first non-system database it finds. `Cmd+K` switches to another either way. A database in a connection URL path (`mongodb://host:27017/mydb`) fills the same field.
 
 **Database** is not the same as **Auth Database**: one says what you browse, the other says where your user account lives. They are linked in one direction. With **Auth Database** empty, a named **Database** is also what TablePro authenticates against, matching how a `/database` path works in a MongoDB connection string. So if your user lives in `admin` and you name a **Database**, set **Auth Database** to `admin` as well, or authentication fails. SRV connections are exempt and always authenticate against `admin` unless you say otherwise.
 
@@ -45,7 +45,7 @@ Leaving **Auth Database** empty authenticates against the database in the connec
 
 The **Use SRV Record** toggle in Advanced connects with the `mongodb+srv://` scheme. For hosts ending in `.mongodb.net`, TablePro enables SRV automatically and turns TLS on if the SSL mode is Disabled, since Atlas requires both. An Atlas connection needs only the cluster hostname, username, and password.
 
-## Replica Sets
+## Replica sets
 
 The **Hosts** field accepts multiple `host:port` pairs separated by commas (for example `host1:27017,host2:27017,host3:27017`). TablePro discovers the primary automatically and routes writes there. Set the replica set name in **Advanced**.
 
@@ -55,9 +55,9 @@ You can also paste a multi-host URI directly:
 mongodb://user:pass@host1:27017,host2:27017,host3:27017/db?replicaSet=rs0
 ```
 
-<Note>
+<Warning>
 Over an SSH tunnel TablePro connects to the first host only and drops the rest of the list. Replica set discovery and failover are off for that session.
-</Note>
+</Warning>
 
 ## SSL/TLS
 
@@ -78,15 +78,19 @@ See [Connection URL Reference](/databases/connection-urls) for all parameters.
 
 **Collection Browsing**: Sidebar shows all collections. Click to view documents in the data grid. Top-level fields render as columns, nested objects and arrays as formatted JSON, ObjectIds as strings. The grid schema is inferred by sampling documents.
 
-**Binary UUIDs**: A binary subtype 4 field renders as `UUID("8cd003eb-4a25-4324-9332-88fce2da0d1a")`. Subtype 3 is the older format the Java, C# and Python drivers each wrote with a different byte order, and nothing in the stored bytes says which one produced them. TablePro shows subtype 3 as `BinData(3, "...")` until you pick a byte order in **Legacy UUID Encoding** on the connection, then renders it as `LegacyJavaUUID("...")`, `LegacyCSharpUUID("...")`, or `LegacyPythonUUID("...")`. The names match `mongosh` 2.6 and Compass 1.49, so a copied value pastes into either.
+**Nested Field Filtering**: The filter bar's column picker lists the paths inside a nested object or an array of objects, so `customer.country` and `items.sku` can be filtered directly. A row on a field inside an array chooses between **any element** (dot notation, where two rows may be satisfied by two different array entries) and **same element**, which groups every row set to it into one `$elemMatch` so they must all match one entry. Filter values are compared as the type the field holds, so a range on a date, ObjectId or `NumberDecimal` field is sent as `$date`, `$oid` or `$numberDecimal` rather than as a string that MongoDB's type bracketing would never match. See [Filtering](/features/filtering#nested-fields).
+
+A field whose name contains a literal dot is left out of the picker: MongoDB reads the dot in a query as a path separator, so filtering it would address a different field. Reach it with `$getField` inside `$expr` in a raw filter or a query tab.
+
+**Binary UUIDs**: A binary subtype 4 field renders as `UUID("8cd003eb-4a25-4324-9332-88fce2da0d1a")`. Subtype 3 is the older format the Java, C# and Python drivers each wrote with a different byte order, and nothing in the stored bytes says which one produced them. TablePro shows subtype 3 as `BinData(3, "…")` until you pick a byte order in **Legacy UUID Encoding** on the connection, then renders it as `LegacyJavaUUID("…")`, `LegacyCSharpUUID("…")`, or `LegacyPythonUUID("…")`. The names match `mongosh` 2.6 and Compass 1.49, so a copied value pastes into either.
 
 The setting only changes how TablePro reads the bytes; it never rewrites what is stored. Picking the wrong encoding shows a valid-looking but wrong UUID, so match it to the driver that wrote the data. Filtering, editing and MQL export all use the same encoding, and a value you type back is written as binary with the subtype it came from. Pasting a connection URL that carries `uuidRepresentation=javaLegacy` sets it, and Copy URL includes it. Changing it takes effect on the next connect.
 
 **New Database**: The dialog asks for a database name and the name of its first collection. Both are required. MongoDB stores a database only once it holds a collection, so a name on its own would disappear as soon as the sidebar refreshed. The collection is created empty.
 
-**Views**: **New View** in the sidebar opens a query tab with a `db.createView("view_name", "source_collection", [pipeline])` template. Editing a view definition pre-fills a `db.runCommand({"collMod": ...})` command.
+**Views**: **New View** in the sidebar opens a query tab with a `db.createView("view_name", "source_collection", [pipeline])` template. Editing a view definition pre-fills a `db.runCommand({"collMod": …})` command.
 
-**Explain**: Press `Cmd+Option+E` on an MQL statement. TablePro converts `find`, `aggregate`, `countDocuments`, update, delete, and `findOneAnd*` calls into `db.runCommand({"explain": ..., "verbosity": "executionStats"})`.
+**Explain**: Press `Cmd+Option+E` on an MQL statement. TablePro converts `find`, `aggregate`, `countDocuments`, update, delete, and `findOneAnd*` calls into `db.runCommand({"explain": …, "verbosity": "executionStats"})`.
 
 **MQL Shell Queries**: Filters and pipelines are parsed as JSON and Extended JSON, not JavaScript. Quote every key, operators included: `{age: {$gte: 18}}` fails with a parse error. The editor has no comment syntax, so a `//` line becomes part of the statement.
 
@@ -124,9 +128,9 @@ Count documents:
 db.users.countDocuments({"role": "admin"})
 ```
 
-**Collection references**: Write `db.users`, `db["users"]`, or `db.getCollection("users")`. The bracket and `getCollection` forms take the name exactly as written, so use them for names that contain dots or spaces, start with a digit, or match a database method such as `stats` or `version`. Single quotes and backticks work in place of double quotes. `db.getSiblingDB(...)` is not supported: a query always runs against the database the connection is using.
+**Collection references**: Write `db.users`, `db["users"]`, or `db.getCollection("users")`. The bracket and `getCollection` forms take the name exactly as written, so use them for names that contain dots or spaces, start with a digit, or match a database method such as `stats` or `version`. Single quotes and backticks work in place of double quotes. `db.getSiblingDB(…)` is not supported: a query always runs against the database the connection is using.
 
-**Chained methods**: `.sort()`, `.limit()` and `.skip()` chain onto `find` and onto `aggregate`. On an aggregation they become `$sort`, `$skip` and `$limit` stages appended to the pipeline, in that order, which is what the cursor methods mean. Chaining onto a call that returns no cursor, such as `insertOne`, is an error, and so is a method the parser does not recognise. Nothing is dropped silently.
+**Chained methods**: `.sort()`, `.limit()` and `.skip()` chain onto `find` and onto `aggregate`. On an aggregation they become `$sort`, `$skip` and `$limit` stages appended to the pipeline, in that order, which is what the cursor methods mean. Chaining onto a call that returns no cursor, such as `insertOne`, is an error, and so is a method the parser does not recognize. Nothing is dropped silently.
 
 **Write options**: `updateOne`, `updateMany`, `replaceOne` and `findOneAndUpdate` take a third options document. `upsert`, `arrayFilters` and `hint` are passed to the server. The option used to be dropped without a word, so an upsert quietly did nothing.
 
@@ -140,7 +144,7 @@ The result reports `modifiedCount` and `upsertedCount`.
 
 **Autocomplete**: The editor suggests collections, methods, field names including nested paths such as `address.city`, and the `$` operators that are valid at the cursor. See [Autocomplete](/features/autocomplete#mongodb).
 
-**Supported methods**: collection-level `find`, `findOne`, `aggregate`, `countDocuments`/`count`, `insertOne`/`insertMany`, `updateOne`/`updateMany`, `replaceOne`, `deleteOne`/`deleteMany`, `findOneAndUpdate`/`findOneAndReplace`/`findOneAndDelete`, `createIndex`, `dropIndex`, `drop`; database-level `getCollectionNames`/`listCollections`, `createCollection`, `dropDatabase`, `version`, `stats`. Anything else goes through `db.runCommand({...})` or `db.adminCommand({...})`. Unlisted shell methods (for example `distinct` or `getUsers`) return an unsupported-method error.
+**Supported methods**: collection-level `find`, `findOne`, `aggregate`, `countDocuments`/`count`, `insertOne`/`insertMany`, `updateOne`/`updateMany`, `replaceOne`, `deleteOne`/`deleteMany`, `findOneAndUpdate`/`findOneAndReplace`/`findOneAndDelete`, `createIndex`, `dropIndex`, `drop`; database-level `getCollectionNames`/`listCollections`, `createCollection`, `dropDatabase`, `version`, `stats`. Anything else goes through `db.runCommand({…})` or `db.adminCommand({…})`. Unlisted shell methods (for example `distinct` or `getUsers`) return an unsupported-method error.
 
 ## Troubleshooting
 
@@ -152,11 +156,13 @@ The result reports `modifiedCount` and `upsertedCount`.
 
 **A collection is slow to open**: A sort or a filter on a field with no index makes MongoDB read every document, even when you only ask for 20 rows, because it has to look at all of them to find which 20 come first. Check the Structure tab for an index on the field you sorted or filtered by, and add one if it is missing. `Cmd+.` stops the query on the server.
 
-**The row total shows `~`**: That is an estimate read from collection metadata, which is instant. TablePro caps the automatic count at 5 seconds and keeps the estimate if the server takes longer, so browsing is never held up by counting. **Count exactly** runs a real count with your configured query timeout. Views and time-series collections have no metadata count, so their estimate can be missing.
+**The row total shows `~`**: That is an estimate read from collection metadata, which is instant. TablePro caps the automatic count at 5 seconds and keeps the estimate if the server takes longer, so browsing is never held up by counting. **Count Exactly** runs a real count with your configured query timeout. Views and time-series collections have no metadata count, so their estimate can be missing.
 
 ## Limitations
 
 - Transactions are not exposed. Statements always run standalone, on any topology.
 - The grid schema is inferred by sampling documents, not read from a validator.
+- Nested paths can be filtered but not sorted. Sorting works on the grid's own columns.
+- **same element** is offered for a field one array deep. A field inside an array inside another array needs nested `$elemMatch` operators, so those paths filter with dot notation only.
 - GridFS buckets are not browsable.
 - Change streams are unsupported.

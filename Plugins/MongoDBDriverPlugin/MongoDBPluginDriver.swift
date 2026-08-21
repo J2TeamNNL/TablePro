@@ -5,12 +5,16 @@
 
 import Foundation
 import os
+import TableProNumberFormatting
 import TableProPluginKit
 
 final class MongoDBPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     private let config: DriverConnectionConfig
     private var mongoConnection: MongoDBConnection?
     private var currentDb: String
+    private let columnKindLock = NSLock()
+    private var columnKindsByCollection: [String: [String: BsonValueKind]] = [:]
+    private var fieldPathKindsByCollection: [String: [String: BsonValueKind]] = [:]
 
     private static let logger = Logger(subsystem: "com.TablePro", category: "MongoDBPluginDriver")
 
@@ -295,6 +299,7 @@ final class MongoDBPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         let kinds = BsonDocumentFlattener.columnKinds(
             for: columns, documents: docs, representation: uuidRepresentation
         )
+        rememberColumnKinds(kinds, for: columns, collection: table)
 
         return columns.enumerated().map { index, name in
             let typeName = BsonDocumentFlattener.typeName(
@@ -444,7 +449,8 @@ final class MongoDBPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
             throw MongoDBPluginError.notConnected
         }
 
-        let filterJson = MongoDBQueryBuilder().buildFilterDocument(from: filters, logicMode: logicMode)
+        let filterJson = MongoDBQueryBuilder(columnKinds: filterKinds(for: table))
+            .buildFilterDocument(from: filters, logicMode: logicMode)
         let count = try await conn.countDocuments(
             database: currentDb, collection: table, filter: filterJson, background: background
         )
@@ -751,7 +757,7 @@ final class MongoDBPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         offset: Int,
         columnKinds: [String: PluginColumnKind]
     ) -> String? {
-        let builder = MongoDBQueryBuilder()
+        let builder = MongoDBQueryBuilder(columnKinds: filterKinds(for: table))
         return builder.buildFilteredQuery(
             collection: table, queryFilters: queryFilters, logicMode: logicMode,
             sortColumns: sortColumns, columns: columns, limit: limit, offset: offset
@@ -767,7 +773,9 @@ final class MongoDBPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         deletedRowIndices: Set<Int>,
         insertedRowIndices: Set<Int>
     ) -> [(statement: String, parameters: [PluginCellValue])]? {
-        let generator = MongoDBStatementGenerator(collectionName: table, columns: columns)
+        let generator = MongoDBStatementGenerator(
+            collectionName: table, columns: columns, columnKinds: columnKinds(for: table)
+        )
         return generator.generateStatements(
             from: changes, insertedRowData: insertedRowData,
             deletedRowIndices: deletedRowIndices, insertedRowIndices: insertedRowIndices
@@ -847,18 +855,22 @@ final class MongoDBPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
                     rows: [], rowsAffected: 0, executionTime: Date().timeIntervalSince(startTime)
                 )
             }
-            return buildPluginResult(from: result.docs, startTime: startTime, isTruncated: result.isTruncated)
+            return buildPluginResult(
+                from: result.docs, startTime: startTime, isTruncated: result.isTruncated, collection: collection
+            )
 
         case .findOne(let collection, let filter):
             let result = try await conn.find(
                 database: db, collection: collection, filter: filter,
                 sort: nil, projection: nil, skip: 0, limit: 1
             )
-            return buildPluginResult(from: result.docs, startTime: startTime)
+            return buildPluginResult(from: result.docs, startTime: startTime, collection: collection)
 
         case .aggregate(let collection, let pipeline):
             let result = try await conn.aggregate(database: db, collection: collection, pipeline: pipeline)
-            return buildPluginResult(from: result.docs, startTime: startTime, isTruncated: result.isTruncated)
+            return buildPluginResult(
+                from: result.docs, startTime: startTime, isTruncated: result.isTruncated, collection: collection
+            )
 
         case .countDocuments(let collection, let filter):
             let count = try await conn.countDocuments(
@@ -1045,7 +1057,8 @@ final class MongoDBPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     private func buildPluginResult(
         from documents: [[String: Any]],
         startTime: Date,
-        isTruncated: Bool = false
+        isTruncated: Bool = false,
+        collection: String = ""
     ) -> PluginQueryResult {
         if documents.isEmpty {
             return PluginQueryResult(
@@ -1059,6 +1072,8 @@ final class MongoDBPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         let kinds = BsonDocumentFlattener.columnKinds(
             for: columns, documents: documents, representation: uuidRepresentation
         )
+        rememberColumnKinds(kinds, for: columns, collection: collection)
+        rememberFieldPathKinds(from: documents, collection: collection)
         let typeNames = kinds.map { BsonDocumentFlattener.typeName(for: $0, representation: uuidRepresentation) }
         let rows = BsonDocumentFlattener.flatten(
             documents: documents, columns: columns, kinds: kinds, representation: uuidRepresentation
@@ -1097,12 +1112,55 @@ final class MongoDBPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
     private func prettyJson(_ value: Any) -> String {
         let sanitized = BsonDocumentFlattener.sanitizeForJson(value, representation: uuidRepresentation)
-        guard JSONSerialization.isValidJSONObject(sanitized),
-              let data = try? JSONSerialization.data(withJSONObject: sanitized, options: [.sortedKeys, .prettyPrinted]),
-              let json = String(data: data, encoding: .utf8) else {
+        guard let json = NumberText.json(
+            from: sanitized, prettyPrinted: true, preservesFloatingPointForm: true
+        ) else {
             return String(describing: value)
         }
-        return json.replacingOccurrences(of: "    ", with: "  ")
+        return json
+    }
+
+    private func rememberColumnKinds(_ kinds: [BsonValueKind], for columns: [String], collection: String) {
+        guard !collection.isEmpty else { return }
+        var byName: [String: BsonValueKind] = [:]
+        for (index, name) in columns.enumerated() where index < kinds.count {
+            byName[name] = kinds[index]
+        }
+        let key = columnKindKey(collection)
+        columnKindLock.withLock { columnKindsByCollection[key] = byName }
+    }
+
+    private func columnKinds(for collection: String) -> [String: BsonValueKind] {
+        let key = columnKindKey(collection)
+        return columnKindLock.withLock { columnKindsByCollection[key] ?? [:] }
+    }
+
+    /// Recorded from the documents a browse already fetched, on the session driver that will
+    /// build the filter. Sampling through `sampleFieldPaths` cannot do it: that call is routed
+    /// through `MetadataConnectionPool`, so it lands on a different driver instance whose cache
+    /// the filter path never reads.
+    private func rememberFieldPathKinds(from documents: [[String: Any]], collection: String) {
+        guard !collection.isEmpty, !documents.isEmpty else { return }
+        let sampled = Array(documents.prefix(MongoStreamProjection.sampleSize))
+        let kinds = BsonDocumentFlattener.fieldPathKinds(from: sampled, representation: uuidRepresentation)
+        guard !kinds.isEmpty else { return }
+        let key = columnKindKey(collection)
+        columnKindLock.withLock { fieldPathKindsByCollection[key] = kinds }
+    }
+
+    /// Kinds a filter can be typed against: the flat columns the grid shows, plus every nested
+    /// path the picker offers. Without the nested half, a filter on a nested Date or ObjectId is
+    /// compared as a string and MongoDB's type bracketing returns nothing.
+    private func filterKinds(for collection: String) -> [String: BsonValueKind] {
+        let key = columnKindKey(collection)
+        return columnKindLock.withLock {
+            (fieldPathKindsByCollection[key] ?? [:]).merging(columnKindsByCollection[key] ?? [:]) { _, top in top }
+        }
+    }
+
+    /// Two databases can hold a collection of the same name with different field types.
+    private func columnKindKey(_ collection: String) -> String {
+        "\(currentDb)\u{0}\(collection)"
     }
 }
 

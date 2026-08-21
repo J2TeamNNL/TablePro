@@ -55,9 +55,27 @@ final class DamengConnectionRecoveryTests: XCTestCase {
         XCTAssertEqual(tickets.cancel(fresh), .interruptConnection)
     }
 
+    /// Rebuilding the connection clears the cancellations with everything else, so a statement
+    /// whose caller had already cancelled it must not become runnable again. A cancelled Save
+    /// applying after the fact is the failure this prevents.
+    func testARebuildDoesNotResurrectACancelledStatement() {
+        var tickets = DamengStatementTickets()
+        let running = tickets.issue()
+        let queued = tickets.issue()
+        XCTAssertTrue(tickets.beginExecuting(running))
+        XCTAssertEqual(tickets.cancel(queued), .dropQueued)
+
+        tickets.reset()
+
+        XCTAssertFalse(tickets.beginExecuting(queued))
+    }
+
     func testOnlyReadsAreSentAgainOnARebuiltConnection() {
+        let driver = DamengPluginDriver(config: DriverConnectionConfig(
+            host: "127.0.0.1", port: 5_236, username: "SYSDBA", password: "test-only", database: "APP"
+        ))
         for query in ["SELECT 1 FROM DUAL", "  show tables", "DESC APP.CUSTOMER", "EXPLAIN SELECT 1"] {
-            XCTAssertEqual(DamengPluginDriver.replayPolicy(for: query), .replayable, query)
+            XCTAssertEqual(driver.replayPolicy(for: query), .replayable, query)
         }
 
         // A write may already have committed before the abandoned reply was dropped, so it is
@@ -73,13 +91,32 @@ final class DamengConnectionRecoveryTests: XCTestCase {
             "WITH c AS (SELECT 1) SELECT * FROM c",
             "VALUES(1)"
         ] {
-            XCTAssertEqual(DamengPluginDriver.replayPolicy(for: query), .reportFailure, query)
+            XCTAssertEqual(driver.replayPolicy(for: query), .reportFailure, query)
         }
     }
 
     func testAReadIsStillRecognisedBehindAComment() {
+        let driver = DamengPluginDriver(config: DriverConnectionConfig(
+            host: "127.0.0.1", port: 5_236, username: "SYSDBA", password: "test-only", database: "APP"
+        ))
         XCTAssertEqual(
-            DamengPluginDriver.replayPolicy(for: "-- reload\n/* nested /* block */ */ SELECT 1 FROM DUAL"),
+            driver.replayPolicy(for: "-- reload\n/* nested /* block */ */ SELECT 1 FROM DUAL"),
+            .replayable
+        )
+    }
+
+    /// A script now really executes, so classifying it on its leading keyword alone would
+    /// replay the write that follows the read.
+    func testAScriptIsOnlyReplayableWhenEveryStatementIsARead() {
+        let driver = DamengPluginDriver(config: DriverConnectionConfig(
+            host: "127.0.0.1", port: 5_236, username: "SYSDBA", password: "test-only", database: "APP"
+        ))
+        XCTAssertEqual(
+            driver.replayPolicy(for: "SELECT 1 FROM DUAL; DELETE FROM \"APP\".\"T\""),
+            .reportFailure
+        )
+        XCTAssertEqual(
+            driver.replayPolicy(for: "SELECT 1 FROM DUAL; SELECT 2 FROM DUAL"),
             .replayable
         )
     }

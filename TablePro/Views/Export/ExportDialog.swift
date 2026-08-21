@@ -7,12 +7,15 @@
 //
 
 import AppKit
+import os
 import SwiftUI
 import TableProPluginKit
 import UniformTypeIdentifiers
 
 /// Main export dialog view
 struct ExportDialog: View {
+    private static let logger = Logger(subsystem: "com.TablePro", category: "ExportDialog")
+
     @Binding var isPresented: Bool
     let mode: ExportMode
     var sidebarTables: [TableInfo] = []
@@ -23,11 +26,17 @@ struct ExportDialog: View {
     @State private var databaseItems: [ExportDatabaseItem] = []
     @State private var isLoading = true
     @State private var isExporting = false
+    @State private var exportStartedAt: ContinuousClock.Instant?
     @State private var showProgressDialog = false
     @State private var showSuccessDialog = false
     @State private var exportedFileURL: URL?
     @State private var settingsSnapshot: PluginSettingsSnapshot?
     @State private var exportSucceeded = false
+
+    /// The window this dialog is hosted in, used for presenting its alerts and panels.
+    /// Avoids `NSApp.keyWindow`, which when a result is presented is the progress sheet being
+    /// torn down in the same transaction, and AppKit ends a sheet's children with it (#2314).
+    @State private var hostWindow: NSWindow?
 
     // MARK: - User Preferences
 
@@ -91,6 +100,11 @@ struct ExportDialog: View {
         }
         .frame(width: dialogWidth)
         .background(Color(nsColor: .windowBackgroundColor))
+        .background {
+            WindowAccessor { window in
+                hostWindow = window
+            }
+        }
         .onAppear {
             let available = availableFormats
             if let lastFormatId = TransferDialogStorage.shared.loadLastExportFormatId(),
@@ -147,7 +161,7 @@ struct ExportDialog: View {
         }
         .onChange(of: showSuccessDialog) { _, isShowing in
             guard isShowing else { return }
-            TransferResultAlert.presentExportSuccess(window: NSApp.keyWindow) { choice in
+            TransferResultAlert.presentExportSuccess(window: hostWindow) { choice in
                 showSuccessDialog = false
                 if choice == .openFolder {
                     openContainingFolder()
@@ -238,7 +252,7 @@ struct ExportDialog: View {
                     Spacer()
                     ProgressView()
                         .scaleEffect(0.8)
-                    Text("Loading databases...")
+                    Text("Loading databases…")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .padding(.top, 8)
@@ -382,7 +396,7 @@ struct ExportDialog: View {
                 }
             }
 
-            Button("Export...") {
+            Button("Export…") {
                 Task {
                     await performExport()
                 }
@@ -473,6 +487,25 @@ struct ExportDialog: View {
         exportSucceeded = true
         TransferDialogStorage.shared.saveLastExportFormatId(config.formatId)
         settingsSnapshot = nil
+        reportExportFinished(.succeeded(OperationSummary(fileURL: exportedFileURL)))
+    }
+
+    /// Both export entry points converge here, so the completion is reported once whichever route
+    /// ran. Cancellation is caught separately by each and deliberately reports nothing.
+    private func reportExportFinished(_ outcome: OperationOutcome) {
+        guard let startedAt = exportStartedAt else { return }
+        exportStartedAt = nil
+        OperationCompletionReporter.shared.report(
+            OperationCompletion(
+                kind: .dataExport,
+                owner: .connection(connection.id),
+                connectionId: connection.id,
+                connectionName: connection.name,
+                databaseName: exportScope?.database,
+                elapsed: startedAt.duration(to: .now),
+                outcome: outcome
+            )
+        )
     }
 
     /// Instantly populate the current database from sidebar tables (no network).
@@ -640,7 +673,7 @@ struct ExportDialog: View {
             AlertHelper.showErrorSheet(
                 title: String(localized: "Export Error"),
                 message: String(format: String(localized: "Failed to load databases: %@"), error.localizedDescription),
-                window: nil
+                window: hostWindow
             )
         }
     }
@@ -706,7 +739,10 @@ struct ExportDialog: View {
 
     @MainActor
     private func performExport() async {
-        guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
+        guard let window = hostWindow else {
+            Self.logger.warning("No host window captured, cannot present the file panel")
+            return
+        }
 
         let savePanel = NSSavePanel()
         savePanel.canCreateDirectories = true
@@ -767,10 +803,11 @@ struct ExportDialog: View {
     }
 
     private func showExportError(_ error: Error) {
+        reportExportFinished(.failed(reason: error.localizedDescription))
         AlertHelper.showErrorSheet(
             title: String(localized: "Export Error"),
             message: error.localizedDescription,
-            window: nil
+            window: hostWindow
         )
     }
 
@@ -783,6 +820,7 @@ struct ExportDialog: View {
         let route = DatabaseManager.shared.executionRoute(for: scope)
 
         isExporting = true
+        exportStartedAt = .now
         exportedFileURL = url
         showProgressDialog = true
 
@@ -835,6 +873,7 @@ struct ExportDialog: View {
     @MainActor
     private func startQueryResultsExport(to url: URL) async {
         isExporting = true
+        exportStartedAt = .now
         exportedFileURL = url
         showProgressDialog = true
 
@@ -858,6 +897,7 @@ struct ExportDialog: View {
             default:
                 showProgressDialog = false
                 isExporting = false
+                exportStartedAt = nil
                 return
             }
 

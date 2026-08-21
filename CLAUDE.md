@@ -18,7 +18,7 @@ These govern every decision about code, architecture, tooling and process:
 
 ## Project Overview
 
-TablePro is a native macOS database client (SwiftUI + AppKit), a fast, lightweight alternative to TablePlus. macOS 14.0+, `SWIFT_VERSION = 5.0` (`Configs/Base.xcconfig`), Universal Binary (arm64 + x86_64).
+TablePro is a native macOS database client (SwiftUI + AppKit), a fast, lightweight alternative to TablePlus. macOS 14.0+, `SWIFT_VERSION = 6.0` (`Configs/Base.xcconfig`), Universal Binary (arm64 + x86_64).
 
 - **Source**: `TablePro/` holds `Core/` (business logic, services), `Views/` (UI), `Models/` (data structures), `ViewModels/`, `Extensions/` and `Theme/`
 - **Plugins**: `Plugins/` holds the `.tableplugin` bundles plus the `TableProPluginKit` shared framework.
@@ -27,6 +27,7 @@ TablePro is a native macOS database client (SwiftUI + AppKit), a fast, lightweig
 - **C bridges**: Each plugin contains its own C bridge module (e.g., `Plugins/MySQLDriverPlugin/CMariaDB/`, `Plugins/PostgreSQLDriverPlugin/CLibPQ/`)
 - **Static libs**: `Libs/` holds pre-built `.a` files and `Libs/ios/` holds the iOS xcframeworks. Both are downloaded by `scripts/download-libs.sh` and are not in git.
 - **SPM deps**: declared in `project.yml`. Vendored local packages under `LocalPackages/` (CodeEditSourceEditor, CodeEditTextView, CodeEditLanguages) and `Packages/` (TableProCore, TableProOracle); remote packages are Sparkle, swift-certificates and Yams. Revisions are pinned by the tracked `Package.resolved` inside each generated `.xcodeproj`.
+    - `SWIFT_VERSION` in `Configs/Base.xcconfig` sets the language mode for the Xcode-native targets only. A SwiftPM package takes its mode from its own manifest, so `Packages/TableProCore` and `Packages/TableProOracle` carry `swift-tools-version: 6.0` of their own. The vendored `LocalPackages/` forks stay on 5.9 so they can still take upstream changes, and a remote dependency keeps whatever its own manifest says. Never pass `SWIFT_VERSION=` on an `xcodebuild` command line to test a language-mode change: the override reaches the package targets too and reports their errors as yours.
 
 ## Build & Development Commands
 
@@ -112,7 +113,7 @@ All database drivers are `.tableplugin` bundles loaded at runtime by `PluginMana
 - **DatabaseManager** (`Core/Database/DatabaseManager.swift`), connection pool, lifecycle, primary interface for views/coordinators
 - **ConnectionHealthMonitor**: 30s ping, auto-reconnect with exponential backoff
 
-When adding a new driver: create a new plugin bundle under `Plugins/`, implement `DriverPlugin` + `PluginDatabaseDriver`, add the target to `project.yml`, add `DatabaseType` static constant, add a `case` arm to the `case "$PLUGIN_NAME"` block in the `Resolve plugin info` step of `.github/workflows/build-plugin.yml`, add row to `docs/index.mdx` supported databases table, and add CHANGELOG entry. See `docs/development/plugin-development.mdx` and `docs/development/plugin-registry.mdx` for details.
+When adding a new driver: create a new plugin bundle under `Plugins/`, implement `DriverPlugin` + `PluginDatabaseDriver`, add the target to `project.yml`, add `DatabaseType` static constant, add an entry to `.github/plugin-registry.json`, add row to `docs/index.mdx` supported databases table, and add CHANGELOG entry. See `docs/development/plugin-development.mdx` and `docs/development/plugin-registry.mdx` for details.
 
 When adding a new method to the driver protocol: add to `PluginDatabaseDriver` (with default implementation), then update `PluginDriverAdapter` to bridge it to `DatabaseDriver`. This is an additive, ABI-safe change (see below) and needs no version bump.
 
@@ -211,6 +212,8 @@ To ship one: add the record type or field in CloudKit Console (or `xcrun cktool 
 
 **A MongoDB update or delete is anchored on `_id` or it does not run**: `generateDelete` used to fall back to a filter built from the remaining columns, which silently dropped every value it could not stringify (all binary) and then `deleteOne`d the first partial match, so a document with a binary `_id` could delete a different document. Both paths now skip with a logged warning instead, matching what `generateUpdate` already did.
 
+**Redis Cluster routing follows the server's own answer, and the curated table is only a fallback**: `RedisCommandRouting` fetches `COMMAND` once at connect, which supplies key positions on every Redis and, from Redis 7, the `request_policy` / `response_policy` tips that say which commands fan out and how their replies combine. A policy lives on the *subcommand* entry, not the container (`COMMAND INFO config` carries no tips at all; `config|set` is what says `all_nodes`), so the table is keyed `container|sub`. Redis 6 reports no tips, so a parsed reply is merged *over* the curated table rather than replacing it, or `DBSIZE`, `KEYS` and `FLUSHDB` would each go to one shard of a cluster and report success. The curated table is a hand-written list that has to agree with Redis and that nothing at runtime checks, so `scripts/check-redis-command-routing.sh [host] [port]` diffs it against a live Redis 7+; it found 32 disagreements the first time it ran, including a container command hashed on its literal subcommand name and `MSETNX` marked splittable when splitting it breaks the guarantee it exists for. Two rules follow. A container command takes no key of its own, so `OBJECT`, `MEMORY` and `CONFIG` declare no key positions and their keyed subcommands are listed separately, at the index the key sits in the *full* argument list (`OBJECT ENCODING k` puts it at 2, not 1). And an unknown command is routed as keyless rather than by hashing `argv[1]`: a keyless container like `SCRIPT LOAD` answers `+OK` from one node and never sends a `MOVED` to correct the guess.
+
 ### Main Coordinator Pattern
 
 `MainContentCoordinator` is the central coordinator, split across 51 extension files in `Views/Main/Extensions/` (e.g., `+Alerts`, `+Filtering`, `+Pagination`, `+RowOperations`). When adding coordinator functionality, add a new extension file rather than growing the main file.
@@ -278,7 +281,9 @@ When approaching limits: extract into `TypeName+Category.swift` extension files 
 
 These are **non-negotiable**, never skip them:
 
-1. **CHANGELOG.md**: Follow [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). Update under `[Unreleased]` using the canonical sections: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`. Do **not** add a "Fixed" entry for fixing something that is itself still unreleased; fold the fix into the Added or Changed entry instead. Documentation-only changes (`docs/`, `CLAUDE.md`, `CHANGELOG.md` formatting) do **not** need a CHANGELOG entry. Each entry is one line, user-facing, with no file paths, class names, or method signatures; reference IDs go in parens at the end: `(#1234)`.
+1. **CHANGELOG.md**: Follow [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). Update under `[Unreleased]` using the canonical sections: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`. Each section appears **at most once per version, in that order**; a second `### Security` under one version is a defect, not a second topic. Do **not** add a "Fixed" entry for fixing something that is itself still unreleased; fold the fix into the Added or Changed entry instead. Documentation-only changes (`docs/`, `CLAUDE.md`, `CHANGELOG.md` formatting) do **not** need a CHANGELOG entry.
+
+    **Entry shape**: a changelog is a curated list of notable changes, not the explanation of them. One entry is **one sentence, two at the outside, and under 200 characters**. State what changed and, where it is not obvious, what it does now instead. No file paths, class names, or method signatures; reference IDs go in parens at the end: `(#1234)`. The reasoning, the mechanism and the before-and-after belong in the PR body, which is where a reader who wants them can find them. Two entries describing one change get merged, not listed twice. 0.67.0 arrived with 211 entries averaging 300 characters, one of them 1,685, and had to be rewritten wholesale at release time.
 
 2. **Localization**: Use `String(localized:)` for new user-facing strings in computed properties, AppKit code, alerts, and error descriptions. SwiftUI view literals (`Text("literal")`, `Button("literal")`) auto-localize. Do NOT localize technical terms (font names, database types, SQL keywords, encoding names). Never use `String(localized:)` with string interpolation, `String(localized: "Preview \(name)")` creates a dynamic key that never matches the strings catalog. Use `String(format: String(localized: "Preview %@"), name)`.
 
@@ -338,8 +343,10 @@ If anything matches, rewrite before committing.
 
 ## CI/CD
 
-GitHub Actions (`.github/workflows/build.yml`) triggered by `v*` tags. The `release` job needs all five of `lint`, `test`, `build-arm64`, `build-x86_64` and `registry-readiness`, so a red test suite or a registry missing a compatible plugin binary blocks the tag. It produces the DMG and ZIP plus Sparkle signatures, and release notes are auto-extracted from `CHANGELOG.md`.
+GitHub Actions (`.github/workflows/build.yml`) triggered by `v*` tags. The `release` job needs all four of `lint`, `test`, `build` (a matrix over arm64 and x86_64) and `registry-readiness`, so a red test suite or a registry missing a compatible plugin binary blocks the tag. It produces the DMG and ZIP plus Sparkle signatures, and release notes are auto-extracted from `CHANGELOG.md`.
+
+**Repo hygiene** (`.github/workflows/repo-hygiene.yml`): runs `actionlint` over every workflow (which shells out to `shellcheck` for each inline `run:` block, the only way those get checked), `shellcheck --severity=warning` over every script, and the plugin manifest check. Ubuntu, under a minute, free on a public repo. The scripts hold at zero warning-level findings; the remaining informational ones are almost all `SC2012`.
 
 **Plugin CI** (`.github/workflows/build-plugin.yml`): triggered by `plugin-*-v*` tags or `workflow_dispatch`. The dispatch input accepts comma-separated `tag:pluginKitVersion` pairs; if `:pluginKitVersion` is omitted, the workflow reads `currentPluginKitVersion` from `PluginManager.swift`. Registry update logic lives in `.github/scripts/update-registry.py` (atomic write, per-binary `pluginKitVersion`, prune-old policy). Use `scripts/release-all-plugins.sh <version>` for bulk re-release after an ABI bump.
 
-**Plugin tag naming**: Tag names must match the `case "$PLUGIN_NAME"` mapping in the CI workflow's `Resolve plugin info` step. Notable non-obvious mappings: `CloudflareD1DriverPlugin` → `plugin-cloudflare-d1-v*`, `EtcdDriverPlugin` → `plugin-etcd-v*`. Check existing tags with `git tag -l "plugin-*"` before creating new ones.
+**Plugin tag naming**: The slug in a tag must be a key in `.github/plugin-registry.json`, which maps it to the target and the release metadata. Notable non-obvious mappings: `CloudflareD1DriverPlugin` → `plugin-cloudflare-d1-v*`, `EtcdDriverPlugin` → `plugin-etcd-v*`. Check existing tags with `git tag -l "plugin-*"` before creating new ones.

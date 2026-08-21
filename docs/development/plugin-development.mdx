@@ -3,7 +3,7 @@ title: Plugin Development
 description: Write a database driver plugin, implement the PluginKit protocols, and package it as a .tableplugin bundle
 ---
 
-A TablePro database driver is a `.tableplugin` bundle built against **TableProPluginKit** (`Plugins/TableProPluginKit/`). You implement two protocols: `DriverPlugin` describes the database (name, port, capabilities, SQL dialect) and creates driver instances; `PluginDatabaseDriver` is the connection itself (connect, query, fetch schema). The app bridges your driver to its internal `DatabaseDriver` protocol through `PluginDriverAdapter` and resolves it by database type ID, so a working plugin gets the full UI: connection form, sidebar, data grid, editor, import and export.
+`DriverPlugin` describes the database (name, port, capabilities, SQL dialect) and creates driver instances. `PluginDatabaseDriver` is the connection itself: connect, query, fetch schema. Implement both in a `.tableplugin` bundle linked against **TableProPluginKit** (`Plugins/TableProPluginKit/`). `PluginDriverAdapter` then bridges your driver to the app's internal `DatabaseDriver` protocol and resolves it by database type ID, so a working plugin gets the full UI: connection form, sidebar, data grid, editor, import and export.
 
 The best starting point is an existing plugin. `Plugins/SurrealDBDriverPlugin/` is a compact reference with no C bridge: it talks HTTP, implements the schema-aware query-building hooks, and ships a custom editor language.
 
@@ -13,7 +13,7 @@ A plugin is a macOS loadable bundle target with `WRAPPER_EXTENSION = tableplugin
 
 | Key | Type | Required | Purpose |
 |-----|------|----------|---------|
-| `TableProPluginKitVersion` | integer | Yes | PluginKit ABI version the plugin was built against (18, unchanged since 0.48.0) |
+| `TableProPluginKitVersion` | integer | Yes | PluginKit ABI version the plugin was built against (19) |
 | `TableProProvidesDatabaseTypeIds` | array of strings | Recommended | Database type IDs the plugin serves. Enables lazy loading. |
 | `TableProMinAppVersion` | string | No | Loader rejects the plugin on older app versions |
 | `CFBundleShortVersionString` | string | Yes | Plugin version, used for registry update checks |
@@ -115,7 +115,7 @@ Link the XCFramework as **Do Not Embed**. The app supplies TableProPluginKit at 
 
 Publishing to TablePro's registry takes two steps in this repo:
 
-1. Add a case for your plugin to the `case "$PLUGIN_NAME"` block in the `Resolve plugin info` step of `.github/workflows/build-plugin.yml`: target name, bundle ID, display name, summary, database type IDs, icon, category, homepage. Without it the workflow exits with `Unknown plugin name`.
+1. Add an entry for your plugin to `.github/plugin-registry.json`, keyed by the slug its tag will use: target, bundle name, bundle ID, whether it is also bundled in the app, display name, summary, database type IDs, icon, category, homepage. Without one the release workflow stops with `Unknown plugin`. `icon` and `databaseTypeIds` must match what your `DriverPlugin` class declares; `scripts/ci/check-plugin-manifest.py` fails the release if they drift.
 2. Push the tag `plugin-<name>-v<version>`. CI builds both architectures, signs, notarizes, and updates `plugins.json`.
 
 CI signs with TablePro's own certificate, so a third-party plugin ships through a pull request, not a tag of your own. See [Plugin Registry](/development/plugin-registry) for the manifest format, the self-describing `metadata` block, and the publishing flow.

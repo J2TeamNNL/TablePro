@@ -9,22 +9,22 @@ Query Insights needs a [Starter license](/features/licensing). Everything it sho
 
 Query history answers "what did I run". Insights answers "what is worth my attention". It reads the same local SQLite database and summarizes it.
 
-Open it from **Database** > **Query Insights**. It opens as a tab, one per connection, and reuses the existing tab if you already have one open.
+Open it from **Database > Query Insights**. It opens as a tab, one per connection, and reuses the existing tab if you already have one open.
 
 <Frame caption="Query Insights: summary, activity chart, and the ranked panels below it">
   <img className="block dark:hidden" src="/images/query-insights.png" alt="Query Insights tab" />
   <img className="hidden dark:block" src="/images/query-insights-dark.png" alt="Query Insights tab" />
 </Frame>
 
-## Queries Are Grouped by Shape
+## Queries are grouped by shape
 
 `SELECT * FROM users WHERE id = 1` and `SELECT * FROM users WHERE id = 2` are the same query run twice, not two queries run once. Insights strips the values out of every statement and groups by what is left:
 
 | Written | Counted as |
 |---------|------------|
 | `WHERE id = 1` and `WHERE id = 2` | `WHERE id = ?` |
-| `IN (1, 2)` and `IN (1, 2, 3, 4)` | `IN (...)` |
-| `VALUES (1, 'a')` and `VALUES (1, 'a'), (2, 'b')` | `VALUES (...)` |
+| `IN (1, 2)` and `IN (1, 2, 3, 4)` | `IN (…)` |
+| `VALUES (1, 'a')` and `VALUES (1, 'a'), (2, 'b')` | `VALUES (…)` |
 | `select * from t` and `SELECT * FROM t` | one shape |
 | the same query with and without comments | one shape |
 
@@ -32,9 +32,9 @@ This is the same idea as PostgreSQL's `pg_stat_statements` and MySQL's statement
 
 Two things are deliberately **not** merged. Table and column names keep their capitalization, because on a case-sensitive server `Orders` and `orders` are different tables and merging them would report a wrong count. And numbers inside a name stay part of the name, so `events_2025` and `events_2026` are counted separately.
 
-Each row shows the shape, not the literal query you ran. **Copy Query** and **Load in Editor** in the right-click menu give you the most recent real query in the group, values and all.
+Each row shows the shape, not the literal query you ran. **Copy Query** and **Load in Editor** in the right-click menu give you the most recent real query in the group, values and all. It always comes from a run the row is actually counting: the connection, the sources and the date range you picked all apply to it, so a matching query run somewhere you filtered out never supplies the values. In **Failures** it comes from a run that failed, which is the one that produced the error shown beside it.
 
-## The Panels
+## The panels
 
 **Summary** across the top: how many queries ran, what share failed, the average duration, and the total time spent waiting.
 
@@ -72,7 +72,7 @@ There is no outcome filter, on purpose. Hiding failed queries would make the fai
 
 Insights refreshes itself as you run queries. The refresh button is there for when you want it now.
 
-## What It Cannot Tell You
+## What it cannot tell you
 
 It only knows what your Mac recorded. Queries run before you installed TablePro, run by other people, or run while [capture was paused](/features/query-history#pausing) are not in it. Queries pruned by your [retention settings](/features/query-history#storage-and-retention), 10,000 entries and 90 days by default, are gone too, so a long **All Time** range does not reach further back than retention allows.
 

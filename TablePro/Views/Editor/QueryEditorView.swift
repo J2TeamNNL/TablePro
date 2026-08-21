@@ -29,10 +29,14 @@ struct QueryEditorView: View {
     var claimFocusOnAppear: Bool = false
     var onFocusClaimed: (() -> Void)?
     var restoredCursorRange: NSRange?
+    var pendingStatementJump: StatementAnchor?
+    var onStatementJumpHandled: (() -> Void)?
     var restoredFoldRanges: [Range<Int>]?
     var onFoldRangesChanged: (([Range<Int>]) -> Void)?
     var onCloseTab: (() -> Void)?
     var onExecuteQuery: (() -> Void)?
+    var onRunStatement: ((String, Int) -> Bool)?
+    var isExecuting: Bool = false
     var onExplain: ((ExplainVariant?) -> Void)?
     var onAIExplain: ((String) -> Void)?
     var onAIOptimize: ((String) -> Void)?
@@ -77,11 +81,15 @@ struct QueryEditorView: View {
                 claimFocusOnAppear: claimFocusOnAppear,
                 onFocusClaimed: onFocusClaimed,
                 restoredCursorRange: restoredCursorRange,
+                pendingStatementJump: pendingStatementJump,
+                onStatementJumpHandled: onStatementJumpHandled,
                 restoredFoldRanges: restoredFoldRanges,
                 onFoldRangesChanged: onFoldRangesChanged,
                 vimMode: $vimMode,
                 onCloseTab: onCloseTab,
                 onExecuteQuery: onExecuteQuery,
+                onRunStatement: onRunStatement,
+                isExecuting: isExecuting,
                 onAIExplain: onAIExplain,
                 onAIOptimize: onAIOptimize,
                 onSaveAsFavorite: onSaveAsFavorite

@@ -19,7 +19,8 @@ extension MainContentCoordinator {
             return
         }
         guard let statement = explainStatement(in: tab) else { return }
-        guard let request = explainRequest(variant: variant, statement: statement) else {
+        let anchor = tab.tabType == .table ? nil : StatementAnchor(statement)
+        guard let request = explainRequest(variant: variant, statement: statement.sql) else {
             tabManager.mutate(at: index) {
                 $0.execution.errorMessage = String(
                     localized: "EXPLAIN is not supported for this database type."
@@ -30,7 +31,7 @@ extension MainContentCoordinator {
 
         let level = safeModeLevel
         guard level.appliesToAllQueries, level.requiresConfirmation else {
-            run(request)
+            run(request, anchor: anchor)
             return
         }
 
@@ -47,36 +48,46 @@ extension MainContentCoordinator {
                 )
             )
             guard case .authorized = decision else { return }
-            run(request)
+            run(request, anchor: anchor)
         }
     }
 
     // MARK: - Request
 
-    private func explainStatement(in tab: QueryTab) -> String? {
+    /// The statement EXPLAIN will describe, and where it sits in the tab's query.
+    ///
+    /// Resolved the same way a run resolves it, so the plan is anchored to the statement the reader would have run.
+    /// A table tab's query is generated rather than typed, so its offset is meaningless and the caller drops it.
+    private func explainStatement(in tab: QueryTab) -> SQLStatementScanner.ExecutableStatement? {
         let fullQuery = tab.content.query
 
         let sql: String
+        let sourceOffset: Int
         if tab.tabType == .table {
             sql = fullQuery
+            sourceOffset = 0
         } else if let firstCursor = cursorPositions.first, firstCursor.range.length > 0 {
             let nsQuery = fullQuery as NSString
             let clampedRange = NSIntersectionRange(
                 firstCursor.range,
                 NSRange(location: 0, length: nsQuery.length)
             )
-            sql = nsQuery.substring(with: clampedRange).trimmingCharacters(in: .whitespacesAndNewlines)
+            sql = nsQuery.substring(with: clampedRange)
+            sourceOffset = clampedRange.location
         } else {
-            sql = SQLStatementScanner.statementAtCursor(
+            let statement = SQLStatementScanner.locatedStatementAtCursor(
                 in: fullQuery,
                 cursorPosition: cursorPositions.first?.range.location ?? 0,
                 dialect: sqlDialect
             )
+            sql = statement.sql
+            sourceOffset = statement.offset
         }
 
-        let trimmed = sql.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        return SQLStatementScanner.allStatements(in: trimmed, dialect: sqlDialect).first
+        return SQLStatementScanner
+            .executableStatements(in: sql, dialect: sqlDialect)
+            .first?
+            .offset(by: sourceOffset)
     }
 
     private func explainRequest(variant: ExplainVariant?, statement: String) -> ExplainRequest? {
@@ -98,15 +109,15 @@ extension MainContentCoordinator {
 
     // MARK: - Execution
 
-    private func run(_ request: ExplainRequest) {
+    private func run(_ request: ExplainRequest, anchor: StatementAnchor?) {
         guard !request.isDriverBuilt else {
-            executeQueryInternal(request.sql)
+            executeQueryInternal(request.sql, anchor: anchor)
             return
         }
-        executeExplain(request)
+        executeExplain(request, anchor: anchor)
     }
 
-    private func executeExplain(_ request: ExplainRequest) {
+    private func executeExplain(_ request: ExplainRequest, anchor: StatementAnchor?) {
         guard let (tab, index) = tabManager.selectedTabAndIndex else { return }
         guard let scope = scope(for: tab) else {
             tabManager.mutate(at: index) {
@@ -146,8 +157,19 @@ extension MainContentCoordinator {
                     // query that is still running, so the gate comes before all of them.
                     guard tabExecution.settle(claim) else { return }
                     retireQueryTask(for: claim)
-                    guard !Task.isCancelled else { return }
+                    guard !Task.isCancelled else {
+                        reportEndedExecutions([
+                            EndedExecution(tabId: claim.tabId, startedAt: claim.startedAt, reason: .cancelledByUser)
+                        ])
+                        return
+                    }
 
+                    reportOperation(
+                        kind: .query,
+                        claim: claim,
+                        databaseName: operationDatabaseName(tabId: tabId),
+                        outcome: .succeeded(OperationSummary())
+                    )
                     flushBufferToActiveResult(tabId: tabId, pinnedOnly: true)
                     tabManager.mutate(tabId: tabId) { tab in
                         tab.execution.executionTime = fetchResult.executionTime
@@ -157,8 +179,11 @@ extension MainContentCoordinator {
                         tab.pagination.resetLoadMore()
                         tab.display.replaceUnpinnedResults(
                             with: [ExplainResultSetFactory.make(
-                                rawText: rawText, plan: plan, sql: request.sql,
-                                executionTime: fetchResult.executionTime
+                                rawText: rawText,
+                                plan: plan,
+                                sql: request.sql,
+                                executionTime: fetchResult.executionTime,
+                                anchor: anchor
                             )]
                         )
                         if tab.display.isResultsCollapsed {
@@ -190,7 +215,19 @@ extension MainContentCoordinator {
 
                     // A cancelled EXPLAIN is not a failure the user needs told about, and it does
                     // not belong in history either.
-                    if DatabaseCancellationDiagnosis.isCancellation(error) || Task.isCancelled { return }
+                    if DatabaseCancellationDiagnosis.isCancellation(error) || Task.isCancelled {
+                        reportEndedExecutions([
+                            EndedExecution(tabId: claim.tabId, startedAt: claim.startedAt, reason: .cancelledByUser)
+                        ])
+                        return
+                    }
+
+                    reportOperation(
+                        kind: .query,
+                        claim: claim,
+                        databaseName: operationDatabaseName(tabId: tabId),
+                        outcome: .failed(reason: error.localizedDescription)
+                    )
 
                     tabManager.mutate(tabId: tabId) { tab in
                         tab.execution.errorMessage = error.localizedDescription

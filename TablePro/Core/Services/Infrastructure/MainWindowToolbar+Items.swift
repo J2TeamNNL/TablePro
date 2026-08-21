@@ -59,6 +59,29 @@ extension MainWindowToolbar {
         )
     }
 
+    /// No text label on either button: the HIG asks for the standard chevrons and says not to
+    /// label a Back control. `chevron.backward` and `chevron.forward` mirror in a right-to-left
+    /// layout, which `chevron.left` and `chevron.right` do not.
+    func subitemNavigateBack() -> NSToolbarItem {
+        menuOnlyItem(
+            id: Self.navigateBack,
+            label: String(localized: "Back"),
+            symbol: "chevron.backward",
+            action: #selector(performNavigateBack(_:)),
+            shortcut: .navigateBack
+        )
+    }
+
+    func subitemNavigateForward() -> NSToolbarItem {
+        menuOnlyItem(
+            id: Self.navigateForward,
+            label: String(localized: "Forward"),
+            symbol: "chevron.forward",
+            action: #selector(performNavigateForward(_:)),
+            shortcut: .navigateForward
+        )
+    }
+
     func subitemSaveChanges() -> NSToolbarItem {
         menuOnlyItem(
             id: Self.saveChanges,
@@ -66,6 +89,20 @@ extension MainWindowToolbar {
             symbol: "checkmark.circle.fill",
             action: #selector(performSaveChanges(_:)),
             shortcut: .saveChanges
+        )
+    }
+
+    /// A row insert is a change to the data, so it belongs with the other data commands rather than
+    /// in the status bar, which reports what is on screen. It ships as a subitem of an existing group
+    /// so a toolbar the user already customized picks it up: `autosavesConfiguration` restores the
+    /// saved identifier list, and a brand new top-level identifier would never appear for them.
+    func subitemAddRow() -> NSToolbarItem {
+        menuOnlyItem(
+            id: Self.addRow,
+            label: String(localized: "Add Row"),
+            symbol: "plus",
+            action: #selector(performAddRow(_:)),
+            shortcut: .addRow
         )
     }
 

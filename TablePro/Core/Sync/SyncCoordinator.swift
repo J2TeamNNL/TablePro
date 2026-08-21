@@ -16,7 +16,7 @@ import TableProSyncTransport
 @MainActor @Observable
 final class SyncCoordinator {
     static let shared = SyncCoordinator()
-    private static let logger = Logger(subsystem: "com.TablePro", category: "SyncCoordinator")
+    nonisolated private static let logger = Logger(subsystem: "com.TablePro", category: "SyncCoordinator")
 
     private(set) var syncStatus: SyncStatus = .disabled(.userDisabled)
     private(set) var lastSyncDate: Date?
@@ -27,7 +27,7 @@ final class SyncCoordinator {
     @ObservationIgnored private let changeTracker: SyncChangeTracker
     @ObservationIgnored private let metadataStorage: SyncMetadataStorage
     @ObservationIgnored private let recordCache = SyncRecordCache()
-    @ObservationIgnored private var accountObserver: NSObjectProtocol?
+    @ObservationIgnored private let accountObserver = OSAllocatedUnfairLock<(any NSObjectProtocol)?>(uncheckedState: nil)
     @ObservationIgnored private var changeCancellable: AnyCancellable?
     @ObservationIgnored private var licenseCancellable: AnyCancellable?
     @ObservationIgnored private var syncTask: Task<Void, Never>?
@@ -41,7 +41,7 @@ final class SyncCoordinator {
     }
 
     deinit {
-        if let accountObserver { NotificationCenter.default.removeObserver(accountObserver) }
+        if let observer = accountObserver.withLockUnchecked({ $0 }) { NotificationCenter.default.removeObserver(observer) }
         syncTask?.cancel()
     }
 
@@ -199,8 +199,7 @@ final class SyncCoordinator {
             changeTracker.markDirty(.tableFavorite, id: FavoriteTablesStorage.syncId(for: entry))
         }
 
-        for category in ["general", "appearance", "editor", "dataGrid", "history", "tabs", "keyboard", "ai",
-                         CustomSlashCommandStorage.syncCategory] {
+        for category in AppSettingsCategory.synced + [CustomSlashCommandStorage.syncCategory] {
             changeTracker.markDirty(.settings, id: category)
         }
 
@@ -214,7 +213,7 @@ final class SyncCoordinator {
             "tags=\(tags.count)",
             "sshProfiles=\(sshProfiles.count)",
             "favoriteTables=\(favoriteTables.count)",
-            "settings=8"
+            "settings=\(AppSettingsCategory.synced.count + 1)"
         ].joined(separator: ", ")
         Self.logger.info("Marked all local data dirty: \(summary, privacy: .public)")
     }
@@ -720,7 +719,7 @@ final class SyncCoordinator {
     // MARK: - Observers
 
     private func observeAccountChanges() {
-        accountObserver = NotificationCenter.default.addObserver(
+        let observer = NotificationCenter.default.addObserver(
             forName: .CKAccountChanged,
             object: nil,
             queue: .main
@@ -739,6 +738,7 @@ final class SyncCoordinator {
                 }
             }
         }
+        accountObserver.withLockUnchecked { $0 = observer }
     }
 
     private func observeLocalChanges() {
@@ -804,14 +804,15 @@ final class SyncCoordinator {
 
         do {
             switch category {
-            case "general": return try encoder.encode(storage.loadGeneral())
-            case "appearance": return try encoder.encode(storage.loadAppearance())
-            case "editor": return try encoder.encode(storage.loadEditor())
-            case "dataGrid": return try encoder.encode(storage.loadDataGrid())
-            case "history": return try encoder.encode(storage.loadHistory())
-            case "tabs": return try encoder.encode(storage.loadTabs())
-            case "keyboard": return try encoder.encode(storage.loadKeyboard())
-            case "ai": return try encoder.encode(storage.loadAI())
+            case AppSettingsCategory.general: return try encoder.encode(storage.loadGeneral())
+            case AppSettingsCategory.appearance: return try encoder.encode(storage.loadAppearance())
+            case AppSettingsCategory.editor: return try encoder.encode(storage.loadEditor())
+            case AppSettingsCategory.dataGrid: return try encoder.encode(storage.loadDataGrid())
+            case AppSettingsCategory.history: return try encoder.encode(storage.loadHistory())
+            case AppSettingsCategory.tabs: return try encoder.encode(storage.loadTabs())
+            case AppSettingsCategory.keyboard: return try encoder.encode(storage.loadKeyboard())
+            case AppSettingsCategory.ai: return try encoder.encode(storage.loadAI())
+            case AppSettingsCategory.notifications: return try encoder.encode(storage.loadNotifications())
             case CustomSlashCommandStorage.syncCategory:
                 return try encoder.encode(CustomSlashCommandStorage.shared.commands)
             case let category where category.hasPrefix(FileColumnLayoutPersister.syncCategoryPrefix):
@@ -832,14 +833,17 @@ final class SyncCoordinator {
 
         do {
             switch category {
-            case "general": manager.general = try decoder.decode(GeneralSettings.self, from: data)
-            case "appearance": manager.appearance = try decoder.decode(AppearanceSettings.self, from: data)
-            case "editor": manager.editor = try decoder.decode(EditorSettings.self, from: data)
-            case "dataGrid": manager.dataGrid = try decoder.decode(DataGridSettings.self, from: data)
-            case "history": manager.history = try decoder.decode(HistorySettings.self, from: data)
-            case "tabs": manager.tabs = try decoder.decode(TabSettings.self, from: data)
-            case "keyboard": manager.keyboard = try decoder.decode(KeyboardSettings.self, from: data)
-            case "ai": manager.ai = try decoder.decode(AISettings.self, from: data)
+            case AppSettingsCategory.general: manager.general = try decoder.decode(GeneralSettings.self, from: data)
+            case AppSettingsCategory.appearance:
+                manager.appearance = try decoder.decode(AppearanceSettings.self, from: data)
+            case AppSettingsCategory.editor: manager.editor = try decoder.decode(EditorSettings.self, from: data)
+            case AppSettingsCategory.dataGrid: manager.dataGrid = try decoder.decode(DataGridSettings.self, from: data)
+            case AppSettingsCategory.history: manager.history = try decoder.decode(HistorySettings.self, from: data)
+            case AppSettingsCategory.tabs: manager.tabs = try decoder.decode(TabSettings.self, from: data)
+            case AppSettingsCategory.keyboard: manager.keyboard = try decoder.decode(KeyboardSettings.self, from: data)
+            case AppSettingsCategory.ai: manager.ai = try decoder.decode(AISettings.self, from: data)
+            case AppSettingsCategory.notifications:
+                manager.notifications = try decoder.decode(NotificationSettings.self, from: data)
             case CustomSlashCommandStorage.syncCategory:
                 CustomSlashCommandStorage.shared.applyRemote(try decoder.decode([CustomSlashCommand].self, from: data))
             case let category where category.hasPrefix(FileColumnLayoutPersister.syncCategoryPrefix):

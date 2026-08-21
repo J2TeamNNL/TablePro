@@ -318,9 +318,10 @@ final class DamengPluginDriverTests: XCTestCase {
     /// "The Dameng connection is closed": switching schema reported a failure and tables took a
     /// long time to open or never opened at all.
     ///
-    /// The stopped statement is a self-contained join over `SYSOBJECTS` that takes a couple of
-    /// seconds and then ends. DM8 keeps running an abandoned statement, so a query chosen to
-    /// run for hours would pin the server long after the test finished.
+    /// The stopped statement generates its own rows from `DUAL` rather than reading a table, so
+    /// it takes the same few seconds on any server and needs no fixture. It also ends on its
+    /// own: DM8 keeps running an abandoned statement, so one chosen to run for hours would pin
+    /// the server long after the test finished.
     func testLiveDM8RecoversFromAStoppedStatement() async throws {
         let environment = try liveEnvironment()
         let driver = DamengPluginDriver(config: environment.config(database: "SYSDBA"))
@@ -330,8 +331,10 @@ final class DamengPluginDriverTests: XCTestCase {
         let stopped = Task {
             try await driver.execute(
                 query: """
-                    SELECT COUNT(*) FROM SYSOBJECTS a, SYSOBJECTS b
-                    WHERE a.NAME || b.NAME LIKE '%zzzz%'
+                    SELECT COUNT(*) FROM
+                        (SELECT LEVEL AS N FROM DUAL CONNECT BY LEVEL <= 6000) a,
+                        (SELECT LEVEL AS N FROM DUAL CONNECT BY LEVEL <= 6000) b
+                    WHERE TO_CHAR(a.N) || TO_CHAR(b.N) LIKE '%99999%'
                     """
             )
         }
@@ -404,6 +407,76 @@ final class DamengPluginDriverTests: XCTestCase {
         XCTAssertEqual(driver.currentSchema, "SYSDBA")
     }
 
+    /// DM8 answers a query with one inline batch and holds the rest on a cursor. The driver
+    /// used to stop at that batch, so a 20000 row table came back as 662 rows while reporting
+    /// itself complete, and the sidebar listed 1159 of 2000 tables.
+    func testLiveDM8ReturnsEveryRowOfALargeResult() async throws {
+        let environment = try liveEnvironment()
+        let driver = DamengPluginDriver(config: environment.config(database: "SYSDBA"))
+        try await checked("connect") { try await driver.connect() }
+        defer { driver.disconnect() }
+
+        let table = "TP_ROWS_\(UUID().uuidString.prefix(8))".uppercased()
+        let quoted = driver.quoteIdentifier(table)
+        _ = try await driver.execute(query: "CREATE TABLE \(quoted)(\"ID\" INT, \"PAD\" VARCHAR(40))")
+        defer { Task { _ = try? await driver.execute(query: "DROP TABLE \(quoted)") } }
+        _ = try await driver.execute(query: """
+            INSERT INTO \(quoted)("ID", "PAD")
+            SELECT LEVEL, 'padpadpadpadpadpadpadpadpad' FROM DUAL CONNECT BY LEVEL <= 5000
+            """)
+        _ = try await driver.execute(query: "COMMIT")
+
+        let all = try await checked("read every row") {
+            try await driver.execute(query: "SELECT \"ID\", \"PAD\" FROM \(quoted) ORDER BY \"ID\"")
+        }
+        XCTAssertEqual(all.rows.count, 5_000)
+        XCTAssertEqual(all.columns.count, 2)
+        XCTAssertFalse(all.isTruncated)
+        XCTAssertEqual(all.rows.first?.first, .text("1"))
+        XCTAssertEqual(all.rows.last?.first, .text("5000"))
+
+        // A row cap still stops early, and says so.
+        let capped = try await checked("read with a cap") {
+            try await driver.executeUserQuery(
+                query: "SELECT \"ID\" FROM \(quoted) ORDER BY \"ID\"", rowCap: 100, parameters: nil
+            )
+        }
+        XCTAssertEqual(capped.rows.count, 100)
+        XCTAssertTrue(capped.isTruncated)
+    }
+
+    /// A LOB column descriptor is longer than the others, and mis-measuring it shifted the
+    /// column list and reparsed the remaining descriptors as rows.
+    func testLiveDM8ReadsATableWithALobColumn() async throws {
+        let environment = try liveEnvironment()
+        let driver = DamengPluginDriver(config: environment.config(database: "SYSDBA"))
+        try await checked("connect") { try await driver.connect() }
+        defer { driver.disconnect() }
+
+        let table = "TP_LOB_\(UUID().uuidString.prefix(8))".uppercased()
+        let quoted = driver.quoteIdentifier(table)
+        _ = try await driver.execute(query: """
+            CREATE TABLE \(quoted)("ID" INT, "NOTE" CLOB, "NAME" VARCHAR(50), "BLOB_COL" BLOB)
+            """)
+        defer { Task { _ = try? await driver.execute(query: "DROP TABLE \(quoted)") } }
+        _ = try await driver.execute(query: "INSERT INTO \(quoted)(\"ID\", \"NAME\") VALUES(1, 'one')")
+        _ = try await driver.execute(query: "INSERT INTO \(quoted)(\"ID\", \"NAME\") VALUES(2, 'two')")
+        _ = try await driver.execute(query: "COMMIT")
+
+        let everyColumn = try await checked("select star") {
+            try await driver.execute(query: "SELECT * FROM \(quoted) ORDER BY \"ID\"")
+        }
+        XCTAssertEqual(everyColumn.columns, ["ID", "NOTE", "NAME", "BLOB_COL"])
+        XCTAssertEqual(everyColumn.rows.count, 2)
+
+        let lobFirst = try await checked("lob as the first column") {
+            try await driver.execute(query: "SELECT \"NOTE\", \"ID\" FROM \(quoted) ORDER BY \"ID\"")
+        }
+        XCTAssertEqual(lobFirst.columns.count, 2)
+        XCTAssertEqual(lobFirst.rows.count, 2)
+        XCTAssertEqual(lobFirst.rows.last?[1], .text("2"))
+    }
+
     func testLiveDM8RejectsBadCredentialsAndInvalidPort() async throws {
         let environment = try liveEnvironment()
         let invalidPortDriver = DamengPluginDriver(config: DriverConnectionConfig(
@@ -455,7 +528,12 @@ final class DamengPluginDriverTests: XCTestCase {
                     isPrimaryKey: true,
                     autoIncrement: true
                 ),
-                PluginColumnDefinition(name: "NAME", dataType: "VARCHAR(100)", isNullable: false),
+                PluginColumnDefinition(
+                    name: "NAME",
+                    dataType: "VARCHAR(100)",
+                    isNullable: false,
+                    comment: "the parent name"
+                ),
                 PluginColumnDefinition(name: "PAYLOAD", dataType: "VARBINARY(8188)")
             ],
             indexes: [PluginIndexDefinition(name: "IDX_PARENT_NAME", columns: ["NAME"])],
@@ -499,6 +577,21 @@ final class DamengPluginDriverTests: XCTestCase {
             }
         }
 
+        // ALL_COL_COMMENTS keys its OWNER on the schema's owning user, not on the schema, so a
+        // schema owned by a differently named user used to return no column comments at all.
+        let parentColumns = try await checked("read columns") {
+            try await driver.fetchColumns(table: "PARENT", schema: schema)
+        }
+        let nameColumn = parentColumns.first { $0.name == "NAME" }
+        XCTAssertEqual(nameColumn?.comment, "the parent name")
+        XCTAssertEqual(parentColumns.first { $0.name == "ID" }?.isPrimaryKey, true)
+
+        let columnsByTable = try await checked("read all columns") {
+            try await driver.fetchAllColumns(schema: schema)
+        }
+        let bulkName = columnsByTable["PARENT"]?.first { $0.name == "NAME" }
+        XCTAssertEqual(bulkName?.comment, "the parent name")
+
         let valueResult = try await checked("read unicode and binary metadata") {
             try await driver.execute(
                 query: "SELECT \"NAME\", RAWTOHEX(\"PAYLOAD\") FROM \"PARENT\" ORDER BY \"ID\""
@@ -507,7 +600,10 @@ final class DamengPluginDriverTests: XCTestCase {
         XCTAssertEqual(valueResult.rows.first?[0], .text(hostileText))
         XCTAssertEqual(valueResult.rows.first?[1], .text("00017FFF"))
 
-        let preciseDecimal = "1234567890123456789012345678.1234567890"
+        // The last fractional digit is deliberately non-zero: DM8 renders a value without its
+        // insignificant trailing zeros, so a literal ending in one could not tell that apart
+        // from the 38th significant digit being lost, which is what this checks.
+        let preciseDecimal = "1234567890123456789012345678.1234567891"
         let decimalResult = try await checked("read high-precision decimal") {
             try await driver.execute(
                 query: "SELECT CAST('\(preciseDecimal)' AS DECIMAL(38, 10)) FROM DUAL"

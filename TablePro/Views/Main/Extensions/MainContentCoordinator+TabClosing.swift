@@ -28,6 +28,44 @@ extension MainContentCoordinator {
         persistence.clearForUserClosedAllTabs()
     }
 
+    /// Drops the per-tab caches of tabs that are no longer open. Every one of these is keyed by
+    /// tab id, so a stale entry does not merely waste memory: the next tab to be handed that id
+    /// would read another tab's state.
+    func cleanupTabCaches(openTabIds: Set<UUID>) {
+        prune(&displayFormatsCache, keeping: openTabIds)
+        prune(&displayOrderCache, keeping: openTabIds)
+        prune(&createTableDrafts, keeping: openTabIds)
+        prune(&navigationHistories, keeping: openTabIds)
+        prune(&pendingRowAnchors, keeping: openTabIds)
+        for (tabId, session) in structureSessions where !openTabIds.contains(tabId) {
+            session.releaseViewWiring()
+            structureSessions.removeValue(forKey: tabId)
+        }
+    }
+
+    /// Rewrites the dictionary only when something has actually gone, because assigning a filtered
+    /// copy back is what a plain `filter` would cost on every tab change.
+    private func prune<Value>(_ cache: inout [UUID: Value], keeping openTabIds: Set<UUID>) {
+        guard cache.keys.contains(where: { !openTabIds.contains($0) }) else { return }
+        cache = cache.filter { openTabIds.contains($0.key) }
+    }
+
+    /// A retarget keeps the tab's id and throws away everything the id used to mean, so the
+    /// per-tab caches keyed on that id now describe a table the tab no longer shows. Left behind,
+    /// the structure session goes on reporting staged ALTERs, which raises an unsaved-changes prompt
+    /// naming the previous table and offers to apply its statements from a tab that cannot show
+    /// them. `selectedTabHoldsProtectedContent` is what stops a tab holding real work being
+    /// retargeted at all; this is what keeps the caches honest once one without work has been.
+    func releaseRetargetedTabState(for tabId: UUID) {
+        pendingRowAnchors.removeValue(forKey: tabId)
+        structureSessions.removeValue(forKey: tabId)?.releaseViewWiring()
+        createTableDrafts.removeValue(forKey: tabId)
+        tabsWithStagedPrincipals.remove(tabId)
+        toolbarState.hasStructureChanges = false
+        toolbarState.hasCreateTablePending = false
+        toolbarState.hasPrincipalChanges = false
+    }
+
     /// A closed tab has to take its coordinator-side state with it, and this is the only place that
     /// can: `handleTabChange` snapshots a tab by looking it up in `tabManager.tabs`, and by the time
     /// it runs the tab is already gone. So it must happen before `tabManager.closeTab(id:)`, which
@@ -42,8 +80,10 @@ extension MainContentCoordinator {
             WindowLifecycleMonitor.shared.unregisterSourceFile(url)
         }
         tabsWithStagedPrincipals.remove(tab.id)
-        structureSessions.removeValue(forKey: tab.id)
+        structureSessions.removeValue(forKey: tab.id)?.releaseViewWiring()
         createTableDrafts.removeValue(forKey: tab.id)
+        navigationHistories.removeValue(forKey: tab.id)
+        pendingRowAnchors.removeValue(forKey: tab.id)
         guard isSelectedTab(tab) else { return }
         changeManager.clearChangesAndUndoHistory()
         toolbarState.hasStructureChanges = false

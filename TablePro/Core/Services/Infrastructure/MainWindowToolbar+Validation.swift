@@ -13,6 +13,7 @@ extension MainWindowToolbar: NSToolbarItemValidation {
         /// derives its own `isConnected` from the window phase rather than from execution.
         let connected: Bool
         let isTableTab: Bool
+        let canAddRow: Bool
         let hasPendingChanges: Bool
         let hasDataPendingChanges: Bool
         let blocksAllWrites: Bool
@@ -20,6 +21,8 @@ extension MainWindowToolbar: NSToolbarItemValidation {
         let supportsContainerSwitching: Bool
         let supportsImport: Bool
         let supportsServerDashboard: Bool
+        let canNavigateBack: Bool
+        let canNavigateForward: Bool
     }
 
     /// Listed exhaustively so a new state has to choose a side instead of inheriting "alive".
@@ -40,6 +43,12 @@ extension MainWindowToolbar: NSToolbarItemValidation {
             return context.connected && !context.fileBased && context.supportsContainerSwitching
         case Self.refresh, Self.quickSwitcher, Self.newTab, Self.exportTables, Self.sidebarToggle:
             return context.connected
+        case Self.addRow:
+            return context.connected && context.canAddRow
+        case Self.navigateBack:
+            return context.connected && context.canNavigateBack
+        case Self.navigateForward:
+            return context.connected && context.canNavigateForward
         case Self.saveChanges:
             return context.hasPendingChanges && context.connected && !context.blocksAllWrites
         case Self.previewSQL:
@@ -60,13 +69,16 @@ extension MainWindowToolbar: NSToolbarItemValidation {
         return ValidationContext(
             connected: Self.hasLiveSession(state.connectionState),
             isTableTab: state.isTableTab,
+            canAddRow: coordinator?.canAddRow ?? false,
             hasPendingChanges: state.hasPendingChanges,
             hasDataPendingChanges: state.hasDataPendingChanges,
             blocksAllWrites: state.safeModeLevel.blocksAllWrites,
             fileBased: PluginManager.shared.connectionMode(for: state.databaseType) == .fileBased,
             supportsContainerSwitching: PluginManager.shared.supportsContainerSwitching(for: state.databaseType),
             supportsImport: PluginManager.shared.supportsImport(for: state.databaseType),
-            supportsServerDashboard: coordinator?.commandActions?.supportsServerDashboard ?? false
+            supportsServerDashboard: coordinator?.commandActions?.supportsServerDashboard ?? false,
+            canNavigateBack: coordinator?.canNavigateBack ?? false,
+            canNavigateForward: coordinator?.canNavigateForward ?? false
         )
     }
 

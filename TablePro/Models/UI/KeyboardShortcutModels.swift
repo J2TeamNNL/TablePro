@@ -78,6 +78,9 @@ enum ShortcutAction: String, Codable, CaseIterable, Identifiable {
     case foldAll
     case unfoldAll
     case toggleFold
+    case previousStatement
+    case nextStatement
+    case runStatementAndAdvance
     case previewSQL
     case findNext
     case findPrevious
@@ -111,6 +114,8 @@ enum ShortcutAction: String, Codable, CaseIterable, Identifiable {
     case importData
 
     // Navigation
+    case navigateBack
+    case navigateForward
     case newTab
     case closeTab
     case closeOtherTabs
@@ -143,6 +148,7 @@ enum ShortcutAction: String, Codable, CaseIterable, Identifiable {
         case .openFile, .saveChanges, .saveAs, .executeQuery, .executeAllStatements,
              .executeQueryWithoutLimit, .cancelQuery, .explainQuery, .formatQuery,
              .foldAll, .unfoldAll, .toggleFold,
+             .previousStatement, .nextStatement, .runStatementAndAdvance,
              .previewSQL, .findNext, .findPrevious, .aiExplainQuery, .aiOptimizeQuery:
             return .editor
         case .undo, .redo, .cut, .copy, .copyRowsExplicit, .copyWithHeaders, .copyAsJson,
@@ -150,7 +156,8 @@ enum ShortcutAction: String, Codable, CaseIterable, Identifiable {
              .truncateTable, .toggleHeaderRow, .previewFKReference, .saveAsFavorite, .previousPage,
              .nextPage, .firstPage, .lastPage, .refresh, .export, .importData:
             return .dataGrid
-        case .newTab, .closeTab, .closeOtherTabs, .closeTabsForOtherDatabases, .closeAllTabs,
+        case .navigateBack, .navigateForward,
+             .newTab, .closeTab, .closeOtherTabs, .closeTabsForOtherDatabases, .closeAllTabs,
              .reopenClosedTab, .quickSwitcher, .toggleTableBrowser,
              .toggleInspector, .toggleFilters, .toggleHistory, .toggleResults, .previousResultTab,
              .nextResultTab, .pinResultTab, .closeResultTab, .focusSidebarSearch,
@@ -164,7 +171,8 @@ enum ShortcutAction: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .executeQuery, .executeAllStatements, .executeQueryWithoutLimit,
              .cancelQuery, .explainQuery, .formatQuery, .foldAll, .unfoldAll,
-             .toggleFold, .previewSQL, .findNext,
+             .toggleFold, .previousStatement, .nextStatement, .runStatementAndAdvance,
+             .previewSQL, .findNext,
              .findPrevious, .aiExplainQuery, .aiOptimizeQuery:
             return .editor
         case .previousPage, .nextPage, .firstPage, .lastPage, .addRow, .duplicateRow,
@@ -193,6 +201,8 @@ enum ShortcutAction: String, Codable, CaseIterable, Identifiable {
         case .executeAllStatements: return String(localized: "Execute All Statements")
         case .executeQueryWithoutLimit: return String(localized: "Execute Query Without Limit")
         case .cancelQuery: return String(localized: "Cancel Query")
+        case .navigateBack: return String(localized: "Back")
+        case .navigateForward: return String(localized: "Forward")
         case .newTab: return String(localized: "New Tab")
         case .openDatabase: return String(localized: "Open Database")
         case .openFile: return String(localized: "Open File")
@@ -211,6 +221,9 @@ enum ShortcutAction: String, Codable, CaseIterable, Identifiable {
         case .foldAll: return String(localized: "Fold All")
         case .unfoldAll: return String(localized: "Unfold All")
         case .toggleFold: return String(localized: "Toggle Fold")
+        case .previousStatement: return String(localized: "Previous Statement")
+        case .nextStatement: return String(localized: "Next Statement")
+        case .runStatementAndAdvance: return String(localized: "Run Statement and Advance")
         case .findNext: return String(localized: "Find Next")
         case .findPrevious: return String(localized: "Find Previous")
         case .export: return String(localized: "Export")
@@ -273,7 +286,9 @@ extension ShortcutAction {
         (.character("k", command: true, shift: true), String(localized: "Delete Line")),
         (.special(.space, control: true), String(localized: "Show Completions")),
         (.special(.upArrow, option: true), String(localized: "Move Line Up")),
-        (.special(.downArrow, option: true), String(localized: "Move Line Down"))
+        (.special(.downArrow, option: true), String(localized: "Move Line Down")),
+        (.special(.upArrow, shift: true, option: true), String(localized: "Extend Selection to Previous Statement")),
+        (.special(.downArrow, shift: true, option: true), String(localized: "Extend Selection to Next Statement"))
     ]
 
     /// AppKit's own text-editing key bindings, taken from `StandardKeyBinding.dict`.
@@ -495,6 +510,9 @@ struct KeyboardSettings: Codable, Equatable {
         .cancelQuery: .character(".", command: true),
         .explainQuery: .character("e", command: true, option: true),
         .formatQuery: .character("l", command: true, shift: true),
+        .previousStatement: .special(.leftArrow, command: true, control: true),
+        .nextStatement: .special(.rightArrow, command: true, control: true),
+        .runStatementAndAdvance: .special(.return, command: true, control: true),
         .foldAll: .special(.leftArrow, command: true, shift: true, option: true),
         .unfoldAll: .special(.rightArrow, command: true, shift: true, option: true),
         .toggleFold: .special(.leftArrow, command: true, option: true),
@@ -531,6 +549,14 @@ struct KeyboardSettings: Codable, Equatable {
         .refresh: .character("r", command: true),
 
         // Navigation
+        /// Not the Safari chord. Command+[ and Command+] are Previous/Next Page and are claimed
+        /// again by the editor's own indent and outdent, Option+Command+[ and ] are the result
+        /// tabs, Shift+Command+[ and ] are the editor tabs, Control+Command+Left and Right are
+        /// Previous/Next Statement, and Option+Command+Left is Toggle Fold. Two menu items cannot
+        /// share a key equivalent: AppKit blanks the loser's. This completes the bracket family
+        /// the app already reads as "step through something".
+        .navigateBack: .character("[", command: true, control: true),
+        .navigateForward: .character("]", command: true, control: true),
         .newTab: .character("t", command: true),
         .closeTab: .character("w", command: true),
         .reopenClosedTab: .character("t", command: true, shift: true),

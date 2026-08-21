@@ -5,9 +5,9 @@ description: Connect to Snowflake with password, key-pair, SSO, or OAuth auth
 
 TablePro connects to Snowflake over its connector REST protocol (the same API used by the official drivers). Browse databases, schemas, and tables, run Snowflake SQL, and edit rows in the data grid. The plugin auto-installs when you pick Snowflake, or install it from **Settings > Plugins > Browse > Snowflake Driver**.
 
-## Quick Setup
+## Quick setup
 
-Click **New Connection**, select **Snowflake**, enter your **Account Identifier**, pick an auth method, and click **Save & Connect**.
+Click **Create Connection…**, select **Snowflake**, enter your **Account Identifier**, pick an auth method, and click **Save & Connect**.
 
 The account identifier is the part before `.snowflakecomputing.com`:
 
@@ -21,7 +21,7 @@ The account identifier is the part before `.snowflakecomputing.com`:
 **Key Pair (.p8)**: Point to an RSA private key file in PKCS#8 (`.p8`) format and, if the key is encrypted, supply its passphrase. Register the matching public key on your user first:
 
 ```sql
-ALTER USER jane_doe SET RSA_PUBLIC_KEY='MIIBIjANBgkq...';
+ALTER USER jane_doe SET RSA_PUBLIC_KEY='MIIBIjANBgkq…';
 ```
 
 **Single Sign-On (Browser)**: Authenticate through your identity provider (Okta, Entra ID, etc.) in the browser. TablePro opens your IdP's login page and captures the response automatically (`authenticator=externalbrowser`). With `ALLOW_ID_TOKEN = TRUE` on the account, the sign-in token is cached in the Keychain so later connects skip the browser for about four hours.
@@ -32,7 +32,7 @@ ALTER USER jane_doe SET RSA_PUBLIC_KEY='MIIBIjANBgkq...';
 Already use the Snowflake CLI? Set **CLI Connection Name** (Advanced) to a connection defined in `~/.snowflake/connections.toml` and TablePro fills in the account, user, auth method, warehouse, database, schema, and role for you.
 </Tip>
 
-## Connection Settings
+## Connection settings
 
 | Field | Required | Notes |
 |-------|----------|-------|

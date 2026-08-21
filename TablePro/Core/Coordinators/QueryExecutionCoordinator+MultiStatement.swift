@@ -7,7 +7,10 @@ import Foundation
 import TableProPluginKit
 
 extension QueryExecutionCoordinator {
-    func executeMultipleStatements(_ statements: [String], bypassRowLimit: Bool = false) {
+    func executeMultipleStatements(
+        _ statements: [SQLStatementScanner.ExecutableStatement],
+        bypassRowLimit: Bool = false
+    ) {
         executeMultipleStatementsWithParameters(statements, parameters: [], bypassRowLimit: bypassRowLimit)
     }
 
@@ -32,7 +35,8 @@ extension QueryExecutionCoordinator {
         index: Int,
         baseQuery: String,
         baseQueryParameterValues: [String?]? = nil,
-        tabId: UUID
+        tabId: UUID,
+        anchor: StatementAnchor? = nil
     ) -> ResultSet {
         let tableName = parent.extractTableName(from: sql)
         let rows = TableRows.from(
@@ -40,7 +44,11 @@ extension QueryExecutionCoordinator {
             columns: result.columns.map { String($0) },
             columnTypes: result.columnTypes
         )
-        let resultSet = ResultSet(label: tableName ?? "Result \(index + 1)", tableRows: rows)
+        let resultSet = ResultSet(
+            label: ResultSet.label(tableName: tableName, anchor: anchor, index: index),
+            tableRows: rows
+        )
+        resultSet.statementAnchor = anchor
         resultSet.executionTime = result.executionTime
         resultSet.rowsAffected = result.rowsAffected
         resultSet.statusMessage = result.statusMessage
@@ -104,6 +112,17 @@ extension QueryExecutionCoordinator {
         guard parent.tabExecution.settle(claim) else { return }
         parent.retireQueryTask(for: claim)
         parent.toolbarState.lastQueryDuration = cumulativeTime
+
+        /// Once for the batch, never once per statement, and below the settle gate rather than at
+        /// the call site: a superseded batch has its results dropped here, and a notification
+        /// raised outside this guard would announce a result the user will never be shown.
+        reportOperation(
+            kind: .queryBatch,
+            claim: claim,
+            outcome: .succeeded(
+                OperationSummary(rowsAffected: totalRowsAffected, statementCount: newResultSets.count)
+            )
+        )
 
         guard let idx = parent.tabManager.tabs.firstIndex(where: { $0.id == tabId }) else {
             return

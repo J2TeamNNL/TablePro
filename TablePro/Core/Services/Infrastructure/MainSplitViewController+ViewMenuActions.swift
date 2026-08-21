@@ -18,6 +18,12 @@ extension MainSplitViewController {
         commandActions?.showNextWorkspace()
     }
 
+    @objc func setResultView(_ sender: Any?) {
+        guard let raw = (sender as? NSMenuItem)?.representedObject as? String,
+              let mode = ResultsViewMode(rawValue: raw) else { return }
+        commandActions?.setResultsViewMode(mode)
+    }
+
     @objc func useFlatSidebarLayout(_ sender: Any?) {
         commandActions?.setSidebarLayout(.flat)
     }
@@ -48,6 +54,14 @@ extension MainSplitViewController {
 
     @objc func toggleResults(_ sender: Any?) {
         commandActions?.toggleResults()
+    }
+
+    @objc func navigateBack(_ sender: Any?) {
+        commandActions?.navigateBack()
+    }
+
+    @objc func navigateForward(_ sender: Any?) {
+        commandActions?.navigateForward()
     }
 
     @objc func showPreviousResult(_ sender: Any?) {

@@ -3,7 +3,7 @@ title: Filtering
 description: Filter table data with 18 operators, raw SQL, and saved presets
 ---
 
-Press `Cmd+F` while viewing a table to open the filter panel. Type a raw SQL WHERE clause and press `Enter` to filter. Raw SQL is the default mode.
+A filter is a WHERE clause, and it runs at the database. That is the difference between filtering and the find bar: matches come from every row in the table, not from the page you are looking at. Open the filter bar with `Cmd+Option+F`, type a condition into the row that appears, and press `Enter`.
 
 <Frame caption="Filter panel with column and raw SQL conditions">
   <img className="block dark:hidden" src="/images/filter-panel.png" alt="Filter panel above the data grid" />
@@ -27,11 +27,11 @@ When you reopen a table, TablePro restores the filters you last applied to it, i
 
 To delete every saved filter row for the current table, open the **⋯** menu and choose **Remove All Filters**.
 
-The filter panel queries the database. To narrow rows already loaded in the grid without re-querying, use the column value filter in the [Data Grid](/features/data-grid).
+The filter bar queries the database. To narrow rows already loaded in the grid without re-querying, use the column value filter in the [Data Grid](/features/data-grid).
 
-<Note>
-Redis shows a key-pattern search bar (for example `user:*`) with a key-type picker instead of the filter panel.
-</Note>
+<Info>
+Redis shows a key-pattern search bar (for example `user:*`) with a key-type picker instead of the filter bar.
+</Info>
 
 ## Operators
 
@@ -39,21 +39,56 @@ Redis shows a key-pattern search bar (for example `user:*`) with a key-type pick
 
 BETWEEN shows two value fields. IN/NOT IN takes comma-separated values.
 
-## Case Sensitivity
+## Case sensitivity
 
 Contains, not contains, starts with, and ends with ignore case. Equals, not equals, IN, NOT IN, and regex match case. Open the operator menu and use **Match Case** to change either one for that row. A small `Aa` icon on the operator button marks a row that is not using its usual setting.
 
 TablePro picks the fastest form each database offers: `ILIKE` on PostgreSQL, DuckDB, CockroachDB, and Snowflake, and `LOWER()` on both sides for Oracle, BigQuery, ClickHouse, and Redshift, whose `ILIKE` only folds ASCII. Trino has no `ILIKE`, so it uses `regexp_like` with the `i` flag.
 
-<Note>
-On MySQL, MariaDB, SQL Server, SQLite, libSQL, and Cloudflare D1 the column's collation decides case sensitivity and TablePro cannot override it per query, so **Match Case** is greyed out. The default collation on these databases already ignores case. Cassandra and Redis have no case-insensitive matching at all, so the option is greyed out there too.
-</Note>
+<Info>
+On MySQL, MariaDB, SQL Server, SQLite, libSQL, and Cloudflare D1 the column's collation decides case sensitivity and TablePro cannot override it per query, so **Match Case** is dimmed. The default collation on these databases already ignores case. Cassandra and Redis have no case-insensitive matching at all, so the option is dimmed there too.
+</Info>
 
 Filters saved before this option existed follow the same rules, so a saved "contains" filter now ignores case on PostgreSQL, DuckDB, Oracle, and BigQuery. Turn **Match Case** on to get the old behavior back.
 
+## Nested fields
+
+On a document store such as MongoDB, a field holding an object or an array of objects is one column in the grid, showing its JSON. The column picker also lists the paths inside it, so you can filter on `customer.country` or `items.sku` directly.
+
+<Frame caption="Column picker listing nested field paths under their parent">
+  <img className="block dark:hidden" src="/images/filter-nested-fields.png" alt="Filter column picker with nested paths grouped under their top-level field" />
+  <img className="hidden dark:block" src="/images/filter-nested-fields-dark.png" alt="Filter column picker with nested paths grouped under their top-level field" />
+</Frame>
+
+TablePro reads the paths from a sample of the collection, so the picker lists the fields the sample actually contained, grouped under their top-level parent. Only the first two levels go in the picker. The button beside it opens a searchable list of every path found, and typing a path there that no document in the sample had uses it anyway, which is how you reach a field that only some documents carry.
+
+A field whose name contains a literal dot is left out. MongoDB reads the dot in a query as a path separator, so a filter naming such a field would match a different field.
+
+### Fields inside an array
+
+A row on a field inside an array gets one more control, because MongoDB has two different answers here:
+
+<Frame caption="Two rows on items set to same element, so one array entry must satisfy both">
+  <img className="block dark:hidden" src="/images/filter-array-element-scope.png" alt="Filter rows on an array field showing the any element and same element control" />
+  <img className="hidden dark:block" src="/images/filter-array-element-scope-dark.png" alt="Filter rows on an array field showing the any element and same element control" />
+</Frame>
+
+| Setting | What it matches |
+|---------|-----------------|
+| **any element** | Each row is satisfied on its own by any entry in the array. Two rows can be satisfied by two different entries |
+| **same element** | Every row set to **same element** for that array must be satisfied by one single entry |
+
+Filtering `items.price` greater than 500 and `items.name` equal to `Laptop` with **any element** returns an order that has an expensive item and, separately, an item called Laptop. With **same element** on both rows it returns only orders holding one item that is both. **any element** is the default, and it is what dot notation means in MongoDB.
+
+Rows sharing an array and set to **same element** are grouped together automatically, and the header's **Match all** / **Match any** setting applies inside the group too: with **Match any**, one array entry satisfying any of those rows is enough. Open **SQL Preview** in the **⋯** menu to see the query this produces.
+
+Sorting still works on the grid's own columns only, so a nested path can be filtered but not sorted.
+
 ## Raw SQL
 
-The default mode. Type any WHERE condition directly:
+The default mode. On a database that does not speak SQL the row is labelled **Raw Filter** and takes that database's own filter syntax: on MongoDB, a filter document such as `{"customer.country": "US"}`.
+
+Type any WHERE condition directly:
 
 ```sql
 created_at > NOW() - INTERVAL 7 DAY
@@ -77,7 +112,7 @@ Save and load filter configurations via the **⋯** menu in the header.
 
 | Action | How |
 |--------|-----|
-| Save | ⋯ > **Save as Preset...** |
+| Save | ⋯ > **Save as Preset…** |
 | Load | ⋯ > click preset name |
 | Delete | ⋯ > **Delete Preset** > click name |
 
@@ -95,4 +130,4 @@ Save and load filter configurations via the **⋯** menu in the header.
 | Default Operator | Equal, Contains |
 | Panel State | Always Hide, Always Show, Restore Last Filter |
 
-**Panel State** controls what happens when you reopen a table. **Restore Last Filter** (the default) brings back the filter you last applied. **Always Hide** reopens tables unfiltered with the panel closed. **Always Show** keeps the filter panel visible even when no filter is set.
+**Panel State** controls what happens when you reopen a table. **Restore Last Filter** (the default) brings back the filter you last applied. **Always Hide** reopens tables unfiltered with the panel closed. **Always Show** keeps the filter bar visible even when no filter is set.

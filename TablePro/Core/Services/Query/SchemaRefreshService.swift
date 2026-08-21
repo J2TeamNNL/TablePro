@@ -20,7 +20,7 @@ final class SchemaRefreshService {
         let database: String?
     }
 
-    private static let logger = Logger(subsystem: "com.TablePro", category: "SchemaRefreshService")
+    nonisolated private static let logger = Logger(subsystem: "com.TablePro", category: "SchemaRefreshService")
 
     private let schemaService: SchemaService
     private let treeMetadataService: DatabaseTreeMetadataService
@@ -85,8 +85,9 @@ final class SchemaRefreshService {
     func loadBrowseCatalogs(connectionIds: [UUID]) async -> Set<UUID> {
         await withTaskGroup(of: (UUID, Bool).self) { group in
             for connectionId in connectionIds {
-                group.addTask { @MainActor in
-                    (connectionId, await self.loadBrowseCatalog(connectionId: connectionId))
+                group.addTask {
+                    let didLoad = await self.loadBrowseCatalog(connectionId: connectionId)
+                    return (connectionId, didLoad)
                 }
             }
             var loaded: Set<UUID> = []
@@ -182,7 +183,52 @@ final class SchemaRefreshService {
 
     private func refreshForSchemaSwitch(connectionId: UUID) async {
         guard let connection = databaseManager?.session(for: connectionId)?.connection else { return }
-        await refresh(connection: connection)
+        guard pluginManager.databaseGroupingStrategy(for: connection.type) == .hierarchicalSchema else {
+            await refresh(connection: connection)
+            return
+        }
+        await refreshSessionScopedObjects(connectionId: connectionId)
+    }
+
+    /// A schema switch on a hierarchicalSchema engine moves the session's default schema and
+    /// nothing else. That tree lists every schema and keys each object list by an explicit
+    /// schema, so the schema list and the per-schema tables cannot have gone stale. Only the
+    /// routines can: `fetchProcedures` and `fetchFunctions` resolve a nil schema to the driver's
+    /// current one.
+    ///
+    /// Reloading the whole catalog instead re-fetched every expanded schema in series, on the
+    /// one connection the clicked table's own query needs, because these engines browse no
+    /// database and a server-scoped read cannot be pooled. That is why opening a table took a
+    /// round trip per expanded schema (#2262).
+    private func refreshSessionScopedObjects(connectionId: UUID) async {
+        do {
+            guard let scope = metadataDriverProvider.browseScope(for: connectionId) else {
+                throw DatabaseError.notConnected
+            }
+            let reloaded = try await metadataDriverProvider.withMetadataDriver(
+                scope: scope,
+                workload: .bulk
+            ) { [schemaService] driver in
+                /// Both run, and neither short circuits the other: a failed procedure fetch must
+                /// not skip the function fetch that would still have succeeded.
+                let procedures = await schemaService.reloadProcedures(connectionId: connectionId, driver: driver)
+                let functions = await schemaService.reloadFunctions(connectionId: connectionId, driver: driver)
+                return procedures && functions
+            }
+            /// Recording the new scope says the loaded routines belong to it. A reload that failed
+            /// left the previous schema's routines in place, so claiming coverage there would pin
+            /// them to a schema they never came from, with nothing scheduled to correct it.
+            if reloaded {
+                schemaService.noteScopeCovered(scope, for: connectionId)
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            Self.logger.warning(
+                "[schema] routine refresh after schema switch failed connId=\(connectionId, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+            )
+        }
+        await syncAutocompleteProvider(connectionId: connectionId)
     }
 
     private func performRefresh(connection: DatabaseConnection, database: String?) async {
