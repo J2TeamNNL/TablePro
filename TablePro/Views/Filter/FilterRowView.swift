@@ -15,7 +15,7 @@ struct FilterRowView: View {
     var rawSQLCompletionProvider: RawSQLFilterCompletionProvider?
     var columnMenu: FilterColumnMenu = .empty
     var fieldPaths: [PluginFieldPath] = []
-    var rawFilterLabel: String = String(localized: "Raw SQL")
+    var rawFilterLabel = String(localized: "Raw SQL")
     let onAdd: () -> Void
     let onDuplicate: () -> Void
     let onRemove: () -> Void
