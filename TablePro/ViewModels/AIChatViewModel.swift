@@ -37,6 +37,15 @@ final class AIChatViewModel {
 
     var connection: DatabaseConnection?
 
+    /// Why this session is not streaming yet, when another session holds the provider it needs.
+    /// Phase 4's session rail is the eventual home for this; until then the composer shows it, so
+    /// a queued session reads as waiting rather than as a hang.
+    var providerWaitReason: String?
+
+    /// This session's tool mode. Seeded from the app setting, which stays the default for sessions
+    /// created later, so two sessions can hold different modes at once.
+    var chatMode: AIChatMode
+
     /// Which surface each connection is on, for the Assistant mode Safe Mode floor. Injectable for
     /// the same reason `streamFlushClock` is: the alternative is a test that writes the app's real
     /// UserDefaults to arrange a floor.
@@ -104,8 +113,10 @@ final class AIChatViewModel {
 
     static let maxMessageCount = 200
 
-    init(services: AppServices = .live) {
+    init(services: AppServices = .live, connection: DatabaseConnection? = nil) {
         self.services = services
+        self.connection = connection
+        chatMode = services.appSettings.ai.chatMode
         loadConversations()
     }
 
@@ -199,6 +210,8 @@ final class AIChatViewModel {
         streamingTask?.cancel()
         streamingTask = nil
         ToolApprovalCenter.shared.cancelAll(sessionId: sessionId)
+        ProviderStreamLease.shared.releaseAll(sessionId: sessionId)
+        providerWaitReason = nil
 
         if case .streaming(let assistantID) = streamingState,
            let idx = messages.firstIndex(where: { $0.id == assistantID }) {
@@ -231,7 +244,7 @@ final class AIChatViewModel {
               let lastAssistantIndex = messages.lastIndex(where: { $0.role == .assistant })
         else { return }
 
-        AIProviderFactory.copilotDeleteLastTurn()
+        deleteLastProviderTurn()
         messages.remove(at: lastAssistantIndex)
         clearError()
         startStreaming()
@@ -245,7 +258,7 @@ final class AIChatViewModel {
     }
 
     func startNewConversation() {
-        AIProviderFactory.resetCopilotConversation()
+        resetProviderConversation()
         cancelStream()
         persistCurrentConversation()
         messages.removeAll()
@@ -255,7 +268,7 @@ final class AIChatViewModel {
 
     func switchConversation(to id: UUID) {
         guard let conversation = conversations.first(where: { $0.id == id }) else { return }
-        AIProviderFactory.resetCopilotConversation()
+        resetProviderConversation()
         cancelStream()
         persistCurrentConversation()
         messages = conversation.messages.map { ChatTurn(wire: $0) }
@@ -264,12 +277,12 @@ final class AIChatViewModel {
     }
 
     func clearSessionData() {
-        AIProviderFactory.resetCopilotConversation()
+        resetProviderConversation()
         prepTask?.cancel()
         prepTask = nil
         streamingTask?.cancel()
         streamingTask = nil
-        AIProviderFactory.invalidateCache()
+        ProviderStreamLease.shared.releaseAll(sessionId: sessionId)
         connection = nil
         columnsByTable = [:]
         foreignKeysByTable = [:]
@@ -357,6 +370,40 @@ final class AIChatViewModel {
         savedQueries = favorites
         for favorite in favorites {
             cachedSavedQueries[favorite.id] = favorite
+        }
+    }
+
+    /// The provider configuration this session streams on. Resolved the same way the stream itself
+    /// resolves it, because a stale `selectedProviderId` naming a deleted provider falls back to the
+    /// active one: recomputing the choice here instead would reset a configuration nobody is using
+    /// and leave the real conversation running.
+    var activeProviderConfigId: UUID? {
+        AIProviderFactory.resolveConfig(
+            settings: services.appSettings.ai,
+            overrideProviderId: selectedProviderId
+        )?.id
+    }
+
+    /// Detaches this session from its provider-side conversation, waiting for any other session
+    /// streaming on the same configuration rather than skipping. Skipping was silent, and a reset
+    /// that does not happen leaves the next turn appended to the conversation the user just left.
+    func resetProviderConversation() {
+        guard let configId = activeProviderConfigId else { return }
+        let session = sessionId
+        Task { @MainActor in
+            await ProviderStreamLease.shared.withLease(configId: configId, sessionId: session) {
+                AIProviderFactory.resetCopilotConversation(configId: configId)
+            }
+        }
+    }
+
+    func deleteLastProviderTurn() {
+        guard let configId = activeProviderConfigId else { return }
+        let session = sessionId
+        Task { @MainActor in
+            await ProviderStreamLease.shared.withLease(configId: configId, sessionId: session) {
+                AIProviderFactory.copilotDeleteLastTurn(configId: configId)
+            }
         }
     }
 

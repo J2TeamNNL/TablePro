@@ -47,24 +47,36 @@ enum AIProviderFactory {
         cacheLock.withLock { $0.removeValue(forKey: configID) }
     }
 
-    static func resetCopilotConversation() {
+    /// Resets the Copilot conversation held by one provider configuration.
+    ///
+    /// The unscoped form walked the whole cache, so one session starting a new conversation threw
+    /// away the server-side conversation id of every other session on every other provider.
+    static func resetCopilotConversation(configId: UUID) {
         cacheLock.withLock { cache in
-            for (_, entry) in cache {
-                if let copilot = entry.provider as? CopilotChatProvider {
-                    copilot.resetConversation()
-                }
-            }
+            guard let copilot = cache[configId]?.provider as? CopilotChatProvider else { return }
+            copilot.resetConversation()
         }
     }
 
-    static func copilotDeleteLastTurn() {
+    static func copilotDeleteLastTurn(configId: UUID) {
         cacheLock.withLock { cache in
-            for (_, entry) in cache {
-                if let copilot = entry.provider as? CopilotChatProvider {
-                    copilot.deleteLastTurn()
-                }
-            }
+            guard let copilot = cache[configId]?.provider as? CopilotChatProvider else { return }
+            copilot.deleteLastTurn()
         }
+    }
+
+    /// Which configuration a session streams on. An override that names no live provider falls back
+    /// to the active one, so anything keyed by "the configuration this session uses" has to ask here
+    /// rather than recompute the choice, or the two answers diverge the moment a provider is deleted.
+    static func resolveConfig(
+        settings: AISettings,
+        overrideProviderId: UUID? = nil
+    ) -> AIProviderConfig? {
+        if let overrideProviderId,
+           let match = settings.providers.first(where: { $0.id == overrideProviderId }) {
+            return match
+        }
+        return settings.activeProvider
     }
 
     static func resolve(
@@ -73,14 +85,9 @@ enum AIProviderFactory {
         overrideModel: String? = nil
     ) -> ResolvedProvider? {
         guard settings.enabled else { return nil }
-        let config: AIProviderConfig?
-        if let overrideProviderId,
-           let match = settings.providers.first(where: { $0.id == overrideProviderId }) {
-            config = match
-        } else {
-            config = settings.activeProvider
+        guard let config = resolveConfig(settings: settings, overrideProviderId: overrideProviderId) else {
+            return nil
         }
-        guard let config else { return nil }
         let apiKey: String?
         switch config.type.authStyle {
         case .apiKey, .optionalApiKey:

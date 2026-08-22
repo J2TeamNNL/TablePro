@@ -85,7 +85,17 @@ In Edit and Agent modes each tool call appears as a card in the reply. Read-only
 
 Safe Mode **Silent** auto-approves write tools in the inspector panel and **Read-Only** auto-denies them. In [Assistant mode](/features/assistant-mode) a **Silent** connection is held at **Alert** instead, so its write tools wait for a click. Destructive operations are the exception: `confirm_destructive_operation` always needs a click, Silent does not auto-approve it, **Always for this connection** is refused for it, and the model must pass the verbatim phrase `I understand this is irreversible`.
 
-Every provider except Cursor can call tools. Claude Agent passes them to the `claude` command instead, which approves them on its own terms, so per-card approval and the Assistant mode write floor do not reach it; the MCP server has to be on for that path. Local models depend on the model.
+Where a provider's tool calls are approved depends on how they reach the database.
+
+| Provider | How tools reach the database | What approves them |
+| --- | --- | --- |
+| Anthropic, OpenAI, Gemini, xAI, ChatGPT Codex, OpenAI-compatible | Through TablePro | Per card, plus the Assistant mode write floor |
+| GitHub Copilot | Through TablePro | Per card, plus the Assistant mode write floor |
+| Claude Agent | Through the `claude` command, against the MCP server, which has to be on | A read-only token the app issues for 15 minutes, which reaches every connection. No per-card approval and no write floor |
+| Cursor | No database access | Nothing to approve |
+| Local models | Through TablePro when the model calls tools at all | Per card, plus the Assistant mode write floor |
+
+Use an API-key provider for a session that writes.
 
 A reply pauses after 25 tool calls, keeps everything it has done, and offers **Continue** for a fresh budget or **Adjust Limit** to change the number, 5 to 200, under **Agent** in **Settings > AI**. Every call is another request with the schema attached, so a higher limit costs tokens.
 

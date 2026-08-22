@@ -313,14 +313,15 @@ extension AIChatViewModel {
         let result: ChatToolResult
         switch finalState {
         case .approved:
-            guard ChatToolRegistry.shared.isToolAllowed(name: block.name, in: mode) else {
+            let scope = ChatToolScope(sessionId: sessionId, connectionId: connection?.id, mode: mode)
+            guard ChatToolRegistry.shared.isToolAllowed(name: block.name, in: scope) else {
                 result = ChatToolResult(
                     content: "Tool '\(block.name)' is not available in \(mode.displayName) mode",
                     isError: true
                 )
                 break
             }
-            let tool = ChatToolRegistry.shared.tool(named: block.name, in: mode)
+            let tool = ChatToolRegistry.shared.tool(named: block.name, in: scope)
             guard let tool else {
                 result = ChatToolResult(content: "Tool '\(block.name)' is not registered", isError: true)
                 break

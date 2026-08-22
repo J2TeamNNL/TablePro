@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The managed `minimumSafeModeLevel` floor not reaching AI-proposed writes.
 - A connection's AI policy and Safe Mode level not reaching an open chat panel until relaunch.
 - "Always for this connection" writing a stale connection record back over newer changes.
+- A new chat session adopting the most recent conversation from another connection.
+- Two chat sessions overwriting each other's saved transcript.
+- Clearing one chat session's conversation deleting every conversation in the app.
+- One chat session's New Conversation resetting the server-side conversation of another.
+- The chat tool mode being shared by every session instead of belonging to one.
+- A registered chat tool being able to take the name of a built-in one.
 
 ## [0.67.1] - 2026-08-22
 

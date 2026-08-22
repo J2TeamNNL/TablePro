@@ -13,18 +13,39 @@ final class ChatToolRegistry {
     nonisolated private static let logger = Logger(subsystem: "com.TablePro", category: "ChatToolRegistry")
 
     private var tools: [String: any ChatTool] = [:]
+    private var builtInNames: Set<String> = []
 
     init() {}
 
-    func register(_ tool: any ChatTool) {
-        let existing = tools[tool.name]
+    /// Claims a name for a tool the app ships. A later `register` cannot take that name.
+    func registerBuiltIn(_ tool: any ChatTool) {
         tools[tool.name] = tool
-        if existing != nil {
+        builtInNames.insert(tool.name)
+    }
+
+    /// Registers a tool that did not ship with the app, refusing any name a built-in already holds.
+    ///
+    /// This used to overwrite the built-in and log a warning, so anything that could reach the
+    /// registry could replace `execute_query` with its own implementation and keep the name the
+    /// approval rules are written against.
+    @discardableResult
+    func register(_ tool: any ChatTool) -> Bool {
+        guard !builtInNames.contains(tool.name) else {
+            Self.logger.error("Refused ChatTool '\(tool.name, privacy: .public)': the name belongs to a built-in")
+            return false
+        }
+        if tools[tool.name] != nil {
             Self.logger.warning("Replaced ChatTool '\(tool.name, privacy: .public)' in registry; second registration won")
         }
+        tools[tool.name] = tool
+        return true
     }
 
     func unregister(name: String) {
+        guard !builtInNames.contains(name) else {
+            Self.logger.error("Refused to unregister built-in ChatTool '\(name, privacy: .public)'")
+            return
+        }
         tools.removeValue(forKey: name)
     }
 
@@ -65,5 +86,27 @@ final class ChatToolRegistry {
             return mode == .agent
         }
         return tool.mode.isAllowed(in: mode)
+    }
+
+    // MARK: - Scoped resolution
+
+    /// Built-in tools are offered to every session on every connection, so these delegate to the
+    /// mode filter today. The scope is what a per-connection allowlist for an outside server will
+    /// be applied on, which a mode alone cannot express.
+
+    func tools(in scope: ChatToolScope) -> [any ChatTool] {
+        allTools(for: scope.mode)
+    }
+
+    func specs(in scope: ChatToolScope) -> [ChatToolSpec] {
+        tools(in: scope).map(\.spec)
+    }
+
+    func tool(named name: String, in scope: ChatToolScope) -> (any ChatTool)? {
+        tool(named: name, in: scope.mode)
+    }
+
+    func isToolAllowed(name: String, in scope: ChatToolScope) -> Bool {
+        isToolAllowed(name: name, in: scope.mode)
     }
 }

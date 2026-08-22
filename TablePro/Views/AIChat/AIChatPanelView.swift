@@ -206,6 +206,10 @@ struct AIChatPanelView: View {
         VStack(spacing: 0) {
             Divider()
             VStack(alignment: .leading, spacing: 6) {
+                if let waitReason = viewModel.providerWaitReason {
+                    providerWaitNotice(waitReason)
+                }
+
                 AIChatContextChipStrip(
                     items: viewModel.attachedContext,
                     onRemove: { viewModel.detach($0) }
@@ -269,10 +273,24 @@ struct AIChatPanelView: View {
         }
     }
 
+    private func providerWaitNotice(_ reason: String) -> some View {
+        HStack(spacing: 6) {
+            ProgressView()
+                .controlSize(.small)
+            Text(reason)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(reason)
+    }
+
     private var modeMenu: some View {
         let binding = Binding<AIChatMode>(
-            get: { settingsManager.ai.chatMode },
+            get: { viewModel.chatMode },
             set: { newValue in
+                viewModel.chatMode = newValue
                 var settings = settingsManager.ai
                 settings.chatMode = newValue
                 settingsManager.ai = settings
@@ -289,8 +307,8 @@ struct AIChatPanelView: View {
             .labelsHidden()
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: settingsManager.ai.chatMode.symbolName)
-                Text(settingsManager.ai.chatMode.displayName)
+                Image(systemName: viewModel.chatMode.symbolName)
+                Text(viewModel.chatMode.displayName)
                     .lineLimit(1)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.caption2)
@@ -300,7 +318,7 @@ struct AIChatPanelView: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        .help(settingsManager.ai.chatMode.helpText)
+        .help(viewModel.chatMode.helpText)
     }
 
     @ViewBuilder

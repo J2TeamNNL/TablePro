@@ -30,9 +30,14 @@ actor AIChatStorage {
     }()
 
     private init() {
-        let dir = AppStorageEnvironment.shared.applicationSupportRoot
+        self.init(directory: AppStorageEnvironment.shared.applicationSupportRoot
             .appendingPathComponent("TablePro", isDirectory: true)
-            .appendingPathComponent("ai_chats", isDirectory: true)
+            .appendingPathComponent("ai_chats", isDirectory: true))
+    }
+
+    /// Injectable so a test can scope reads against a throwaway directory instead of the chat
+    /// history of whoever is running it.
+    internal init(directory dir: URL) {
         directory = dir
 
         // Create directory inline since actor init is nonisolated
@@ -110,6 +115,24 @@ actor AIChatStorage {
             Self.logger.error("Failed to list conversations: \(error.localizedDescription)")
             return []
         }
+    }
+
+    /// Load one conversation by ID
+    func load(id: UUID) -> AIConversation? {
+        let fileURL = directory.appendingPathComponent("\(id.uuidString).json")
+        do {
+            let data = try Data(contentsOf: fileURL)
+            return try Self.decoder.decode(AIConversation.self, from: data)
+        } catch {
+            Self.logger.error("Failed to load conversation \(id): \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// Conversations a session may list: its own connection's, plus the orphans left by records
+    /// written before the connection id existed. A nil id lists the orphans alone.
+    func loadAll(connectionId: UUID?) -> [AIConversation] {
+        loadAll().filter { $0.connectionId == connectionId || $0.isOrphan }
     }
 
     /// Delete a conversation by ID

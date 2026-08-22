@@ -34,9 +34,7 @@ import os
     private var _aiViewModel: AIChatViewModel?
     var aiViewModel: AIChatViewModel {
         if _aiViewModel == nil {
-            let created = AIChatViewModel()
-            created.connection = connection
-            _aiViewModel = created
+            _aiViewModel = AIChatViewModel(connection: connection)
         }
         return _aiViewModel! // swiftlint:disable:this force_unwrapping
     }
