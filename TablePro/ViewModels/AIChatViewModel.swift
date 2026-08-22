@@ -37,6 +37,11 @@ final class AIChatViewModel {
 
     var connection: DatabaseConnection?
 
+    /// Which surface each connection is on, for the Assistant mode Safe Mode floor. Injectable for
+    /// the same reason `streamFlushClock` is: the alternative is a test that writes the app's real
+    /// UserDefaults to arrange a floor.
+    @ObservationIgnored var contentModeStore: WorkspaceContentModeStore = .shared
+
     @ObservationIgnored var streamFlushClock: StreamFlushClock = ContinuousStreamFlushClock()
     @ObservationIgnored var streamFlushInterval: Duration = .milliseconds(50)
 
@@ -86,6 +91,11 @@ final class AIChatViewModel {
     @ObservationIgnored var inFlightSchemaLoad: Task<Void, Never>?
     @ObservationIgnored nonisolated(unsafe) var streamingTask: Task<Void, Never>?
     @ObservationIgnored var prepTask: Task<Void, Never>?
+
+    /// This session's identity, for anything that must not reach another session: its pending
+    /// approvals above all, which used to be keyed by the provider's own tool-use string and so
+    /// could be resolved by a decision made somewhere else entirely.
+    @ObservationIgnored let sessionId = UUID()
 
     @ObservationIgnored let services: AppServices
     var chatStorage: AIChatStorage { services.aiChatStorage }
@@ -188,7 +198,7 @@ final class AIChatViewModel {
         prepTask = nil
         streamingTask?.cancel()
         streamingTask = nil
-        ToolApprovalCenter.shared.cancelAll()
+        ToolApprovalCenter.shared.cancelAll(sessionId: sessionId)
 
         if case .streaming(let assistantID) = streamingState,
            let idx = messages.firstIndex(where: { $0.id == assistantID }) {

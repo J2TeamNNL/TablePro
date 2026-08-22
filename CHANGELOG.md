@@ -10,6 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Assistant mode for the connection window, with the conversation at full width.
+- Confirm Writes floor while Assistant mode is active.
+
+### Fixed
+
+- Tool approvals resolved by a decision made in another chat session.
+- AI tool calls evaluated against the chat's own connection instead of the one the statement targets.
+- AI tool calls reaching a connection the chat session is not attached to.
+- Writes running unchecked when a message was sent before the chat panel had laid out.
+- Stop Generating cancelling tool approvals awaiting a decision in other chat sessions.
+- "Always for this connection" overriding a Safe Mode floor the user did not set.
+- The managed `minimumSafeModeLevel` floor not reaching AI-proposed writes.
+- A connection's AI policy and Safe Mode level not reaching an open chat panel until relaunch.
+- "Always for this connection" writing a stale connection record back over newer changes.
 
 ## [0.67.1] - 2026-08-22
 

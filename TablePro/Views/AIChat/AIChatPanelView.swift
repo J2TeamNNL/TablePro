@@ -43,12 +43,8 @@ struct AIChatPanelView: View {
                 inputArea
             }
         }
-        .onAppear {
-            viewModel.connection = connection
-        }
-        .onChange(of: connection.id) {
-            viewModel.connection = connection
-        }
+        .environment(\.chatSessionId, viewModel.sessionId)
+        .environment(\.chatWriteFloorActive, viewModel.floorRaisedSafeModeLevel(for: connection))
         .task(id: settingsManager.ai.providers.map(\.id)) {
             await viewModel.loadAvailableModels()
         }
@@ -253,6 +249,8 @@ struct AIChatPanelView: View {
                     modelPicker
                     sendOrStopButton
                 }
+
+                AssistantFloorNoticeView(connectionId: connection.id)
             }
             .padding(8)
         }

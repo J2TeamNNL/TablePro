@@ -187,7 +187,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         var state: SessionStateFactory.SessionState?
         var panelState: RightPanelState?
         if let session = resolvedSession {
-            panelState = RightPanelState(connectionId: session.connection.id)
+            panelState = RightPanelState(connectionId: session.connection.id, connection: session.connection)
             if let payloadId = payload?.id,
                let pending = SessionStateFactory.consumePending(for: payloadId) {
                 state = pending
@@ -380,6 +380,12 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
             guard let record = stored.first(where: { $0.id == connectionId })
                 ?? DatabaseManager.shared.activeSessions[connectionId]?.connection else { continue }
             workspace.payloadConnection = record
+            /// The chat session authorizes against its own copy of the record: its AI policy is
+            /// what `startStreaming` checks, and its Safe Mode level is the fallback the approval
+            /// path reads when the session is not live. The copy is taken once, when the session is
+            /// created, so without this a user who sets AI policy to Never or raises Safe Mode
+            /// while the panel is open would see the form save and nothing change.
+            workspace.rightPanelState?.refreshConnectionRecord(record)
             refreshPanes(of: workspace)
             if workspaces.selectedConnectionId == connectionId { repaint = true }
         }
@@ -461,7 +467,10 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         workspace.session = session
 
         if workspace.rightPanelState == nil {
-            workspace.rightPanelState = RightPanelState(connectionId: session.connection.id)
+            workspace.rightPanelState = RightPanelState(
+                connectionId: session.connection.id,
+                connection: session.connection
+            )
         }
         if workspace.sessionState == nil {
             let state = SessionStateFactory.create(connection: session.connection, payload: workspace.payload)
@@ -787,7 +796,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     @ViewBuilder
     private func buildInspectorView(for workspace: ConnectionWorkspace) -> some View {
         if workspace.contentMode == .assistant {
-            AgentArtifactPaneView()
+            AgentArtifactPaneView(connectionId: workspace.connection?.id)
         } else if let session = workspace.session, let rightPanelState = workspace.rightPanelState {
             UnifiedRightPanelView(
                 state: rightPanelState,

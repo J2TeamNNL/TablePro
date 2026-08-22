@@ -61,11 +61,24 @@ internal enum AgentArtifactSegment: String, CaseIterable, Identifiable {
 }
 
 internal struct AgentArtifactPaneView: View {
+    /// Nil before the connection is up. The pane still renders its empty states then; only the
+    /// Safe Mode notice needs a connection to speak about.
+    internal let connectionId: UUID?
+
     @State private var segment: AgentArtifactSegment = .sql
+
+    internal init(connectionId: UUID? = nil) {
+        self.connectionId = connectionId
+    }
 
     internal var body: some View {
         VStack(spacing: 0) {
             picker
+            if let connectionId {
+                AssistantFloorNoticeView(connectionId: connectionId)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 6)
+            }
             Divider()
             EmptyStateView(
                 icon: segment.icon,

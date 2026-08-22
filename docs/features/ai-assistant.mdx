@@ -83,9 +83,9 @@ In Edit and Agent modes each tool call appears as a card in the reply. Read-only
   <img className="hidden dark:block" src="/images/ai-chat-tool-approval-dark.png" alt="Per-card tool approval" />
 </Frame>
 
-Safe Mode **Silent** auto-approves write tools and **Read-Only** auto-denies them. Destructive operations are the exception: `confirm_destructive_operation` always needs a click, Silent does not auto-approve it, **Always for this connection** is refused for it, and the model must pass the verbatim phrase `I understand this is irreversible`.
+Safe Mode **Silent** auto-approves write tools in the inspector panel and **Read-Only** auto-denies them. In [Assistant mode](/features/assistant-mode) a **Silent** connection is held at **Alert** instead, so its write tools wait for a click. Destructive operations are the exception: `confirm_destructive_operation` always needs a click, Silent does not auto-approve it, **Always for this connection** is refused for it, and the model must pass the verbatim phrase `I understand this is irreversible`.
 
-Every provider except Cursor can call tools. Claude Agent reaches them through the MCP server, so that has to be on, and local models depend on the model.
+Every provider except Cursor can call tools. Claude Agent passes them to the `claude` command instead, which approves them on its own terms, so per-card approval and the Assistant mode write floor do not reach it; the MCP server has to be on for that path. Local models depend on the model.
 
 A reply pauses after 25 tool calls, keeps everything it has done, and offers **Continue** for a fresh budget or **Adjust Limit** to change the number, 5 to 200, under **Agent** in **Settings > AI**. Every call is another request with the schema attached, so a higher limit costs tokens.
 

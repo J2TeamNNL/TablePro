@@ -51,7 +51,20 @@ extension AIChatViewModel {
             return
         }
 
-        if connection != nil, let policy = resolveConnectionPolicy(settings: settings) {
+        /// Fails closed. This used to read `if connection != nil`, so a send that landed before the
+        /// panel's first layout had assigned the connection skipped the `.never` policy, the
+        /// per-send consent alert, and every Safe Mode denial downstream. A session with no
+        /// connection now refuses instead of streaming unchecked.
+        guard connection != nil else {
+            errorMessage = String(
+                localized: "This chat session is not attached to a connection. Open a connection and try again."
+            )
+            if let last = messages.last, last.role == .user {
+                messages.removeLast()
+            }
+            return
+        }
+        if let policy = resolveConnectionPolicy(settings: settings) {
             if policy == .never {
                 errorMessage = String(localized: "AI is disabled for this connection.")
                 if let last = messages.last, last.role == .user {
