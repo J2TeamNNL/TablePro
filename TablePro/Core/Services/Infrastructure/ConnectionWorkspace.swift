@@ -22,6 +22,16 @@ internal final class ConnectionWorkspace {
     internal var attemptToken: UUID?
     internal var phase: ConnectionWindowPhase
 
+    /// Which surface this connection shows. Orthogonal to `phase`: that one answers connection
+    /// health, this one answers what the window puts in its three columns. Persisted on write so
+    /// the choice survives a relaunch.
+    internal var contentMode: ConnectionWorkspaceContentMode {
+        didSet {
+            guard contentMode != oldValue else { return }
+            WorkspaceContentModeStore.shared.setMode(contentMode, connectionId: connectionId)
+        }
+    }
+
     /// Each workspace owns its undo stack. Routing through `NSWindow.undoManager` was correct
     /// while a window meant one connection; sharing one window between several would let an
     /// undo in one connection roll back an edit made in another.
@@ -49,6 +59,7 @@ internal final class ConnectionWorkspace {
         self.sessionState = sessionState
         self.rightPanelState = rightPanelState
         self.phase = phase
+        self.contentMode = WorkspaceContentModeStore.shared.mode(connectionId: connectionId)
         self.undoManager = UndoManager()
     }
 

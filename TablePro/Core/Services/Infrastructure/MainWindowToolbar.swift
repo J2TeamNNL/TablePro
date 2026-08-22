@@ -52,6 +52,10 @@ internal final class MainWindowToolbar: NSObject, NSToolbarDelegate {
     /// so without this its view orphans and the toolbar item collapses to zero width.
     internal var hostingControllers: [NSToolbarItem.Identifier: NSHostingController<AnyView>] = [:]
     private(set) var sidebarGroup: NSToolbarItemGroup?
+    /// Not `private(set)`: the factory that claims the slot lives in
+    /// `MainWindowToolbar+ContentMode.swift`, and a `private` setter is scoped to the declaring
+    /// file, not to the type.
+    var contentModeGroup: NSToolbarItemGroup?
 
     override internal convenience init() {
         self.init(managedToolbar: NSToolbar(identifier: Self.toolbarIdentifier))
@@ -139,6 +143,7 @@ internal final class MainWindowToolbar: NSObject, NSToolbarDelegate {
         observePendingChangeState()
         refreshConnectionScopedItems()
         syncSidebarSelection()
+        syncContentModeSelection()
         managedToolbar.validateVisibleItems()
     }
 
@@ -149,6 +154,7 @@ internal final class MainWindowToolbar: NSObject, NSToolbarDelegate {
         subject.coordinator?.switcherPresenter.dismiss()
         pendingChangeObservationGeneration += 1
         sidebarGroup = nil
+        contentModeGroup = nil
         hostingControllers.removeAll()
         subject.coordinator = nil
     }
@@ -231,6 +237,7 @@ internal final class MainWindowToolbar: NSObject, NSToolbarDelegate {
     static let refreshSaveGroup = NSToolbarItem.Identifier("com.TablePro.toolbar.refreshSaveGroup")
     static let exportImportGroup = NSToolbarItem.Identifier("com.TablePro.toolbar.exportImportGroup")
     static let sidebarToggle = NSToolbarItem.Identifier("com.TablePro.toolbar.sidebarToggle")
+    static let contentMode = NSToolbarItem.Identifier("com.TablePro.toolbar.contentMode")
     static let backForwardGroup = NSToolbarItem.Identifier("com.TablePro.toolbar.backForwardGroup")
     static let navigateBack = NSToolbarItem.Identifier("com.TablePro.toolbar.navigateBack")
     static let navigateForward = NSToolbarItem.Identifier("com.TablePro.toolbar.navigateForward")
@@ -252,6 +259,7 @@ internal final class MainWindowToolbar: NSObject, NSToolbarDelegate {
         .sidebarTrackingSeparator,
         backForwardGroup,
         connectionGroup,
+        contentMode,
         principal,
         .flexibleSpace,
         refreshSaveGroup,

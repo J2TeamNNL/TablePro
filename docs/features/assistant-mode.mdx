@@ -1,0 +1,24 @@
+---
+title: Assistant mode
+description: Hand the whole window to one AI session, with its steps, its SQL, and the rows it read side by side
+---
+
+Click **Assistant** in the toolbar. The object browser and the editor tab strip go, and the window becomes three columns: the sessions you have open, the conversation, and what the session produced. Click **Browse** to come back to the tables. The choice is per connection, so one connection can sit in Assistant mode while another stays on a table.
+
+The narrow [connections strip](/features/workspace-rail) stays where it is, and no tab is closed by the switch. Everything in the browse window is where you left it.
+
+## The three columns
+
+| Column | Holds |
+|--------|-------|
+| Sessions | One row per session, current connection first, each row naming its connection and state |
+| Conversation | The same chat as the [inspector](/features/ai-assistant#chat), at full width |
+| Result pane | What this session proposed, ran, and changed |
+
+The result pane opens with the window and collapses like the inspector does. Drag either divider to resize.
+
+## Related
+
+- [AI assistant](/features/ai-assistant) for providers, keys, chat modes, and what leaves your Mac
+- [Safe Mode](/features/safe-mode) for the six levels and what each one gates
+- [MCP server](/features/mcp) for reaching TablePro from Claude Code, Cursor, and Zed

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Assistant mode for the connection window, with the conversation at full width.
+
 ## [0.67.1] - 2026-08-22
 
 ### Added

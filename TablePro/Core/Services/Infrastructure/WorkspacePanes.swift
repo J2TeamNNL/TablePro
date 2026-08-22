@@ -46,6 +46,17 @@ internal final class WorkspacePanes {
         [detail, inspector, sidebar, tabStrip]
     }
 
+    /// Forces the reconcile a `rootView` write books for the next layout pass. A detached pane
+    /// never gets one, because nothing asks a view with no superview to lay out, so a background
+    /// connection's rebuild would sit unapplied until the user switched to it. That is fine while
+    /// only the data changes, and wrong as soon as the write changes which view is mounted: the
+    /// pane would come back on screen still showing the surface the connection has left.
+    internal func layoutUnparented() {
+        for pane in panes where pane.view.superview == nil {
+            pane.view.layoutSubtreeIfNeeded()
+        }
+    }
+
     /// Empties every pane and unparents it. A hosting controller retains its SwiftUI tree, which
     /// retains the `MainContentCoordinator`, which only leaves the app-wide coordinator registry
     /// when it deinits: a pane left behind keeps a dead session answering questions about open tabs

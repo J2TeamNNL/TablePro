@@ -127,7 +127,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
 
     // MARK: - Toolbar
 
-    private var toolbarOwner: MainWindowToolbar?
+    internal private(set) var toolbarOwner: MainWindowToolbar?
 
     /// The coordinator currently treated as this window's active one, so a workspace switch can
     /// hand over key-window state the same way AppKit would between windows.
@@ -260,7 +260,10 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
 
         detailPaneHost = WorkspacePaneHost()
         detailSplitItem = NSSplitViewItem(viewController: detailPaneHost)
-        detailSplitItem.minimumThickness = Self.resolveDetailMinimumThickness(for: payload?.tabType)
+        detailSplitItem.minimumThickness = Self.resolveDetailMinimumThickness(
+            mode: workspaces.selected?.contentMode ?? .browse,
+            tabType: payload?.tabType
+        )
         detailSplitItem.holdingPriority = .defaultLow
         addSplitViewItem(detailSplitItem)
 
@@ -610,12 +613,15 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
 
     /// Rebuilds one connection's panes into its own hosting controllers, whether or not it is the
     /// one on screen. This is the only place a pane's content is produced.
-    private func refreshPanes(of workspace: ConnectionWorkspace) {
+    internal func refreshPanes(of workspace: ConnectionWorkspace) {
         workspace.panes.sidebar.rootView = AnyView(buildSidebarView(for: workspace))
         workspace.panes.detail.rootView = AnyView(buildDetailView(for: workspace))
         workspace.panes.inspector.rootView = AnyView(buildInspectorView(for: workspace))
         refreshTabStripPane(of: workspace)
-        guard isShowing(workspace) else { return }
+        guard isShowing(workspace) else {
+            workspace.panes.layoutUnparented()
+            return
+        }
         bindSidebarChrome(to: workspace)
     }
 
@@ -697,6 +703,15 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     /// so the tree is per-connection by construction and an identity would only throw it away.
     @ViewBuilder
     private func buildSidebarView(for workspace: ConnectionWorkspace) -> some View {
+        if workspace.contentMode == .assistant {
+            buildAgentSessionRailView(for: workspace)
+        } else {
+            buildObjectBrowserView(for: workspace)
+        }
+    }
+
+    @ViewBuilder
+    private func buildObjectBrowserView(for workspace: ConnectionWorkspace) -> some View {
         if Self.pane(of: workspace) == .content,
            let session = workspace.session,
            let sessionState = workspace.sessionState {
@@ -718,6 +733,18 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
 
     @ViewBuilder
     private func buildDetailView(for workspace: ConnectionWorkspace) -> some View {
+        if workspace.contentMode == .assistant, Self.pane(of: workspace) == .content {
+            buildAgentConversationView(for: workspace)
+        } else {
+            buildBrowseDetailView(for: workspace)
+        }
+    }
+
+    /// Assistant mode only replaces the detail pane once there is a session to talk to. The
+    /// connecting and unavailable arms stay as they are here, so a connect that is still dialling
+    /// or has failed shows the same thing it does in browse mode.
+    @ViewBuilder
+    private func buildBrowseDetailView(for workspace: ConnectionWorkspace) -> some View {
         let pane = Self.pane(of: workspace)
         if pane == .connecting, let pendingConnection = workspace.connection {
             ConnectingStateView(connection: pendingConnection) { [weak self] in
@@ -759,7 +786,9 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
 
     @ViewBuilder
     private func buildInspectorView(for workspace: ConnectionWorkspace) -> some View {
-        if let session = workspace.session, let rightPanelState = workspace.rightPanelState {
+        if workspace.contentMode == .assistant {
+            AgentArtifactPaneView()
+        } else if let session = workspace.session, let rightPanelState = workspace.rightPanelState {
             UnifiedRightPanelView(
                 state: rightPanelState,
                 connection: session.connection
@@ -970,6 +999,8 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     static let inspectorMinThickness: CGFloat = 270
     private static let sidebarMaxThickness: CGFloat = 600
 
+    static let assistantDetailMinThickness: CGFloat = 360
+
     static func resolveDetailMinimumThickness(for tabType: TabType?) -> CGFloat {
         guard let tabType else { return defaultDetailMinThickness }
         switch tabType {
@@ -977,6 +1008,22 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
             return UsersRolesLayoutMetrics.tabMinimumWidth
         case .query, .table, .createTable, .erDiagram, .serverDashboard, .insights:
             return defaultDetailMinThickness
+        }
+    }
+
+    /// Assistant mode has no `TabType` of its own, and `TabType`'s switch is exhaustive with no
+    /// `default:` over a closed enum, so it declares its minimum here instead of taking a case.
+    /// The tab argument is ignored in assistant mode: the connection's tabs are still open, they
+    /// are just not what the detail pane is showing, so their width is not what it has to fit.
+    static func resolveDetailMinimumThickness(
+        mode: ConnectionWorkspaceContentMode,
+        tabType: TabType?
+    ) -> CGFloat {
+        switch mode {
+        case .assistant:
+            return assistantDetailMinThickness
+        case .browse:
+            return resolveDetailMinimumThickness(for: tabType)
         }
     }
 
@@ -1011,7 +1058,10 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     /// a wide tab would raise the visible connection's minimum and the window's own minimum with it.
     func updateDetailMinimumThickness(for tabType: TabType?, connectionId: UUID) {
         guard workspaces.selectedConnectionId == connectionId else { return }
-        let resolved = Self.resolveDetailMinimumThickness(for: tabType)
+        let resolved = Self.resolveDetailMinimumThickness(
+            mode: workspaces.selected?.contentMode ?? .browse,
+            tabType: tabType
+        )
         guard let detailSplitItem, detailSplitItem.minimumThickness != resolved else { return }
         detailSplitItem.minimumThickness = resolved
         recomputeWindowMinSize()
@@ -1036,7 +1086,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         sidebarSplitItem.minimumThickness = resolved
     }
 
-    private func recomputeWindowMinSize() {
+    internal func recomputeWindowMinSize() {
         applySidebarMinimumThickness()
         guard let window = view.window else { return }
         let sidebarVisible = !(sidebarSplitItem?.isCollapsed ?? true)
@@ -1081,6 +1131,11 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
 
     private var userPaneLayout: ChromePaneLayout?
 
+    /// Where the user had the inspector before assistant mode opened the artifact pane over it.
+    /// Non-nil is also the flag saying assistant mode currently owns that item, so the reconciler
+    /// is idempotent and can run on every chrome pass.
+    private var browseInspectorCollapsed: Bool?
+
     /// A split item's collapse state is written into the autosave record, which is how the
     /// inspector remembers being hidden. Collapsing the sidebar for a phase the user did not
     /// choose would persist that as their layout and lose the width they set, so autosaving is
@@ -1091,9 +1146,58 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         } else {
             revealWindowChrome()
         }
+        applyArtifactPaneVisibility()
         applyTabStripVisibility()
+        toolbarOwner?.syncContentModeSelection()
         toolbarOwner?.managedToolbar.validateVisibleItems()
         recomputeWindowMinSize()
+    }
+
+    /// The artifact pane ships open in assistant mode, and it opens by uncollapsing the inspector
+    /// item the window already has rather than by rewriting the window's frame. That distinction is
+    /// the whole rule here: `recomputeWindowMinSize()` grows a window whose frame is under the new
+    /// minimum and never shrinks it back, so opening the pane on a window too narrow for it would
+    /// widen the user's window permanently after one Browse → Assistant → Browse round trip. The
+    /// pane therefore opens only when the frame already fits it, and stays collapsible either way.
+    ///
+    /// Autosaving is off for the whole span assistant mode is active, for the same reason
+    /// `hideWindowChrome()` switches it off: a collapse state the user did not choose must not be
+    /// written over the layout they did choose. The state captured on the way in is what gives the
+    /// inspector back, because assigning an autosave name to a split view that has already laid out
+    /// restores nothing.
+    ///
+    /// One window can host a browse connection and an assistant connection at once, and they share
+    /// one inspector item, so this reconciles from the selected workspace's mode on every chrome
+    /// pass instead of acting once at the switch.
+    private func applyArtifactPaneVisibility() {
+        guard chromeState == .revealed else { return }
+        guard contentMode == .assistant else {
+            guard let restored = browseInspectorCollapsed else { return }
+            browseInspectorCollapsed = nil
+            inspectorSplitItem.isCollapsed = restored
+            restoreUserPaneLayout()
+            return
+        }
+        splitView.autosaveName = nil
+        guard browseInspectorCollapsed == nil else { return }
+        browseInspectorCollapsed = inspectorSplitItem.isCollapsed
+        guard inspectorSplitItem.isCollapsed, canOpenInspectorWithoutResizing else { return }
+        inspectorSplitItem.isCollapsed = false
+    }
+
+    /// Whether the window is already wide enough to show the inspector alongside the other two
+    /// panes at their current minimums. Asked before opening the artifact pane, so opening it can
+    /// never be the thing that resizes the window.
+    private var canOpenInspectorWithoutResizing: Bool {
+        guard let window = view.window else { return false }
+        let required = Self.resolveWindowMinWidth(
+            detailMinimum: detailSplitItem?.minimumThickness ?? Self.defaultDetailMinThickness,
+            sidebarVisible: !(sidebarSplitItem?.isCollapsed ?? true),
+            inspectorVisible: true,
+            sidebarMinimum: sidebarSplitItem?.minimumThickness ?? Self.sidebarMinThickness,
+            dividerThickness: splitView.dividerThickness
+        )
+        return window.frame.width >= required
     }
 
     private func hideWindowChrome() {
