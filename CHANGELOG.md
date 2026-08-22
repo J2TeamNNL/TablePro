@@ -7,29 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.67.1] - 2026-08-22
+
 ### Added
 
-- Database favorites can be tagged by environment, filtered in the Favorites sidebar, opened directly, and synced through iCloud. (#1553)
-- Open in Window on a row inspector text field, for reading or editing a long value on a bigger surface.
+- Environment tags for database favorites, with sidebar filtering, direct open, and iCloud sync. (#1553)
+- Open in Window for row inspector text fields.
 
 ### Fixed
 
-- Background table-tab eviction now releases unpinned row data without dropping query, pinned, edited or in-flight results.
-- The result display cache now enforces its memory budget when a cached row's formatted values grow.
-- Undo, redo, a theme change and a display-format change no longer leave the data grid reformatting every cell as you scroll.
-- Autocomplete no longer bulk-loads every column of a schema too big to cache, so on those databases column suggestions arrive per table as you reference one.
-- A background tab whose column metadata arrived after its rows were freed now reloads on return instead of showing an empty grid.
-- A saved connection whose SSH settings were written before the agent socket field existed now loads instead of disappearing.
-- Switch Connection and Open Database now open on a narrow window, and after you remove their toolbar button, instead of doing nothing at all.
-- A large text value in the row inspector now scrolls in a resizable text view instead of being clipped, and stays selectable and copyable when the row is read-only.
-- The inspector picks its multi-line editor from the value, so a large value in `VARCHAR(MAX)`, `NCLOB` or ClickHouse's `Nullable(String)` is no longer stuck on one line.
-- Right-clicking a read-only inspector field now offers Copy Value instead of an empty menu.
-- Editor crashes when layout, highlighting, accessibility, input methods, dictation or Look Up read text a newer edit had removed. (#2338, #2339, #2340)
-- A search highlight or diagnostic underline whose text you delete now disappears instead of moving elsewhere. (#2341)
-- The toolbar no longer sits on "Executing…" after a query ends, and the session context buttons no longer empty out while one runs. (#2342)
-- A SQLite query that stops early on a locked database or a volume error now says so instead of showing an empty table. (#2355)
-- Stop now ends a SQLite query waiting on a database another program has locked. (#2363)
-- The XLSX, MQL and SQL Import plugins now link to Import & Export instead of a page that does not exist.
+- Background tab eviction dropping query, pinned, edited, and in-flight results.
+- Result display cache exceeding its memory budget when a cached row's values grew.
+- Data grid reformatting every cell while scrolling after undo, redo, a theme change, or a display-format change.
+- Autocomplete bulk-loading every column of a schema too large to cache.
+- Empty grid on a background tab whose column metadata arrived after its rows were freed.
+- Saved connections failing to load when their SSH settings predated the agent socket field.
+- Switch Connection and Open Database doing nothing on a narrow window or without their toolbar button.
+- Large text values clipped in the row inspector, and unselectable when the row is read-only.
+- Large `VARCHAR(MAX)`, `NCLOB`, and `Nullable(String)` values stuck on one line in the inspector.
+- Empty context menu when right-clicking a read-only inspector field.
+- Editor crashes reading text a newer edit had removed. (#2338, #2339, #2340)
+- Search highlights and diagnostic underlines moving when their text was deleted. (#2341)
+- Toolbar stuck on "Executing…" after a query ended, and session context buttons emptying mid-query. (#2342)
+- SQLite queries showing an empty table instead of reporting a lock or volume error. (#2355)
+- Stop not ending a SQLite query waiting on a database locked by another program. (#2363)
+- Broken documentation links in the XLSX, MQL, and SQL Import plugins.
 
 ## [0.67.0] - 2026-08-21
 
