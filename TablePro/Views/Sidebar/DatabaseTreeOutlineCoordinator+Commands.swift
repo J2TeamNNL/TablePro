@@ -76,6 +76,18 @@ extension DatabaseTreeOutlineCoordinator {
             sidebarState?.clearRecentTables(inDatabase: mainCoordinator?.browseDatabaseName)
         case .useAsActive(let container):
             useAsActive(container)
+        case .setFavoriteDatabases(let databases, let environment):
+            for database in databases {
+                favoriteDatabasesStorage.setFavorite(
+                    database: database,
+                    environment: environment,
+                    connectionId: connectionId
+                )
+            }
+        case .removeFavoriteDatabases(let databases):
+            for database in databases {
+                favoriteDatabasesStorage.removeFavorite(database: database, connectionId: connectionId)
+            }
         case .refreshContainers(let targets):
             refreshContainers(targets)
         case .copyContainerNames(let targets):
