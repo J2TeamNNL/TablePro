@@ -37,6 +37,26 @@ struct QueryCompletionProfileRegistryTests {
         }
     }
 
+    /// Lets one resolution announce that the registry has already recorded it as in flight,
+    /// so the joining call is made against a known state instead of racing `async let` ordering.
+    actor Signal {
+        private var isRaised = false
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+
+        func raise() {
+            isRaised = true
+            for waiter in waiters {
+                waiter.resume()
+            }
+            waiters = []
+        }
+
+        func wait() async {
+            guard !isRaised else { return }
+            await withCheckedContinuation { waiters.append($0) }
+        }
+    }
+
     nonisolated private static func base(revision: String = "base") -> QueryCompletionProfile {
         QueryCompletionProfile(
             resolvedDialect: nil,
@@ -164,6 +184,9 @@ struct QueryCompletionProfileRegistryTests {
         let scope = DatabaseScope(connectionId: UUID(), database: "shop", schema: nil)
         let resolutions = Counter()
 
+        let didStart = Signal()
+        let mayFinish = Signal()
+
         async let first = registry.resolve(
             scope: scope,
             databaseType: .mysql,
@@ -171,9 +194,11 @@ struct QueryCompletionProfileRegistryTests {
             base: Self.base()
         ) {
             await resolutions.increment()
-            await Task.yield()
+            await didStart.raise()
+            await mayFinish.wait()
             return Self.base(revision: "resolved")
         }
+        await didStart.wait()
         async let second = registry.resolve(
             scope: scope,
             databaseType: .mysql,
@@ -183,6 +208,7 @@ struct QueryCompletionProfileRegistryTests {
             await resolutions.increment()
             return Self.base(revision: "duplicate")
         }
+        await mayFinish.raise()
 
         let revisions = await [first.revision, second.revision]
         #expect(await resolutions.value == 1)

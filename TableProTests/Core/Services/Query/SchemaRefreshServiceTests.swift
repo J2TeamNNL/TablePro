@@ -257,7 +257,7 @@ struct SchemaRefreshServiceTests {
         async let unscoped: Void = service.refresh(connection: connection, database: nil)
         _ = await (scoped, unscoped)
 
-        #expect(provider.acquisitionCount == 2)
+        #expect(provider.requestedWorkloads.filter { $0 == .bulk }.count == 2)
     }
 
     @Test("a metadata connection failure surfaces a failed schema state")
