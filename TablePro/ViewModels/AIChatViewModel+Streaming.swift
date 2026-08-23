@@ -241,7 +241,8 @@ extension AIChatViewModel {
                         ChatToolContext(
                             connectionId: self.connection?.id,
                             bridge: ChatToolBootstrap.bridge,
-                            authPolicy: ChatToolBootstrap.authPolicy
+                            authPolicy: ChatToolBootstrap.authPolicy,
+                            sessionId: self.sessionId
                         )
                     }
                     let toolUseBlocks = await self.resolveAndAwaitApprovals(

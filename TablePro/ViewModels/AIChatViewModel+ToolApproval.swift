@@ -117,8 +117,18 @@ extension AIChatViewModel {
         input: JsonValue,
         registry: ChatToolRegistry? = nil
     ) -> ToolApprovalState {
-        let tool = (registry ?? ChatToolRegistry.shared).tool(named: toolName)
+        let resolvedRegistry = registry ?? ChatToolRegistry.shared
+        let tool = resolvedRegistry.tool(named: toolName)
         let toolMode = tool?.mode
+
+        /// A tool from an outside MCP server always waits for a human, in every chat mode, whatever
+        /// mode it declares and whatever the connection's grants say. "Read-only" is the server's
+        /// claim about itself, and what leaves the machine on such a call is the schema and the rows
+        /// the assistant hands it. Checked ahead of every other arm, including the `.readOnly`
+        /// shortcut a remote tool would otherwise take straight to `.approved`.
+        if resolvedRegistry.isRemoteTool(named: toolName) {
+            return .pending
+        }
 
         if toolMode == .readOnly {
             return .approved
@@ -266,6 +276,12 @@ extension AIChatViewModel {
         if ChatToolRegistry.shared.tool(named: toolName)?.mode == .agentOnly {
             return
         }
+        /// A remote tool is never granted. `computeInitialApprovalState` forces it to `.pending`
+        /// whatever is recorded, so a grant here would be a permanent entry that does nothing and
+        /// reads, in the connection form, as permission the user gave and TablePro ignores.
+        if ChatToolRegistry.shared.isRemoteTool(named: toolName) {
+            return
+        }
         guard let target = connection else { return }
         guard !floorRaisedSafeModeLevel(for: target) else { return }
         guard var stored = services.connectionStorage.loadConnection(id: target.id) else { return }
@@ -284,7 +300,8 @@ extension AIChatViewModel {
         let context = ChatToolContext(
             connectionId: connection?.id,
             bridge: ChatToolBootstrap.bridge,
-            authPolicy: ChatToolBootstrap.authPolicy
+            authPolicy: ChatToolBootstrap.authPolicy,
+            sessionId: sessionId
         )
         await handleCopilotToolInvocation(
             block: block, replyToken: replyToken,

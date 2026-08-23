@@ -85,6 +85,10 @@ internal final class AgentSessionRegistry {
         )
         sessions.append(session)
         persist()
+        /// Outside MCP servers this connection allows are connected in the background. A server that
+        /// never answers must not hold up the session the user just started, so nothing here is
+        /// awaited and a failure only means the tools are not offered.
+        Task { await MCPRemoteToolCoordinator.shared.attach(session: session) }
         return session
     }
 
@@ -138,17 +142,26 @@ internal final class AgentSessionRegistry {
         session.viewModel.releaseUnsentAttachments()
         sessions.removeAll { $0.id == id }
         persist()
+        /// A server's tools stay registered while another session still authorizes it, so a call
+        /// already in flight on that session is untouched.
+        Task { await MCPRemoteToolCoordinator.shared.detach(sessionId: id) }
     }
 
     internal func removeSessions(for connectionId: UUID) {
         let owned = sessions(for: connectionId)
         guard !owned.isEmpty else { return }
+        let ids = owned.map(\.id)
         for session in owned {
             session.stop()
             session.viewModel.releaseUnsentAttachments()
         }
         sessions.removeAll { $0.connectionId == connectionId }
         persist()
+        Task {
+            for id in ids {
+                await MCPRemoteToolCoordinator.shared.detach(sessionId: id)
+            }
+        }
     }
 
     // MARK: - Persistence

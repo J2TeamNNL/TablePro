@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Result pane in Assistant mode with proposed SQL, steps taken, query results and schema changes.
 - `explain_query` chat tool, so the assistant can ask for a query plan without running the statement.
 - Start an AI session from the welcome window, with running and stopped sessions listed there.
+- Outside MCP servers as tool sources for AI sessions, allowlisted per connection.
 
 ### Fixed
 
@@ -39,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The last turn of a chat lost when the app quit mid-reply.
 - Approving any tool call but the first in a turn doing nothing, leaving the reply parked.
 - Every proposed tool call taking `Return`, so the key acted on whichever button AppKit reached first.
+
+### Security
+
+- Outside MCP tools always require approval and are audited per call, with the payload's size and hash but not its contents.
 
 ## [0.67.1] - 2026-08-22
 
