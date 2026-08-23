@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Session rail listing every session with its connection, including sessions whose window is closed.
 - Result pane in Assistant mode with proposed SQL, steps taken, query results and schema changes.
 - `explain_query` chat tool, so the assistant can ask for a query plan without running the statement.
+- Start an AI session from the welcome window, with running and stopped sessions listed there.
 
 ### Fixed
 

@@ -46,6 +46,38 @@ struct ConnectionWindowPaneResolverTests {
         }
     }
 
+    @Test("Assistant mode keeps its detail pane while connecting and after a failure")
+    func assistantModeKeepsChromeDecisionForPreConnect() {
+        #expect(!ConnectionWindowPaneResolver.hidesChrome(for: .connecting, mode: .assistant))
+        #expect(!ConnectionWindowPaneResolver.hidesChrome(for: .unavailable(.failed(Self.failure)), mode: .assistant))
+        #expect(!ConnectionWindowPaneResolver.hidesChrome(for: .content, mode: .assistant))
+        #expect(ConnectionWindowPaneResolver.hidesChrome(for: .empty, mode: .assistant))
+    }
+
+    @Test("Browse mode's chrome decision is unchanged by the mode argument")
+    func browseModeChromeDecisionUnchanged() {
+        #expect(ConnectionWindowPaneResolver.hidesChrome(for: .connecting, mode: .browse))
+        #expect(ConnectionWindowPaneResolver.hidesChrome(for: .unavailable(.cancelled), mode: .browse))
+        #expect(ConnectionWindowPaneResolver.hidesChrome(for: .empty, mode: .browse))
+        #expect(!ConnectionWindowPaneResolver.hidesChrome(for: .content, mode: .browse))
+    }
+
+    @Test("Only assistant mode mounts a pre-connect surface, and never over content")
+    func preConnectSurfaceMatrix() {
+        #expect(ConnectionWindowPaneResolver.showsPreConnectAssistant(for: .connecting, mode: .assistant))
+        #expect(ConnectionWindowPaneResolver.showsPreConnectAssistant(
+            for: .unavailable(.failed(Self.failure)),
+            mode: .assistant
+        ))
+        #expect(!ConnectionWindowPaneResolver.showsPreConnectAssistant(for: .content, mode: .assistant))
+        #expect(!ConnectionWindowPaneResolver.showsPreConnectAssistant(for: .empty, mode: .assistant))
+        #expect(!ConnectionWindowPaneResolver.showsPreConnectAssistant(for: .connecting, mode: .browse))
+        #expect(!ConnectionWindowPaneResolver.showsPreConnectAssistant(
+            for: .unavailable(.cancelled),
+            mode: .browse
+        ))
+    }
+
     @Test("Every unavailable reason reaches its pane")
     func everyUnavailableReasonResolves() {
         let reasons: [ConnectionUnavailableReason] = [

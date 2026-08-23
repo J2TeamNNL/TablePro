@@ -35,12 +35,38 @@ internal enum ConnectionWindowPaneResolver {
 
     /// A sidebar and an inspector with nothing to put in them are not chrome, they are two empty
     /// columns that promise a session the window does not have yet.
-    internal static func hidesChrome(for pane: ConnectionWindowPane) -> Bool {
+    ///
+    /// Assistant mode is the exception while a connection is being established or has failed. A
+    /// prompt typed at Welcome lives on the session, not on the window, so there is content to show
+    /// before any database answers: the transcript and the composer. The sidebar and the inspector
+    /// still go, because a session rail and a result pane have nothing to say yet.
+    internal static func hidesChrome(
+        for pane: ConnectionWindowPane,
+        mode: ConnectionWorkspaceContentMode = .browse
+    ) -> Bool {
         switch pane {
         case .content:
             return false
-        case .connecting, .unavailable, .empty:
+        case .connecting, .unavailable:
+            return mode != .assistant
+        case .empty:
             return true
+        }
+    }
+
+    /// Whether the detail pane carries the pre-connect assistant surface rather than the connecting
+    /// or failure view. Read by the pane builder, so the two decisions cannot drift: a mode that
+    /// keeps its chrome hidden and mounts no content would leave the window blank.
+    internal static func showsPreConnectAssistant(
+        for pane: ConnectionWindowPane,
+        mode: ConnectionWorkspaceContentMode
+    ) -> Bool {
+        guard mode == .assistant else { return false }
+        switch pane {
+        case .connecting, .unavailable:
+            return true
+        case .content, .empty:
+            return false
         }
     }
 

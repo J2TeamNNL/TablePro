@@ -3,7 +3,7 @@ title: Assistant mode
 description: Hand the whole window to one AI session, with its steps, its SQL, and the rows it read side by side
 ---
 
-Click **Assistant** in the toolbar. The object browser and the editor tab strip go, and the window becomes three columns: the sessions you have open, the conversation, and what the session produced. Click **Browse** to come back to the tables. The choice is per connection, so one connection can sit in Assistant mode while another stays on a table.
+Click **Assistant** in the toolbar, or type a request under the connection list in the [welcome window](#starting-from-the-welcome-window). The object browser and the editor tab strip go, and the window becomes three columns: the sessions you have open, the conversation, and what the session produced. Click **Browse** to come back to the tables. The choice is per connection, so one connection can sit in Assistant mode while another stays on a table.
 
 The narrow [connections strip](/features/workspace-rail) stays where it is, and no tab is closed by the switch. Everything in the browse window is where you left it.
 
@@ -66,6 +66,14 @@ A rejected statement stays in the list with its state, and the model is told it 
 **Results** shows the first 100 rows of each result and says how many there are. **Open as Query** puts the statement in a normal query tab for the whole set.
 
 The **Schema** view reads `CREATE`, `ALTER … ADD`, `ALTER … DROP`, `DROP`, and `TRUNCATE`. A statement it cannot read shows its own SQL instead of a list of changes. The preview never decides whether a statement runs: that is the approval card, and for `DROP`, `TRUNCATE`, and `ALTER…DROP` the separate destructive confirmation.
+
+## Starting from the welcome window
+
+Select a connection and the panel under the list offers both ways in. **Browse database** opens the tables and is what `Return` and a double click still do. Typing a request and pressing `Return` in the field opens the connection in Assistant mode and sends the request once connected.
+
+The conversation and the request appear while the connection is still opening, with sending dimmed. A connect that fails shows the driver's error there with **Try Again**, and the request is still waiting when it succeeds.
+
+Sessions already open are listed above the field with their connection and state, so a session whose window is closed is reachable without opening anything first. Clicking one focuses the window already hosting its connection rather than opening a second.
 
 ## Limitations
 

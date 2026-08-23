@@ -486,7 +486,8 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         /// connection record, and `AgentSession` needs one. Without this the conversation pane would
         /// stay blank after the connect landed, because nothing else would ask for a session.
         if workspace.contentMode == .assistant {
-            startSessionIfNeeded(for: workspace)
+            let agentSession = startSessionIfNeeded(for: workspace)
+            agentSession?.sendPendingPromptIfReady(connection: session.connection)
         }
     }
 
@@ -748,16 +749,21 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
 
     @ViewBuilder
     private func buildDetailView(for workspace: ConnectionWorkspace) -> some View {
-        if workspace.contentMode == .assistant, Self.pane(of: workspace) == .content {
+        let pane = Self.pane(of: workspace)
+        if workspace.contentMode == .assistant, pane == .content {
             buildAgentConversationView(for: workspace)
+        } else if ConnectionWindowPaneResolver.showsPreConnectAssistant(
+            for: pane,
+            mode: workspace.contentMode
+        ) {
+            buildAgentPreConnectView(for: workspace, pane: pane)
         } else {
             buildBrowseDetailView(for: workspace)
         }
     }
 
-    /// Assistant mode only replaces the detail pane once there is a session to talk to. The
-    /// connecting and unavailable arms stay as they are here, so a connect that is still dialling
-    /// or has failed shows the same thing it does in browse mode.
+    /// Browse mode's connecting and failure arms. Assistant mode keeps its own pane during both, so
+    /// a prompt typed before the connection was ready stays visible and recoverable.
     @ViewBuilder
     private func buildBrowseDetailView(for workspace: ConnectionWorkspace) -> some View {
         let pane = Self.pane(of: workspace)
@@ -1159,7 +1165,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     /// choose would persist that as their layout and lose the width they set, so autosaving is
     /// switched off for the whole span the chrome is hidden and switched back on to restore it.
     func applyPaneChrome() {
-        if ConnectionWindowPaneResolver.hidesChrome(for: currentPane) {
+        if ConnectionWindowPaneResolver.hidesChrome(for: currentPane, mode: contentMode) {
             hideWindowChrome()
         } else {
             revealWindowChrome()

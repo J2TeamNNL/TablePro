@@ -139,6 +139,58 @@ internal extension MainSplitViewController {
         refreshPanes(of: workspace)
     }
 
+    /// The assistant surface while the connection is still being established, or has failed.
+    ///
+    /// The session is resolved rather than created: a connection with no session has nothing to
+    /// render here, and creating one from a pane builder is creating one from a view body.
+    @ViewBuilder
+    func buildAgentPreConnectView(
+        for workspace: ConnectionWorkspace,
+        pane: ConnectionWindowPane
+    ) -> some View {
+        if let connection = workspace.connection, let session = selectedSession(of: workspace) {
+            AgentPreConnectView(
+                connection: connection,
+                session: session,
+                failure: {
+                    if case .unavailable(let reason) = pane { return reason }
+                    return nil
+                }(),
+                onRetry: { [weak self] in self?.reconnectWorkspace(workspace.connectionId) },
+                onCancel: { [weak self] in self?.cancelConnectionAttempt(for: workspace.connectionId) }
+            )
+        } else {
+            buildBrowsePaneFallback(for: workspace, pane: pane)
+        }
+    }
+
+    /// What the assistant arm falls back to when there is no session yet: the same connecting or
+    /// failure view browse mode shows, so the window is never blank.
+    @ViewBuilder
+    private func buildBrowsePaneFallback(
+        for workspace: ConnectionWorkspace,
+        pane: ConnectionWindowPane
+    ) -> some View {
+        if let connection = workspace.connection {
+            if case .unavailable(let reason) = pane {
+                ConnectionUnavailableView(
+                    connection: connection,
+                    reason: reason,
+                    onPrimaryAction: { [weak self] in
+                        self?.performUnavailablePrimaryAction(reason, for: workspace.connectionId)
+                    },
+                    onManageConnections: { [weak self] in self?.openConnectionList() }
+                )
+            } else {
+                ConnectingStateView(connection: connection) { [weak self] in
+                    self?.cancelConnectionAttempt(for: workspace.connectionId)
+                }
+            }
+        } else {
+            Color.clear
+        }
+    }
+
     @ViewBuilder
     func buildAgentConversationView(for workspace: ConnectionWorkspace) -> some View {
         if let connectionSession = workspace.session,

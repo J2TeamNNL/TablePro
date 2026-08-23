@@ -41,6 +41,11 @@ internal final class AgentSession: Identifiable, Equatable {
     /// call site would still have every engine transition consult the process-wide one.
     @ObservationIgnored private let approvals: ToolApprovalCenter
 
+    /// How a pending prompt reaches the provider. Injectable for the same reason
+    /// `AIChatViewModel.streamFlushClock` is: the real path opens a provider request, so a test that
+    /// exercised the send would fire one on whatever provider the machine running it has configured.
+    @ObservationIgnored internal var promptSender: (String) -> Void
+
     internal init(
         connectionId: UUID,
         connectionName: String,
@@ -49,9 +54,13 @@ internal final class AgentSession: Identifiable, Equatable {
         status: AgentSessionStatus = .idle,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
-        approvals: ToolApprovalCenter = .shared
+        approvals: ToolApprovalCenter = .shared,
+        promptSender: ((String) -> Void)? = nil
     ) {
         self.approvals = approvals
+        self.promptSender = promptSender ?? { [weak viewModel] prompt in
+            viewModel?.sendWithContext(prompt: prompt)
+        }
         self.id = viewModel.sessionId
         self.connectionId = connectionId
         self.connectionName = connectionName
@@ -136,6 +145,24 @@ internal final class AgentSession: Identifiable, Equatable {
     /// statement the user never saw the outcome of.
     internal func markFailed() {
         apply(.failed)
+    }
+
+    /// Sends the prompt the session was created with, once its connection is up.
+    ///
+    /// Cleared before the send is dispatched, not after it completes. A connect can report connected
+    /// more than once (a retry, or a second window joining), and clearing afterwards would send the
+    /// first turn twice.
+    internal func sendPendingPromptIfReady(connection: DatabaseConnection) {
+        guard let prompt = pendingPrompt?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !prompt.isEmpty
+        else {
+            pendingPrompt = nil
+            return
+        }
+        pendingPrompt = nil
+        viewModel.connection = connection
+        connectionName = connection.name
+        promptSender(prompt)
     }
 
     internal func adoptTitleFromTranscript() {
