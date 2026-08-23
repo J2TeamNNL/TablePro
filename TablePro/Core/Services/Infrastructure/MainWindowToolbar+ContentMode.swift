@@ -17,14 +17,20 @@ extension MainWindowToolbar {
     /// slot and pin it to the leading edge of the content title area, which is where back, forward
     /// and the connection chip already are.
     internal static func makeContentModeGroup(target: AnyObject?, action: Selector) -> NSToolbarItemGroup {
-        let images = ["tablecells", "sparkles"].compactMap {
-            NSImage(systemSymbolName: $0, accessibilityDescription: nil)
+        let labels = [String(localized: "Browse"), String(localized: "Assistant")]
+        /// The label goes on the image too, not only in `labels`. An expanded group builds its own
+        /// segmented control and takes each segment's accessibility name from the image's
+        /// `accessibilityDescription`, so a nil one leaves VoiceOver reading the SF Symbol name:
+        /// the window's sidebar toggle announces itself as "List" and "favorite" for exactly this
+        /// reason.
+        let images = zip(["tablecells", "sparkles"], labels).compactMap {
+            NSImage(systemSymbolName: $0.0, accessibilityDescription: $0.1)
         }
         let group = NSToolbarItemGroup(
             itemIdentifier: contentMode,
             images: images,
             selectionMode: .selectOne,
-            labels: [String(localized: "Browse"), String(localized: "Assistant")],
+            labels: labels,
             target: target,
             action: action
         )
