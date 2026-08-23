@@ -91,26 +91,42 @@ struct ValidateDriverDescriptorTests {
         try pm.validateDriverDescriptor(MockDriverPlugin.self, pluginId: "test")
     }
 
+    /// The conflict is seeded here rather than taken from a built-in plugin.
+    ///
+    /// Both of these named "MySQL" and relied on the bundled MySQL plugin having claimed it. Nothing
+    /// claims it under XCTest: `applicationDidFinishLaunching` returns early when
+    /// `XCTestConfigurationFilePath` is set, so no plugin is ever loaded, `driverPlugins` is empty,
+    /// and the duplicate check these exist to prove had nothing to collide with.
+    @MainActor
+    private func withRegisteredDriver(typeId: String, _ body: (PluginManager) -> Void) {
+        let manager = PluginManager.shared
+        MockDriverPlugin.reset(typeId: typeId, displayName: "Occupant")
+        manager.driverPlugins[typeId] = MockDriverPlugin()
+        defer { manager.driverPlugins.removeValue(forKey: typeId) }
+        body(manager)
+    }
+
     @Test("rejects duplicate primary type ID already registered")
     @MainActor func rejectsDuplicatePrimaryTypeId() {
-        // "MySQL" is registered by the built-in MySQL plugin
-        MockDriverPlugin.reset(typeId: "MySQL", displayName: "Fake MySQL")
-        let pm = PluginManager.shared
-        #expect(throws: PluginError.self) {
-            try pm.validateDriverDescriptor(MockDriverPlugin.self, pluginId: "test")
+        withRegisteredDriver(typeId: "occupied-test-db-type") { manager in
+            MockDriverPlugin.reset(typeId: "occupied-test-db-type", displayName: "Fake Occupant")
+            #expect(throws: PluginError.self) {
+                try manager.validateDriverDescriptor(MockDriverPlugin.self, pluginId: "test")
+            }
         }
     }
 
     @Test("rejects duplicate additional type ID already registered")
     @MainActor func rejectsDuplicateAdditionalTypeId() {
-        MockDriverPlugin.reset(
-            typeId: "unique-test-db-type-2",
-            displayName: "Test DB",
-            additionalIds: ["MySQL"]
-        )
-        let pm = PluginManager.shared
-        #expect(throws: PluginError.self) {
-            try pm.validateDriverDescriptor(MockDriverPlugin.self, pluginId: "test")
+        withRegisteredDriver(typeId: "occupied-test-db-type-2") { manager in
+            MockDriverPlugin.reset(
+                typeId: "unique-test-db-type-2",
+                displayName: "Test DB",
+                additionalIds: ["occupied-test-db-type-2"]
+            )
+            #expect(throws: PluginError.self) {
+                try manager.validateDriverDescriptor(MockDriverPlugin.self, pluginId: "test")
+            }
         }
     }
 }
