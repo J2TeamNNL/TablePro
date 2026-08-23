@@ -126,6 +126,14 @@ struct SQLEditorView: View {
             configureCompletion()
             setupFavoritesObserver()
         }
+        /// A tab rebound to another database keeps its view and its connection, so only the scope
+        /// moves. Without this the editor keeps completing against the previous database's
+        /// provider until the profile resolution returns, which leases a metadata driver and on a
+        /// non-poolable engine can queue behind a running query.
+        .onChange(of: databaseScope) { _, _ in
+            completionProfile = nil
+            configureCompletion()
+        }
         .task(id: completionProfileRequest) {
             await resolveCompletionProfile()
         }

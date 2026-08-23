@@ -87,10 +87,12 @@ final class QueryCompletionProfileRegistry {
         if let profile = profiles[key] {
             return profile
         }
-        if let task = inFlight[key] {
-            return await task.value
-        }
         let generation = generations[key, default: 0]
+        if let task = inFlight[key] {
+            let joined = await task.value
+            guard generations[key, default: 0] == generation else { return base }
+            return joined
+        }
         let task = Task {
             (try? await resolver()) ?? base
         }

@@ -36,6 +36,7 @@ final class SchemaProviderRegistry {
     private var providers: [DatabaseScope: SQLSchemaProvider] = [:]
     private var loadedScopes: Set<DatabaseScope> = []
     private var populationTasks: [DatabaseScope: Task<Void, Never>] = [:]
+    private var populationGenerations: [DatabaseScope: Int] = [:]
     private var refCounts: [UUID: Int] = [:]
     private var removalTasks: [UUID: Task<Void, Never>] = [:]
     private var cancellables: Set<AnyCancellable> = []
@@ -135,10 +136,16 @@ final class SchemaProviderRegistry {
     /// writers with no ordering between them and two different table sets to write.
     func refresh(request: DataRefreshRequest) {
         let browseScope = metadataDriverProvider.browseScope(for: request.connectionId)
+        /// Most senders leave the scope nil, which reaches every provider of the connection.
+        /// Repopulating all of them would run a catalog fetch and a whole-schema column preload
+        /// per scope the session has ever visited, so only the scopes something still renders
+        /// are refreshed; the rest reload when a tab binds to them again.
+        let live = liveScopeProvider?.liveScopes(for: request.connectionId)
         let matching = providers.filter { scope, _ in
             scope.connectionId == request.connectionId
                 && scope != browseScope
                 && request.reaches(tabScope: scope)
+                && (live?.contains(scope) ?? true)
         }
         for (scope, provider) in matching {
             Task { [weak self] in
@@ -164,12 +171,19 @@ final class SchemaProviderRegistry {
         let metadataProvider = metadataDriverProvider
         let resolvedConnection = connection ?? DatabaseManager.shared.session(for: scope.connectionId)?.connection
         let databases = knownDatabases(for: scope)
+        let generation = populationGenerations[scope, default: 0]
 
         let task = Task { [weak self] in
+            let registry = self
             do {
                 try await metadataProvider.withMetadataDriver(scope: scope, workload: .bulk) { driver in
                     let tables = try await driver.fetchTables(schema: scope.schema)
                     let schemas = (try? await driver.fetchSchemas()) ?? []
+                    /// The fetch is a round trip, and `SchemaRefreshService` can finish filling
+                    /// this scope during it with the union of every expanded schema. Committing
+                    /// afterwards would narrow that union to this one schema and then record the
+                    /// scope as loaded, so nothing would widen it again until a manual refresh.
+                    guard await registry?.canCommitPopulation(of: scope, generation: generation) == true else { return }
                     await provider.resetForDatabase(
                         scope.database,
                         tables: tables,
@@ -178,7 +192,7 @@ final class SchemaProviderRegistry {
                     )
                     await provider.setNamespaces(schemas: schemas, databases: databases)
                 }
-                self?.markPopulated(scope: scope, provider: provider)
+                self?.markPopulated(scope: scope, provider: provider, generation: generation)
             } catch is CancellationError {
                 return
             } catch {
@@ -199,8 +213,8 @@ final class SchemaProviderRegistry {
     /// disconnected mid-flight still completes and writes into a provider nobody holds any more.
     /// Recording the scope as loaded on the strength of that write would leave its replacement
     /// permanently unfilled, so the identity of the provider written to is the fence.
-    private func markPopulated(scope: DatabaseScope, provider: SQLSchemaProvider) {
-        guard providers[scope] === provider else { return }
+    private func markPopulated(scope: DatabaseScope, provider: SQLSchemaProvider, generation: Int) {
+        guard providers[scope] === provider, populationGenerations[scope, default: 0] == generation else { return }
         loadedScopes.insert(scope)
     }
 
@@ -211,6 +225,17 @@ final class SchemaProviderRegistry {
     func notePopulatedExternally(scope: DatabaseScope) {
         guard providers[scope] != nil else { return }
         loadedScopes.insert(scope)
+        populationGenerations[scope, default: 0] &+= 1
+        populationTasks.removeValue(forKey: scope)?.cancel()
+    }
+
+    /// A population commits only while it is still the one filling this scope. `Task.cancel` is
+    /// cooperative and the pooled body never checks it, so a superseded fetch runs to completion
+    /// and has to be stopped at the write rather than at the read. The generation, not the loaded
+    /// flag, is what separates "the owner filled this while I was fetching" from "this is a
+    /// refresh of a scope that was already loaded".
+    private func canCommitPopulation(of scope: DatabaseScope, generation: Int) -> Bool {
+        populationGenerations[scope, default: 0] == generation
     }
 
     private func knownDatabases(for scope: DatabaseScope) -> [String] {
@@ -291,6 +316,7 @@ final class SchemaProviderRegistry {
         for scope in doomed {
             providers.removeValue(forKey: scope)
             loadedScopes.remove(scope)
+            populationGenerations[scope, default: 0] &+= 1
             populationTasks.removeValue(forKey: scope)?.cancel()
         }
     }

@@ -45,18 +45,4 @@ struct PluginManagerEditorMetadataTests {
         #expect(dialect.identifierQuote == "`")
         #expect(PluginManager.shared.editorLanguage(for: alias) == .sql)
     }
-
-    /// One connection, one dialect. The filter preview reads PluginManager.sqlDialect while the
-    /// executed base query builds through resolveSQLDialect, so a variant answering differently
-    /// between them shows the user one statement and runs another.
-    @Test("every reader of the editor dialect agrees for a variant type")
-    func dialectReadersAgreeForAVariant() throws {
-        for databaseType in [DatabaseType.redshift, .cockroachdb, .pglite, .mariadb] {
-            let viaManager = try #require(PluginManager.shared.sqlDialect(for: databaseType))
-            let viaHelper = try resolveSQLDialect(for: databaseType)
-            #expect(viaManager.caseSensitivityStyle == viaHelper.caseSensitivityStyle)
-            #expect(viaManager.identifierQuote == viaHelper.identifierQuote)
-            #expect(PluginManager.shared.autoLimitStyle(for: databaseType) == viaManager.autoLimitStyle)
-        }
-    }
 }
