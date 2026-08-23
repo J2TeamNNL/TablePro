@@ -293,7 +293,7 @@ final class MainContentCommandActions {
     /// existing proves nothing: it is kept alive across a lost session so a reconnect can restore
     /// the user's tabs.
     var isConnected: Bool { coordinator?.splitViewController?.isConnected ?? false }
-    var isQueryExecuting: Bool { coordinator?.toolbarState.isExecuting ?? false }
+    var isQueryExecuting: Bool { coordinator?.tabExecution.isAnyExecuting ?? false }
 
     var safeModeLevel: SafeModeLevel { coordinator?.toolbarState.safeModeLevel ?? connection.safeModeLevel }
 
@@ -317,6 +317,38 @@ final class MainContentCommandActions {
 
     var supportsContainerSwitching: Bool {
         PluginManager.shared.supportsContainerSwitching(for: connection.type)
+    }
+
+    /// An engine with no database dimension has nothing to favorite, and neither has a window whose
+    /// browse database is still empty.
+    var canFavoriteActiveDatabase: Bool {
+        PluginManager.shared.containerSwitchTarget(for: connection.type) == .database
+            && !browseDatabaseName.isEmpty
+    }
+
+    var activeDatabaseFavoriteEnvironment: FavoriteDatabaseEnvironment? {
+        guard canFavoriteActiveDatabase else { return nil }
+        return FavoriteDatabasesStorage.shared
+            .favorites(for: connection.id)
+            .first { $0.database == browseDatabaseName }?
+            .environment
+    }
+
+    func setActiveDatabaseFavorite(environment: FavoriteDatabaseEnvironment) {
+        guard canFavoriteActiveDatabase else { return }
+        FavoriteDatabasesStorage.shared.setFavorite(
+            database: browseDatabaseName,
+            environment: environment,
+            connectionId: connection.id
+        )
+    }
+
+    func removeActiveDatabaseFavorite() {
+        guard canFavoriteActiveDatabase else { return }
+        FavoriteDatabasesStorage.shared.removeFavorite(
+            database: browseDatabaseName,
+            connectionId: connection.id
+        )
     }
 
     /// Picks between the two spellings a container command has. Each one is a whole localized
@@ -1306,7 +1338,7 @@ final class MainContentCommandActions {
         guard PluginManager.shared.connectionMode(for: type) != .fileBased else { return }
         coordinator.contentWindow?.makeFirstResponder(nil)
         coordinator.presentedScopeSwitcher = nil
-        coordinator.isDatabaseSwitcherShown = true
+        presentDatabaseSwitcher(on: coordinator, target: nil)
     }
 
     /// The same chooser, opened from the toolbar chip so it appears against the scope it switches.
@@ -1317,7 +1349,7 @@ final class MainContentCommandActions {
         let type = coordinator.connection.type
         guard PluginManager.shared.switchableContainers(for: type).contains(target) else { return }
         coordinator.contentWindow?.makeFirstResponder(nil)
-        coordinator.isDatabaseSwitcherShown = false
+        coordinator.switcherPresenter.dismiss()
         coordinator.presentedScopeSwitcher = target
     }
 
@@ -1326,8 +1358,29 @@ final class MainContentCommandActions {
     }
 
     func openConnectionSwitcher() {
-        coordinator?.contentWindow?.makeFirstResponder(nil)
-        coordinator?.isConnectionSwitcherShown = true
+        guard let coordinator else { return }
+        coordinator.contentWindow?.makeFirstResponder(nil)
+        coordinator.presentedScopeSwitcher = nil
+        coordinator.switcherPresenter.present(
+            from: coordinator.contentWindow,
+            anchoredTo: MainWindowToolbar.connectionGroup,
+            contentSize: ConnectionSwitcherPopover.contentSize
+        ) { dismiss in
+            ConnectionSwitcherPopover(dismiss: dismiss)
+        }
+    }
+
+    /// Anchored to the connection group rather than to the Database button inside it, because the
+    /// group is the only item AppKit draws a frame for: its subitems exist to populate the overflow
+    /// menu and carry no frame of their own.
+    private func presentDatabaseSwitcher(on coordinator: MainContentCoordinator, target: ContainerSwitchTarget?) {
+        coordinator.switcherPresenter.present(
+            from: coordinator.contentWindow,
+            anchoredTo: MainWindowToolbar.connectionGroup,
+            contentSize: DatabaseSwitcherPopover.contentSize
+        ) { dismiss in
+            DatabaseSwitcherPopoverHost(coordinator: coordinator, target: target, dismiss: dismiss)
+        }
     }
 
     // MARK: - Undo/Redo (Group A — Called Directly)

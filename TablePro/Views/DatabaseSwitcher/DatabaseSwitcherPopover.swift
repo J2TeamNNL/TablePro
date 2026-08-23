@@ -7,6 +7,7 @@ struct DatabaseSwitcherPopoverHost: View {
     /// Which container dimension this presentation switches. An engine can have both, so the caller
     /// names the one it opened rather than the popover guessing from the engine's primary target.
     var target: ContainerSwitchTarget?
+    let dismiss: () -> Void
 
     var body: some View {
         if let coordinator {
@@ -38,7 +39,8 @@ struct DatabaseSwitcherPopoverHost: View {
                 },
                 onRequestExport: { [weak coordinator] containers in
                     coordinator?.openExportDialog(containers: containers)
-                }
+                },
+                dismiss: dismiss
             )
         } else {
             EmptyView()
@@ -60,12 +62,16 @@ struct DatabaseSwitcherPopover: View {
     let onRequestDrop: ([DatabaseContainerRef]) -> Void
     let onRequestExport: ([DatabaseContainerRef]) -> Void
 
-    @Environment(\.dismiss) private var dismiss
+    /// An explicit closure rather than `@Environment(\.dismiss)`: the presenter owns the surface,
+    /// and this content is hosted in an AppKit popover or panel that SwiftUI cannot dismiss.
+    let dismiss: () -> Void
     @State private var viewModel: DatabaseSwitcherViewModel
     @State private var supportsCreateDatabase = false
+    @State private var favoriteDatabases: Set<String> = []
 
-    private static let popoverWidth: CGFloat = 320
-    private static let popoverHeight: CGFloat = 360
+    /// One declaration, read by this view's own frame and by whoever presents it, so the
+    /// surface and its host can never disagree about how big it is.
+    static let contentSize = NSSize(width: 320, height: 360)
 
     private var supportsDropDatabase: Bool {
         PluginManager.shared.supportsDropDatabase(for: databaseType)
@@ -98,7 +104,8 @@ struct DatabaseSwitcherPopover: View {
         onSelect: @escaping (String) -> Void,
         onRequestCreate: @escaping () -> Void,
         onRequestDrop: @escaping ([DatabaseContainerRef]) -> Void,
-        onRequestExport: @escaping ([DatabaseContainerRef]) -> Void
+        onRequestExport: @escaping ([DatabaseContainerRef]) -> Void,
+        dismiss: @escaping () -> Void
     ) {
         self.currentDatabase = currentDatabase
         self.activeDatabase = activeDatabase
@@ -110,6 +117,7 @@ struct DatabaseSwitcherPopover: View {
         self.onRequestCreate = onRequestCreate
         self.onRequestDrop = onRequestDrop
         self.onRequestExport = onRequestExport
+        self.dismiss = dismiss
         self._viewModel = State(
             wrappedValue: DatabaseSwitcherViewModel(
                 connectionId: connectionId,
@@ -133,10 +141,14 @@ struct DatabaseSwitcherPopover: View {
                 createButton
             }
         }
-        .frame(width: Self.popoverWidth, height: Self.popoverHeight)
+        .frame(width: Self.contentSize.width, height: Self.contentSize.height)
         .background(refreshShortcut)
         .task { await viewModel.fetchDatabases() }
         .task { await refreshCreateSupport() }
+        .onAppear { reloadFavorites() }
+        .onReceive(NotificationCenter.default.publisher(for: .favoriteDatabasesDidChange)) { _ in
+            reloadFavorites()
+        }
     }
 
     private var refreshShortcut: some View {
@@ -218,15 +230,30 @@ struct DatabaseSwitcherPopover: View {
                 .truncationMode(.middle)
 
             Spacer(minLength: 0)
+
+            favoriteIndicator(for: database)
         }
         .padding(.horizontal, 8)
         .contentShape(Rectangle())
     }
 
+    /// A status glyph, not a control. `FieldDrivenCellHostingView` returns nil from `hitTest`, so a
+    /// button in this row could never be clicked; the right-click menu is where the toggle lives.
+    @ViewBuilder
+    private func favoriteIndicator(for database: DatabaseMetadata) -> some View {
+        let isFavorite = switchTarget == .database && favoriteDatabases.contains(database.name)
+        Image(systemName: "star.fill")
+            .font(.caption)
+            .selectionAwareTint(Color.yellow)
+            .opacity(isFavorite ? 1 : 0)
+            .accessibilityLabel(Text(String(localized: "Favorite")))
+            .accessibilityHidden(!isFavorite)
+    }
+
     private func contextMenuItems(for selection: Set<String>) -> [FieldDrivenMenuItem] {
         let targets = containerRefs(for: selection)
         let droppable = ContainerDropEligibility.droppable(targets, context: dropEligibilityContext)
-        var items: [FieldDrivenMenuItem] = []
+        var items: [FieldDrivenMenuItem] = favoriteItems(for: targets)
 
         if !targets.isEmpty {
             let copyTitle = targets.count == 1
@@ -257,6 +284,57 @@ struct DatabaseSwitcherPopover: View {
                 onRequestDrop(droppable)
             })
         }
+        return items
+    }
+
+    /// Only in database mode. In schema mode these rows are schemas, and a schema name written into
+    /// the database favorites store is a favorite that names nothing.
+    private func reloadFavorites() {
+        guard switchTarget == .database else { return }
+        favoriteDatabases = Set(
+            FavoriteDatabasesStorage.shared.favorites(for: connectionId).map(\.database)
+        )
+    }
+
+    private func favoriteItems(for targets: [DatabaseContainerRef]) -> [FieldDrivenMenuItem] {
+        guard switchTarget == .database else { return [] }
+        let databases = targets.filter { $0.kind == .database }.compactMap(\.database)
+        guard !databases.isEmpty else { return [] }
+
+        let stored = FavoriteDatabasesStorage.shared.favorites(for: connectionId)
+        let environments = Dictionary(
+            stored.map { ($0.database, $0.environment) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let state = FavoriteDatabaseSelectionState(environments: databases.map { environments[$0] })
+
+        var items: [FieldDrivenMenuItem] = [
+            FieldDrivenMenuItem(
+                title: FavoriteDatabaseMenu.submenuTitle(for: state),
+                submenu: FavoriteDatabaseMenu.environmentItems(for: state).map { item in
+                    FieldDrivenMenuItem(title: item.title, isOn: item.isOn) {
+                        for database in databases {
+                            FavoriteDatabasesStorage.shared.setFavorite(
+                                database: database,
+                                environment: item.environment,
+                                connectionId: connectionId
+                            )
+                        }
+                    }
+                }
+            )
+        ]
+        if state.hasFavorite {
+            items.append(FieldDrivenMenuItem(title: FavoriteDatabaseMenu.removeTitle) {
+                for database in databases {
+                    FavoriteDatabasesStorage.shared.removeFavorite(
+                        database: database,
+                        connectionId: connectionId
+                    )
+                }
+            })
+        }
+        items.append(.separator)
         return items
     }
 

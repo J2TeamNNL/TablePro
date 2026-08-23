@@ -152,6 +152,43 @@ struct MainContentCoordinatorLazyLoadTests {
         #expect(coordinator.pendingLoadTrigger == nil)
     }
 
+    /// The task slot stops answering once the load hands off to an execution: `executeQueryInternal`
+    /// supersedes, and `supersedeExecution` nils the slot held by the task it is running inside.
+    /// Every later trigger for the same navigation then found an empty slot and started a second
+    /// identical query, and the pair collided (#2342). The registry owns the other half.
+    @Test("Returns early when the tab already has an execution in flight")
+    func skipsWhenTheTabIsAlreadyExecuting() {
+        let (coordinator, tabManager) = makeCoordinator()
+        let tabId = addTableTab(to: tabManager)
+        let claim = coordinator.tabExecution.claim(tabId)
+        let inFlight = Task<Void, Never> { _ = try? await Task.sleep(for: .seconds(60)) }
+        defer { inFlight.cancel() }
+        coordinator.currentQueryTask = inFlight
+
+        coordinator.lazyLoadCurrentTabIfNeeded()
+
+        #expect(coordinator.tabExecution.isCurrent(claim))
+        #expect(coordinator.tableLoadTasks[tabId] == nil)
+        #expect(coordinator.pendingLoadTrigger == nil)
+    }
+
+    /// Fetch All runs without claiming the tab, so the narrower `isExecuting` would let a second
+    /// load through beside it.
+    @Test("Returns early when unclaimed work is running on the tab")
+    func skipsWhenUnclaimedWorkIsRunning() {
+        let (coordinator, tabManager) = makeCoordinator()
+        let tabId = addTableTab(to: tabManager)
+        _ = coordinator.tabExecution.beginUnclaimedWork(for: tabId)
+        let inFlight = Task<Void, Never> { _ = try? await Task.sleep(for: .seconds(60)) }
+        defer { inFlight.cancel() }
+        coordinator.currentQueryTask = inFlight
+
+        coordinator.lazyLoadCurrentTabIfNeeded()
+
+        #expect(coordinator.tableLoadTasks[tabId] == nil)
+        #expect(coordinator.pendingLoadTrigger == nil)
+    }
+
     // MARK: - Connection guard
 
     @Test("Sets pendingLoadTrigger when a fresh table tab is not connected")
@@ -285,6 +322,24 @@ struct MainContentCoordinatorLazyLoadTests {
         #expect(coordinator.tabSessionRegistry.isEvicted(foreground) == false)
     }
 
+    /// A claim with no task behind it is healed on the next lazy load. That heal never lowered the
+    /// window's stored busy flag, so the titlebar kept reporting a query that had no task and no way
+    /// to finish, and only Stop could clear it (#2342). The window's state is derived now, so the
+    /// heal is the whole fix.
+    @Test("Healing an abandoned claim leaves the window reporting idle")
+    func abandonedClaimLeavesTheWindowIdle() {
+        let (coordinator, tabManager) = makeCoordinator()
+        let tabId = addTableTab(to: tabManager)
+        let claim = coordinator.tabExecution.claim(tabId)
+        #expect(coordinator.currentQueryTask == nil)
+        #expect(coordinator.tabExecution.isAnyExecuting)
+
+        coordinator.lazyLoadCurrentTabIfNeeded()
+
+        #expect(coordinator.tabExecution.isCurrent(claim) == false)
+        #expect(coordinator.tabExecution.isAnyExecuting == false)
+    }
+
     // MARK: - Regression: handleWindowDidBecomeKey does NOT trigger query work
 
     @Test("handleWindowDidBecomeKey does not change tab execution state")
@@ -297,13 +352,13 @@ struct MainContentCoordinatorLazyLoadTests {
         }
         let executingBefore = coordinator.tabExecution.isExecuting(tabId)
         let executedAtBefore = tabManager.tabs[idx].execution.lastExecutedAt
-        let toolbarBefore = coordinator.toolbarState.isExecuting
+        let toolbarBefore = coordinator.tabExecution.isAnyExecuting
 
         coordinator.handleWindowDidBecomeKey()
 
         let executingAfter = coordinator.tabExecution.isExecuting(tabId)
         let executedAtAfter = tabManager.tabs[idx].execution.lastExecutedAt
-        let toolbarAfter = coordinator.toolbarState.isExecuting
+        let toolbarAfter = coordinator.tabExecution.isAnyExecuting
 
         #expect(executingAfter == executingBefore)
         #expect(executedAtAfter == executedAtBefore)

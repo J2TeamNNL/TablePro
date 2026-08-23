@@ -7,15 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Compare & Sync between two databases, comparing tables, views, procedures, functions and triggers, or row data. Starter license. (#721)
+- Triggers as a sidebar section, listed per database and schema alongside Procedures and Functions. (#2383)
+- Read-only source viewer for procedures, functions and triggers, with Copy, Export and Open in Editor. (#2383)
+- Procedures, functions and triggers on MSSQL, Oracle, SQLite, ClickHouse, DuckDB, Snowflake, BigQuery, Cassandra, LibSQL, Cloudflare D1, Teradata and Dameng. (#2383)
+- Procedures, functions and triggers in the quick switcher.
+- Argument signatures on routine rows, shown when two routines in a section share a name.
+- Schema-wide `list_triggers` for MCP clients, and `return_type` and `language` on `list_routines`.
+
 ### Changed
 
-- Autocomplete in a query tab follows that tab's own database and schema instead of the object browser's, and caches suggestions per database.
+- Autocomplete in a query tab follows that tab's own database and schema, with suggestions cached per database.
+- The data grid draws its cells instead of building a view for each one, so a result with hundreds of columns opens at once and holds a fraction of the memory. (#2381)
+- The data grid draws its own column separators. (#2381)
+- The inline cell editor scrolls a long line instead of wrapping it. (#2381)
 
 ### Fixed
 
-- Case-insensitive filters and completion on Redshift use its own dialect, so they no longer fall back to PostgreSQL's ASCII-only ILIKE.
-- Fixed a crash on macOS 26 and later when the editor redrew a diagnostic underline or search highlight whose text had been edited away.
-- The XLSX, MQL and SQL Import plugins linked to a documentation page that did not exist. They now point at Import & Export.
+- A second of delay opening the inline editor on a result with hundreds of columns. (#2381)
+- Case-insensitive filters and completion on Redshift falling back to PostgreSQL's ASCII-only ILIKE.
+- Flickering columns, blank columns, and an unpainted gap while scrolling a result with about 100 columns sideways. (#2381)
+- Find, arrow keys, and the inline editor unable to reach a column scrolled off the side of a wide result.
+- Return opening no editor on a row selected with the arrow keys.
+- Tab out of a row's last cell and Shift+Tab out of its first doing nothing.
+- Size All Columns to Fit leaving the far columns of a wide result unreachable.
+- A table with 500 columns pinning a core for 20 seconds and taking a gigabyte to open. (#2381)
+- An empty grid the first time a table is opened in a window with no tabs. (#2342)
+- One table click running its query twice. (#2342)
+- A closed tab leaving its query counted as running. (#2342)
+- One of two PostgreSQL function overloads missing from the sidebar, and Show DDL opening an arbitrary one. (#2383)
+- MySQL Show DDL reading the session database instead of the one being browsed. (#2383)
+- Routine tooltips, VoiceOver labels and Copy with Signature showing a return type in place of the argument list. (#2383)
+- Duplicate routine rows in the flat sidebar taking the selection back to the first of them. (#2383)
+- MySQL triggers losing their definer, `WHEN` clause and ordering in the Structure tab.
+- Oracle triggers showing a header with no body in the Structure tab.
+- Crash exporting two same-named tables from different schemas to SQL. (#1968)
+- SQL export writing one schema's rows into another schema's table of the same name. (#1968)
+- SQL export leaving out columns and foreign keys for every schema after the first. (#1968)
+
+## [0.67.1] - 2026-08-22
+
+### Added
+
+- Environment tags for database favorites, with sidebar filtering, direct open, and iCloud sync. (#1553)
+- Open in Window for row inspector text fields.
+
+### Fixed
+
+- Background tab eviction dropping query, pinned, edited, and in-flight results.
+- Result display cache exceeding its memory budget when a cached row's values grew.
+- Data grid reformatting every cell while scrolling after undo, redo, a theme change, or a display-format change.
+- Autocomplete bulk-loading every column of a schema too large to cache.
+- Empty grid on a background tab whose column metadata arrived after its rows were freed.
+- Saved connections failing to load when their SSH settings predated the agent socket field.
+- Switch Connection and Open Database doing nothing on a narrow window or without their toolbar button.
+- Large text values clipped in the row inspector, and unselectable when the row is read-only.
+- Large `VARCHAR(MAX)`, `NCLOB`, and `Nullable(String)` values stuck on one line in the inspector.
+- Empty context menu when right-clicking a read-only inspector field.
+- Editor crashes reading text a newer edit had removed. (#2338, #2339, #2340)
+- Search highlights and diagnostic underlines moving when their text was deleted. (#2341)
+- Toolbar stuck on "Executing…" after a query ended, and session context buttons emptying mid-query. (#2342)
+- SQLite queries showing an empty table instead of reporting a lock or volume error. (#2355)
+- Stop not ending a SQLite query waiting on a database locked by another program. (#2363)
+- Broken documentation links in the XLSX, MQL, and SQL Import plugins.
 
 ## [0.67.0] - 2026-08-21
 
@@ -3279,7 +3335,8 @@ TablePro is a native macOS database client built with SwiftUI and AppKit, design
     - Custom SQL query templates
     - Performance optimized for large datasets
 
-[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.67.0...HEAD
+[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.67.1...HEAD
+[0.67.1]: https://github.com/TableProApp/TablePro/compare/v0.67.0...v0.67.1
 [0.67.0]: https://github.com/TableProApp/TablePro/compare/v0.66.0...v0.67.0
 [0.66.0]: https://github.com/TableProApp/TablePro/compare/v0.65.0...v0.66.0
 [0.65.0]: https://github.com/TableProApp/TablePro/compare/v0.64.0...v0.65.0

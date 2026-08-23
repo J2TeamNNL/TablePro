@@ -223,12 +223,14 @@ final class MainContentCoordinator {
     var cursorPositions: [CursorPosition] = []
     var tableMetadata: TableMetadata?
     var activeSheet: ActiveSheet?
-    var isDatabaseSwitcherShown = false
     /// Which scope the toolbar chip is showing a chooser for, so the popover opens against the
-    /// component the user clicked. Separate from `isDatabaseSwitcherShown`, which belongs to the
-    /// toolbar button, and the two are cleared together so a window never holds two of them.
+    /// component the user clicked. Separate from the switchers the presenter owns, and cleared
+    /// alongside them so a window never holds two of them.
     var presentedScopeSwitcher: ContainerSwitchTarget?
-    var isConnectionSwitcherShown = false
+    /// Owns the connection and database switcher surfaces. The commands present through this
+    /// rather than flipping a flag a toolbar-hosted view has to observe, because that view is
+    /// absent whenever its item is clipped into the overflow menu or removed by the user.
+    @ObservationIgnored lazy var switcherPresenter = ToolbarSwitcherPresenter(panelController: quickSwitcherPanel)
     var sessionContexts: [PluginSessionContext] = []
     var containerDropRequest: DatabaseDropRequest?
     var importFileURL: URL?
@@ -566,17 +568,14 @@ final class MainContentCoordinator {
         }
     }()
 
-    /// Evict row data for background tabs in this coordinator to free memory.
-    /// Called when the coordinator's native window-tab becomes inactive.
-    /// The currently selected tab is kept in memory so the user sees no
-    /// refresh flicker when switching back — matching native macOS behavior.
-    /// Background tabs are re-fetched automatically when selected.
+    /// Frees the row data of every background tab that can fetch it again, called when this
+    /// coordinator's window stops being key. The selected tab keeps its rows so returning to the
+    /// window costs no refresh, and `canEvictReloadableTableRows` decides the rest: a query tab, a
+    /// tab holding a pinned result, a failed tab and a tab with work in flight all stay resident,
+    /// because none of them would come back on their own.
     func evictInactiveRowData() {
-        let selectedId = tabManager.selectedTabId
-        for (index, tab) in tabManager.tabs.enumerated()
-        where tab.id != selectedId && !tab.pendingChanges.hasChanges {
-            tabSessionRegistry.evict(for: tab.id)
-            tabManager.mutate(at: index) { $0.loadEpoch &+= 1 }
+        for tab in tabManager.tabs {
+            evictReloadableTableRows(for: tab.id)
         }
     }
 
@@ -758,53 +757,47 @@ final class MainContentCoordinator {
         pruneStaleSidebarState()
     }
 
-    func refreshProcedures() async {
+    func refreshRoutines() async {
         try? await services.databaseManager.withBrowseMetadataDriver(connectionId: connectionId) { [services, connectionId] driver in
-            _ = await services.schemaService.reloadProcedures(connectionId: connectionId, driver: driver)
+            _ = await services.schemaService.reloadRoutines(connectionId: connectionId, driver: driver)
         }
     }
 
-    func refreshFunctions() async {
+    func refreshTriggers() async {
+        guard connection.type.supportsDatabaseTriggerBrowse else { return }
         try? await services.databaseManager.withBrowseMetadataDriver(connectionId: connectionId) { [services, connectionId] driver in
-            _ = await services.schemaService.reloadFunctions(connectionId: connectionId, driver: driver)
+            _ = await services.schemaService.reloadTriggers(connectionId: connectionId, driver: driver)
         }
     }
 
-    func showRoutineDDL(_ routine: RoutineInfo) {
-        guard let adapter = services.databaseManager.driver(for: connectionId) as? PluginDriverAdapter else {
-            AlertHelper.showErrorSheet(
-                title: String(localized: "Cannot Show DDL"),
-                message: String(localized: "This driver does not expose routine DDL."),
-                window: nil
-            )
-            return
-        }
-        Task { [connectionId = connection.id, routine] in
-            do {
-                let ddl = try await adapter.fetchRoutineDDL(routine: routine)
-                let titleFormat: String = routine.kind == .procedure
-                    ? String(localized: "Procedure: %@")
-                    : String(localized: "Function: %@")
-                let payload = EditorTabPayload(
-                    connectionId: connectionId,
-                    tabType: .query,
-                    initialQuery: ddl,
-                    skipAutoExecute: true,
-                    tabTitle: String(format: titleFormat, routine.name)
-                )
-                await MainActor.run {
-                    WindowManager.shared.openTab(payload: payload)
-                }
-            } catch {
-                await MainActor.run {
-                    AlertHelper.showErrorSheet(
-                        title: String(localized: "Failed to Fetch DDL"),
-                        message: error.localizedDescription,
-                        window: nil
-                    )
-                }
-            }
-        }
+    /// Opens the viewer rather than fetching here. Inspecting an object should not put its source
+    /// into an editable query buffer, where the next Cmd+Return runs it, and the viewer refetches
+    /// on its own so a restored tab shows the current definition instead of a stale one.
+    func showObjectSource(_ objectRef: DatabaseObjectRef) {
+        let resolved = objectRef.resolvingDatabase(browseDatabaseName)
+        let payload = EditorTabPayload(
+            connectionId: connectionId,
+            tabType: .objectSource,
+            databaseName: resolved.database,
+            schemaName: resolved.schema,
+            objectRef: resolved,
+            tabTitle: QueryTabManager.objectSourceTitle(for: resolved)
+        )
+        WindowManager.shared.openTab(payload: payload)
+    }
+
+    func openObjectSourceInEditor(_ objectRef: DatabaseObjectRef, source: String) {
+        let resolved = objectRef.resolvingDatabase(browseDatabaseName)
+        let payload = EditorTabPayload(
+            connectionId: connectionId,
+            tabType: .query,
+            databaseName: resolved.database,
+            schemaName: resolved.schema,
+            initialQuery: source,
+            skipAutoExecute: true,
+            tabTitle: resolved.displayIdentity
+        )
+        WindowManager.shared.openTab(payload: payload)
     }
 
     /// Drop sidebar state for tables that no longer exist. The selection lives in this
@@ -947,7 +940,7 @@ final class MainContentCoordinator {
         toolbarState.update(from: connection)
 
         if let session = services.databaseManager.session(for: connectionId) {
-            toolbarState.connectionState = mapSessionStatus(session.status)
+            toolbarState.updateConnectionState(from: session.status)
             if let driver = session.driver {
                 toolbarState.databaseVersion = driver.serverVersion
             }
@@ -966,16 +959,6 @@ final class MainContentCoordinator {
     func initializeView() async {
         initializeToolbar()
         await loadSchemaIfNeeded()
-    }
-
-    /// Map ConnectionStatus to ToolbarConnectionState
-    private func mapSessionStatus(_ status: ConnectionStatus) -> ToolbarConnectionState {
-        switch status {
-        case .connected: return .connected
-        case .connecting: return .executing
-        case .disconnected: return .disconnected
-        case .error: return .error("")
-        }
     }
 
     // MARK: - Query Execution
@@ -1230,7 +1213,6 @@ final class MainContentCoordinator {
             tab.execution.errorMessage = nil
         }
         let tab = tabManager.tabs[index]
-        toolbarState.setExecuting(true)
 
         if services.pluginManager.supportsQueryProgress(for: connection.type) {
             installClickHouseProgressHandler()
@@ -1261,7 +1243,6 @@ final class MainContentCoordinator {
             tabManager.mutate(at: index) { tab in
                 tab.execution.errorMessage = String(localized: "Not connected to database")
             }
-            toolbarState.setExecuting(false)
             return
         }
 
@@ -1416,14 +1397,16 @@ final class MainContentCoordinator {
         currentQueryTaskOwner = claim
     }
 
-    /// Retires the window's task handle and the spinner it drives, but only for the execution that
-    /// installed them. A completion that owns its own tab can still be a stranger to the query the
-    /// window is running, and clearing that one's spinner reports on work still in flight.
+    /// Retires the window's Stop handle, but only for the execution that installed it. A completion
+    /// that owns its own tab can still be a stranger to the query the window is running, and taking
+    /// that one's handle down would leave a live query with nothing to cancel it.
+    ///
+    /// It no longer reports anything: what the titlebar shows is derived from `tabExecution`, so a
+    /// completion that cannot retire the handle can no longer leave the window claiming to be busy.
     internal func retireQueryTask(for claim: TabExecutionClaim?) {
         guard currentQueryTaskOwner == claim else { return }
         currentQueryTask = nil
         currentQueryTaskOwner = nil
-        toolbarState.setExecuting(false)
     }
 
     internal func cancelInFlightQueryTask(reach: DriverCancellationReach = .userStop) {
@@ -1442,27 +1425,30 @@ final class MainContentCoordinator {
     /// new claim is minted is what makes "the user navigated away and no successor ever ran" still
     /// discard the old result, which a counter that only moved on a successful start could not do.
     ///
-    /// Clearing the spinner here is what makes the cancelled execution's own completion free to stay
-    /// silent. A retarget need not be followed by a successor, so nothing else would put the
-    /// titlebar back to idle, and a stuck spinner keeps Stop enabled and makes Disconnect warn about
-    /// a query that is not running.
+    /// Removing the entry is also what puts the titlebar back to idle, because the indicator reads
+    /// the registry. A retarget need not be followed by a successor, and nothing else would have
+    /// lowered a stored flag.
     internal func supersedeExecution(for tabId: UUID) {
         reportEndedExecutions(tabExecution.invalidate(tabId, reason: .supersededNavigation).map { [$0] } ?? [])
         cancelTableLoad(for: tabId)
         cancelRowCountTask(for: tabId)
-        let hadInFlightQuery = currentQueryTask != nil
         cancelInFlightQueryTask(reach: .supersededNavigation)
-        if hadInFlightQuery {
-            toolbarState.setExecuting(false)
-        }
     }
 
-    /// Reset execution state when a query is cancelled. The task handle is retired through the same
-    /// ownership check as any other completion: a cancelled attempt that has already been replaced
-    /// would otherwise take its successor's handle and spinner down with it.
+    /// Reset execution state when a query is cancelled, releasing the tab only if this claim still
+    /// owns it. Settling is that gate and it comes first, exactly as `finishFailedQuery` does for
+    /// the other way an execution ends early.
+    ///
+    /// This used to invalidate by tab id, which releases whatever the tab is running now rather
+    /// than what this claim started. A cancelled execution unwinding after its successor had
+    /// claimed the tab therefore deleted the successor's entry, and the successor's own `settle`
+    /// then refused to apply the rows it had just fetched (#2342).
     @MainActor
     internal func resetExecutionState(claim: TabExecutionClaim, executionTime: TimeInterval) {
-        reportEndedExecutions(tabExecution.invalidate(claim.tabId, reason: .cancelledByUser).map { [$0] } ?? [])
+        guard tabExecution.settle(claim) else { return }
+        reportEndedExecutions([
+            EndedExecution(tabId: claim.tabId, startedAt: claim.startedAt, reason: .cancelledByUser)
+        ])
         guard currentQueryTaskOwner == claim else { return }
         retireQueryTask(for: claim)
         toolbarState.lastQueryDuration = executionTime
