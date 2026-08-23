@@ -676,11 +676,7 @@ struct MainEditorContentView: View {
             case .chart:
                 resultTabBarSection(tab: tab)
                 if let explain = tab.display.activeExplainResult {
-                    QueryPlanResultView(
-                        rawText: explain.explainRawText ?? "",
-                        executionTime: explain.executionTime,
-                        plan: explain.queryPlan
-                    )
+                    queryPlanResultView(for: explain)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let resultSet = tab.display.activeResultSet {
                     ResultChartView(
@@ -702,11 +698,7 @@ struct MainEditorContentView: View {
             case .data:
                 resultTabBarSection(tab: tab)
                 if let explain = tab.display.activeExplainResult {
-                    QueryPlanResultView(
-                        rawText: explain.explainRawText ?? "",
-                        executionTime: explain.executionTime,
-                        plan: explain.queryPlan
-                    )
+                    queryPlanResultView(for: explain)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     let resolvedRows = resolvedTableRows(for: tab)
@@ -788,6 +780,15 @@ struct MainEditorContentView: View {
             }
             Divider()
         }
+    }
+
+    private func queryPlanResultView(for resultSet: ResultSet) -> QueryPlanResultView {
+        QueryPlanResultView(
+            rawText: resultSet.explainRawText ?? "",
+            executionTime: resultSet.executionTime,
+            plan: resultSet.queryPlan,
+            planContext: resultSet.explainPlanContext
+        )
     }
 
     @ViewBuilder
