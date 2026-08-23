@@ -43,7 +43,11 @@ extension PluginManager {
                 }
                 PluginMetadataRegistry.shared.register(snapshot: snapshot, forTypeId: typeId, preserveIcon: true)
                 for additionalId in driverType.additionalDatabaseTypeIds {
-                    PluginMetadataRegistry.shared.registerVariant(pluginSnapshot: snapshot, forTypeId: additionalId)
+                    PluginMetadataRegistry.shared.registerVariant(
+                        pluginSnapshot: snapshot,
+                        forTypeId: additionalId,
+                        primaryTypeId: typeId
+                    )
                     PluginMetadataRegistry.shared.registerTypeAlias(additionalId, primaryTypeId: typeId)
                 }
 
@@ -210,7 +214,7 @@ extension PluginManager {
     }
 
     func sqlDialect(for databaseType: DatabaseType) -> SQLDialectDescriptor? {
-        metadataSnapshot(for: databaseType)?.editor.sqlDialect
+        PluginMetadataRegistry.shared.snapshot(for: databaseType)?.editor.sqlDialect
     }
 
     /// How this engine can express case-insensitive matching. SQL engines answer from their
@@ -224,7 +228,7 @@ extension PluginManager {
     }
 
     func statementCompletions(for databaseType: DatabaseType) -> [CompletionEntry] {
-        metadataSnapshot(for: databaseType)?.editor.statementCompletions ?? []
+        PluginMetadataRegistry.shared.snapshot(for: databaseType)?.editor.statementCompletions ?? []
     }
 
     func additionalConnectionFields(for databaseType: DatabaseType) -> [ConnectionField] {
@@ -315,12 +319,7 @@ extension PluginManager {
     }
 
     func editorLanguage(for databaseType: DatabaseType) -> EditorLanguage {
-        metadataSnapshot(for: databaseType)?.editorLanguage ?? .sql
-    }
-
-    private func metadataSnapshot(for databaseType: DatabaseType) -> PluginMetadataSnapshot? {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: databaseType.rawValue)
-            ?? PluginMetadataRegistry.shared.snapshot(forTypeId: databaseType.pluginTypeId)
+        PluginMetadataRegistry.shared.snapshot(for: databaseType)?.editorLanguage ?? .sql
     }
 
     func queryLanguageName(for databaseType: DatabaseType) -> String {
@@ -391,7 +390,7 @@ extension PluginManager {
     }
 
     func columnTypesByCategory(for databaseType: DatabaseType) -> [String: [String]] {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: databaseType.pluginTypeId)?
+        PluginMetadataRegistry.shared.snapshot(for: databaseType)?
             .editor.columnTypesByCategory ?? PluginMetadataSnapshot.EditorConfig.defaults.columnTypesByCategory
     }
 
@@ -514,7 +513,7 @@ extension PluginManager {
     }
 
     func autoLimitStyle(for databaseType: DatabaseType) -> AutoLimitStyle {
-        guard let snapshot = PluginMetadataRegistry.shared.snapshot(forTypeId: databaseType.pluginTypeId) else {
+        guard let snapshot = PluginMetadataRegistry.shared.snapshot(for: databaseType) else {
             return .limit
         }
         guard let dialect = snapshot.editor.sqlDialect else { return .none }

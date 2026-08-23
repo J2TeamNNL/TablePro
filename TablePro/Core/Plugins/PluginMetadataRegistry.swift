@@ -946,19 +946,28 @@ final class PluginMetadataRegistry: @unchecked Sendable {
     /// Registers an additional database type served by a multi-type plugin (Redshift,
     /// CockroachDB, PGlite on the PostgreSQL plugin). A plugin's statics are per-class, so
     /// they cannot express per-type facts like PGlite's disabled SSL or single-connection limit.
-    /// The curated built-in entry is therefore authoritative for a variant; the plugin only
-    /// fills the EXPLAIN variants the curated entry leaves open. A variant with no curated entry
-    /// falls back to deriving its snapshot from the plugin.
-    func registerVariant(pluginSnapshot: PluginMetadataSnapshot, forTypeId typeId: String) {
+    /// The curated built-in entry is therefore authoritative for a variant; the plugin fills the
+    /// EXPLAIN variants the curated entry leaves open, and supplies the editor config. A variant
+    /// with no curated entry falls back to deriving its snapshot from the plugin.
+    func registerVariant(
+        pluginSnapshot: PluginMetadataSnapshot,
+        forTypeId typeId: String,
+        primaryTypeId: String
+    ) {
         lock.lock()
         defer { lock.unlock() }
         guard let curated = defaultSnapshots[typeId] else {
             registerLocked(snapshot: pluginSnapshot, forTypeId: typeId, preserveIcon: true)
             return
         }
-        let resolved = curated.explainVariants.isEmpty && !pluginSnapshot.explainVariants.isEmpty
+        var resolved = curated.explainVariants.isEmpty && !pluginSnapshot.explainVariants.isEmpty
             ? curated.withExplainVariants(pluginSnapshot.explainVariants)
             : curated
+        Self.adoptPluginEditorConfig(
+            &resolved,
+            pluginSnapshot: pluginSnapshot,
+            curatedPrimary: defaultSnapshots[primaryTypeId]
+        )
         registerLocked(snapshot: resolved, forTypeId: typeId, preserveIcon: false)
     }
 
@@ -981,37 +990,6 @@ final class PluginMetadataRegistry: @unchecked Sendable {
         for scheme in resolved.urlSchemes {
             schemeIndex[scheme.lowercased()] = typeId
         }
-    }
-
-    /// A plugin built before case-insensitive matching existed reports `.unsupported`,
-    /// which would leave its engine without the option until the plugin is re-released.
-    /// The app's curated entry knows the engine, so it fills the gap.
-    static func adoptCuratedCaseSensitivity(
-        _ snapshot: inout PluginMetadataSnapshot,
-        registryDefault: PluginMetadataSnapshot
-    ) {
-        guard let dialect = snapshot.editor.sqlDialect,
-              dialect.caseSensitivityStyle == .unsupported,
-              let curated = registryDefault.editor.sqlDialect,
-              curated.caseSensitivityStyle != .unsupported else { return }
-        snapshot.editor.sqlDialect = dialect.withCaseSensitivityStyle(
-            curated.caseSensitivityStyle,
-            caseFoldFunction: curated.caseFoldFunction
-        )
-    }
-
-    /// A plugin built before its engine moved to schema-only switching still
-    /// declares database switching with bySchema grouping. The app's registry
-    /// default is the ground truth for routing, so its switch fields win.
-    static func declaresLegacySchemaOnlyRouting(
-        _ snapshot: PluginMetadataSnapshot,
-        registryDefault: PluginMetadataSnapshot
-    ) -> Bool {
-        !registryDefault.supportsDatabaseSwitching
-            && registryDefault.capabilities.supportsSchemaSwitching
-            && snapshot.supportsDatabaseSwitching
-            && snapshot.capabilities.supportsSchemaSwitching
-            && snapshot.schema.databaseGroupingStrategy == .bySchema
     }
 
     func unregister(typeId: String) {
@@ -1038,6 +1016,25 @@ final class PluginMetadataRegistry: @unchecked Sendable {
         return snapshots[typeId]
     }
 
+    /// The snapshot describing a database type, which for a variant is its own curated entry
+    /// rather than the entry of the plugin that serves it. Reaching a snapshot through
+    /// `pluginTypeId` asks the primary instead, which is how a Redshift tab came to be told
+    /// PostgreSQL's `ILIKE` folds non-ASCII.
+    ///
+    /// The fallback covers a type registered by a plugin with no curated entry of its own, where
+    /// the primary's snapshot is the only one there is.
+    ///
+    /// Every reader of the editor config goes through here. The rest of the app still reads by
+    /// `pluginTypeId`, deliberately: the curated variant capability tables were written when
+    /// nothing read them, so switching those over is a separate audit of the values themselves.
+    func snapshot(for databaseType: DatabaseType) -> PluginMetadataSnapshot? {
+        lock.lock()
+        defer { lock.unlock() }
+        if let own = snapshots[databaseType.rawValue] { return own }
+        guard let primary = reverseTypeIndex[databaseType.rawValue] else { return nil }
+        return snapshots[primary]
+    }
+
     func typeId(forUrlScheme scheme: String) -> String? {
         lock.lock()
         defer { lock.unlock() }
@@ -1059,6 +1056,14 @@ final class PluginMetadataRegistry: @unchecked Sendable {
         reverseTypeIndex[aliasTypeId] = primaryTypeId
     }
 
+    /// The inverse of `registerTypeAlias`. `unregister(typeId:)` drops a snapshot and leaves the
+    /// alias behind, so a test that registers one has nothing to undo it with.
+    func removeTypeAlias(_ aliasTypeId: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        reverseTypeIndex.removeValue(forKey: aliasTypeId)
+    }
+
     /// Returns all registered type IDs (sorted for deterministic UI ordering).
     func allRegisteredTypeIds() -> [String] {
         lock.lock()
@@ -1068,7 +1073,10 @@ final class PluginMetadataRegistry: @unchecked Sendable {
 
     /// Resolves a database type raw value to its plugin type ID for driver lookup.
     /// For multi-type plugins (MySQL serves MariaDB), maps the alias to the primary.
-    /// Does NOT remap for snapshot lookups — use snapshot(forTypeId:) directly.
+    ///
+    /// This is the answer to "which plugin serves this type", never "what is this type like".
+    /// A snapshot read for a `DatabaseType` belongs in `snapshot(for:)`, which asks the variant
+    /// first; `snapshot(forTypeId:)` is for a bare id that is already the one you want.
     func pluginTypeId(for rawValue: String) -> String {
         lock.lock()
         defer { lock.unlock() }
