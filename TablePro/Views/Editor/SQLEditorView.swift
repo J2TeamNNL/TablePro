@@ -19,6 +19,7 @@ import TableProPluginKit
 struct SQLEditorView: View {
     @Binding var text: String
     @Binding var cursorPositions: [CursorPosition]
+    @State private var completionProfile: QueryCompletionProfile?
     var schemaProvider: SQLSchemaProvider?
     var databaseType: DatabaseType?
     var databaseScope: DatabaseScope?
@@ -122,7 +123,7 @@ struct SQLEditorView: View {
             coordinator.repointFolds(to: restoredFoldRanges)
         }
         .onChange(of: connectionId) { _, _ in
-            completionAdapter.configure(schemaProvider: schemaProvider, databaseType: databaseType)
+            configureCompletion()
             setupFavoritesObserver()
         }
         .task(id: completionProfileRequest) {
@@ -154,8 +155,20 @@ struct SQLEditorView: View {
     // MARK: - Initialization
 
     private func initializeEditor() {
-        completionAdapter.configure(schemaProvider: schemaProvider, databaseType: databaseType)
+        configureCompletion()
         setupFavoritesObserver()
+    }
+
+    /// The one place the completion service is configured. Appear and the connection change used
+    /// to configure without a profile, so whichever of them ran after the resolver silently put
+    /// the editor back on the app's own dialect, with nothing scheduled to correct it: the
+    /// resolving `.task` re-runs only when its request identity changes.
+    private func configureCompletion() {
+        completionAdapter.configure(
+            schemaProvider: schemaProvider,
+            databaseType: databaseType,
+            profile: completionProfile
+        )
     }
 
     private var completionProfileRequest: CompletionProfileRequest? {
@@ -176,11 +189,8 @@ struct SQLEditorView: View {
             serverVersion: request.serverVersion
         )
         guard !Task.isCancelled else { return }
-        completionAdapter.configure(
-            schemaProvider: schemaProvider,
-            databaseType: databaseType,
-            profile: profile
-        )
+        completionProfile = profile
+        configureCompletion()
     }
 
     // MARK: - Favorites

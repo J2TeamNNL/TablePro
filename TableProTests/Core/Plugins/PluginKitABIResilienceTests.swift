@@ -47,7 +47,6 @@ struct PluginKitABIResilienceTests {
         let base = QueryCompletionProfile(
             resolvedDialect: nil,
             statementCompletions: [CompletionEntry(label: "SELECT", insertText: "SELECT")],
-            tokenCasingPolicy: .uppercaseKeywordsAndFunctions,
             revision: "fixture"
         )
         let resolved = try await driver.resolveQueryCompletionProfile(
@@ -56,7 +55,6 @@ struct PluginKitABIResilienceTests {
         )
         #expect(resolved.resolvedDialect == nil)
         #expect(resolved.statementCompletions.map(\.label) == ["SELECT"])
-        #expect(resolved.tokenCasingPolicy == .uppercaseKeywordsAndFunctions)
         #expect(resolved.revision == "fixture")
     }
 }

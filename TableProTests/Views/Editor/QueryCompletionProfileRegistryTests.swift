@@ -61,7 +61,6 @@ struct QueryCompletionProfileRegistryTests {
         QueryCompletionProfile(
             resolvedDialect: nil,
             statementCompletions: [CompletionEntry(label: "SELECT", insertText: "SELECT")],
-            tokenCasingPolicy: .preserveTypedToken,
             revision: revision
         )
     }

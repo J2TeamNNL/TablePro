@@ -466,7 +466,7 @@ extension DatabaseManager {
         await DatabaseTreeMetadataService.shared.handleDisconnect(connectionId: sessionId)
 
         SchemaProviderRegistry.shared.clear(for: sessionId)
-        QueryCompletionProfileRegistry.shared.invalidate(connectionId: sessionId)
+        QueryCompletionProfileRegistry.shared.clear(connectionId: sessionId)
         ExternalSchemaTracker.shared.reset(connectionId: sessionId)
 
         SharedSidebarState.removeConnection(sessionId)

@@ -20,7 +20,14 @@ final class QueryCompletionAdapter: CodeSuggestionDelegate {
         var replacementRange: NSRange
     }
 
+    private struct Configuration: Equatable {
+        let schemaProvider: ObjectIdentifier?
+        let databaseType: DatabaseType?
+        let profileRevision: String?
+    }
+
     private var service: QueryCompletionService
+    private var configuration: Configuration?
     private var favoriteKeywords: [String: (name: String, query: String)] = [:]
     private var session: Session?
 
@@ -38,11 +45,23 @@ final class QueryCompletionAdapter: CodeSuggestionDelegate {
         self.service = QueryCompletionServiceFactory.make(schemaProvider: schemaProvider, databaseType: databaseType)
     }
 
+    /// Rebuilding the service drops the open completion session, so it happens only when the
+    /// inputs actually differ. The editor reconfigures on appear, on a connection change and
+    /// again when the profile resolves, and a refresh in any window of the connection bumps the
+    /// profile revision the editor's `.task(id:)` keys on: rebuilding unconditionally closed the
+    /// popup under whoever was typing.
     func configure(
         schemaProvider: SQLSchemaProvider?,
         databaseType: DatabaseType?,
         profile: QueryCompletionProfile? = nil
     ) {
+        let requested = Configuration(
+            schemaProvider: schemaProvider.map(ObjectIdentifier.init),
+            databaseType: databaseType,
+            profileRevision: profile?.revision
+        )
+        guard requested != configuration else { return }
+        configuration = requested
         service = QueryCompletionServiceFactory.make(
             schemaProvider: schemaProvider,
             databaseType: databaseType,
@@ -52,6 +71,12 @@ final class QueryCompletionAdapter: CodeSuggestionDelegate {
         session = nil
         clearRefilterState()
     }
+
+    #if DEBUG
+    /// Identifies the built service so a test can tell a rebuild from a no-op without reaching
+    /// for the private session state a rebuild discards.
+    var serviceIdentityForTesting: ObjectIdentifier { ObjectIdentifier(service) }
+    #endif
 
     func updateFavoriteKeywords(_ keywords: [String: (name: String, query: String)]) {
         favoriteKeywords = keywords

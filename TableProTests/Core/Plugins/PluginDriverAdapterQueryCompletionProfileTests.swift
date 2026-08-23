@@ -42,7 +42,6 @@ private final class OverrideQueryCompletionProfileDriver: QueryCompletionProfile
         return QueryCompletionProfile(
             resolvedDialect: base.resolvedDialect,
             statementCompletions: base.statementCompletions + [CompletionEntry(label: "TOP", insertText: "TOP")],
-            tokenCasingPolicy: .lowercaseKeywordsAndFunctions,
             revision: "override-\(databaseTypeId)"
         )
     }
@@ -68,7 +67,6 @@ struct PluginDriverAdapterQueryCompletionProfileTests {
         let base = QueryCompletionProfile(
             resolvedDialect: nil,
             statementCompletions: [CompletionEntry(label: "SELECT", insertText: "SELECT")],
-            tokenCasingPolicy: .uppercaseKeywordsAndFunctions,
             revision: "base"
         )
 
@@ -79,7 +77,6 @@ struct PluginDriverAdapterQueryCompletionProfileTests {
 
         #expect(driver.receivedTypeIds == ["SQL Server"])
         #expect(resolved.statementCompletions.map(\.label) == ["SELECT", "TOP"])
-        #expect(resolved.tokenCasingPolicy == .lowercaseKeywordsAndFunctions)
         #expect(resolved.revision == "override-SQL Server")
     }
 
@@ -92,7 +89,6 @@ struct PluginDriverAdapterQueryCompletionProfileTests {
         let base = QueryCompletionProfile(
             resolvedDialect: nil,
             statementCompletions: [CompletionEntry(label: "SELECT", insertText: "SELECT")],
-            tokenCasingPolicy: .uppercaseKeywordsAndFunctions,
             revision: "base"
         )
 
@@ -103,7 +99,6 @@ struct PluginDriverAdapterQueryCompletionProfileTests {
 
         #expect(resolved.resolvedDialect == nil)
         #expect(resolved.statementCompletions.map(\.label) == ["SELECT"])
-        #expect(resolved.tokenCasingPolicy == .uppercaseKeywordsAndFunctions)
         #expect(resolved.revision == "base")
     }
 }

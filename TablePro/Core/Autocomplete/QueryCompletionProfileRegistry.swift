@@ -20,7 +20,20 @@ final class QueryCompletionProfileRegistry {
     private(set) var revisions: [DatabaseScope: Int] = [:]
     @ObservationIgnored private var cancellables: Set<AnyCancellable> = []
 
-    init() {
+    #if DEBUG
+    /// Test-only init for `@testable` tests in DEBUG builds; release builds must use `.shared`.
+    /// A second instance in shipping code is a second profile cache no `invalidate` call reaches,
+    /// plus a second permanent `refreshData` subscription.
+    internal init() {
+        subscribeToRefreshSignal()
+    }
+    #else
+    private init() {
+        subscribeToRefreshSignal()
+    }
+    #endif
+
+    private func subscribeToRefreshSignal() {
         AppCommands.shared.refreshData
             .sink { [weak self] request in
                 guard let self else { return }
@@ -83,10 +96,15 @@ final class QueryCompletionProfileRegistry {
         }
         inFlight[key] = task
         let profile = await task.value
-        if generations[key, default: 0] == generation {
-            inFlight.removeValue(forKey: key)
-            profiles[key] = profile
+        guard generations[key, default: 0] == generation else {
+            /// An invalidation landed while this was running. The refusal to cache is not enough
+            /// on its own: handing the caller the profile the refresh existed to replace would
+            /// configure the editor with it. The base is the current answer for everything the
+            /// app itself knows, and the revision bump re-runs the resolver behind it.
+            return base
         }
+        inFlight.removeValue(forKey: key)
+        profiles[key] = profile
         return profile
     }
 
@@ -100,6 +118,19 @@ final class QueryCompletionProfileRegistry {
             revisions[scope, default: 0] &+= 1
         }
         discardEntries { $0.connectionId == connectionId }
+    }
+
+    /// Teardown, as opposed to invalidation. `revisions` has to stay monotonic while a connection
+    /// is open, because `.task(id:)` in the editor keys on it and a value that went backwards
+    /// would re-fire the wrong way round; once the session is gone there is nothing to key.
+    func clear(connectionId: UUID) {
+        discardEntries { $0.connectionId == connectionId }
+        for key in Array(generations.keys) where key.scope.connectionId == connectionId {
+            generations.removeValue(forKey: key)
+        }
+        for scope in Array(revisions.keys) where scope.connectionId == connectionId {
+            revisions.removeValue(forKey: scope)
+        }
     }
 
     private func cachedScopes(of connectionId: UUID) -> Set<DatabaseScope> {
@@ -128,7 +159,6 @@ final class QueryCompletionProfileRegistry {
         QueryCompletionProfile(
             resolvedDialect: PluginManager.shared.sqlDialect(for: databaseType),
             statementCompletions: PluginManager.shared.statementCompletions(for: databaseType),
-            tokenCasingPolicy: .preserveTypedToken,
             revision: [databaseType.rawValue, serverVersion ?? "unknown", "base"].joined(separator: ":")
         )
     }
