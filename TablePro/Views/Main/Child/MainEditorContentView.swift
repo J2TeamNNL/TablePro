@@ -478,7 +478,10 @@ struct MainEditorContentView: View {
         }
         .task(id: queryScope) {
             guard let queryScope else { return }
-            _ = await SchemaProviderRegistry.shared.prepare(for: queryScope)
+            await SchemaProviderRegistry.shared.prepare(
+                for: queryScope,
+                connection: coordinator.connection
+            )
         }
     }
 

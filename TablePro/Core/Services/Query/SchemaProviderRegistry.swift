@@ -10,22 +10,46 @@ import Combine
 import Foundation
 import os
 
+/// Answers which scopes something is still rendering, so eviction can drop only the providers
+/// nothing holds.
+///
+/// It is a pull, not a retain count, because a query tab reads its provider from a SwiftUI body
+/// and appearance is not lifetime here: unparenting a pane fires `onDisappear` on a view that is
+/// still alive, so a retain keyed on the view would churn on every connection switch, and one
+/// missed release would pin a provider for the session.
+@MainActor
+protocol LiveScopeProviding: AnyObject {
+    func liveScopes(for connectionId: UUID) -> Set<DatabaseScope>
+}
+
 @MainActor
 final class SchemaProviderRegistry {
     nonisolated private static let logger = Logger(subsystem: "com.TablePro", category: "SchemaProviderRegistry")
 
+    /// How many providers one connection keeps before eviction looks for scopes nothing holds.
+    /// A window renders one query tab at a time, so anything above the browse scope plus a
+    /// handful of pinned tabs is a session's history rather than its working set.
+    private static let softProviderLimit = 8
+
     static let shared = SchemaProviderRegistry()
 
     private var providers: [DatabaseScope: SQLSchemaProvider] = [:]
+    private var loadedScopes: Set<DatabaseScope> = []
+    private var populationTasks: [DatabaseScope: Task<Void, Never>] = [:]
     private var refCounts: [UUID: Int] = [:]
     private var removalTasks: [UUID: Task<Void, Never>] = [:]
     private var cancellables: Set<AnyCancellable> = []
     private let metadataDriverProvider: any ScopedMetadataProviding
+    private weak var liveScopeProvider: (any LiveScopeProviding)?
 
     #if DEBUG
     /// Test-only init for `@testable` tests in DEBUG builds; release builds must use `.shared`.
-    internal init(metadataDriverProvider: any ScopedMetadataProviding = DatabaseManager.shared) {
+    internal init(
+        metadataDriverProvider: any ScopedMetadataProviding = DatabaseManager.shared,
+        liveScopeProvider: (any LiveScopeProviding)? = nil
+    ) {
         self.metadataDriverProvider = metadataDriverProvider
+        self.liveScopeProvider = liveScopeProvider
         subscribeToRefreshSignal()
     }
     #else
@@ -34,6 +58,10 @@ final class SchemaProviderRegistry {
         subscribeToRefreshSignal()
     }
     #endif
+
+    func setLiveScopeProvider(_ provider: any LiveScopeProviding) {
+        liveScopeProvider = provider
+    }
 
     private func subscribeToRefreshSignal() {
         AppCommands.shared.refreshData
@@ -84,34 +112,111 @@ final class SchemaProviderRegistry {
         )
         let provider = SQLSchemaProvider(metadataSource: source)
         providers[scope] = provider
+        evictUnheldProvidersIfNeeded(for: connectionId)
         return provider
     }
 
-    /// Creates the provider for `scope` if it does not exist yet and loads its object list once.
-    /// A provider that already holds tables is left as it is, because a tab that reappears has
-    /// not changed database; `refresh(request:)` is the reload path.
-    func prepare(for scope: DatabaseScope) async -> SQLSchemaProvider {
+    /// Creates the provider for `scope` if it does not exist yet and fills it once.
+    ///
+    /// "Filled" is tracked here rather than read back off the provider, because a database with
+    /// no tables is loaded and empty, and asking the provider whether it holds any would refetch
+    /// its catalog on every tab activation forever.
+    @discardableResult
+    func prepare(for scope: DatabaseScope, connection: DatabaseConnection? = nil) async -> SQLSchemaProvider {
         let provider = getOrCreate(for: scope)
-        let isLoaded = await provider.isSchemaLoaded()
-        guard !isLoaded else { return provider }
-        try? await metadataDriverProvider.withMetadataDriver(scope: scope) { driver in
-            await provider.loadSchema(using: driver)
-        }
+        guard !loadedScopes.contains(scope) else { return provider }
+        await populate(scope: scope, provider: provider, connection: connection)
         return provider
     }
 
+    /// A data change repopulates every provider it reaches except the browse scope, which
+    /// `SchemaRefreshService.syncAutocompleteProvider` owns and fills with the union of every
+    /// schema the sidebar has expanded. Repopulating it here as well would give one provider two
+    /// writers with no ordering between them and two different table sets to write.
     func refresh(request: DataRefreshRequest) {
-        let matchingProviders = providers.filter { scope, _ in
-            scope.connectionId == request.connectionId && request.reaches(tabScope: scope)
+        let browseScope = metadataDriverProvider.browseScope(for: request.connectionId)
+        let matching = providers.filter { scope, _ in
+            scope.connectionId == request.connectionId
+                && scope != browseScope
+                && request.reaches(tabScope: scope)
         }
-        for (scope, provider) in matchingProviders {
-            Task {
-                try? await metadataDriverProvider.withMetadataDriver(scope: scope) { driver in
-                    await provider.clearColumnCache()
-                    await provider.loadSchema(using: driver)
-                }
+        for (scope, provider) in matching {
+            Task { [weak self] in
+                await self?.populate(scope: scope, provider: provider, connection: nil)
             }
         }
+    }
+
+    /// Fetches the scope's catalog and commits it over whatever the provider held.
+    ///
+    /// One lease covers the object list and the schema list, so a tab bound to another database
+    /// can complete `SCHEMA.` and offer namespaces rather than only its own tables. A failure
+    /// leaves the previous content alone and clears the loaded flag, so the next call retries.
+    private func populate(
+        scope: DatabaseScope,
+        provider: SQLSchemaProvider,
+        connection: DatabaseConnection?
+    ) async {
+        if let existing = populationTasks[scope] {
+            await existing.value
+            return
+        }
+        let metadataProvider = metadataDriverProvider
+        let resolvedConnection = connection ?? DatabaseManager.shared.session(for: scope.connectionId)?.connection
+        let databases = knownDatabases(for: scope)
+
+        let task = Task { [weak self] in
+            do {
+                try await metadataProvider.withMetadataDriver(scope: scope, workload: .bulk) { driver in
+                    let tables = try await driver.fetchTables(schema: scope.schema)
+                    let schemas = (try? await driver.fetchSchemas()) ?? []
+                    await provider.resetForDatabase(
+                        scope.database,
+                        tables: tables,
+                        driver: driver,
+                        connection: resolvedConnection
+                    )
+                    await provider.setNamespaces(schemas: schemas, databases: databases)
+                }
+                self?.markPopulated(scope: scope, provider: provider)
+            } catch is CancellationError {
+                return
+            } catch {
+                Self.logger.warning(
+                    "[schema] scope population failed scope=\(scope.qualifiedDescription, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                )
+                self?.loadedScopes.remove(scope)
+            }
+        }
+        populationTasks[scope] = task
+        await task.value
+        if populationTasks[scope] == task {
+            populationTasks.removeValue(forKey: scope)
+        }
+    }
+
+    /// The lease is not cancellation-aware, so a population whose scope was evicted or
+    /// disconnected mid-flight still completes and writes into a provider nobody holds any more.
+    /// Recording the scope as loaded on the strength of that write would leave its replacement
+    /// permanently unfilled, so the identity of the provider written to is the fence.
+    private func markPopulated(scope: DatabaseScope, provider: SQLSchemaProvider) {
+        guard providers[scope] === provider else { return }
+        loadedScopes.insert(scope)
+    }
+
+    /// `SchemaRefreshService` fills the browse scope with the union of every schema the sidebar
+    /// has expanded, which the registry cannot assemble. Without this, a tab sitting on the
+    /// browse scope would see an unfilled provider and refill it with its own single-schema
+    /// list, narrowing what the sidebar had already gathered.
+    func notePopulatedExternally(scope: DatabaseScope) {
+        guard providers[scope] != nil else { return }
+        loadedScopes.insert(scope)
+    }
+
+    private func knownDatabases(for scope: DatabaseScope) -> [String] {
+        let listed = DatabaseTreeMetadataService.shared.databases(for: scope.connectionId).map(\.name)
+        guard listed.isEmpty else { return listed }
+        return scope.database.isEmpty ? [] : [scope.database]
     }
 
     func retain(for connectionId: UUID) {
@@ -128,7 +233,7 @@ final class SchemaProviderRegistry {
             removalTasks[connectionId] = Task { [weak self] in
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
                 guard let self, !Task.isCancelled else { return }
-                self.providers = self.providers.filter { $0.key.connectionId != connectionId }
+                self.dropProviders(for: connectionId) { _ in true }
                 self.removalTasks.removeValue(forKey: connectionId)
             }
         } else {
@@ -137,7 +242,7 @@ final class SchemaProviderRegistry {
     }
 
     func clear(for connectionId: UUID) {
-        providers = providers.filter { $0.key.connectionId != connectionId }
+        dropProviders(for: connectionId) { _ in true }
         refCounts.removeValue(forKey: connectionId)
         removalTasks[connectionId]?.cancel()
         removalTasks.removeValue(forKey: connectionId)
@@ -151,8 +256,42 @@ final class SchemaProviderRegistry {
         }
         for connectionId in orphanedIds {
             Self.logger.info("Purging orphaned schema provider for connection \(connectionId)")
-            providers = providers.filter { $0.key.connectionId != connectionId }
+            dropProviders(for: connectionId) { _ in true }
             refCounts.removeValue(forKey: connectionId)
+        }
+    }
+
+    /// Drops the providers for scopes nothing renders any more. Keying by scope means a session
+    /// that visits many databases leaves one provider per visited scope, each holding up to
+    /// `SQLSchemaProvider.maxCachedTables` tables of column metadata, and only disconnecting
+    /// reclaimed them.
+    ///
+    /// The browse scope is never dropped: `SchemaRefreshService` fills it and nothing here would
+    /// know to refill it. A scope a window still renders is never dropped either, or the next
+    /// body pass would build an empty provider for a tab whose `.task(id:)` has already run and
+    /// will not run again.
+    private func evictUnheldProvidersIfNeeded(for connectionId: UUID) {
+        let held = providers.keys.filter { $0.connectionId == connectionId }
+        guard held.count > Self.softProviderLimit else { return }
+        guard let liveScopeProvider else { return }
+        var keep = liveScopeProvider.liveScopes(for: connectionId)
+        if let browseScope = metadataDriverProvider.browseScope(for: connectionId) {
+            keep.insert(browseScope)
+        }
+        let evictable = held.filter { !keep.contains($0) }
+        guard !evictable.isEmpty else { return }
+        Self.logger.info(
+            "Evicting \(evictable.count) unheld schema provider(s) for connection \(connectionId, privacy: .public)"
+        )
+        dropProviders(for: connectionId) { evictable.contains($0) }
+    }
+
+    private func dropProviders(for connectionId: UUID, where matches: (DatabaseScope) -> Bool) {
+        let doomed = providers.keys.filter { $0.connectionId == connectionId && matches($0) }
+        for scope in doomed {
+            providers.removeValue(forKey: scope)
+            loadedScopes.remove(scope)
+            populationTasks.removeValue(forKey: scope)?.cancel()
         }
     }
 }

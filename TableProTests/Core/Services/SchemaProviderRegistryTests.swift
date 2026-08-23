@@ -121,4 +121,185 @@ struct SchemaProviderRegistryTests {
         #expect(registry.provider(for: first) == nil)
         #expect(registry.provider(for: second) != nil)
     }
+
+    // MARK: - Population
+
+    @Test("prepare fills the scope's namespaces so qualified completion works off the browse scope")
+    func prepareFillsNamespaces() async {
+        let driver = MockDatabaseDriver()
+        driver.tablesToReturn = [TestFixtures.makeTableInfo(name: "orders")]
+        driver.schemasToReturn = ["sales", "audit"]
+        let metadata = CountingScopedMetadataProvider(driver: driver)
+        let registry = SchemaProviderRegistry(metadataDriverProvider: metadata)
+        let target = scope(database: "warehouse", schema: "sales")
+
+        let provider = await registry.prepare(for: target, connection: TestFixtures.makeConnection())
+
+        #expect(await provider.isKnownSchema("sales"))
+        #expect(await provider.isKnownSchema("audit"))
+        #expect(await provider.getConnectionInfo() != nil)
+        #expect(await provider.getTables().map(\.name) == ["orders"])
+    }
+
+    @Test("two callers on one scope share a single catalog fetch")
+    func concurrentPrepareFetchesOnce() async {
+        let driver = MockDatabaseDriver()
+        driver.tablesToReturn = [TestFixtures.makeTableInfo(name: "orders")]
+        let metadata = CountingScopedMetadataProvider(driver: driver)
+        let registry = SchemaProviderRegistry(metadataDriverProvider: metadata)
+        let target = scope()
+
+        async let first = registry.prepare(for: target)
+        async let second = registry.prepare(for: target)
+        _ = await (first, second)
+
+        #expect(driver.fetchScopedTablesCallCount == 1)
+        #expect(driver.fetchSchemasCallCount == 1)
+    }
+
+    /// A database with no tables is loaded and empty. Asking the provider whether it holds any
+    /// made every activation of that tab refetch its catalog, forever.
+    @Test("an empty catalog is fetched once, not on every activation")
+    func emptyCatalogIsNotRefetched() async {
+        let driver = MockDatabaseDriver()
+        driver.tablesToReturn = []
+        let metadata = CountingScopedMetadataProvider(driver: driver)
+        let registry = SchemaProviderRegistry(metadataDriverProvider: metadata)
+        let target = scope()
+
+        await registry.prepare(for: target)
+        await registry.prepare(for: target)
+
+        #expect(driver.fetchScopedTablesCallCount == 1)
+    }
+
+    @Test("a failed population is retried on the next prepare")
+    func failedPopulationIsRetried() async {
+        let driver = MockDatabaseDriver()
+        driver.fetchTablesError = DatabaseError.notConnected
+        let metadata = CountingScopedMetadataProvider(driver: driver)
+        let registry = SchemaProviderRegistry(metadataDriverProvider: metadata)
+        let target = scope()
+
+        await registry.prepare(for: target)
+        driver.fetchTablesError = nil
+        driver.tablesToReturn = [TestFixtures.makeTableInfo(name: "orders")]
+        let provider = await registry.prepare(for: target)
+
+        #expect(await provider.getTables().map(\.name) == ["orders"])
+    }
+
+    /// `SchemaRefreshService` owns the browse scope and fills it with the union of every expanded
+    /// schema. Repopulating it here too gave one provider two writers and two different answers.
+    @Test("refresh leaves the browse scope to its owner")
+    func refreshSkipsTheBrowseScope() async {
+        let driver = MockDatabaseDriver()
+        driver.tablesToReturn = [TestFixtures.makeTableInfo(name: "orders")]
+        let connectionId = UUID()
+        let browse = scope(connectionId, database: "shop")
+        let tab = scope(connectionId, database: "warehouse")
+        let metadata = CountingScopedMetadataProvider(driver: driver, browseScope: browse)
+        let registry = SchemaProviderRegistry(metadataDriverProvider: metadata)
+        _ = registry.getOrCreate(for: browse)
+        _ = registry.getOrCreate(for: tab)
+
+        registry.refresh(request: DataRefreshRequest(connectionId: connectionId))
+        await Task.yield()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(metadata.requestedScopes.allSatisfy { $0 == tab })
+    }
+
+    /// A tab can sit on the browse scope, whose provider `SchemaRefreshService` fills with the
+    /// union of every expanded schema. Refilling it here with one schema's tables would narrow it.
+    @Test("prepare leaves a scope its owner has already filled")
+    func prepareSkipsAnExternallyPopulatedScope() async {
+        let driver = MockDatabaseDriver()
+        driver.tablesToReturn = [TestFixtures.makeTableInfo(name: "orders")]
+        let metadata = CountingScopedMetadataProvider(driver: driver)
+        let registry = SchemaProviderRegistry(metadataDriverProvider: metadata)
+        let target = scope()
+        _ = registry.getOrCreate(for: target)
+        registry.notePopulatedExternally(scope: target)
+
+        await registry.prepare(for: target)
+
+        #expect(driver.fetchScopedTablesCallCount == 0)
+    }
+
+    // MARK: - Eviction
+
+    @Test("eviction drops the scopes nothing renders and keeps the ones it does")
+    func evictionKeepsHeldScopes() {
+        let connectionId = UUID()
+        let browse = scope(connectionId, database: "shop")
+        let live = scope(connectionId, database: "warehouse")
+        let metadata = CountingScopedMetadataProvider(driver: MockDatabaseDriver(), browseScope: browse)
+        let liveScopes = StubLiveScopeProvider(scopes: [live])
+        let registry = SchemaProviderRegistry(
+            metadataDriverProvider: metadata,
+            liveScopeProvider: liveScopes
+        )
+        _ = registry.getOrCreate(for: browse)
+        _ = registry.getOrCreate(for: live)
+        let stale = (0..<10).map { scope(connectionId, database: "stale-\($0)") }
+        for staleScope in stale {
+            _ = registry.getOrCreate(for: staleScope)
+        }
+
+        #expect(registry.provider(for: browse) != nil)
+        #expect(registry.provider(for: live) != nil)
+        #expect(stale.contains { registry.provider(for: $0) == nil })
+    }
+
+    @Test("eviction never touches another connection")
+    func evictionIsScopedToOneConnection() {
+        let connectionId = UUID()
+        let other = scope(UUID(), database: "elsewhere")
+        let metadata = CountingScopedMetadataProvider(driver: MockDatabaseDriver())
+        let registry = SchemaProviderRegistry(
+            metadataDriverProvider: metadata,
+            liveScopeProvider: StubLiveScopeProvider(scopes: [])
+        )
+        _ = registry.getOrCreate(for: other)
+        for index in 0..<12 {
+            _ = registry.getOrCreate(for: scope(connectionId, database: "db-\(index)"))
+        }
+
+        #expect(registry.provider(for: other) != nil)
+    }
+}
+
+@MainActor
+private final class CountingScopedMetadataProvider: ScopedMetadataProviding {
+    private let driver: MockDatabaseDriver
+    private let browse: DatabaseScope?
+    private(set) var requestedScopes: [DatabaseScope] = []
+
+    init(driver: MockDatabaseDriver, browseScope: DatabaseScope? = nil) {
+        self.driver = driver
+        self.browse = browseScope
+    }
+
+    func withMetadataDriver<T: Sendable>(
+        scope: DatabaseScope,
+        workload: MetadataConnectionPool.Workload,
+        _ body: @Sendable @escaping (DatabaseDriver) async throws -> T
+    ) async throws -> T {
+        requestedScopes.append(scope)
+        return try await body(driver)
+    }
+
+    func browseScope(for connectionId: UUID) -> DatabaseScope? { browse }
+}
+
+@MainActor
+private final class StubLiveScopeProvider: LiveScopeProviding {
+    private let scopes: Set<DatabaseScope>
+
+    init(scopes: Set<DatabaseScope>) {
+        self.scopes = scopes
+    }
+
+    func liveScopes(for connectionId: UUID) -> Set<DatabaseScope> { scopes }
 }

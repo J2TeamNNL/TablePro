@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - A second of delay opening the inline editor on a result with hundreds of columns. (#2381)
+- AI inline suggestions written without the connection's schema.
 - Case-insensitive filters and completion on Redshift falling back to PostgreSQL's ASCII-only ILIKE.
 - Flickering columns, blank columns, and an unpainted gap while scrolling a result with about 100 columns sideways. (#2381)
 - Find, arrow keys, and the inline editor unable to reach a column scrolled off the side of a wide result.

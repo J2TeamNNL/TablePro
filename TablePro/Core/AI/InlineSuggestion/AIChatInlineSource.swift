@@ -10,7 +10,10 @@ import os
 final class AIChatInlineSource: InlineSuggestionSource {
     nonisolated private static let logger = Logger(subsystem: "com.TablePro", category: "AIChatInlineSource")
 
-    private weak var schemaProvider: SQLSchemaProvider?
+    /// Settable, because the provider is per database scope and the source outlives a scope
+    /// change: latching the instance handed the model the first scope's tables for the rest of
+    /// the tab's life, and left the prompt schema-less once that provider was released.
+    weak var schemaProvider: SQLSchemaProvider?
     var connectionPolicy: AIConnectionPolicy?
 
     init(schemaProvider: SQLSchemaProvider?, connectionPolicy: AIConnectionPolicy?) {

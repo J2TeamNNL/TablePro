@@ -695,6 +695,7 @@ final class MainContentCoordinator {
             return prior
         }
         if !wasAlreadyActive {
+            services.schemaProviderRegistry.setLiveScopeProvider(CoordinatorLiveScopeProvider.shared)
             services.schemaProviderRegistry.retain(for: connection.id)
         }
         registerForPersistence()
