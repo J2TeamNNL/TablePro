@@ -43,3 +43,36 @@ InspectorToolbarPlacementUITests/testTheInspectorToggleHoldsTheTrailingEdgeThrou
 #     `.any` removes the walk. That needs one CI run to confirm the types, which is why it is not
 #     in this release.
 WindowExecutionIndicatorUITests/testTheExecutingIndicatorAppearsWhileAQueryRunsAndClearsAfterIt()
+
+# --- Opens a modal licence alert instead of the window, and then holds the runner in it.
+#     Every case goes through `launchAndOpenCompareSync()`, which clicks
+#     Database > Compare > "Compare & Sync Databases…" and waits for a window titled
+#     "Compare & Sync". `CompareSyncLauncher.open` gates on
+#     `LicenseManager.isFeatureAvailable(.compareSync)` and, with no licence, calls
+#     `NSAlert.runModal()` instead. `UITestCase.launchApp()` hands the app a throwaway
+#     container, so there is never a licence: the window the tests wait for is never opened and
+#     all five time out.
+#
+#     The suite guards for this with `guard item.isEnabled else { throw XCTSkip(...) }`, and the
+#     guard cannot fire: the gate is in the launcher, not in menu validation, so the item is
+#     enabled whatever the licence says.
+#
+#     The modal is why this is quarantined rather than left to fail. `runModal()` holds the main
+#     thread, so the alert is still up when the runner moves on, and the cases after it in the
+#     same shard fail on unrelated assertions: "The sample database never finished opening" and
+#     "Not hittable" have both been seen this way. One licence gate takes several unrelated tests
+#     with it.
+#
+#     These have never been green. They arrived with the window in 3848a21a1 and fail identically
+#     on upstream main (run 32631046978), on this branch's CI, and locally.
+#
+#     Getting it back: give the sandbox a licence for the feature, the way the tests that need one
+#     will have to. Making the menu item validate against the licence would also fire the existing
+#     XCTSkip, but a paid feature's menu item is meant to stay enabled and explain itself, so that
+#     would be trading a visible skip for worse discoverability. Either way the launcher should not
+#     reach for a modal on a path a test can drive.
+CompareSyncUITests/testCompareSyncOpensFromFileMenu()
+CompareSyncUITests/testBannerStatesNothingHasBeenWrittenBeforeAnyRun()
+CompareSyncUITests/testCompareIsDisabledUntilBothEndpointsAreChosen()
+CompareSyncUITests/testTargetPickerStartsWithNoConnectionChosen()
+CompareSyncUITests/testSwapIsDisabledWhenNoEndpointIsChosen()
