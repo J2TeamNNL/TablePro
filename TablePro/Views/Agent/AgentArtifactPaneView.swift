@@ -9,8 +9,7 @@ import SwiftUI
 /// the rows it got back, and the schema change a DDL statement would make.
 ///
 /// This is what separates the surface from a wider chat window: the user checks the database's own
-/// answer instead of the model's sentence about it. The segments are empty until the phase that
-/// fills them; each one says what will appear there rather than showing a blank column.
+/// answer instead of the model's sentence about it.
 internal enum AgentArtifactSegment: String, CaseIterable, Identifiable {
     case sql
     case plan
@@ -65,10 +64,30 @@ internal struct AgentArtifactPaneView: View {
     /// Safe Mode notice needs a connection to speak about.
     internal let connectionId: UUID?
 
+    /// Nil before there is a session. Every segment reads its content from the session's transcript,
+    /// so a pane with no session is the same as a pane with an empty one.
+    internal let session: AgentSession?
+
     @State private var segment: AgentArtifactSegment = .sql
 
-    internal init(connectionId: UUID? = nil) {
+    internal init(connectionId: UUID? = nil, session: AgentSession? = nil) {
         self.connectionId = connectionId
+        self.session = session
+    }
+
+    /// Recomputed from the transcript on every pass rather than cached beside it.
+    ///
+    /// The projection reads `messages` and each block's approval state, both observed, so this
+    /// invalidates exactly when the session changes and can never disagree with the conversation.
+    /// A stored copy would need its own invalidation and would be wrong after a restore, when the
+    /// transcript arrives without any of the stream events that built it.
+    private var artifact: AgentArtifact {
+        guard let session else { return AgentArtifact() }
+        return AgentArtifactProjection.build(
+            from: session.viewModel.messages,
+            connectionName: session.connectionName,
+            databaseType: session.viewModel.connection?.type ?? .mysql
+        )
     }
 
     internal var body: some View {
@@ -80,13 +99,48 @@ internal struct AgentArtifactPaneView: View {
                     .padding(.bottom, 6)
             }
             Divider()
-            EmptyStateView(
-                icon: segment.icon,
-                title: segment.emptyTitle,
-                description: segment.emptyDescription
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        let artifact = artifact
+        switch segment {
+        case .sql:
+            if artifact.statements.isEmpty {
+                emptyState
+            } else if let session {
+                AgentArtifactSQLView(statements: artifact.statements, sessionId: session.id)
+            }
+        case .plan:
+            if artifact.steps.isEmpty {
+                emptyState
+            } else {
+                AgentArtifactPlanView(steps: artifact.steps)
+            }
+        case .results:
+            if artifact.runs.isEmpty {
+                emptyState
+            } else {
+                AgentArtifactResultsView(runs: artifact.runs, connectionId: connectionId)
+            }
+        case .schema:
+            if artifact.schemaChanges.isEmpty {
+                emptyState
+            } else {
+                AgentArtifactSchemaView(changes: artifact.schemaChanges)
+            }
+        }
+    }
+
+    private var emptyState: some View {
+        EmptyStateView(
+            icon: segment.icon,
+            title: segment.emptyTitle,
+            description: segment.emptyDescription
+        )
     }
 
     private var picker: some View {

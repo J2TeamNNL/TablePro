@@ -214,6 +214,19 @@ final class AIChatViewModel {
         messages.first { $0.id == id }
     }
 
+    /// The first tool call still waiting for a decision, in transcript order. Only that row's Run
+    /// takes `Return`; several rows carrying the default action at once meant `Return` fired
+    /// whichever button AppKit reached first.
+    var firstPendingToolUseId: String? {
+        for turn in messages {
+            for block in turn.blocks {
+                guard case .toolUse(let use) = block.kind, case .pending = use.approvalState else { continue }
+                return use.id
+            }
+        }
+        return nil
+    }
+
     func cancelStream() {
         pendingWalkthroughBeforeSQL = nil
         prepTask?.cancel()

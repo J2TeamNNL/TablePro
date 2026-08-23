@@ -802,7 +802,10 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     @ViewBuilder
     private func buildInspectorView(for workspace: ConnectionWorkspace) -> some View {
         if workspace.contentMode == .assistant {
-            AgentArtifactPaneView(connectionId: workspace.connection?.id)
+            AgentArtifactPaneView(
+                connectionId: workspace.connection?.id,
+                session: selectedSession(of: workspace)
+            )
         } else if let session = workspace.session, let rightPanelState = workspace.rightPanelState {
             UnifiedRightPanelView(
                 state: rightPanelState,

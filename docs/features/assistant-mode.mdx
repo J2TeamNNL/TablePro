@@ -48,6 +48,25 @@ Closing a window stops the sessions on that connection and keeps their transcrip
 
 **Close Session** in a row's context menu ends one session and keeps its transcript in the conversation history.
 
+## The result pane
+
+Four views of one session. A view with nothing in it says what would appear there.
+
+| View | Shows |
+|------|-------|
+| **SQL** | Every statement the session proposed, in order, with its state and its target connection |
+| **Plan** | The steps the session has taken, what is in flight, and what waits on you |
+| **Results** | Rows, row count, and duration for each query it ran, plus the query plan when it asked for one |
+| **Schema** | Columns, indexes, and constraints a `CREATE` or `ALTER` would add or remove, destructive lines marked |
+
+**Run** and **Reject** in the SQL view and the buttons on the conversation card are the same decision: acting in one updates the other. Review statements in any order; the reply resumes once each has a decision. `Return` acts on the first statement still waiting.
+
+A rejected statement stays in the list with its state, and the model is told it was rejected, so it can propose something else.
+
+**Results** shows the first 100 rows of each result and says how many there are. **Open as Query** puts the statement in a normal query tab for the whole set.
+
+The **Schema** view reads `CREATE`, `ALTER … ADD`, `ALTER … DROP`, `DROP`, and `TRUNCATE`. A statement it cannot read shows its own SQL instead of a list of changes. The preview never decides whether a statement runs: that is the approval card, and for `DROP`, `TRUNCATE`, and `ALTER…DROP` the separate destructive confirmation.
+
 ## Limitations
 
 Provider tool calls that run outside the app are not covered by the floor. **Claude Agent** passes tools to the `claude` command, which approves them on its own terms, so the **Alert** floor and the per-statement **Run** and **Reject** do not apply to it. Use an API-key provider for a session that writes.

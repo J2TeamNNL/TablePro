@@ -13,6 +13,10 @@ private struct ChatWriteFloorActiveKey: EnvironmentKey {
     static let defaultValue = false
 }
 
+private struct ChatPrimaryPendingToolUseIdKey: EnvironmentKey {
+    static let defaultValue: String? = nil
+}
+
 internal extension EnvironmentValues {
     /// Which chat session the view is inside. Read by the approval buttons, which have to name the
     /// session their decision belongs to: a decision keyed by the provider's tool-use string alone
@@ -33,5 +37,16 @@ internal extension EnvironmentValues {
     var chatWriteFloorActive: Bool {
         get { self[ChatWriteFloorActiveKey.self] }
         set { self[ChatWriteFloorActiveKey.self] = newValue }
+    }
+
+    /// The first tool call still waiting for a decision. Only that row's **Run** takes `Return`.
+    ///
+    /// Three proposed writes used to mean three simultaneous default actions, so `Return` fired
+    /// whichever button AppKit happened to reach. Derived from the transcript rather than asked of
+    /// the approval center, because the center's dictionary is outside the observation graph and a
+    /// row that read it would render once and never update.
+    var chatPrimaryPendingToolUseId: String? {
+        get { self[ChatPrimaryPendingToolUseIdKey.self] }
+        set { self[ChatPrimaryPendingToolUseIdKey.self] = newValue }
     }
 }

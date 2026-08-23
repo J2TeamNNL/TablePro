@@ -11,6 +11,11 @@ struct ToolApprovalActionsRow: View {
 
     @Environment(\.chatSessionId) private var sessionId
     @Environment(\.chatWriteFloorActive) private var writeFloorActive
+    @Environment(\.chatPrimaryPendingToolUseId) private var primaryPendingToolUseId
+
+    /// Only the first waiting call takes `Return`. Every row carried the default action before, so
+    /// three proposed writes gave the window three default buttons at once.
+    private var isPrimary: Bool { primaryPendingToolUseId == toolUseId }
 
     /// Nil means the row cannot say which session's approval it would resolve, so it resolves
     /// nothing. Disabling is the only safe answer: a decision sent under the wrong session id would
@@ -29,7 +34,7 @@ struct ToolApprovalActionsRow: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
-            .keyboardShortcut(.defaultAction)
+            .keyboardShortcut(isPrimary ? .defaultAction : nil)
 
             Button {
                 resolve(.alwaysAllow)
@@ -54,7 +59,7 @@ struct ToolApprovalActionsRow: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
-            .keyboardShortcut(.cancelAction)
+            .keyboardShortcut(isPrimary ? .cancelAction : nil)
 
             Spacer()
         }

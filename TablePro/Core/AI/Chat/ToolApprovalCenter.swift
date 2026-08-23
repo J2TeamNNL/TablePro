@@ -6,7 +6,7 @@
 import Foundation
 import os
 
-enum ToolApprovalDecision: Sendable {
+enum ToolApprovalDecision: Sendable, Equatable {
     case run
     case alwaysAllow
     case cancel
@@ -27,6 +27,15 @@ final class ToolApprovalCenter {
 
     private var pending: [ApprovalRequestID: CheckedContinuation<ToolApprovalDecision, Never>] = [:]
 
+    /// Decisions made before the stream asked for them.
+    ///
+    /// A turn can propose several statements, and the stream awaits them one at a time, so only the
+    /// statement being decided has a continuation registered. A click on the third card used to hit
+    /// `guard let continuation … else { return }` and do nothing at all, while the stream stayed
+    /// parked on the first. Holding the decision means a reader can work through the cards in any
+    /// order and each one is honoured when its turn comes.
+    private var decided: [ApprovalRequestID: ToolApprovalDecision] = [:]
+
     /// Told which session's queue changed, so the session rail can say "waiting on you" on the row
     /// it belongs to. A pull would not do: this type is a plain class and its dictionary is outside
     /// the observation graph, so a view that asked it a question would render once and never
@@ -34,7 +43,11 @@ final class ToolApprovalCenter {
     var onPendingChange: (@MainActor (UUID) -> Void)?
 
     func awaitDecision(for request: ApprovalRequestID) async -> ToolApprovalDecision {
-        await withCheckedContinuation { continuation in
+        if let early = decided.removeValue(forKey: request) {
+            onPendingChange?(request.sessionId)
+            return early
+        }
+        return await withCheckedContinuation { continuation in
             if let existing = pending[request] {
                 Self.logger.warning(
                     """
@@ -50,9 +63,18 @@ final class ToolApprovalCenter {
     }
 
     func resolve(_ request: ApprovalRequestID, decision: ToolApprovalDecision) {
-        guard let continuation = pending.removeValue(forKey: request) else { return }
-        continuation.resume(returning: decision)
+        if let continuation = pending.removeValue(forKey: request) {
+            continuation.resume(returning: decision)
+        } else {
+            decided[request] = decision
+        }
         onPendingChange?(request.sessionId)
+    }
+
+    /// What the user already decided for a request the stream has not reached yet. The card reads
+    /// this so a click it recorded stops looking like a click that did nothing.
+    func recordedDecision(for request: ApprovalRequestID) -> ToolApprovalDecision? {
+        decided[request]
     }
 
     /// Cancels one session's pending approvals and leaves every other session's alone. This is what
@@ -63,10 +85,17 @@ final class ToolApprovalCenter {
         for (request, _) in owned {
             pending.removeValue(forKey: request)
         }
+        /// Recorded decisions go with the stream that would have consumed them. A decision left
+        /// behind would be applied to a statement in a later turn that happened to reuse the
+        /// provider's tool-use id, which several providers do from `call_0` on every turn.
+        let strandedDecisions = decided.keys.filter { $0.sessionId == sessionId }
+        for request in strandedDecisions {
+            decided.removeValue(forKey: request)
+        }
         for (_, continuation) in owned {
             continuation.resume(returning: .cancel)
         }
-        guard !owned.isEmpty else { return }
+        guard !owned.isEmpty || !strandedDecisions.isEmpty else { return }
         onPendingChange?(sessionId)
     }
 
@@ -74,6 +103,7 @@ final class ToolApprovalCenter {
     func cancelAll() {
         let snapshot = pending
         pending.removeAll()
+        decided.removeAll()
         for (_, continuation) in snapshot {
             continuation.resume(returning: .cancel)
         }

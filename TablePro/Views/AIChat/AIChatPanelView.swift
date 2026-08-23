@@ -45,6 +45,7 @@ struct AIChatPanelView: View {
         }
         .environment(\.chatSessionId, viewModel.sessionId)
         .environment(\.chatWriteFloorActive, viewModel.floorRaisedSafeModeLevel(for: connection))
+        .environment(\.chatPrimaryPendingToolUseId, viewModel.firstPendingToolUseId)
         .task(id: settingsManager.ai.providers.map(\.id)) {
             await viewModel.loadAvailableModels()
         }

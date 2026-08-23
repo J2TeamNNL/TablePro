@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Confirm Writes floor while Assistant mode is active.
 - Several AI sessions at once, each with its own approvals, transcript and status.
 - Session rail listing every session with its connection, including sessions whose window is closed.
+- Result pane in Assistant mode with proposed SQL, steps taken, query results and schema changes.
+- `explain_query` chat tool, so the assistant can ask for a query plan without running the statement.
 
 ### Fixed
 
@@ -34,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Closing a window, disconnecting, or losing a session erasing that connection's chat transcript.
 - Explain with AI and Fix Error doing nothing until the chat panel had been opened once.
 - The last turn of a chat lost when the app quit mid-reply.
+- Approving any tool call but the first in a turn doing nothing, leaving the reply parked.
+- Every proposed tool call taking `Return`, so the key acted on whichever button AppKit reached first.
 
 ## [0.67.1] - 2026-08-22
 

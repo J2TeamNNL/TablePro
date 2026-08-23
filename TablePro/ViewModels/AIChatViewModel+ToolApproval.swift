@@ -48,34 +48,51 @@ extension AIChatViewModel {
             return initial
         }
 
+        /// Every waiting call registers its own continuation before any of them is awaited, so the
+        /// reader can work through the cards in whatever order they like. Awaiting them one at a
+        /// time meant only the first had a continuation registered: a click on the third card hit
+        /// `resolve`'s missing-continuation guard and did nothing, while the stream stayed parked on
+        /// the first. Registering up front also means the card the reader clicked repaints at once,
+        /// because its own decision arrives and updates its block rather than waiting its turn.
+        ///
+        /// Execution order is untouched. Approvals are collected here; the statements themselves run
+        /// afterwards, in transcript order, in `executeToolUses`.
+        let session = sessionId
+        let awaitedStates: [String: Task<ToolApprovalState, Never>] = await MainActor.run { [weak self] in
+            var tasks: [String: Task<ToolApprovalState, Never>] = [:]
+            for block in initialBlocks {
+                guard case .pending = block.approvalState else { continue }
+                let request = ApprovalRequestID(sessionId: session, toolUseId: block.id)
+                tasks[block.id] = Task { @MainActor in
+                    let decision = await ToolApprovalCenter.shared.awaitDecision(for: request)
+                    let state: ToolApprovalState
+                    switch decision {
+                    case .run:
+                        state = .approved
+                    case .alwaysAllow:
+                        self?.persistAlwaysAllowed(toolName: block.name)
+                        state = .approved
+                    case .cancel:
+                        state = .cancelled
+                    }
+                    self?.updateApprovalState(blockID: block.id, newState: state, assistantID: assistantID)
+                    return state
+                }
+            }
+            return tasks
+        }
+
         var resolved: [ToolUseBlock] = []
         for block in initialBlocks {
-            guard case .pending = block.approvalState else {
+            guard let awaited = awaitedStates[block.id] else {
                 resolved.append(block)
                 continue
-            }
-            let request = ApprovalRequestID(sessionId: sessionId, toolUseId: block.id)
-            let decision = await ToolApprovalCenter.shared.awaitDecision(for: request)
-            let finalState: ToolApprovalState
-            switch decision {
-            case .run:
-                finalState = .approved
-            case .alwaysAllow:
-                await MainActor.run { [weak self] in
-                    self?.persistAlwaysAllowed(toolName: block.name)
-                }
-                finalState = .approved
-            case .cancel:
-                finalState = .cancelled
-            }
-            await MainActor.run { [weak self] in
-                self?.updateApprovalState(blockID: block.id, newState: finalState, assistantID: assistantID)
             }
             resolved.append(ToolUseBlock(
                 id: block.id,
                 name: block.name,
                 input: block.input,
-                approvalState: finalState,
+                approvalState: await awaited.value,
                 providerMetadata: block.providerMetadata
             ))
         }

@@ -23,6 +23,7 @@ enum ChatToolBootstrap {
         registry.registerBuiltIn(DescribeTableChatTool())
         registry.registerBuiltIn(GetTableDDLChatTool())
         registry.registerBuiltIn(ExecuteQueryChatTool())
+        registry.registerBuiltIn(ExplainQueryChatTool())
         registry.registerBuiltIn(ConfirmDestructiveOperationChatTool())
     }
 }
