@@ -89,6 +89,20 @@ actor AIChatStorage {
         }
     }
 
+    /// Quit only. `applicationWillTerminate` has no time for an actor hop that may never be
+    /// scheduled before the process exits, so the terminate path writes on the calling thread. The
+    /// trimming above is skipped: the caller is already out of time, and a turn on disk that is
+    /// larger than the cap is still readable, while no turn on disk is the bug this exists to fix.
+    nonisolated func saveSync(_ conversation: AIConversation) {
+        let fileURL = directory.appendingPathComponent("\(conversation.id.uuidString).json")
+        do {
+            let data = try Self.encoder.encode(conversation)
+            try data.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        } catch {
+            Self.logger.error("Failed to save conversation \(conversation.id) at terminate: \(error.localizedDescription)")
+        }
+    }
+
     /// Load all conversations, sorted by updatedAt descending
     func loadAll() -> [AIConversation] {
         do {

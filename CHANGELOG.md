@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Assistant mode for the connection window, with the conversation at full width.
 - Confirm Writes floor while Assistant mode is active.
+- Several AI sessions at once, each with its own approvals, transcript and status.
+- Session rail listing every session with its connection, including sessions whose window is closed.
 
 ### Fixed
 
@@ -29,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - One chat session's New Conversation resetting the server-side conversation of another.
 - The chat tool mode being shared by every session instead of belonging to one.
 - A registered chat tool being able to take the name of a built-in one.
+- Closing a window, disconnecting, or losing a session erasing that connection's chat transcript.
+- Explain with AI and Fix Error doing nothing until the chat panel had been opened once.
+- The last turn of a chat lost when the app quit mid-reply.
 
 ## [0.67.1] - 2026-08-22
 

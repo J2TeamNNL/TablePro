@@ -51,6 +51,12 @@ struct AIChatPanelView: View {
         .task(id: connection.id) {
             await viewModel.loadSavedQueries()
         }
+        /// The history menu's list, loaded by whoever puts the conversation on screen. It used to be
+        /// loaded in the view model's initializer, which made restoring N sessions at launch N full
+        /// scans of the conversation directory for a list only the visible session ever shows.
+        .task(id: connection.id) {
+            viewModel.loadConversations()
+        }
         .alert(
             String(localized: "Allow AI Access"),
             isPresented: $viewModel.showAIAccessConfirmation

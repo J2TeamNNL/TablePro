@@ -482,6 +482,12 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
             }
         }
         workspace.drainPendingPayloads()
+        /// A window restored straight into Assistant mode has its surface before it has a
+        /// connection record, and `AgentSession` needs one. Without this the conversation pane would
+        /// stay blank after the connect landed, because nothing else would ask for a session.
+        if workspace.contentMode == .assistant {
+            startSessionIfNeeded(for: workspace)
+        }
     }
 
     /// Only called once the session entry is gone. A session that still exists without a driver

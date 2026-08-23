@@ -94,6 +94,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         PluginNotificationService.shared.setUp()
         OperationCompletionReporter.shared.setUp()
         ChatToolBootstrap.register()
+        /// Sessions are listed again before any window asks for one, so a session whose window was
+        /// closed last run is in the rail from the start rather than appearing once its connection
+        /// happens to be opened.
+        Task { await AgentSessionRegistry.shared.restore() }
 
         NSWorkspace.shared.notificationCenter.addObserver(
             self, selector: #selector(handleSystemDidWake),
@@ -177,6 +181,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         persistOpenConnectionsForRecovery()
+        /// Nothing used to persist AI state at quit, so a session killed mid-stream came back with
+        /// its last turn missing and no record that it had been working. Written synchronously: an
+        /// actor hop here may never be scheduled before the process exits.
+        AgentSessionRegistry.shared.persistAtTerminate()
         LinkedFolderWatcher.shared.stop()
         SQLFolderWatcher.shared.stop()
         SSHTunnelManager.shared.terminateAllProcessesSync()

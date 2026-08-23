@@ -22,6 +22,11 @@ internal final class ConnectionWorkspace {
     internal var attemptToken: UUID?
     internal var phase: ConnectionWindowPhase
 
+    /// Which of this connection's sessions the assistant surface is showing. Held per workspace, so
+    /// switching connection and back returns to the session the user was reading rather than to
+    /// whichever one the registry touched last. Nil falls back to the connection's default session.
+    internal var selectedSessionId: UUID?
+
     /// Which surface this connection shows. Orthogonal to `phase`: that one answers connection
     /// health, this one answers what the window puts in its three columns. Persisted on write so
     /// the choice survives a relaunch.

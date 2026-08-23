@@ -29,6 +29,25 @@ A session works on one connection. A statement aimed at a different connection i
 
 Destructive statements are unchanged: `DROP`, `TRUNCATE`, and `ALTER…DROP` still need the separate confirmation described under [tool calling](/features/ai-assistant#tool-calling), and no floor and no approval covers them.
 
+## Sessions
+
+A session belongs to one connection and holds one conversation. Switching to Assistant mode starts the first one. **New Session** at the foot of the sessions column starts another on the same connection.
+
+| State | Meaning |
+|-------|---------|
+| **Working** | Streaming a reply or executing a tool |
+| **Waiting on you** | Holding a statement that needs **Run** or **Cancel** |
+| **Queued** | Another session is streaming on the same provider |
+| **Ready** | Waiting for your next message |
+| **Stopped** | Its window was closed. The transcript is intact |
+| **Failed** | The provider returned an error, or the app quit mid-reply |
+
+Clicking a row swaps the two columns to its right. A row on another connection switches the window to that connection first. Nothing in any other session stops or changes.
+
+Closing a window stops the sessions on that connection and keeps their transcripts. Open one again from the sessions column and it reconnects where it stopped. Nothing is replayed: a statement that was waiting for approval when the window closed is still waiting, not run.
+
+**Close Session** in a row's context menu ends one session and keeps its transcript in the conversation history.
+
 ## Limitations
 
 Provider tool calls that run outside the app are not covered by the floor. **Claude Agent** passes tools to the `claude` command, which approves them on its own terms, so the **Alert** floor and the per-statement **Run** and **Reject** do not apply to it. Use an API-key provider for a session that writes.
@@ -36,6 +55,8 @@ Provider tool calls that run outside the app are not covered by the floor. **Cla
 Two sessions cannot send to one provider at the same time. The second waits for the first to finish its reply, and its composer names the provider it is waiting on. Point the second session at another provider in **Settings > AI** to run both at once.
 
 Two sessions on one **GitHub Copilot** provider also share a single conversation on Copilot's side. Whatever the first session sent, including schema and query results, stays in context for the second, and the second session's messages join the first session's conversation. Give each session its own provider in **Settings > AI**, or start a new conversation before switching connection.
+
+Sessions stay on this Mac. Conversations sync with [iCloud Sync](/features/icloud-sync) as they always have, but which sessions are open and what they are waiting on does not.
 
 ## Related
 

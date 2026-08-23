@@ -27,6 +27,12 @@ final class ToolApprovalCenter {
 
     private var pending: [ApprovalRequestID: CheckedContinuation<ToolApprovalDecision, Never>] = [:]
 
+    /// Told which session's queue changed, so the session rail can say "waiting on you" on the row
+    /// it belongs to. A pull would not do: this type is a plain class and its dictionary is outside
+    /// the observation graph, so a view that asked it a question would render once and never
+    /// invalidate.
+    var onPendingChange: (@MainActor (UUID) -> Void)?
+
     func awaitDecision(for request: ApprovalRequestID) async -> ToolApprovalDecision {
         await withCheckedContinuation { continuation in
             if let existing = pending[request] {
@@ -39,12 +45,14 @@ final class ToolApprovalCenter {
                 existing.resume(returning: .cancel)
             }
             pending[request] = continuation
+            onPendingChange?(request.sessionId)
         }
     }
 
     func resolve(_ request: ApprovalRequestID, decision: ToolApprovalDecision) {
         guard let continuation = pending.removeValue(forKey: request) else { return }
         continuation.resume(returning: decision)
+        onPendingChange?(request.sessionId)
     }
 
     /// Cancels one session's pending approvals and leaves every other session's alone. This is what
@@ -58,6 +66,8 @@ final class ToolApprovalCenter {
         for (_, continuation) in owned {
             continuation.resume(returning: .cancel)
         }
+        guard !owned.isEmpty else { return }
+        onPendingChange?(sessionId)
     }
 
     /// App teardown only. Every other caller wants the session-scoped one above.
@@ -73,5 +83,12 @@ final class ToolApprovalCenter {
 
     func hasPending(sessionId: UUID) -> Bool {
         pending.keys.contains { $0.sessionId == sessionId }
+    }
+
+    /// One session's outstanding requests. The unscoped `hasPending` above is the only question the
+    /// center could answer before, and answering it for a rail would mark every session "waiting on
+    /// you" whenever any one of them was.
+    func pendingRequests(for sessionId: UUID) -> [ApprovalRequestID] {
+        pending.keys.filter { $0.sessionId == sessionId }
     }
 }

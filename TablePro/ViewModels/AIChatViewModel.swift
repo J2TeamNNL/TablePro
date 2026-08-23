@@ -23,7 +23,9 @@ final class AIChatViewModel {
 
     var messages: [ChatTurn] = []
     var inputText: String = ""
-    var streamingState: StreamingState = .idle
+    var streamingState: StreamingState = .idle {
+        didSet { session?.refreshFromEngine() }
+    }
     var errorMessage: String?
     var conversations: [AIConversation] = []
     var activeConversationID: UUID?
@@ -38,9 +40,19 @@ final class AIChatViewModel {
     var connection: DatabaseConnection?
 
     /// Why this session is not streaming yet, when another session holds the provider it needs.
-    /// Phase 4's session rail is the eventual home for this; until then the composer shows it, so
+    /// The composer shows it and the session rail reads it as the `queued` status's detail line, so
     /// a queued session reads as waiting rather than as a hang.
-    var providerWaitReason: String?
+    var providerWaitReason: String? {
+        didSet { session?.refreshFromEngine() }
+    }
+
+    /// The registry entry this engine belongs to, if it has one. Weak, and the session owns the
+    /// engine: a strong reference here would keep every session the user ever stopped alive.
+    ///
+    /// Nil for an engine nobody registered, which is what the tests build and what the inspector
+    /// chat used to be. Every status update goes through here, so a nil session simply means nothing
+    /// is listening.
+    @ObservationIgnored internal weak var session: AgentSession?
 
     /// This session's tool mode. Seeded from the app setting, which stays the default for sessions
     /// created later, so two sessions can hold different modes at once.
@@ -117,7 +129,6 @@ final class AIChatViewModel {
         self.services = services
         self.connection = connection
         chatMode = services.appSettings.ai.chatMode
-        loadConversations()
     }
 
     deinit {
@@ -276,14 +287,17 @@ final class AIChatViewModel {
         clearError()
     }
 
-    func clearSessionData() {
-        resetProviderConversation()
+    /// Drops the derived context a stopped session no longer needs, and keeps everything it would
+    /// need to carry on: the transcript, the conversation id, and the connection.
+    ///
+    /// This replaces a `clearSessionData()` that emptied `messages`, `connection` and
+    /// `activeConversationID` as well. It ran on window close, disconnect and session loss, so a
+    /// transcript the user never asked to lose was gone from three ordinary paths. What is released
+    /// here is only what a reopened session rebuilds on its own: the schema maps, the tab's current
+    /// query and result text, and any fetch still in flight.
+    func releaseDerivedContext() {
         prepTask?.cancel()
         prepTask = nil
-        streamingTask?.cancel()
-        streamingTask = nil
-        ProviderStreamLease.shared.releaseAll(sessionId: sessionId)
-        connection = nil
         columnsByTable = [:]
         foreignKeysByTable = [:]
         inFlightColumnFetches.values.forEach { $0.cancel() }
@@ -293,17 +307,20 @@ final class AIChatViewModel {
         currentQuery = nil
         queryResults = nil
         pendingWalkthroughBeforeSQL = nil
-        messages = []
-        errorMessage = nil
-        activeConversationID = nil
         sessionApprovedConnections = []
-        streamingState = .idle
+    }
+
+    /// Deletes the cache files behind images that were attached but never sent. Only a session being
+    /// removed reaches this: a stopped session can be reopened, and its composer is still holding
+    /// those attachments.
+    func releaseUnsentAttachments() {
         for image in attachedImages {
             if case .cacheFile(let filename, _) = image.source {
                 AIImageCache.shared.delete(filename: filename)
             }
         }
         attachedImages = []
+        attachedContext = []
     }
 
     func handleFixError(query: String, error: String) {

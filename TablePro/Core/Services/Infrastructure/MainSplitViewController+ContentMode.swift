@@ -25,7 +25,59 @@ internal extension MainSplitViewController {
     func setContentMode(_ mode: ConnectionWorkspaceContentMode) {
         guard let workspace = workspaces.selected, workspace.contentMode != mode else { return }
         workspace.contentMode = mode
+        /// Switching to Assistant is the user action that starts a session, so the surface has a
+        /// conversation to show rather than an empty rail. Creating it here rather than from the
+        /// pane builder is what keeps creation out of a view body.
+        if mode == .assistant {
+            startSessionIfNeeded(for: workspace)
+        }
         applyContentMode(of: workspace)
+    }
+
+    /// Resolves the session the surface shows, creating one if this connection has none. Nil while
+    /// the connection is still dialling: `AgentSession` requires a connection record, and phase 2
+    /// made that a creation-time requirement so nothing can stream without one.
+    @discardableResult
+    func startSessionIfNeeded(for workspace: ConnectionWorkspace) -> AgentSession? {
+        guard let connection = workspace.connection else { return nil }
+        let session = AgentSessionRegistry.shared.session(for: connection)
+        workspace.selectedSessionId = session.id
+        return session
+    }
+
+    /// The session this workspace's surface renders. The selection is per workspace, so switching
+    /// connection and back returns to the session the user was reading rather than to whichever one
+    /// was touched last.
+    func selectedSession(of workspace: ConnectionWorkspace) -> AgentSession? {
+        let registry = AgentSessionRegistry.shared
+        if let selected = workspace.selectedSessionId,
+           let session = registry.existingSession(id: selected) {
+            return session
+        }
+        return registry.existingDefaultSession(for: workspace.connectionId)
+    }
+
+    /// Puts a rail row on screen. A session is pinned to its connection and the window shows one
+    /// connection at a time, so a row on another connection selects that workspace first, and a row
+    /// on a connection no window hosts opens one, reconnecting on the way.
+    func selectSession(id: UUID) {
+        guard let session = AgentSessionRegistry.shared.existingSession(id: id) else { return }
+        guard let workspace = workspaces.workspace(for: session.connectionId) else {
+            WindowManager.shared.openTab(
+                payload: EditorTabPayload(
+                    connectionId: session.connectionId,
+                    intent: .restoreOrDefault
+                ),
+                autoConnect: true
+            )
+            return
+        }
+        workspace.selectedSessionId = id
+        if workspaces.selectedConnectionId == session.connectionId {
+            refreshPanes(of: workspace)
+        } else {
+            selectHostedConnection(session.connectionId)
+        }
     }
 
     func toggleContentMode() {
@@ -50,48 +102,58 @@ internal extension MainSplitViewController {
 
     // MARK: - Assistant Panes
 
-    /// One row for the session this window already has. The phase that adds several sessions
-    /// changes where the rows come from and leaves the row itself alone.
     @ViewBuilder
     func buildAgentSessionRailView(for workspace: ConnectionWorkspace) -> some View {
         AgentSessionRailView(
-            connectionName: workspace.connection?.name ?? String(localized: "Connection"),
-            statusTitle: Self.sessionStatusTitle(phase: workspace.phase),
-            hasSession: workspace.session != nil
+            registry: .shared,
+            currentConnectionId: workspace.connectionId,
+            selectedSessionId: selectedSession(of: workspace)?.id,
+            onSelect: { [weak self] id in self?.selectSession(id: id) },
+            onNewSession: newSessionAction(for: workspace),
+            onRemove: { [weak self] id in self?.closeSession(id: id) }
         )
+    }
+
+    /// Nil while the connection has no record to attach a session to, which disables the control
+    /// rather than offering a button that would silently do nothing.
+    private func newSessionAction(for workspace: ConnectionWorkspace) -> (() -> Void)? {
+        guard let connection = workspace.connection else { return nil }
+        return { [weak self] in
+            guard let self else { return }
+            let session = AgentSessionRegistry.shared.makeSession(connection: connection)
+            workspace.selectedSessionId = session.id
+            self.refreshPanes(of: workspace)
+        }
+    }
+
+    /// Ends a session and leaves the surface pointing at whatever remains on this connection, so
+    /// closing the one on screen does not leave the conversation pane empty with no way back.
+    func closeSession(id: UUID) {
+        guard let session = AgentSessionRegistry.shared.existingSession(id: id) else { return }
+        let connectionId = session.connectionId
+        AgentSessionRegistry.shared.remove(id: id)
+        guard let workspace = workspaces.workspace(for: connectionId) else { return }
+        if workspace.selectedSessionId == id {
+            workspace.selectedSessionId = nil
+        }
+        refreshPanes(of: workspace)
     }
 
     @ViewBuilder
     func buildAgentConversationView(for workspace: ConnectionWorkspace) -> some View {
-        if let session = workspace.session, let rightPanelState = workspace.rightPanelState {
+        if let connectionSession = workspace.session,
+           let rightPanelState = workspace.rightPanelState,
+           let agentSession = selectedSession(of: workspace) {
             let context = rightPanelState.inspectorContext
             AgentConversationView(
-                connection: session.connection,
+                connection: connectionSession.connection,
                 currentQuery: context.currentQuery,
                 queryResults: context.queryResults,
-                viewModel: rightPanelState.aiViewModel
+                session: agentSession
             )
             .environment(\.commandActions, workspace.sessionState?.coordinator.commandActions)
         } else {
             Color.clear
-        }
-    }
-
-    /// Derived from the window phase for now. The phase that gives a session its own status
-    /// replaces this with the session's, which can say things a connection's health cannot:
-    /// running, waiting on you, queued behind another session's provider.
-    static func sessionStatusTitle(phase: ConnectionWindowPhase) -> String {
-        switch phase {
-        case .connected:
-            return String(localized: "Ready")
-        case .connecting:
-            return String(localized: "Connecting")
-        case .idle:
-            return String(localized: "Not connected")
-        case .unavailable:
-            return String(localized: "Unavailable")
-        case .closing:
-            return String(localized: "Closing")
         }
     }
 }
