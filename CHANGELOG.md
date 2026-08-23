@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Compare & Sync between two databases, comparing tables, views, procedures, functions and triggers, or row data. Starter license. (#721)
+- Triggers as a sidebar section, listed per database and schema alongside Procedures and Functions. (#2383)
+- Read-only source viewer for procedures, functions and triggers, with Copy, Export and Open in Editor. (#2383)
+- Procedures, functions and triggers on MSSQL, Oracle, SQLite, ClickHouse, DuckDB, Snowflake, BigQuery, Cassandra, LibSQL, Cloudflare D1, Teradata and Dameng. (#2383)
+- Procedures, functions and triggers in the quick switcher.
+- Argument signatures on routine rows, shown when two routines in a section share a name.
+- Schema-wide `list_triggers` for MCP clients, and `return_type` and `language` on `list_routines`.
 - Assistant mode for the connection window, with the conversation at full width.
 - Confirm Writes floor while Assistant mode is active.
 - Several AI sessions at once, each with its own approvals, transcript and status.
@@ -18,8 +25,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Start an AI session from the welcome window, with running and stopped sessions listed there.
 - Outside MCP servers as tool sources for AI sessions, allowlisted per connection.
 
+### Changed
+
+- The data grid draws its cells instead of building a view for each one, so a result with hundreds of columns opens at once and holds a fraction of the memory. (#2381)
+- The data grid draws its own column separators. (#2381)
+- The inline cell editor scrolls a long line instead of wrapping it. (#2381)
+
 ### Fixed
 
+- A second of delay opening the inline editor on a result with hundreds of columns. (#2381)
+- Flickering columns, blank columns, and an unpainted gap while scrolling a result with about 100 columns sideways. (#2381)
+- Find, arrow keys, and the inline editor unable to reach a column scrolled off the side of a wide result.
+- Return opening no editor on a row selected with the arrow keys.
+- Tab out of a row's last cell and Shift+Tab out of its first doing nothing.
+- Size All Columns to Fit leaving the far columns of a wide result unreachable.
+- A table with 500 columns pinning a core for 20 seconds and taking a gigabyte to open. (#2381)
+- An empty grid the first time a table is opened in a window with no tabs. (#2342)
+- One table click running its query twice. (#2342)
+- A closed tab leaving its query counted as running. (#2342)
+- One of two PostgreSQL function overloads missing from the sidebar, and Show DDL opening an arbitrary one. (#2383)
+- MySQL Show DDL reading the session database instead of the one being browsed. (#2383)
+- Routine tooltips, VoiceOver labels and Copy with Signature showing a return type in place of the argument list. (#2383)
+- Duplicate routine rows in the flat sidebar taking the selection back to the first of them. (#2383)
+- MySQL triggers losing their definer, `WHEN` clause and ordering in the Structure tab.
+- Oracle triggers showing a header with no body in the Structure tab.
+- Crash exporting two same-named tables from different schemas to SQL. (#1968)
+- SQL export writing one schema's rows into another schema's table of the same name. (#1968)
+- SQL export leaving out columns and foreign keys for every schema after the first. (#1968)
 - Tool approvals resolved by a decision made in another chat session.
 - AI tool calls evaluated against the chat's own connection instead of the one the statement targets.
 - AI tool calls reaching a connection the chat session is not attached to.
