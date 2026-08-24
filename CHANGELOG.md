@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Autocomplete in a query tab follows that tab's own database and schema.
+- The query editor's database picker names the tab's schema beside its database.
 - The data grid draws its cells instead of building a view for each one, so a result with hundreds of columns opens at once and holds a fraction of the memory. (#2381)
 - The data grid draws its own column separators. (#2381)
 - The inline cell editor scrolls a long line instead of wrapping it. (#2381)
@@ -32,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The JSON viewer keeping its old font after a font, theme or text-size change. (#2393)
 - Hex dumps wrapping mid-line instead of keeping their columns aligned. (#2393)
 - A second of delay opening the inline editor on a result with hundreds of columns. (#2381)
+- AI inline suggestions written without the connection's schema.
+- Case-insensitive filters and completion on Redshift falling back to PostgreSQL's ASCII-only ILIKE.
+- PGlite connection form offering SSH, SSL, Cloudflare Tunnel and SOCKS panes, and a password field.
+- Redshift and CockroachDB system databases listed in the sidebar as ordinary user databases.
+- Columns missing from the AI schema context for any table named with a capital letter.
 - Flickering columns, blank columns, and an unpainted gap while scrolling a result with about 100 columns sideways. (#2381)
 - Find, arrow keys, and the inline editor unable to reach a column scrolled off the side of a wide result.
 - Return opening no editor on a row selected with the arrow keys.

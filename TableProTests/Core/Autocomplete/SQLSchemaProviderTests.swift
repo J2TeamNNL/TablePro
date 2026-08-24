@@ -25,6 +25,8 @@ final class MockDatabaseDriver: DatabaseDriver, SchemaSwitchable, @unchecked Sen
     var schemaTablesToReturn: [String: [TableInfo]] = [:]
     var columnsToReturn: [String: [ColumnInfo]] = [:]
     var fetchTablesCallCount = 0
+    var fetchScopedTablesCallCount = 0
+    var fetchSchemasCallCount = 0
     var fetchColumnsCallCount = 0
     var fetchColumnsCalls: [String] = []
     var fetchAllColumnsCallCount = 0
@@ -62,6 +64,7 @@ final class MockDatabaseDriver: DatabaseDriver, SchemaSwitchable, @unchecked Sen
     }
 
     func fetchSchemas() async throws -> [String] {
+        fetchSchemasCallCount += 1
         if let fetchSchemasError {
             throw fetchSchemasError
         }
@@ -98,6 +101,7 @@ final class MockDatabaseDriver: DatabaseDriver, SchemaSwitchable, @unchecked Sen
     }
 
     func fetchTables(schema: String?) async throws -> [TableInfo] {
+        fetchScopedTablesCallCount += 1
         if let fetchTablesError {
             throw fetchTablesError
         }

@@ -196,10 +196,11 @@ internal final class QuickSwitcherViewModel {
 
         var items: [QuickSwitcherItem] = []
 
-        if await !schemaProvider.isSchemaLoaded(),
-           let driver = services.databaseManager.driver(for: connectionId) {
-            let connection = services.databaseManager.session(for: connectionId)?.connection
-            await schemaProvider.loadSchema(using: driver, connection: connection)
+        if let scope = services.databaseManager.browseScope(for: connectionId) {
+            await SchemaProviderRegistry.shared.prepare(
+                for: scope,
+                connection: services.databaseManager.session(for: connectionId)?.connection
+            )
         }
 
         let tables = await schemaProvider.getTables()

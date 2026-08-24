@@ -614,9 +614,7 @@ final class ConnectionStorage {
     // MARK: - Plugin Secure Field Migration
 
     private static func secureFieldIds(for databaseType: DatabaseType) -> [String] {
-        (PluginMetadataRegistry.shared.snapshot(forTypeId: databaseType.pluginTypeId)?
-            .connection.additionalConnectionFields ?? [])
-            .filter(\.isSecure).map(\.id)
+        PluginManager.shared.secureConnectionFieldIds(for: databaseType)
     }
 
     func migratePluginSecureFieldsIfNeeded() {
@@ -628,14 +626,11 @@ final class ConnectionStorage {
         var changed = false
 
         for index in connections.indices {
-            let secureFields = (PluginMetadataRegistry.shared
-                .snapshot(forTypeId: connections[index].type.pluginTypeId)?
-                .connection.additionalConnectionFields ?? [])
-                .filter(\.isSecure)
-            for field in secureFields {
-                if let value = connections[index].additionalFields[field.id], !value.isEmpty {
-                    savePluginSecureField(value, fieldId: field.id, for: connections[index].id)
-                    connections[index].additionalFields.removeValue(forKey: field.id)
+            let secureFieldIds = Self.secureFieldIds(for: connections[index].type)
+            for fieldId in secureFieldIds {
+                if let value = connections[index].additionalFields[fieldId], !value.isEmpty {
+                    savePluginSecureField(value, fieldId: fieldId, for: connections[index].id)
+                    connections[index].additionalFields.removeValue(forKey: fieldId)
                     changed = true
                 }
             }

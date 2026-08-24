@@ -61,6 +61,10 @@ actor SQLSchemaProvider {
     private let metadataSource: ColumnMetadataSource?
     private var connectionInfo: DatabaseConnection?
 
+    /// The database this provider describes. A provider is per scope, so it can be a database the
+    /// sidebar is not browsing, and the AI schema context must name the one the tables came from.
+    private var scopeDatabase: String?
+
     init(metadataSource: ColumnMetadataSource? = nil) {
         self.metadataSource = metadataSource
     }
@@ -183,7 +187,13 @@ actor SQLSchemaProvider {
         tables = newTables
     }
 
-    func resetForDatabase(_ database: String?, tables newTables: [TableInfo], driver: DatabaseDriver) {
+    func resetForDatabase(
+        _ database: String?,
+        tables newTables: [TableInfo],
+        driver: DatabaseDriver,
+        connection: DatabaseConnection? = nil
+    ) {
+        self.scopeDatabase = database.flatMap { $0.isEmpty ? nil : $0 }
         self.tables = newTables
         self.columnCache.removeAll()
         self.columnAccessOrder.removeAll()
@@ -193,6 +203,7 @@ actor SQLSchemaProvider {
         self.eagerLoadSchema = (driver as? SchemaSwitchable)?.currentSchema
         self.isLoading = false
         self.lastLoadError = nil
+        if let connection { self.connectionInfo = connection }
         startEagerColumnLoad()
     }
 
@@ -327,15 +338,17 @@ actor SQLSchemaProvider {
         for table in tablesToFetch {
             let columns = await getColumns(for: table.name)
             if !columns.isEmpty {
-                columnsByTable[table.name.lowercased()] = columns
+                columnsByTable[table.name] = columns
             }
         }
 
         let dbType = connection.type
         let capturedConnection = connection
         let capturedTables = tables
+        let capturedScopeDatabase = scopeDatabase
         let (dbName, idQuote, editorLanguage, queryLanguageName) = await MainActor.run {
-            let resolvedName = DatabaseManager.shared.browseDatabaseName(for: capturedConnection)
+            let resolvedName = capturedScopeDatabase
+                ?? DatabaseManager.shared.browseDatabaseName(for: capturedConnection)
             let quote = PluginManager.shared.sqlDialect(for: dbType)?.identifierQuote ?? "\""
             let lang = PluginManager.shared.editorLanguage(for: dbType)
             let langName = PluginManager.shared.queryLanguageName(for: dbType)
