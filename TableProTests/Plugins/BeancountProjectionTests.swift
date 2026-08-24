@@ -103,6 +103,185 @@ struct BeancountProjectionTests {
         #expect(closes.rows.map { $0.map(\.asText) } == [["2024-06-30", "Expenses:Food"]])
     }
 
+    @Test("projects pad directives with source locations")
+    func projectsPads() async throws {
+        let driver = try Self.makeDriver()
+        defer { driver.disconnect() }
+
+        let pads = try await driver.execute(query: """
+            SELECT date, account, source_account, source_file, line, source_location FROM pads
+            """)
+        #expect(pads.rows.map { $0.map(\.asText) } == [[
+            "2024-01-30",
+            "Assets:Cash",
+            "Equity:Opening-Balances",
+            Self.ledgerURL.path,
+            "40",
+            "\(Self.ledgerURL.path):40"
+        ]])
+    }
+
+    @Test("projects a generated pad with no source position rather than dropping it")
+    func projectsGeneratedPadWithoutSourcePosition() async throws {
+        var rows = Self.cannedRows
+        rows.pads = [[
+            "date": "2024-02-15",
+            "account": "Assets:Cash",
+            "source_account": "Equity:Opening-Balances",
+            "filename": "<generated>",
+            "lineno": 0
+        ]]
+        let handle = try BeancountPluginDriver.loadProjection(rows: rows, sourceFiles: [Self.ledgerURL])
+        let driver = BeancountPluginDriver(
+            config: DriverConnectionConfig(
+                host: "", port: 0, username: "", password: "", database: Self.ledgerURL.path
+            )
+        )
+        driver.installProjection(handle, ledgerURL: Self.ledgerURL)
+        defer { driver.disconnect() }
+
+        let pads = try await driver.execute(query: """
+            SELECT date, account, source_account, source_file, line, source_location FROM pads
+            """)
+        #expect(pads.rows.map { $0.map(\.asText) } == [[
+            "2024-02-15",
+            "Assets:Cash",
+            "Equity:Opening-Balances",
+            "<generated>",
+            nil,
+            nil
+        ]])
+    }
+
+    @Test("reads pad accounts from a rendered directive")
+    func readsPadAccountsFromRenderedDirective() throws {
+        let pad = try #require(BeancountPluginDriver.padDirective(
+            rendering: "2024-01-30 pad Assets:Cash Equity:Opening-Balances\n"
+        ))
+        #expect(pad.date == "2024-01-30")
+        #expect(pad.account == "Assets:Cash")
+        #expect(pad.sourceAccount == "Equity:Opening-Balances")
+
+        let nonBreakingSpace = "Assets:Ca\u{00A0}sh"
+        #expect(BeancountPluginDriver.padDirective(
+            rendering: "2024-01-30 pad \(nonBreakingSpace) Equity:Opening-Balances\n"
+        )?.account == nonBreakingSpace)
+
+        #expect(BeancountPluginDriver.padDirective(rendering: "2024-01-30 open Assets:Cash USD\n") == nil)
+        #expect(BeancountPluginDriver.padDirective(rendering: "2024-01-30 balance Assets:Cash 0 USD\n") == nil)
+        #expect(BeancountPluginDriver.padDirective(rendering: "2024-01-30 pad Assets:Cash\n") == nil)
+        #expect(BeancountPluginDriver.padDirective(rendering: "") == nil)
+    }
+
+    @Test("correlates pad entries with rendered directives in order")
+    func correlatesPadsWithRenderedDirectives() throws {
+        let projection = BeancountPluginDriver.padProjection(
+            entries: [
+                Self.padEntry(id: 4, date: "2024-02-01", line: 6),
+                Self.padEntry(id: 5, date: "2024-05-01", line: 1, file: "/ledger/included.beancount")
+            ],
+            directives: [
+                "2024-01-01 open Assets:Cash USD\n",
+                "2024-02-01 pad Assets:Cash Equity:Opening-Balances\n",
+                "2024-05-01 pad Assets:Cash Income:Salary\n",
+                "2024-12-31 balance Assets:Cash 5.00 USD\n"
+            ]
+        )
+        #expect(projection.diagnostics.isEmpty)
+        #expect(projection.rows.count == 2)
+        #expect(projection.rows.map { $0["account"] as? String } == ["Assets:Cash", "Assets:Cash"])
+        #expect(
+            projection.rows.map { $0["source_account"] as? String }
+                == ["Equity:Opening-Balances", "Income:Salary"]
+        )
+    }
+
+    @Test("correlates two pads sharing one date by position")
+    func correlatesPadsSharingOneDate() throws {
+        let projection = BeancountPluginDriver.padProjection(
+            entries: [
+                Self.padEntry(id: 4, date: "2024-05-05", line: 6),
+                Self.padEntry(id: 5, date: "2024-05-05", line: 7)
+            ],
+            directives: [
+                "2024-05-05 pad Assets:Cash Equity:Charlie\n",
+                "2024-05-05 pad Assets:Cash Equity:Alpha\n"
+            ]
+        )
+        #expect(projection.diagnostics.isEmpty)
+        #expect(
+            projection.rows.map { $0["source_account"] as? String } == ["Equity:Charlie", "Equity:Alpha"]
+        )
+    }
+
+    @Test("keeps an unparseable pad rendering in place rather than shifting later pads onto it")
+    func keepsUnparseablePadRenderingInPlace() throws {
+        let projection = BeancountPluginDriver.padProjection(
+            entries: [
+                Self.padEntry(id: 4, date: "2024-05-05", line: 6),
+                Self.padEntry(id: 5, date: "2024-05-05", line: 7)
+            ],
+            directives: [
+                "2024-05-05 pad Assets:Cash\n",
+                "2024-05-05 pad Assets:Cash Equity:Bravo\n"
+            ]
+        )
+        #expect(projection.rows.count == 1)
+        #expect(projection.rows.first?["source_account"] as? String == "Equity:Bravo")
+        #expect(projection.rows.first?["lineno"] as? Int == 7)
+        #expect(projection.diagnostics.count == 1)
+        #expect(projection.diagnostics.first?["line"] as? Int == 6)
+    }
+
+    @Test("reports an uncorrelated pad in diagnostics instead of dropping it silently")
+    func reportsUncorrelatedPadsInDiagnostics() throws {
+        let dateMismatch = BeancountPluginDriver.padProjection(
+            entries: [Self.padEntry(id: 4, date: "2024-02-01", line: 6)],
+            directives: ["2024-09-09 pad Assets:Cash Equity:Opening-Balances\n"]
+        )
+        #expect(dateMismatch.rows.isEmpty)
+        #expect(dateMismatch.diagnostics.count == 1)
+        #expect(dateMismatch.diagnostics.first?["phase"] as? String == "projection")
+        #expect(dateMismatch.diagnostics.first?["severity"] as? String == "warning")
+        #expect(dateMismatch.diagnostics.first?["line"] as? Int == 6)
+        #expect(dateMismatch.diagnostics.first?["file"] as? String == "/ledger/main.beancount")
+        let dateMismatchMessage = try #require(dateMismatch.diagnostics.first?["message"] as? String)
+        #expect(!dateMismatchMessage.isEmpty)
+
+        let noDirectives = BeancountPluginDriver.padProjection(
+            entries: [Self.padEntry(id: 4, date: "2024-02-01", line: 6)],
+            directives: []
+        )
+        #expect(noDirectives.rows.isEmpty)
+        #expect(noDirectives.diagnostics.count == 1)
+
+        let surplusDirectives = BeancountPluginDriver.padProjection(
+            entries: [Self.padEntry(id: 4, date: "2024-02-01", line: 6)],
+            directives: [
+                "2024-02-01 pad Assets:Cash Equity:Opening-Balances\n",
+                "2024-03-01 pad Assets:Cash Income:Salary\n"
+            ]
+        )
+        #expect(surplusDirectives.rows.count == 1)
+        #expect(surplusDirectives.diagnostics.isEmpty)
+
+        let undatedEntry = BeancountPluginDriver.padProjection(
+            entries: [["id": 4, "filename": "/ledger/main.beancount", "lineno": 6]],
+            directives: ["2024-02-01 pad Assets:Cash Equity:Opening-Balances\n"]
+        )
+        #expect(undatedEntry.rows.isEmpty)
+        #expect(undatedEntry.diagnostics.count == 1)
+    }
+
+    private static func padEntry(
+        id: Int,
+        date: String,
+        line: Int,
+        file: String = "/ledger/main.beancount"
+    ) -> [String: Any] {
+        ["id": id, "date": date, "filename": file, "lineno": line]
+    }
+
     @Test("projects transaction metadata, posting metadata, tags, and links")
     func projectsMetadataTagsAndLinks() async throws {
         let driver = try Self.makeDriver()
@@ -336,6 +515,16 @@ struct BeancountProjectionTests {
         ],
         events: [
             ["date": "2024-01-01", "type": "location", "description": "Taipei"]
+        ],
+        pads: [
+            [
+                "date": "2024-01-30",
+                "account": "Assets:Cash",
+                "source_account": "Equity:Opening-Balances",
+                "filename": ledgerURL.path,
+                "lineno": 40,
+                "location": "\(ledgerURL.path):40"
+            ]
         ],
         closes: [
             ["account": "Expenses:Food", "close": "2024-06-30"]
