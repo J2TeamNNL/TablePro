@@ -679,14 +679,18 @@ enum DatabaseDriverFactory {
             fields[key] = value
         }
 
-        let secureFields = PluginManager.shared.additionalConnectionFields(for: connection.type)
-            .filter(\.isSecure)
-        for field in secureFields {
-            if fields[field.id] == nil || fields[field.id]?.isEmpty == true {
+        /// The superset, not the rendered form's list. A connection saved while a variant was
+        /// still being offered its primary's whole form holds those values in the Keychain, and
+        /// the connection still acts on them: a Redshift connection with `awsAuth` set reaches
+        /// `resolveIAMPassword`, which reads `awsSecretAccessKey` from here. Loading only what the
+        /// form renders today would leave that secret behind and fail the connect, with no AWS
+        /// section left in the form to turn it off.
+        for fieldId in PluginManager.shared.secureConnectionFieldIds(for: connection.type) {
+            if fields[fieldId] == nil || fields[fieldId]?.isEmpty == true {
                 if let secureValue = ConnectionStorage.shared.loadPluginSecureField(
-                    fieldId: field.id, for: connection.id
+                    fieldId: fieldId, for: connection.id
                 ) {
-                    fields[field.id] = secureValue
+                    fields[fieldId] = secureValue
                 }
             }
         }

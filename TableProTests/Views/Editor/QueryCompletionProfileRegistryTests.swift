@@ -251,6 +251,37 @@ struct QueryCompletionProfileRegistryTests {
         #expect(first === second)
     }
 
+    /// Teardown must not rewind the fence. `clear` used to remove the generations it had just
+    /// bumped, so a resolution still blocked inside the metadata lease resumed, re-read its key as
+    /// generation 0, matched the 0 it had captured, and wrote a profile from the closed session
+    /// into the cache disconnect had just emptied. The next connection's scope keys are identical,
+    /// so it would have been served that profile.
+    @Test("a resolution in flight when the connection is cleared cannot write into the cache")
+    func clearFencesAnInFlightResolution() async {
+        let registry = QueryCompletionProfileRegistry()
+        let connectionId = UUID()
+        let scope = DatabaseScope(connectionId: connectionId, database: "shop", schema: nil)
+
+        let didStart = Signal()
+        let mayFinish = Signal()
+
+        async let inFlight = registry.resolve(scope: scope, databaseType: .mysql, base: Self.base()) {
+            await didStart.raise()
+            await mayFinish.wait()
+            return Self.base(revision: "from-the-closed-session")
+        }
+        await didStart.wait()
+        registry.clear(connectionId: connectionId)
+        await mayFinish.raise()
+        _ = await inFlight
+
+        let afterReconnect = await registry.resolve(scope: scope, databaseType: .mysql, base: Self.base()) {
+            Self.base(revision: "fresh")
+        }
+
+        #expect(afterReconnect.revision == "fresh")
+    }
+
     @Test("invalidating a connection bumps every scope it holds")
     func connectionInvalidationBumpsEveryScope() {
         let registry = QueryCompletionProfileRegistry()

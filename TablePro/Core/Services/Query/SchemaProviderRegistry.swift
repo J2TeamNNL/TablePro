@@ -113,7 +113,11 @@ final class SchemaProviderRegistry {
         )
         let provider = SQLSchemaProvider(metadataSource: source)
         providers[scope] = provider
-        evictUnheldProvidersIfNeeded(for: connectionId)
+        /// Never the scope being created. The quick switcher fabricates a scope when there is no
+        /// browse cursor, and such a scope is in neither `liveScopes` nor the browse exemption, so
+        /// eviction would drop the provider this call is about to return and the next
+        /// `getOrCreate` would hand out a different instance for the same scope.
+        evictUnheldProvidersIfNeeded(for: connectionId, keeping: scope)
         return provider
     }
 
@@ -199,7 +203,13 @@ final class SchemaProviderRegistry {
                 Self.logger.warning(
                     "[schema] scope population failed scope=\(scope.qualifiedDescription, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
                 )
-                self?.loadedScopes.remove(scope)
+                /// Fenced like the commit is, and for the same reason. `notePopulatedExternally`
+                /// bumps the generation when `SchemaRefreshService` fills this scope with the
+                /// union of every expanded schema, so a populate that started earlier and then
+                /// failed must not clear the loaded flag for content that is present and correct.
+                /// Doing so sends the next `prepare` to refill it with this one schema's tables,
+                /// narrowing the union that the flag exists to protect.
+                await registry?.markLoadFailed(scope: scope, generation: generation)
             }
         }
         populationTasks[scope] = task
@@ -216,6 +226,13 @@ final class SchemaProviderRegistry {
     private func markPopulated(scope: DatabaseScope, provider: SQLSchemaProvider, generation: Int) {
         guard providers[scope] === provider, populationGenerations[scope, default: 0] == generation else { return }
         loadedScopes.insert(scope)
+    }
+
+    /// Clears the loaded flag so the next `prepare` retries, but only while this population is
+    /// still the one filling the scope. A superseded fetch that fails has nothing to report.
+    private func markLoadFailed(scope: DatabaseScope, generation: Int) {
+        guard populationGenerations[scope, default: 0] == generation else { return }
+        loadedScopes.remove(scope)
     }
 
     /// `SchemaRefreshService` fills the browse scope with the union of every schema the sidebar
@@ -295,6 +312,7 @@ final class SchemaProviderRegistry {
     /// know to refill it. A scope a window still renders is never dropped either, or the next
     /// body pass would build an empty provider for a tab whose `.task(id:)` has already run and
     /// will not run again.
+
     /// Reclaims now rather than at the next `getOrCreate`, for the callers that know a scope may
     /// have just stopped being rendered: closing a tab, and rebinding one to another database.
     ///
@@ -302,22 +320,33 @@ final class SchemaProviderRegistry {
     /// **in place**: `changeContainer` calls `markTabRenamed`, not a `tabStructureVersion` bump,
     /// so a filter keyed on tab identity would keep the old scope's provider for the session.
     func reclaimUnheldProviders(for connectionId: UUID) {
-        evictUnheldProviders(for: connectionId, respectingSoftLimit: false)
+        evictUnheldProviders(for: connectionId, respectingSoftLimit: false, keeping: nil)
     }
 
-    private func evictUnheldProvidersIfNeeded(for connectionId: UUID) {
-        evictUnheldProviders(for: connectionId, respectingSoftLimit: true)
+    private func evictUnheldProvidersIfNeeded(for connectionId: UUID, keeping scope: DatabaseScope?) {
+        evictUnheldProviders(for: connectionId, respectingSoftLimit: true, keeping: scope)
     }
 
-    private func evictUnheldProviders(for connectionId: UUID, respectingSoftLimit: Bool) {
+    private func evictUnheldProviders(
+        for connectionId: UUID,
+        respectingSoftLimit: Bool,
+        keeping protected: DatabaseScope?
+    ) {
         let held = providers.keys.filter { $0.connectionId == connectionId }
         if respectingSoftLimit {
             guard held.count > Self.softProviderLimit else { return }
         }
         guard let liveScopeProvider else { return }
+        /// No browse cursor means no session, which is the window a reconnect passes through
+        /// rather than a signal that nothing is held. Evicting here would drop the browse
+        /// provider, whose union of every expanded schema only `SchemaRefreshService` can rebuild,
+        /// and `coordinator.browseScope` is nil in that window too so `liveScopes` cannot protect
+        /// it either. Wait for the session to come back.
+        guard let browseScope = metadataDriverProvider.browseScope(for: connectionId) else { return }
         var keep = liveScopeProvider.liveScopes(for: connectionId)
-        if let browseScope = metadataDriverProvider.browseScope(for: connectionId) {
-            keep.insert(browseScope)
+        keep.insert(browseScope)
+        if let protected {
+            keep.insert(protected)
         }
         let evictable = held.filter { !keep.contains($0) }
         guard !evictable.isEmpty else { return }

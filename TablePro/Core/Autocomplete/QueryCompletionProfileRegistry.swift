@@ -167,9 +167,16 @@ final class QueryCompletionProfileRegistry {
     /// re-fire the wrong way round. Once the session is gone there is nothing left to key.
     func clear(connectionId: UUID) {
         discardEntries { $0.connectionId == connectionId }
-        for key in Array(generations.keys) where key.scope.connectionId == connectionId {
-            generations.removeValue(forKey: key)
-        }
+        /// `generations` is deliberately not cleared. `discardEntries` has just bumped every key
+        /// it matched, and that bump is the only thing stopping a resolution still blocked inside
+        /// `withMetadataDriver` from committing: the lease body never checks cancellation, so it
+        /// resumes after this call and re-reads its key. Removing the entry would make
+        /// `generations[key, default: 0]` answer 0 again, the captured generation would match, and
+        /// a profile from the closed session would be written into the emptied cache and then
+        /// served to the next connection, whose scope keys are identical.
+        ///
+        /// A counter per scope and type visited on one connection is a bounded cost; rewinding it
+        /// is a correctness bug.
         for scope in Array(revisionBoxes.keys) where scope.connectionId == connectionId {
             revisionBoxes.removeValue(forKey: scope)
         }

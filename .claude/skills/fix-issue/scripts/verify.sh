@@ -221,14 +221,30 @@ report_tests() {
     # at once: it never matched the unit file at all, so every quarantined case was reported as a
     # new failure; and on the UI file it muted the whole suite, hiding a real regression sitting
     # beside a quarantined case.
+    # xcodebuild prints a failing case in three spellings and the quarantine files use only the
+    # last one, so every line is normalised to Suite/case() before the lookup:
+    #   Test Case '-[TableProUITests.FooUITests testBar]' failed (1.0 seconds).   XCTest
+    #   Test case 'FooUITests.testBar()' failed on 'My Mac' ...                   XCTest
+    #   Test case 'FooTests/bar()' failed on 'My Mac' ...                         Swift Testing
+    # Matching only the third muted nothing written by XCTest, which is every entry in the UI
+    # quarantine file, so a clean uitest run reported both quarantined cases as new failures.
     local fail_lines unmuted muted_cases=0
     fail_lines="$(grep -iE "$FAIL_PATTERN" "$log" 2> /dev/null)"
     unmuted=""
     while IFS= read -r line; do
         [ -n "$line" ] || continue
-        local case_ids case_id
-        case_ids="$(printf '%s\n' "$line" | grep -oE "[A-Za-z_][A-Za-z0-9_]*Tests/[A-Za-z_][A-Za-z0-9_]*\(\)")"
-        case_id="${case_ids%%$'\n'*}"
+        local case_id
+        case_id="$(printf '%s\n' "$line" | sed -E \
+            -e "s|.*'-\[[A-Za-z0-9_]+\.([A-Za-z0-9_]+) ([A-Za-z0-9_]+)\]'.*|\1/\2()|" \
+            -e "s|.*'([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)\(\)'.*|\1/\2()|" \
+            -e "s|.*'([A-Za-z0-9_]+/[A-Za-z0-9_]+\(\))'.*|\1|")"
+        # A line none of the three matched comes back unchanged, so require the normalised shape
+        # before trusting it. Failing to extract must report the line, never mute it.
+        case "$case_id" in
+            *' '* | *'/'*'/'*) case_id="" ;;
+            */*'()') ;;
+            *) case_id="" ;;
+        esac
         if [ -n "$case_id" ] \
             && { grep -qxF "$case_id" "$quarantine" 2> /dev/null \
                 || grep -qxF "$case_id" "$ui_quarantine" 2> /dev/null; }; then

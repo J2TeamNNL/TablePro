@@ -39,7 +39,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PGlite connection form offering SSH, SSL, Cloudflare Tunnel and SOCKS panes, and a password field.
 - Redshift and CockroachDB system databases listed in the sidebar as ordinary user databases.
 - Columns missing from the AI schema context for any table named with a capital letter.
-- A failed completion lookup pinning a tab to the built-in dialect until the next manual refresh.
 - Flickering columns, blank columns, and an unpainted gap while scrolling a result with about 100 columns sideways. (#2381)
 - Find, arrow keys, and the inline editor unable to reach a column scrolled off the side of a wide result.
 - Return opening no editor on a row selected with the arrow keys.
