@@ -621,7 +621,7 @@ enum DatabaseDriverFactory {
             preTunnelPort: connection.preTunnelPort,
             override: fields["awsRDSEndpoint"],
             defaultPort: PluginMetadataRegistry.shared
-                .snapshot(forTypeId: connection.type.pluginTypeId)?.defaultPort ?? connection.port
+                .snapshot(for: connection.type)?.defaultPort ?? connection.port
         )
 
         let explicitRegion = fields["awsRegion"].flatMap { $0.isEmpty ? nil : $0 }

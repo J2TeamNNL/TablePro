@@ -124,7 +124,11 @@ SELECT * FROM ANALYTICS_PROD.DBT_MARTS.ORDERS o WHERE o.|  -- columns
 
 ## Which database a tab completes against
 
-Each query tab completes against its own database and schema, not the one the object browser points at. Rebind a tab to another database and it suggests that database's tables. Schemas and dialects are cached per database, so two tabs on one connection but different databases keep separate caches.
+Every query tab carries its own database and schema, named in the picker at the top of the editor. Suggestions come from there, not from whatever the object browser is pointing at, so selecting a different database in the sidebar leaves open tabs alone.
+
+Two tabs on one connection can sit on different databases and complete against each. Change a tab's database in the picker and its suggestions follow on the next keystroke.
+
+On engines with schemas under a database, the picker names both, as `analytics · public`.
 
 ## Favorite keywords
 

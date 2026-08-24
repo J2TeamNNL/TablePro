@@ -36,7 +36,7 @@ struct PluginManagerEditorMetadataTests {
     func unknownVariantFallsBackToPluginSnapshot() throws {
         let aliasTypeId = "PluginManagerEditorMetadataTestsFork"
         let alias = DatabaseType(rawValue: aliasTypeId)
-        #expect(PluginMetadataRegistry.shared.snapshot(forTypeId: aliasTypeId) == nil)
+        #expect(PluginMetadataRegistry.shared.snapshot(forRegisteredTypeId: aliasTypeId) == nil)
 
         PluginMetadataRegistry.shared.registerTypeAlias(aliasTypeId, primaryTypeId: "MySQL")
         defer { PluginMetadataRegistry.shared.removeTypeAlias(aliasTypeId) }

@@ -3,22 +3,46 @@ import Foundation
 import Observation
 import TableProPluginKit
 
+/// One scope's invalidation counter, as its own observable object.
+///
+/// The counter cannot live in a dictionary on an `@Observable` registry. Observation's
+/// granularity is the whole stored property: the generated getter emits
+/// `access(keyPath: \.revisions)` and `ObservationRegistrar.access` takes a `KeyPath`, with no
+/// per-subscript form. A `revision(for:)` helper therefore registers a dependency on the entire
+/// dictionary, so one scope's bump re-evaluates every editor body on the connection. Worse,
+/// `dict[key, default: 0] &+= 1` mutates through the ungated `_modify` accessor and notifies even
+/// when the value did not change; only whole-dictionary assignment gets the equality gate.
+///
+/// A non-observable container holding observable leaves gives real per-scope granularity, which is
+/// the shape `SchemaProviderRegistry` already uses for its providers.
 @MainActor
 @Observable
+final class QueryCompletionRevisionBox {
+    private(set) var revision = 0
+
+    func bump() {
+        revision &+= 1
+    }
+}
+
+/// Caches the resolved completion profile for a scope, and tells the editor when to ask again.
+///
+/// Deliberately not `@Observable`: everything a view observes here is a `QueryCompletionRevisionBox`,
+/// for the reason written on that type.
+@MainActor
 final class QueryCompletionProfileRegistry {
     struct CacheKey: Hashable {
         let scope: DatabaseScope
         let databaseType: DatabaseType
-        let serverVersion: String?
     }
 
     static let shared = QueryCompletionProfileRegistry()
 
     private var profiles: [CacheKey: QueryCompletionProfile] = [:]
-    private var inFlight: [CacheKey: Task<QueryCompletionProfile, Never>] = [:]
+    private var inFlight: [CacheKey: Task<QueryCompletionProfile?, Never>] = [:]
     private var generations: [CacheKey: Int] = [:]
-    private(set) var revisions: [DatabaseScope: Int] = [:]
-    @ObservationIgnored private var cancellables: Set<AnyCancellable> = []
+    private var revisionBoxes: [DatabaseScope: QueryCompletionRevisionBox] = [:]
+    private var cancellables: Set<AnyCancellable> = []
 
     #if DEBUG
     /// Test-only init for `@testable` tests in DEBUG builds; release builds must use `.shared`.
@@ -46,25 +70,35 @@ final class QueryCompletionProfileRegistry {
             .store(in: &cancellables)
     }
 
-    func revision(for scope: DatabaseScope) -> Int {
-        revisions[scope, default: 0]
+    /// The box a view keys its `.task(id:)` on. Creating one is invisible to SwiftUI, because the
+    /// registry itself is not observable, so calling this from a body registers a dependency on
+    /// the box's `revision` alone.
+    func revisionBox(for scope: DatabaseScope) -> QueryCompletionRevisionBox {
+        if let existing = revisionBoxes[scope] { return existing }
+        let box = QueryCompletionRevisionBox()
+        revisionBoxes[scope] = box
+        return box
     }
 
     /// The metadata driver is leased inside the resolver rather than around this call, so a
     /// cached profile costs nothing. An engine that cannot pool serves metadata from the
     /// session driver, and leasing that for a profile the cache already holds would queue
     /// behind, and ahead of, the statements the user is running.
+    ///
+    /// The server version is deliberately not part of the key. It changes only across a reconnect,
+    /// and `clear(connectionId:)` already empties the cache on disconnect. Keying on it meant
+    /// reading it from a SwiftUI body through `DatabaseManager.driver(for:)`, and
+    /// `PluginDriverAdapter` is not observable, so a version learned after connect reached no
+    /// body and the profile stayed cached under a nil-version key for the life of the tab.
     func profile(
         for scope: DatabaseScope,
         databaseType: DatabaseType,
-        serverVersion: String?,
         metadataProvider: any ScopedMetadataProviding = DatabaseManager.shared
     ) async -> QueryCompletionProfile {
-        let base = baseProfile(for: databaseType, serverVersion: serverVersion)
+        let base = baseProfile(for: databaseType)
         return await resolve(
             scope: scope,
             databaseType: databaseType,
-            serverVersion: serverVersion,
             base: base
         ) {
             try await metadataProvider.withMetadataDriver(scope: scope) { driver in
@@ -76,14 +110,21 @@ final class QueryCompletionProfileRegistry {
         }
     }
 
+    /// Resolves once per key, joining any resolution already in flight.
+    ///
+    /// A resolver that throws is answered with `base` and **nothing is cached**, so the next run
+    /// tries again. Caching the fallback would be permanent: nothing re-resolves a key the cache
+    /// already holds, so one unlucky metadata read would pin the tab to the app's built-in dialect
+    /// until the user pressed Refresh. Leaving it uncached costs nothing, because SwiftUI re-runs
+    /// a `.task` at an unchanged id whenever its host view is unparented and reparented, which is
+    /// what every connection switch does.
     func resolve(
         scope: DatabaseScope,
         databaseType: DatabaseType,
-        serverVersion: String?,
         base: QueryCompletionProfile,
         resolver: @Sendable @escaping () async throws -> QueryCompletionProfile
     ) async -> QueryCompletionProfile {
-        let key = CacheKey(scope: scope, databaseType: databaseType, serverVersion: serverVersion)
+        let key = CacheKey(scope: scope, databaseType: databaseType)
         if let profile = profiles[key] {
             return profile
         }
@@ -91,53 +132,47 @@ final class QueryCompletionProfileRegistry {
         if let task = inFlight[key] {
             let joined = await task.value
             guard generations[key, default: 0] == generation else { return base }
-            return joined
+            return joined ?? base
         }
-        let task = Task {
-            (try? await resolver()) ?? base
-        }
+        let task = Task { try? await resolver() }
         inFlight[key] = task
-        let profile = await task.value
-        guard generations[key, default: 0] == generation else {
-            /// An invalidation landed while this was running. The refusal to cache is not enough
-            /// on its own: handing the caller the profile the refresh existed to replace would
-            /// configure the editor with it. The base is the current answer for everything the
-            /// app itself knows, and the revision bump re-runs the resolver behind it.
-            return base
-        }
+        let resolved = await task.value
+
+        /// Checked after the await, never before: cancelling a caller that is awaiting a shared
+        /// `Task.value` neither cancels that task nor returns early, so a superseded resolution
+        /// always runs its tail all the way to this line. Refusing to cache is half the guard;
+        /// the stale value must not be returned to this caller either, because the caller
+        /// configures the editor with whatever it gets back.
+        guard generations[key, default: 0] == generation else { return base }
         inFlight.removeValue(forKey: key)
-        profiles[key] = profile
-        return profile
+        guard let resolved else { return base }
+        profiles[key] = resolved
+        return resolved
     }
 
     func invalidate(scope: DatabaseScope) {
-        revisions[scope, default: 0] &+= 1
+        revisionBoxes[scope]?.bump()
         discardEntries { $0 == scope }
     }
 
     func invalidate(connectionId: UUID) {
-        for scope in cachedScopes(of: connectionId) {
-            revisions[scope, default: 0] &+= 1
+        for (scope, box) in revisionBoxes where scope.connectionId == connectionId {
+            box.bump()
         }
         discardEntries { $0.connectionId == connectionId }
     }
 
-    /// Teardown, as opposed to invalidation. `revisions` has to stay monotonic while a connection
-    /// is open, because `.task(id:)` in the editor keys on it and a value that went backwards
-    /// would re-fire the wrong way round; once the session is gone there is nothing to key.
+    /// Teardown, as opposed to invalidation. A box has to keep counting up while its connection is
+    /// open, because the editor's `.task(id:)` keys on it and a value that went backwards would
+    /// re-fire the wrong way round. Once the session is gone there is nothing left to key.
     func clear(connectionId: UUID) {
         discardEntries { $0.connectionId == connectionId }
         for key in Array(generations.keys) where key.scope.connectionId == connectionId {
             generations.removeValue(forKey: key)
         }
-        for scope in Array(revisions.keys) where scope.connectionId == connectionId {
-            revisions.removeValue(forKey: scope)
+        for scope in Array(revisionBoxes.keys) where scope.connectionId == connectionId {
+            revisionBoxes.removeValue(forKey: scope)
         }
-    }
-
-    private func cachedScopes(of connectionId: UUID) -> Set<DatabaseScope> {
-        Set(profiles.keys.map(\.scope) + inFlight.keys.map(\.scope))
-            .filter { $0.connectionId == connectionId }
     }
 
     /// The generation bump is what fences a resolution that is already running: it completes
@@ -154,14 +189,11 @@ final class QueryCompletionProfileRegistry {
         profiles = profiles.filter { !matches($0.key.scope) }
     }
 
-    private func baseProfile(
-        for databaseType: DatabaseType,
-        serverVersion: String?
-    ) -> QueryCompletionProfile {
+    private func baseProfile(for databaseType: DatabaseType) -> QueryCompletionProfile {
         QueryCompletionProfile(
             resolvedDialect: PluginManager.shared.sqlDialect(for: databaseType),
             statementCompletions: PluginManager.shared.statementCompletions(for: databaseType),
-            revision: [databaseType.rawValue, serverVersion ?? "unknown", "base"].joined(separator: ":")
+            revision: [databaseType.rawValue, "base"].joined(separator: ":")
         )
     }
 }

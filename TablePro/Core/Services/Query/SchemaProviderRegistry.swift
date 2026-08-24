@@ -295,9 +295,25 @@ final class SchemaProviderRegistry {
     /// know to refill it. A scope a window still renders is never dropped either, or the next
     /// body pass would build an empty provider for a tab whose `.task(id:)` has already run and
     /// will not run again.
+    /// Reclaims now rather than at the next `getOrCreate`, for the callers that know a scope may
+    /// have just stopped being rendered: closing a tab, and rebinding one to another database.
+    ///
+    /// Liveness is re-derived here rather than pushed, because rebinding a tab moves its scope
+    /// **in place**: `changeContainer` calls `markTabRenamed`, not a `tabStructureVersion` bump,
+    /// so a filter keyed on tab identity would keep the old scope's provider for the session.
+    func reclaimUnheldProviders(for connectionId: UUID) {
+        evictUnheldProviders(for: connectionId, respectingSoftLimit: false)
+    }
+
     private func evictUnheldProvidersIfNeeded(for connectionId: UUID) {
+        evictUnheldProviders(for: connectionId, respectingSoftLimit: true)
+    }
+
+    private func evictUnheldProviders(for connectionId: UUID, respectingSoftLimit: Bool) {
         let held = providers.keys.filter { $0.connectionId == connectionId }
-        guard held.count > Self.softProviderLimit else { return }
+        if respectingSoftLimit {
+            guard held.count > Self.softProviderLimit else { return }
+        }
         guard let liveScopeProvider else { return }
         var keep = liveScopeProvider.liveScopes(for: connectionId)
         if let browseScope = metadataDriverProvider.browseScope(for: connectionId) {

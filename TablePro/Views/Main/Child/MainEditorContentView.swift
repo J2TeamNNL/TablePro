@@ -152,6 +152,7 @@ struct MainEditorContentView: View {
             serverDashboardViewModels = serverDashboardViewModels.filter { openTabIds.contains($0.key) }
             usersRolesViewModels = usersRolesViewModels.filter { openTabIds.contains($0.key) }
             queryInsightsViewModels = queryInsightsViewModels.filter { openTabIds.contains($0.key) }
+            SchemaProviderRegistry.shared.reclaimUnheldProviders(for: connectionId)
         }
         .onChange(of: tabManager.selectedTabId) { _, _ in
             updateHasQueryText()
@@ -369,9 +370,20 @@ struct MainEditorContentView: View {
         PluginManager.shared.containerEntityName(for: connection.type)
     }
 
+    /// Read from the tab's own scope, the same value completion resolves against, so the control
+    /// and the suggestions can never describe different databases. Sequel Ace ships that
+    /// divergence: its tab title names one database while the tab queries another (#1396, #1806).
     private func containerName(for tab: QueryTab) -> String {
+        if let scoped = coordinator.scope(for: tab)?.database, !scoped.isEmpty { return scoped }
         let bound = tab.tableContext.databaseName
         return bound.isEmpty ? coordinator.browseDatabaseName : bound
+    }
+
+    /// Only shown beside a database, never instead of one: on an engine whose container IS the
+    /// schema the picker is already naming it.
+    private func containerSchemaName(for tab: QueryTab) -> String? {
+        guard containerSwitchTarget == .database else { return nil }
+        return coordinator.scope(for: tab)?.schema
     }
 
     /// Rebinding the container is a tab-local edit. The tab owns the new database for the
@@ -381,6 +393,7 @@ struct MainEditorContentView: View {
         guard tab.tableContext.databaseName != name,
               tabManager.mutate(tabId: tabId, { $0.tableContext.databaseName = name }) else { return }
         tabManager.markTabRenamed(tabId)
+        SchemaProviderRegistry.shared.reclaimUnheldProviders(for: connectionId)
         guard tabManager.selectedTabId == tabId else { return }
         coordinator.runQuery()
     }
@@ -422,7 +435,6 @@ struct MainEditorContentView: View {
                         schemaProvider: queryScope.map { SchemaProviderRegistry.shared.getOrCreate(for: $0) },
                         databaseType: coordinator.connection.type,
                         databaseScope: queryScope,
-                        serverVersion: DatabaseManager.shared.driver(for: coordinator.connection.id)?.serverVersion,
                         connectionId: coordinator.connection.id,
                         connectionAIPolicy: coordinator.connection.aiPolicy ?? AppSettingsManager.shared.ai.defaultConnectionPolicy,
                         tabID: tab.id,
@@ -463,6 +475,7 @@ struct MainEditorContentView: View {
                         selectedContainerName: containerName(for: tab),
                         containerEntityName: containerEntityName,
                         isContainerSwitchReadOnly: isContainerSwitchReadOnly,
+                        containerSchemaName: containerSchemaName(for: tab),
                         onContainerChanged: { name in changeContainer(for: tab, to: name) }
                     )
                 }

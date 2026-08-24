@@ -22,7 +22,6 @@ struct QueryEditorView: View {
     var schemaProvider: SQLSchemaProvider?
     var databaseType: DatabaseType?
     var databaseScope: DatabaseScope?
-    var serverVersion: String?
     var connectionId: UUID?
     var connectionAIPolicy: AIConnectionPolicy?
     var tabID: UUID?
@@ -46,6 +45,7 @@ struct QueryEditorView: View {
     var selectedContainerName: String = ""
     var containerEntityName: String = ""
     var isContainerSwitchReadOnly: Bool = false
+    var containerSchemaName: String?
     var onContainerChanged: ((String) -> Void)?
 
     @State private var vimMode: VimMode = .normal
@@ -74,7 +74,6 @@ struct QueryEditorView: View {
                 schemaProvider: schemaProvider,
                 databaseType: databaseType,
                 databaseScope: databaseScope,
-                serverVersion: serverVersion,
                 connectionId: connectionId,
                 connectionAIPolicy: connectionAIPolicy,
                 tabID: tabID,
@@ -117,6 +116,7 @@ struct QueryEditorView: View {
                 selectedName: selectedContainerName,
                 entityName: containerEntityName,
                 isReadOnly: isContainerSwitchReadOnly,
+                schemaName: containerSchemaName,
                 onChange: { name in onContainerChanged?(name) }
             )
 

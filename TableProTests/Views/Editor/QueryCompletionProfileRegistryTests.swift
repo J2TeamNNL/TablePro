@@ -75,106 +75,93 @@ struct QueryCompletionProfileRegistryTests {
             browseScope: scope
         )
 
-        _ = await registry.profile(
-            for: scope,
-            databaseType: .postgresql,
-            serverVersion: "15.2",
-            metadataProvider: metadataProvider
-        )
-        _ = await registry.profile(
-            for: scope,
-            databaseType: .postgresql,
-            serverVersion: "15.2",
-            metadataProvider: metadataProvider
-        )
+        _ = await registry.profile(for: scope, databaseType: .postgresql, metadataProvider: metadataProvider)
+        _ = await registry.profile(for: scope, databaseType: .postgresql, metadataProvider: metadataProvider)
 
         #expect(metadataProvider.leaseCount == 1)
 
         registry.invalidate(scope: scope)
-        _ = await registry.profile(
-            for: scope,
-            databaseType: .postgresql,
-            serverVersion: "15.2",
-            metadataProvider: metadataProvider
-        )
+        _ = await registry.profile(for: scope, databaseType: .postgresql, metadataProvider: metadataProvider)
 
         #expect(metadataProvider.leaseCount == 2)
     }
 
-    @Test("cache keys include scope, database type, and server version")
-    func cacheKeyIncludesEveryRuntimeDimension() async {
+    @Test("cache keys separate scope and database type")
+    func cacheKeySeparatesScopeAndType() async {
         let registry = QueryCompletionProfileRegistry()
         let connectionId = UUID()
         let firstScope = DatabaseScope(connectionId: connectionId, database: "first", schema: "public")
         let secondScope = DatabaseScope(connectionId: connectionId, database: "second", schema: "public")
         let resolutions = Counter()
 
-        _ = await registry.resolve(
-            scope: firstScope,
-            databaseType: .postgresql,
-            serverVersion: "15.2",
-            base: Self.base()
-        ) {
+        _ = await registry.resolve(scope: firstScope, databaseType: .postgresql, base: Self.base()) {
             await resolutions.increment()
             return Self.base(revision: "first")
         }
-        _ = await registry.resolve(
-            scope: firstScope,
-            databaseType: .postgresql,
-            serverVersion: "15.2",
-            base: Self.base()
-        ) {
+        _ = await registry.resolve(scope: firstScope, databaseType: .postgresql, base: Self.base()) {
             await resolutions.increment()
             return Self.base(revision: "cached")
         }
-        _ = await registry.resolve(
-            scope: secondScope,
-            databaseType: .postgresql,
-            serverVersion: "15.2",
-            base: Self.base()
-        ) {
+        _ = await registry.resolve(scope: secondScope, databaseType: .postgresql, base: Self.base()) {
             await resolutions.increment()
             return Self.base(revision: "second")
         }
-        _ = await registry.resolve(
-            scope: firstScope,
-            databaseType: .cockroachdb,
-            serverVersion: "15.2",
-            base: Self.base()
-        ) {
+        _ = await registry.resolve(scope: firstScope, databaseType: .cockroachdb, base: Self.base()) {
             await resolutions.increment()
             return Self.base(revision: "type")
         }
-        _ = await registry.resolve(
-            scope: firstScope,
-            databaseType: .postgresql,
-            serverVersion: "16.1",
-            base: Self.base()
-        ) {
-            await resolutions.increment()
-            return Self.base(revision: "version")
-        }
 
-        #expect(await resolutions.value == 4)
+        #expect(await resolutions.value == 3)
     }
 
-    @Test("resolution errors return and cache the conservative base profile")
-    func resolutionFailureReturnsBase() async {
+    /// The behaviour this suite previously asserted the opposite of. Caching a thrown resolution
+    /// is permanent, because nothing re-resolves a key the cache already holds: one unlucky
+    /// metadata read would pin the tab to the app's built-in dialect until a manual refresh.
+    @Test("a failed resolution returns the base profile without caching it")
+    func resolutionFailureReturnsBaseAndDoesNotCache() async {
         let registry = QueryCompletionProfileRegistry()
         let scope = DatabaseScope(connectionId: UUID(), database: "shop", schema: nil)
         let conservative = Self.base(revision: "unknown-base")
+        let attempts = Counter()
 
-        let resolved = await registry.resolve(
-            scope: scope,
-            databaseType: .mysql,
-            serverVersion: nil,
-            base: conservative
-        ) {
+        let failed = await registry.resolve(scope: scope, databaseType: .mysql, base: conservative) {
+            await attempts.increment()
             throw DatabaseError.connectionFailed("catalog denied")
         }
 
-        #expect(resolved.revision == "unknown-base")
-        #expect(resolved.statementCompletions.map(\.label) == ["SELECT"])
+        #expect(failed.revision == "unknown-base")
+        #expect(failed.statementCompletions.map(\.label) == ["SELECT"])
+
+        let retried = await registry.resolve(scope: scope, databaseType: .mysql, base: conservative) {
+            await attempts.increment()
+            return Self.base(revision: "recovered")
+        }
+
+        #expect(await attempts.value == 2)
+        #expect(retried.revision == "recovered")
+    }
+
+    @Test("a recovered resolution is cached, so the retry does not repeat forever")
+    func recoveredResolutionIsCached() async {
+        let registry = QueryCompletionProfileRegistry()
+        let scope = DatabaseScope(connectionId: UUID(), database: "shop", schema: nil)
+        let attempts = Counter()
+
+        _ = await registry.resolve(scope: scope, databaseType: .mysql, base: Self.base()) {
+            await attempts.increment()
+            throw DatabaseError.connectionFailed("catalog denied")
+        }
+        _ = await registry.resolve(scope: scope, databaseType: .mysql, base: Self.base()) {
+            await attempts.increment()
+            return Self.base(revision: "recovered")
+        }
+        let third = await registry.resolve(scope: scope, databaseType: .mysql, base: Self.base()) {
+            await attempts.increment()
+            return Self.base(revision: "should-not-run")
+        }
+
+        #expect(await attempts.value == 2)
+        #expect(third.revision == "recovered")
     }
 
     @Test("concurrent requests for one key join one resolution")
@@ -186,24 +173,14 @@ struct QueryCompletionProfileRegistryTests {
         let didStart = Signal()
         let mayFinish = Signal()
 
-        async let first = registry.resolve(
-            scope: scope,
-            databaseType: .mysql,
-            serverVersion: "8.0",
-            base: Self.base()
-        ) {
+        async let first = registry.resolve(scope: scope, databaseType: .mysql, base: Self.base()) {
             await resolutions.increment()
             await didStart.raise()
             await mayFinish.wait()
             return Self.base(revision: "resolved")
         }
         await didStart.wait()
-        async let second = registry.resolve(
-            scope: scope,
-            databaseType: .mysql,
-            serverVersion: "8.0",
-            base: Self.base()
-        ) {
+        async let second = registry.resolve(scope: scope, databaseType: .mysql, base: Self.base()) {
             await resolutions.increment()
             return Self.base(revision: "duplicate")
         }
@@ -214,41 +191,83 @@ struct QueryCompletionProfileRegistryTests {
         #expect(revisions == ["resolved", "resolved"])
     }
 
-    @Test("invalidation prevents an old resolution from replacing the next generation")
+    /// Cancelling a caller that awaits a shared `Task.value` neither cancels that task nor returns
+    /// early, measured, so a superseded resolution always runs its tail to the commit. Refusing to
+    /// cache is only half the guard: the stale value must not reach the caller either, because the
+    /// caller configures the editor with whatever it is handed.
+    @Test("invalidation prevents an old resolution from replacing or being returned by the next generation")
     func invalidationFencesOldResolution() async {
         let registry = QueryCompletionProfileRegistry()
         let scope = DatabaseScope(connectionId: UUID(), database: "shop", schema: nil)
 
-        async let old = registry.resolve(
-            scope: scope,
-            databaseType: .mysql,
-            serverVersion: "8.0",
-            base: Self.base()
-        ) {
+        async let old = registry.resolve(scope: scope, databaseType: .mysql, base: Self.base()) {
             try? await Task.sleep(nanoseconds: 10_000_000)
             return Self.base(revision: "old")
         }
         await Task.yield()
         registry.invalidate(scope: scope)
-        let current = await registry.resolve(
-            scope: scope,
-            databaseType: .mysql,
-            serverVersion: "8.0",
-            base: Self.base()
-        ) {
+        let current = await registry.resolve(scope: scope, databaseType: .mysql, base: Self.base()) {
             Self.base(revision: "current")
         }
-        _ = await old
-        let cached = await registry.resolve(
-            scope: scope,
-            databaseType: .mysql,
-            serverVersion: "8.0",
-            base: Self.base()
-        ) {
+        let fenced = await old
+        let cached = await registry.resolve(scope: scope, databaseType: .mysql, base: Self.base()) {
             Self.base(revision: "unexpected")
         }
 
         #expect(current.revision == "current")
         #expect(cached.revision == "current")
+        #expect(fenced.revision != "old")
+    }
+
+    /// Observation's granularity is the whole stored property, so a `[Scope: Int]` on an
+    /// `@Observable` registry would make one scope's refresh re-evaluate every editor body on the
+    /// connection. Separate boxes are what keep a bump local to the scope that was invalidated.
+    @Test("invalidating one scope leaves a sibling scope's revision alone")
+    func revisionBumpsStayLocalToTheirScope() {
+        let registry = QueryCompletionProfileRegistry()
+        let connectionId = UUID()
+        let first = DatabaseScope(connectionId: connectionId, database: "first", schema: nil)
+        let second = DatabaseScope(connectionId: connectionId, database: "second", schema: nil)
+
+        let firstBox = registry.revisionBox(for: first)
+        let secondBox = registry.revisionBox(for: second)
+        #expect(firstBox.revision == 0)
+        #expect(secondBox.revision == 0)
+
+        registry.invalidate(scope: first)
+
+        #expect(firstBox.revision == 1)
+        #expect(secondBox.revision == 0)
+    }
+
+    @Test("the same scope always gets the same revision box, so a rebuilt body keeps observing")
+    func revisionBoxIsStablePerScope() {
+        let registry = QueryCompletionProfileRegistry()
+        let scope = DatabaseScope(connectionId: UUID(), database: "shop", schema: nil)
+
+        let first = registry.revisionBox(for: scope)
+        let second = registry.revisionBox(for: scope)
+
+        #expect(first === second)
+    }
+
+    @Test("invalidating a connection bumps every scope it holds")
+    func connectionInvalidationBumpsEveryScope() {
+        let registry = QueryCompletionProfileRegistry()
+        let connectionId = UUID()
+        let other = UUID()
+        let first = DatabaseScope(connectionId: connectionId, database: "first", schema: nil)
+        let second = DatabaseScope(connectionId: connectionId, database: "second", schema: nil)
+        let foreign = DatabaseScope(connectionId: other, database: "first", schema: nil)
+
+        let firstBox = registry.revisionBox(for: first)
+        let secondBox = registry.revisionBox(for: second)
+        let foreignBox = registry.revisionBox(for: foreign)
+
+        registry.invalidate(connectionId: connectionId)
+
+        #expect(firstBox.revision == 1)
+        #expect(secondBox.revision == 1)
+        #expect(foreignBox.revision == 0)
     }
 }

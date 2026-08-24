@@ -85,12 +85,15 @@ extension DatabaseType {
         PluginMetadataRegistry.shared.pluginTypeId(for: rawValue)
     }
 
+    /// Genuinely a fact about the plugin binary rather than the database, so it asks by
+    /// `pluginTypeId`: Redshift is served by the bundled PostgreSQL plugin and there is nothing
+    /// of its own to download.
     var isDownloadablePlugin: Bool {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: pluginTypeId)?.isDownloadable ?? false
+        PluginMetadataRegistry.shared.snapshot(forRegisteredTypeId: pluginTypeId)?.isDownloadable ?? false
     }
 
     var iconName: String {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.iconName ?? "database-icon"
+        PluginMetadataRegistry.shared.snapshot(for: self)?.iconName ?? "database-icon"
     }
 
     /// Returns the correct SwiftUI Image for this database type, handling both
@@ -104,32 +107,32 @@ extension DatabaseType {
     }
 
     var defaultPort: Int {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.defaultPort ?? 0
+        PluginMetadataRegistry.shared.snapshot(for: self)?.defaultPort ?? 0
     }
 
     var defaultSSLMode: SSLMode {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.capabilities.defaultSSLMode ?? .disabled
+        PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.defaultSSLMode ?? .disabled
     }
 
     var supportsOpportunisticTLS: Bool {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.capabilities.supportsOpportunisticTLS ?? true
+        PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.supportsOpportunisticTLS ?? true
     }
 
     var supportsClientKeyPassphrase: Bool {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.capabilities.supportsClientKeyPassphrase ?? false
+        PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.supportsClientKeyPassphrase ?? false
     }
 
     var supportsConnectionPooling: Bool {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.capabilities.supportsConnectionPooling ?? true
+        PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.supportsConnectionPooling ?? true
     }
 
     var authenticationIsDatabaseScoped: Bool {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?
+        PluginMetadataRegistry.shared.snapshot(for: self)?
             .capabilities.authenticationIsDatabaseScoped ?? false
     }
 
     var defaultHost: String? {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.connection.defaultHost
+        PluginMetadataRegistry.shared.snapshot(for: self)?.connection.defaultHost
     }
 
     var supportsCloudSQLProxy: Bool {
@@ -174,44 +177,44 @@ extension DatabaseType {
     }
 
     var explainVariants: [ExplainVariant] {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.explainVariants ?? []
+        PluginMetadataRegistry.shared.snapshot(for: self)?.explainVariants ?? []
     }
 
     var category: DatabaseCategory {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.connection.category ?? .other
+        PluginMetadataRegistry.shared.snapshot(for: self)?.connection.category ?? .other
     }
 
     var pathFieldRole: PathFieldRole {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.pathFieldRole ?? .database
+        PluginMetadataRegistry.shared.snapshot(for: self)?.pathFieldRole ?? .database
     }
 
     var tagline: String? {
-        let raw = PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.connection.tagline ?? ""
+        let raw = PluginMetadataRegistry.shared.snapshot(for: self)?.connection.tagline ?? ""
         return raw.isEmpty ? nil : raw
     }
 
     var requiresAuthentication: Bool {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: pluginTypeId)?.requiresAuthentication ?? true
+        PluginMetadataRegistry.shared.snapshot(for: self)?.requiresAuthentication ?? true
     }
 
     var supportsForeignKeys: Bool {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: pluginTypeId)?.supportsForeignKeys ?? true
+        PluginMetadataRegistry.shared.snapshot(for: self)?.supportsForeignKeys ?? true
     }
 
     var supportsTriggers: Bool {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: pluginTypeId)?.capabilities.supportsTriggers ?? false
+        PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.supportsTriggers ?? false
     }
 
     var supportsTriggerEditing: Bool {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: pluginTypeId)?.capabilities.supportsTriggerEditing ?? false
+        PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.supportsTriggerEditing ?? false
     }
 
     var supportsRoutines: Bool {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: pluginTypeId)?.capabilities.supportsRoutines ?? false
+        PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.supportsRoutines ?? false
     }
 
     var supportsDatabaseTriggerBrowse: Bool {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: pluginTypeId)?
+        PluginMetadataRegistry.shared.snapshot(for: self)?
             .capabilities.supportsDatabaseTriggerBrowse ?? false
     }
 
@@ -230,35 +233,35 @@ extension DatabaseType {
     }
 
     var supportsSchemaEditing: Bool {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.supportsSchemaEditing ?? true
+        PluginMetadataRegistry.shared.snapshot(for: self)?.supportsSchemaEditing ?? true
     }
 
     var supportsAddColumn: Bool {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.capabilities.supportsAddColumn ?? true
+        PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.supportsAddColumn ?? true
     }
 
     var supportsModifyColumn: Bool {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.capabilities.supportsModifyColumn ?? true
+        PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.supportsModifyColumn ?? true
     }
 
     var supportsDropColumn: Bool {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.capabilities.supportsDropColumn ?? true
+        PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.supportsDropColumn ?? true
     }
 
     var supportsRenameColumn: Bool {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.capabilities.supportsRenameColumn ?? false
+        PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.supportsRenameColumn ?? false
     }
 
     var supportsAddIndex: Bool {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.capabilities.supportsAddIndex ?? true
+        PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.supportsAddIndex ?? true
     }
 
     var supportsDropIndex: Bool {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.capabilities.supportsDropIndex ?? true
+        PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.supportsDropIndex ?? true
     }
 
     var supportsModifyPrimaryKey: Bool {
-        PluginMetadataRegistry.shared.snapshot(forTypeId: rawValue)?.capabilities.supportsModifyPrimaryKey ?? true
+        PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.supportsModifyPrimaryKey ?? true
     }
 }
 

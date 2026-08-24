@@ -23,7 +23,6 @@ struct SQLEditorView: View {
     var schemaProvider: SQLSchemaProvider?
     var databaseType: DatabaseType?
     var databaseScope: DatabaseScope?
-    var serverVersion: String?
     var connectionId: UUID?
     var connectionAIPolicy: AIConnectionPolicy?
     var tabID: UUID?
@@ -179,13 +178,14 @@ struct SQLEditorView: View {
         )
     }
 
+    /// Reading `revision` here is what subscribes this body to its own scope's invalidations, and
+    /// only its own: the registry is not `@Observable`, so the dependency lands on this one box.
     private var completionProfileRequest: CompletionProfileRequest? {
         guard let databaseScope, let databaseType else { return nil }
         return CompletionProfileRequest(
             scope: databaseScope,
             databaseType: databaseType,
-            serverVersion: serverVersion,
-            profileRevision: QueryCompletionProfileRegistry.shared.revision(for: databaseScope)
+            profileRevision: QueryCompletionProfileRegistry.shared.revisionBox(for: databaseScope).revision
         )
     }
 
@@ -193,8 +193,7 @@ struct SQLEditorView: View {
         guard let request = completionProfileRequest else { return }
         let profile = await QueryCompletionProfileRegistry.shared.profile(
             for: request.scope,
-            databaseType: request.databaseType,
-            serverVersion: request.serverVersion
+            databaseType: request.databaseType
         )
         guard !Task.isCancelled else { return }
         completionProfile = profile
@@ -270,7 +269,6 @@ struct SQLEditorView: View {
 private struct CompletionProfileRequest: Hashable {
     let scope: DatabaseScope
     let databaseType: DatabaseType
-    let serverVersion: String?
     let profileRevision: Int
 }
 

@@ -338,7 +338,7 @@ actor SQLSchemaProvider {
         for table in tablesToFetch {
             let columns = await getColumns(for: table.name)
             if !columns.isEmpty {
-                columnsByTable[table.name.lowercased()] = columns
+                columnsByTable[table.name] = columns
             }
         }
 

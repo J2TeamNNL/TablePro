@@ -23,35 +23,35 @@ struct PluginMetadataRegistryVariantTests {
     @Test("keeps the curated port instead of the shared plugin's")
     func keepsCuratedPort() throws {
         let registry = PluginMetadataRegistry.shared
-        let postgres = try #require(registry.snapshot(forTypeId: "PostgreSQL"))
+        let postgres = try #require(registry.snapshot(forRegisteredTypeId: "PostgreSQL"))
         #expect(postgres.defaultPort == 5_432)
 
         registry.registerVariant(pluginSnapshot: postgres, forTypeId: "CockroachDB", primaryTypeId: "PostgreSQL")
 
-        #expect(registry.snapshot(forTypeId: "CockroachDB")?.defaultPort == 26_257)
+        #expect(registry.snapshot(forRegisteredTypeId: "CockroachDB")?.defaultPort == 26_257)
     }
 
     @Test("keeps curated capabilities instead of the shared plugin's")
     func keepsCuratedCapabilities() throws {
         let registry = PluginMetadataRegistry.shared
-        let postgres = try #require(registry.snapshot(forTypeId: "PostgreSQL"))
+        let postgres = try #require(registry.snapshot(forRegisteredTypeId: "PostgreSQL"))
         #expect(postgres.capabilities.supportsAddColumn == true)
 
         registry.registerVariant(pluginSnapshot: postgres, forTypeId: "CockroachDB", primaryTypeId: "PostgreSQL")
 
-        #expect(registry.snapshot(forTypeId: "CockroachDB")?.capabilities.supportsAddColumn == false)
+        #expect(registry.snapshot(forRegisteredTypeId: "CockroachDB")?.capabilities.supportsAddColumn == false)
     }
 
     @Test("keeps PGlite's single-connection flag through registration")
     func keepsPGliteSingleConnection() throws {
         let registry = PluginMetadataRegistry.shared
-        let postgres = try #require(registry.snapshot(forTypeId: "PostgreSQL"))
+        let postgres = try #require(registry.snapshot(forRegisteredTypeId: "PostgreSQL"))
         #expect(postgres.capabilities.supportsConnectionPooling == true)
 
         registry.registerVariant(pluginSnapshot: postgres, forTypeId: "PGlite", primaryTypeId: "PostgreSQL")
 
-        #expect(registry.snapshot(forTypeId: "PGlite")?.capabilities.supportsConnectionPooling == false)
-        #expect(registry.snapshot(forTypeId: "PGlite")?.connection.defaultHost == "127.0.0.1")
+        #expect(registry.snapshot(forRegisteredTypeId: "PGlite")?.capabilities.supportsConnectionPooling == false)
+        #expect(registry.snapshot(forRegisteredTypeId: "PGlite")?.connection.defaultHost == "127.0.0.1")
     }
 
     /// The curated dialect is a stub of about 84 keywords; the PostgreSQL plugin ships 559 plus
@@ -60,7 +60,7 @@ struct PluginMetadataRegistryVariantTests {
     @Test("a variant takes the plugin's grammar")
     func variantTakesThePluginGrammar() throws {
         let registry = PluginMetadataRegistry.shared
-        var pluginSnapshot = try #require(registry.snapshot(forTypeId: "PostgreSQL"))
+        var pluginSnapshot = try #require(registry.snapshot(forRegisteredTypeId: "PostgreSQL"))
         pluginSnapshot.editor.sqlDialect = Self.syntheticDialect(caseSensitivityStyle: .ilikeOperator)
         defer { registry.unregister(typeId: "CockroachDB") }
 
@@ -70,7 +70,7 @@ struct PluginMetadataRegistryVariantTests {
             primaryTypeId: "PostgreSQL"
         )
 
-        let dialect = try #require(registry.snapshot(forTypeId: "CockroachDB")?.editor.sqlDialect)
+        let dialect = try #require(registry.snapshot(forRegisteredTypeId: "CockroachDB")?.editor.sqlDialect)
         #expect(dialect.keywords.contains("SYNTHETIC_KEYWORD"))
         #expect(dialect.operators.map(\.symbol) == ["@@"])
         #expect(dialect.caseSensitivityStyle == .ilikeOperator)
@@ -81,7 +81,7 @@ struct PluginMetadataRegistryVariantTests {
     @Test("a variant keeps the case sensitivity its curated entry states")
     func variantKeepsCuratedCaseSensitivity() throws {
         let registry = PluginMetadataRegistry.shared
-        var pluginSnapshot = try #require(registry.snapshot(forTypeId: "PostgreSQL"))
+        var pluginSnapshot = try #require(registry.snapshot(forRegisteredTypeId: "PostgreSQL"))
         pluginSnapshot.editor.sqlDialect = Self.syntheticDialect(caseSensitivityStyle: .ilikeOperator)
         defer { registry.unregister(typeId: "Redshift") }
 
@@ -91,7 +91,7 @@ struct PluginMetadataRegistryVariantTests {
             primaryTypeId: "PostgreSQL"
         )
 
-        let dialect = try #require(registry.snapshot(forTypeId: "Redshift")?.editor.sqlDialect)
+        let dialect = try #require(registry.snapshot(forRegisteredTypeId: "Redshift")?.editor.sqlDialect)
         #expect(dialect.keywords.contains("SYNTHETIC_KEYWORD"))
         #expect(dialect.caseSensitivityStyle == .caseFoldFunction)
     }

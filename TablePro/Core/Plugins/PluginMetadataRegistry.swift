@@ -1010,7 +1010,15 @@ final class PluginMetadataRegistry: @unchecked Sendable {
         }
     }
 
-    func snapshot(forTypeId typeId: String) -> PluginMetadataSnapshot? {
+    /// A raw lookup by the exact id a snapshot was registered under, for the callers that hold an
+    /// id rather than a type: registration itself, and iteration over `allRegisteredTypeIds()`.
+    ///
+    /// It is deliberately not named `snapshot(forTypeId:)` any more. That spelling read as the
+    /// way to ask about a `DatabaseType`, so 62 call sites passed it `databaseType.pluginTypeId`
+    /// and every variant was answered with its primary's facts. Asking about a type is
+    /// `snapshot(for:)`; this overload cannot be reached from a `DatabaseType` without first
+    /// choosing which id you mean, which is the point.
+    func snapshot(forRegisteredTypeId typeId: String) -> PluginMetadataSnapshot? {
         lock.lock()
         defer { lock.unlock() }
         return snapshots[typeId]
@@ -1019,14 +1027,14 @@ final class PluginMetadataRegistry: @unchecked Sendable {
     /// The snapshot describing a database type, which for a variant is its own curated entry
     /// rather than the entry of the plugin that serves it. Reaching a snapshot through
     /// `pluginTypeId` asks the primary instead, which is how a Redshift tab came to be told
-    /// PostgreSQL's `ILIKE` folds non-ASCII.
+    /// PostgreSQL's `ILIKE` folds non-ASCII, and how PGlite came to be offered the SSH, SSL,
+    /// Cloudflare Tunnel and SOCKS panes its own entry declares it does not support.
     ///
     /// The fallback covers a type registered by a plugin with no curated entry of its own, where
     /// the primary's snapshot is the only one there is.
     ///
-    /// Every reader of the editor config goes through here. The rest of the app still reads by
-    /// `pluginTypeId`, deliberately: the curated variant capability tables were written when
-    /// nothing read them, so switching those over is a separate audit of the values themselves.
+    /// This is the only way to read a snapshot for a `DatabaseType`. `pluginTypeId` answers a
+    /// different question, "which plugin serves this type", and belongs to driver lookup alone.
     func snapshot(for databaseType: DatabaseType) -> PluginMetadataSnapshot? {
         lock.lock()
         defer { lock.unlock() }
@@ -1106,7 +1114,7 @@ final class PluginMetadataRegistry: @unchecked Sendable {
         // over from the built-in snapshot or plugin registration silently resets it to the
         // struct default. Cannot read these from driverType directly: stale plugins without
         // the property crash with EXC_BAD_INSTRUCTION (missing witness table entry).
-        let existingSnapshot = snapshot(forTypeId: driverType.databaseTypeId)
+        let existingSnapshot = snapshot(forRegisteredTypeId: driverType.databaseTypeId)
 
         return PluginMetadataSnapshot(
             displayName: driverType.databaseDisplayName,

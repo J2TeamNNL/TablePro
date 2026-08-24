@@ -51,7 +51,7 @@ extension MainContentCoordinator {
         forceNewTab: Bool = false
     ) -> WindowTabOpenDisposition? {
         let navigationModel = PluginMetadataRegistry.shared.snapshot(
-            forTypeId: connection.type.pluginTypeId
+            for: connection.type
         )?.navigationModel ?? .standard
 
         let currentDatabase: String

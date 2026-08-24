@@ -163,7 +163,7 @@ extension DatabaseManager {
             AppEvents.shared.databaseDidConnect.send(DatabaseDidConnect(connectionId: connection.id))
 
             let supportsHealth = PluginMetadataRegistry.shared.snapshot(
-                forTypeId: connection.type.pluginTypeId
+                for: connection.type
             )?.supportsHealthMonitor ?? true
 
             if supportsHealth {
@@ -229,7 +229,7 @@ extension DatabaseManager {
         driver: DatabaseDriver
     ) async {
         let postConnectActions = PluginMetadataRegistry.shared.snapshot(
-            forTypeId: connection.type.pluginTypeId
+            for: connection.type
         )?.postConnectActions ?? []
 
         for action in postConnectActions {
@@ -294,9 +294,9 @@ extension DatabaseManager {
             throw DatabaseError.notConnected
         }
 
-        let pm = PluginMetadataRegistry.shared.snapshot(
-            forTypeId: session(for: connectionId)?.connection.type.pluginTypeId ?? ""
-        )
+        let pm = session(for: connectionId).flatMap {
+            PluginMetadataRegistry.shared.snapshot(for: $0.connection.type)
+        }
 
         if pm?.capabilities.requiresReconnectForDatabaseSwitch == true {
             try await reconnectOntoDatabase(database, for: connectionId)
