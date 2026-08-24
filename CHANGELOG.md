@@ -13,9 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Triggers as a sidebar section, listed per database and schema alongside Procedures and Functions. (#2383)
 - Read-only source viewer for procedures, functions and triggers, with Copy, Export and Open in Editor. (#2383)
 - Procedures, functions and triggers on MSSQL, Oracle, SQLite, ClickHouse, DuckDB, Snowflake, BigQuery, Cassandra, LibSQL, Cloudflare D1, Teradata and Dameng. (#2383)
+- Local performance history for table loads, kept 7 days in Application Support and never uploaded. (#2395)
 - Procedures, functions and triggers in the quick switcher.
 - Argument signatures on routine rows, shown when two routines in a section share a name.
 - Schema-wide `list_triggers` for MCP clients, and `return_type` and `language` on `list_routines`.
+- Compare, a fourth EXPLAIN plan mode that reports what changed against an earlier run of the same query. (#2380)
+- Pinning a saved EXPLAIN plan, to keep it through history cleanup. (#2380)
 
 ### Changed
 
@@ -23,9 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The data grid draws its cells instead of building a view for each one, so a result with hundreds of columns opens at once and holds a fraction of the memory. (#2381)
 - The data grid draws its own column separators. (#2381)
 - The inline cell editor scrolls a long line instead of wrapping it. (#2381)
+- Row inspector fields, cell popovers and the Compare row diff follow the data grid font. (#2393)
 
 ### Fixed
 
+- The JSON viewer keeping its old font after a font, theme or text-size change. (#2393)
+- Hex dumps wrapping mid-line instead of keeping their columns aligned. (#2393)
 - A second of delay opening the inline editor on a result with hundreds of columns. (#2381)
 - AI inline suggestions written without the connection's schema.
 - Case-insensitive filters and completion on Redshift falling back to PostgreSQL's ASCII-only ILIKE.
