@@ -615,7 +615,6 @@ final class MainContentCoordinator {
         )
         self.persistence = TabPersistenceCoordinator(connectionId: connection.id)
 
-        _ = services.schemaProviderRegistry.getOrCreate(for: connection.id)
         ConnectionDataCache.shared(for: connection.id).ensureLoaded()
         changeManager.undoManagerProvider = { [weak self] in self?.contentWindow?.undoManager }
         changeManager.onUndoApplied = { [weak self] result in self?.handleUndoResult(result) }
@@ -702,6 +701,7 @@ final class MainContentCoordinator {
             return prior
         }
         if !wasAlreadyActive {
+            services.schemaProviderRegistry.setLiveScopeProvider(CoordinatorLiveScopeProvider.shared)
             services.schemaProviderRegistry.retain(for: connection.id)
         }
         registerForPersistence()
@@ -1105,7 +1105,7 @@ final class MainContentCoordinator {
 
         let sql = tab.content.query
         guard !sql.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            traceNavigationAbandoned(tabId: tab.id, reason: "emptyQuery")
+            traceNavigationAbandoned(tabId: tab.id, outcome: .emptyQuery)
             return
         }
 
@@ -1114,7 +1114,7 @@ final class MainContentCoordinator {
            tab.execution.lastExecutedAt == nil
         {
             guard !isShowingSafeModePrompt else {
-                traceNavigationAbandoned(tabId: tab.id, reason: "safeModePromptAlreadyOpen")
+                traceNavigationAbandoned(tabId: tab.id, outcome: .safeModePromptAlreadyOpen)
                 return
             }
             isShowingSafeModePrompt = true
@@ -1135,7 +1135,7 @@ final class MainContentCoordinator {
                 case .authorized:
                     executeQueryInternal(sql, isAutoLoad: true, trigger: trigger)
                 case .denied(let reason):
-                    traceNavigationAbandoned(tabId: tab.id, reason: "safeModeDenied")
+                    traceNavigationAbandoned(tabId: tab.id, outcome: .safeModeDenied)
                     tabManager.mutate(at: index) { $0.execution.errorMessage = reason }
                 }
             }
@@ -1349,7 +1349,7 @@ final class MainContentCoordinator {
                         anchor: anchor
                     )
 
-                    scheduleTraceCompletion(traceToken, outcome: "completed")
+                    scheduleTraceCompletion(traceToken, outcome: .completed)
                     reportQueryOperation(
                         claim: claim,
                         trigger: trigger,

@@ -323,7 +323,7 @@ final class QueryTabManager {
     static func tabTitle(name: String, schema: String?, databaseType: DatabaseType) -> String {
         guard let schema, !schema.isEmpty else { return name }
         let defaultSchema = PluginMetadataRegistry.shared
-            .snapshot(forTypeId: databaseType.pluginTypeId)?
+            .snapshot(for: databaseType)?
             .schema.defaultSchemaName ?? ""
         return schema == defaultSchema ? name : "\(schema).\(name)"
     }

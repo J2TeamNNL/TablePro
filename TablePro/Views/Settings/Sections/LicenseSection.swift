@@ -39,7 +39,7 @@ struct LicenseSection: View {
                         .foregroundStyle(.orange)
                     Text(String(format: String(localized: "License expires in %lld day(s)"), days))
                     Spacer()
-                    Link(String(localized: "Renew"), destination: LicenseConstants.pricingURL)
+                    Link(String(localized: "Renew"), destination: SupportLinks.pricing(.licenseSettings))
                         .controlSize(.small)
                 }
                 .padding(6)
@@ -55,7 +55,7 @@ struct LicenseSection: View {
 
             LabeledContent("Status:") {
                 Text(licenseManager.status.displayName)
-                    .foregroundStyle(licenseManager.status.isValid ? .green : .red)
+                    .foregroundStyle(Self.statusColor(for: licenseManager.status))
             }
 
             if let expiresAt = license.expiresAt {
@@ -182,13 +182,26 @@ struct LicenseSection: View {
 
             HStack {
                 Spacer()
-                Link("Purchase License", destination: LicenseConstants.pricingURL)
+                Link("Purchase License", destination: SupportLinks.pricing(.licenseSettings))
                     .font(.subheadline)
             }
         }
     }
 
     // MARK: - Actions
+
+    /// Red is for a license that is gone. A license the app has simply not been able to check is
+    /// not gone, and painting it red told a paying customer their license had failed.
+    static func statusColor(for status: LicenseStatus) -> Color {
+        switch status {
+        case .active:
+            return .green
+        case .validationFailed:
+            return .orange
+        case .unlicensed, .expired, .suspended, .deactivated:
+            return .red
+        }
+    }
 
     private func maskedKey(_ key: String) -> String {
         let parts = key.split(separator: "-")
@@ -210,6 +223,7 @@ struct LicenseSection: View {
             )
             activations = response.activations
             maxActivations = response.maxActivations
+            activationLoadError = nil
         } catch {
             Self.logger.debug("Failed to load activations: \(error.localizedDescription)")
             activationLoadError = error.localizedDescription

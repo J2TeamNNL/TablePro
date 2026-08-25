@@ -45,6 +45,11 @@ protocol DatabaseDriver: AnyObject, Sendable {
     /// Apply query execution timeout (seconds, 0 = no limit)
     func applyQueryTimeout(_ seconds: Int) async throws
 
+    func resolveQueryCompletionProfile(
+        databaseTypeId: String,
+        base: QueryCompletionProfile
+    ) async throws -> QueryCompletionProfile
+
     // MARK: - Query Execution
 
     /// Execute a SQL query and return results
@@ -280,6 +285,13 @@ extension DatabaseDriver {
 
     func connectReporting(stage report: @escaping ConnectionStageReporter) async throws {
         try await connect()
+    }
+
+    func resolveQueryCompletionProfile(
+        databaseTypeId: String,
+        base: QueryCompletionProfile
+    ) async throws -> QueryCompletionProfile {
+        base
     }
 
     var queryBuildingPluginDriver: (any PluginDatabaseDriver)? { nil }
@@ -609,7 +621,7 @@ enum DatabaseDriverFactory {
             preTunnelPort: connection.preTunnelPort,
             override: fields["awsRDSEndpoint"],
             defaultPort: PluginMetadataRegistry.shared
-                .snapshot(forTypeId: connection.type.pluginTypeId)?.defaultPort ?? connection.port
+                .snapshot(for: connection.type)?.defaultPort ?? connection.port
         )
 
         let explicitRegion = fields["awsRegion"].flatMap { $0.isEmpty ? nil : $0 }
@@ -667,14 +679,18 @@ enum DatabaseDriverFactory {
             fields[key] = value
         }
 
-        let secureFields = PluginManager.shared.additionalConnectionFields(for: connection.type)
-            .filter(\.isSecure)
-        for field in secureFields {
-            if fields[field.id] == nil || fields[field.id]?.isEmpty == true {
+        /// The superset, not the rendered form's list. A connection saved while a variant was
+        /// still being offered its primary's whole form holds those values in the Keychain, and
+        /// the connection still acts on them: a Redshift connection with `awsAuth` set reaches
+        /// `resolveIAMPassword`, which reads `awsSecretAccessKey` from here. Loading only what the
+        /// form renders today would leave that secret behind and fail the connect, with no AWS
+        /// section left in the form to turn it off.
+        for fieldId in PluginManager.shared.secureConnectionFieldIds(for: connection.type) {
+            if fields[fieldId] == nil || fields[fieldId]?.isEmpty == true {
                 if let secureValue = ConnectionStorage.shared.loadPluginSecureField(
-                    fieldId: field.id, for: connection.id
+                    fieldId: fieldId, for: connection.id
                 ) {
-                    fields[field.id] = secureValue
+                    fields[fieldId] = secureValue
                 }
             }
         }

@@ -9,24 +9,40 @@ You never have to buy TablePro to keep using it, and nothing counts down. A lice
 
 There are two tiers, Starter and Team. Team includes everything in Starter.
 
-| Feature | Required tier |
-|---------|---------------|
-| [iCloud Sync](/features/icloud-sync) | Starter |
-| [Encrypted connection export](/features/connection-sharing) | Starter |
-| [Environment variables in connection fields](/features/connection-sharing) | Starter |
-| [Linked Folders](/features/connection-sharing) | Starter |
-| [Query Insights](/features/query-insights) | Starter |
-| [Result charts](/features/data-grid#chart-mode) | Starter |
-| [Team Catalog](/features/connection-sharing) | Team |
-| [Team Library](/features/team) | Team |
+| Feature | Required tier | Without a license |
+|---------|---------------|-------------------|
+| [iCloud Sync](/features/icloud-sync) | Starter | Dimmed, with a **PRO** badge |
+| [Encrypted connection export](/features/connection-sharing) | Starter | Dimmed, with a **PRO** badge |
+| [Environment variables in connection fields](/features/connection-sharing) | Starter | References stay unresolved |
+| [Linked Folders](/features/connection-sharing) | Starter | Dimmed, with a **PRO** badge |
+| [Query Insights](/features/query-insights) | Starter | Overlay with **Activate License…** |
+| [Result charts](/features/data-grid#chart-mode) | Starter | Overlay with **Activate License…** |
+| [Compare & Sync](/features/compare-sync) | Starter | Dialog naming the requirement |
+| [Team Catalog](/features/connection-sharing) | Team | Menu item hidden |
+| [Team Library](/features/team) | Team | Menu item hidden |
 
-Without a license, those screens show an overlay with **Activate License…** and a purchase link. On a Starter license, the two Team features show an **Upgrade Plan** link instead. Everything else in the app works.
+On a Starter license, the two Team features offer **Upgrade Plan** instead. Everything else in the app works.
+
+Click a **PRO** badge for the pricing page, or hover it for one line on what the feature does.
+
+## Buy a license
+
+Choose **Help > Support TablePro**. The screen states how the project is funded and carries two actions: **Buy a License** opens the pricing page, **Sponsor on GitHub** opens [the sponsorship page](https://github.com/sponsors/datlechin). Both open in your default browser.
+
+<Frame caption="Help > Support TablePro, with no license active">
+  <img className="block dark:hidden" src="/images/support-window.png" alt="A window stating the funding model above a Buy a License button and a Sponsor on GitHub button" />
+  <img className="hidden dark:block" src="/images/support-window-dark.png" alt="A window stating the funding model above a Buy a License button and a Sponsor on GitHub button" />
+</Frame>
+
+Prices, renewals, and invoices live on tablepro.app. With a license already active, the screen drops the purchase action and keeps the sponsorship one.
+
+Until then, **Support TablePro** also sits at the bottom of the welcome window and in the sidebar footer of every connection window. Both open the same screen, and both disappear once a license is active. Nothing else in the app raises the subject: no prompt at launch, no countdown, no banner.
 
 ## Activate
 
 Open **Settings > Account** (`Cmd+,`), paste your license key (`XXXXX-XXXXX-XXXXX-XXXXX-XXXXX`), and click **Activate**.
 
-The welcome window has an **Activate License** link to the same dialog, and shows a green **Pro** badge once a license is active. The field also takes a team invite code, which TablePro tells apart from a key on its own. See [Team Plan](/features/team).
+The welcome window has an **Activate License** link to the same dialog, and shows a green **Pro** badge once a license is active. The badge turns orange when the license has not been checked in 30 days; the link does not come back, because activating again cannot help a Mac that is offline. The field also takes a team invite code, which TablePro tells apart from a key on its own. See [Team Plan](/features/team).
 
 <Frame caption="License section in Settings > Account">
   <img className="block dark:hidden" src="/images/license-settings.png" alt="License settings showing email, masked key, status, tier, and activations" />
@@ -49,7 +65,7 @@ Activation stores a signed license on your Mac, and the license key goes to the 
 
 - Every launch re-verifies the signature offline, with no network. Tier, status, and expiry all come from the signed license, so editing the copy on disk changes nothing.
 - Every 7 days the app re-validates with the license server in the background.
-- If the server is unreachable, the license keeps working for 30 days after the last successful validation. After that the status becomes Validation Failed and Pro features pause until a validation succeeds.
+- If the server is unreachable, the license keeps working for 30 days after the last successful validation. After that the status becomes Validation Failed, shown in orange rather than red, and Pro features pause until a validation succeeds. Nothing in that state asks for a license key: the way out is a working connection.
 - If the server answers that the license is suspended, expired, or no longer activated on this Mac, Pro features pause at that check. The 30-day grace period only covers a server TablePro could not reach.
 
 **Check Status** in **Settings > Account** re-validates on demand, and a gated screen offers **Retry Validation**. When a license expires within 7 days, the Account tab shows a renewal warning linking to tablepro.app.

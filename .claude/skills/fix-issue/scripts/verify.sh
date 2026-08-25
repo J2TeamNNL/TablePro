@@ -215,40 +215,82 @@ report_tests() {
 
     local quarantine="$REPO_ROOT/.github/macos-test-quarantine.txt"
     local ui_quarantine="$REPO_ROOT/.github/macos-ui-test-quarantine.txt"
+
+    # Both quarantine files hold one case per line as Suite/case(), never a bare suite name, so a
+    # failing line is matched by its own case id. Matching the suite instead did two wrong things
+    # at once: it never matched the unit file at all, so every quarantined case was reported as a
+    # new failure; and on the UI file it muted the whole suite, hiding a real regression sitting
+    # beside a quarantined case.
+    # xcodebuild prints a failing case in three spellings and the quarantine files use only the
+    # last one, so every line is normalised to Suite/case() before the lookup:
+    #   Test Case '-[TableProUITests.FooUITests testBar]' failed (1.0 seconds).   XCTest
+    #   Test case 'FooUITests.testBar()' failed on 'My Mac' ...                   XCTest
+    #   Test case 'FooTests/bar()' failed on 'My Mac' ...                         Swift Testing
+    # Matching only the third muted nothing written by XCTest, which is every entry in the UI
+    # quarantine file, so a clean uitest run reported both quarantined cases as new failures.
+    local fail_lines unmuted muted_cases=0
+    fail_lines="$(grep -iE "$FAIL_PATTERN" "$log" 2> /dev/null)"
+    unmuted=""
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        local case_id
+        case_id="$(printf '%s\n' "$line" | sed -E \
+            -e "s|.*'-\[[A-Za-z0-9_]+\.([A-Za-z0-9_]+) ([A-Za-z0-9_]+)\]'.*|\1/\2()|" \
+            -e "s|.*'([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)\(\)'.*|\1/\2()|" \
+            -e "s|.*'([A-Za-z0-9_]+/[A-Za-z0-9_]+\(\))'.*|\1|")"
+        # A line none of the three matched comes back unchanged, so require the normalised shape
+        # before trusting it. Failing to extract must report the line, never mute it.
+        case "$case_id" in
+            *' '* | *'/'*'/'*) case_id="" ;;
+            */*'()') ;;
+            *) case_id="" ;;
+        esac
+        if [ -n "$case_id" ] \
+            && { grep -qxF "$case_id" "$quarantine" 2> /dev/null \
+                || grep -qxF "$case_id" "$ui_quarantine" 2> /dev/null; }; then
+            muted_cases=$((muted_cases + 1))
+            continue
+        fi
+        unmuted="$unmuted$line"$'\n'
+    done <<< "$fail_lines"
+
+    [ "$muted_cases" -gt 0 ] && note "muted: $muted_cases quarantined case(s)"
+
     local suites
-    suites="$(grep -iE "$FAIL_PATTERN" "$log" 2> /dev/null \
+    suites="$(printf '%s\n' "$unmuted" \
         | grep -oE "[A-Za-z_][A-Za-z0-9_]*Tests" \
         | grep -vxE "TableProTests|TableProUITests" \
         | sort -u)"
 
     if [ -z "$suites" ]; then
+        if [ -z "${unmuted//[$'\n' ]/}" ]; then
+            STATUS=PASS
+            note "verdict: no unexplained failures. Every failing case is quarantined."
+            return
+        fi
         STATUS=FAIL
         note "failing cases (no suite name on the line, read the log):"
-        note "$(grep -iE "$FAIL_PATTERN" "$log" 2> /dev/null | sed 's/^/  /' | head -10)"
+        note "$(printf '%s\n' "$unmuted" | sed 's/^/  /' | head -10)"
         return
     fi
 
     local new_suites="" muted=0 suite
     for suite in $suites; do
-        if [ -f "$quarantine" ] && grep -qx "$suite" "$quarantine" 2> /dev/null; then
-            muted=$((muted + 1))
-        elif [ -f "$ui_quarantine" ] && grep -q "^$suite/" "$ui_quarantine" 2> /dev/null; then
-            muted=$((muted + 1))
-        elif [[ " $KNOWN_ENV_FAILURES " == *" $suite "* ]]; then
+        if [[ " $KNOWN_ENV_FAILURES " == *" $suite "* ]]; then
             muted=$((muted + 1))
         else
             new_suites="$new_suites $suite"
         fi
     done
 
-    [ "$muted" -gt 0 ] && note "muted: $muted failing suite(s) are quarantined or known environment failures"
+    [ "$muted" -gt 0 ] && note "muted: $muted failing suite(s) are known environment failures"
     if [ -z "$new_suites" ]; then
         STATUS=PASS
         note "verdict: no unexplained failures. Every failing suite is already red on this machine."
     else
         STATUS=FAIL
         note "new failures:$new_suites"
-        note "$(grep -iE "$FAIL_PATTERN" "$log" 2> /dev/null | sed 's/^/  /' | head -10)"
+        note "$(printf '%s\n' "$unmuted" | sed 's/^/  /' | head -10)"
     fi
 }
 

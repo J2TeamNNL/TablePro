@@ -154,25 +154,28 @@ final class SchemaRefreshService {
             )
             return
         }
-        guard let provider = providerRegistry.provider(for: connectionId) else {
-            Self.logger.debug(
-                "[schema] autocomplete sync skipped, no provider connId=\(connectionId, privacy: .public)"
-            )
-            return
-        }
-        guard let browseDatabase = metadataDriverProvider.browseScope(for: connectionId)?.database else {
+        guard let browseScope = metadataDriverProvider.browseScope(for: connectionId) else {
             Self.logger.debug(
                 "[schema] autocomplete sync skipped, no browse scope connId=\(connectionId, privacy: .public)"
             )
             return
         }
+        let provider = providerRegistry.getOrCreate(for: browseScope)
+        let browseDatabase = browseScope.database
         let tables = schemaService.allLoadedTables(for: connectionId)
         let schemas = schemaService.schemas(for: connectionId)
+        let connection = databaseManager?.session(for: connectionId)?.connection
         do {
-            try await metadataDriverProvider.withBrowseMetadataDriver(connectionId: connectionId) { driver in
-                await provider.resetForDatabase(browseDatabase, tables: tables, driver: driver)
+            try await metadataDriverProvider.withMetadataDriver(scope: browseScope) { driver in
+                await provider.resetForDatabase(
+                    browseDatabase,
+                    tables: tables,
+                    driver: driver,
+                    connection: connection
+                )
                 await provider.setNamespaces(schemas: schemas, databases: [browseDatabase])
             }
+            providerRegistry.notePopulatedExternally(scope: browseScope)
         } catch {
             Self.logger.warning(
                 "[schema] autocomplete sync failed connId=\(connectionId, privacy: .public) error=\(error.localizedDescription, privacy: .public)"

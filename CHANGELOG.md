@@ -9,13 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Support TablePro in the Help menu, and a standing link in the welcome window and sidebar until a license is active.
+- Account booking, note tags and links, balance assertion details, and a `directives` table with metadata for every dated Beancount directive that is not a transaction. (#2415)
+- Named query and typed custom directives as read-only Beancount tables. (#2413)
+- Pad directives as a read-only Beancount table, including their target and source accounts and source locations. (#2399)
 - Compare & Sync between two databases, comparing tables, views, procedures, functions and triggers, or row data. Starter license. (#721)
 - Triggers as a sidebar section, listed per database and schema alongside Procedures and Functions. (#2383)
 - Read-only source viewer for procedures, functions and triggers, with Copy, Export and Open in Editor. (#2383)
 - Procedures, functions and triggers on MSSQL, Oracle, SQLite, ClickHouse, DuckDB, Snowflake, BigQuery, Cassandra, LibSQL, Cloudflare D1, Teradata and Dameng. (#2383)
+- Local performance history for table loads, kept 7 days in Application Support and never uploaded. (#2395)
 - Procedures, functions and triggers in the quick switcher.
 - Argument signatures on routine rows, shown when two routines in a section share a name.
 - Schema-wide `list_triggers` for MCP clients, and `return_type` and `language` on `list_routines`.
+- Compare, a fourth EXPLAIN plan mode that reports what changed against an earlier run of the same query. (#2380)
+- Pinning a saved EXPLAIN plan, to keep it through history cleanup. (#2380)
 - Assistant mode for the connection window, with the conversation at full width.
 - Confirm Writes floor while Assistant mode is active.
 - Several AI sessions at once, each with its own approvals, transcript and status.
@@ -27,13 +34,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Sync Paused, a separate state for a license the app could not check, offering to check again rather than to buy.
+- The PRO badge beside a gated control names what the feature does and links to the pricing page.
+- Beancount postings preserve their own flag, price, and resolved lot date and label in the SQL projection.
+- Beancount connections report the active `rledger` or Python Beancount version instead of a generic backend name.
+- Third-party plugins a Beancount ledger declares are skipped unless the connection turns on Run Ledger Plugins.
+- Autocomplete in a query tab follows that tab's own database and schema.
+- The query editor's database picker names the tab's schema beside its database.
 - The data grid draws its cells instead of building a view for each one, so a result with hundreds of columns opens at once and holds a fraction of the memory. (#2381)
 - The data grid draws its own column separators. (#2381)
 - The inline cell editor scrolls a long line instead of wrapping it. (#2381)
+- Row inspector fields, cell popovers and the Compare row diff follow the data grid font. (#2393)
+- The connection color as a filled badge behind the connection name, with the database icon back to its engine color. (#2398)
+- Deeper fills on tag badges and the connection name badge. (#2398)
+- Turkish, Vietnamese, Simplified Chinese and Traditional Chinese cover every string that was still in English.
+- A database stays in the connections strip until you close its entry.
+- Close on a connections-strip entry closes that database, and the connection only when it is the last entry.
+- The connection color in the workspace rail as a dot on the engine icon, kept visible on the selected row. (#2398)
 
 ### Fixed
 
+- The welcome window offering Activate License to a Mac that already holds one and has just been offline.
+- iCloud Sync reporting that a license is required when the license was only unverified.
+- iCloud Sync still reporting a live sync after the license was removed from that Mac.
+- The sync status returning to Synced when sync was turned off while a sync was running.
+- The license server never being contacted again after removing and re-adding a license in one session.
+- The Activations error staying on screen after a later refresh loaded the list.
+- A renewal warning counting down zero days above a status that already reads Expired.
+- The connections strip disappearing when you click the entry you came from.
+- Cancelling a close from the connections strip leaving the window on the connection it revealed.
+- Save on a bulk tab close applying to the tab on screen instead of the tabs being closed.
+- A connections-strip entry in another window raising that window without showing the connection.
+- A disconnected connection's entries dropping to the bottom of the connections strip.
+- The connections strip's saved arrangement growing without bound.
+- Every database entry but one leaving the connections strip when a connection is disconnected.
+- A connection opened from a file or a URL losing its strip entries when its session ends.
+- Closing one database's tabs asking to save unsaved work in another.
+- A connection's color and name not reaching the toolbar and workspace rail until the next reconnect. (#2398)
+- An invisible connection dot in the query history drawer and the compare status strip. (#2398)
+- A failed connection's warning icon in the workspace rail wearing the database engine's color. (#2398)
+- The JSON viewer keeping its old font after a font, theme or text-size change. (#2393)
+- Hex dumps wrapping mid-line instead of keeping their columns aligned. (#2393)
 - A second of delay opening the inline editor on a result with hundreds of columns. (#2381)
+- AI inline suggestions written without the connection's schema.
+- Case-insensitive filters and completion on Redshift falling back to PostgreSQL's ASCII-only ILIKE.
+- PGlite connection form offering SSH, SSL, Cloudflare Tunnel and SOCKS panes, and a password field.
+- Redshift and CockroachDB system databases listed in the sidebar as ordinary user databases.
+- Columns missing from the AI schema context for any table named with a capital letter.
 - Flickering columns, blank columns, and an unpainted gap while scrolling a result with about 100 columns sideways. (#2381)
 - Find, arrow keys, and the inline editor unable to reach a column scrolled off the side of a wide result.
 - Return opening no editor on a row selected with the arrow keys.
