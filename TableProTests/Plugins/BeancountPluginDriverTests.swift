@@ -154,48 +154,84 @@ struct BeancountPluginDriverTests {
     }
 
     @Test(
-        "projects authoritative posting amounts and resolved cost basis",
+        "projects posting semantics through rledger",
         .enabled(if: RustledgerLocator.path != nil, "rledger executable unavailable")
     )
-    func projectsAuthoritativeAmounts() async throws {
+    func projectsPostingSemanticsThroughRustledger() async throws {
         try await Self.withRustledger {
-            let directory = try Self.makeTempDirectory()
-            defer { try? FileManager.default.removeItem(at: directory) }
+            try await Self.withPostingSemanticsLedger(Self.expectPostingSemantics)
+        }
+    }
 
-            let ledger = directory.appendingPathComponent("main.beancount")
-            try """
-            2024-01-01 open Assets:Cash USD
-            2024-01-01 open Assets:Stock HOOL
+    @Test(
+        "projects posting semantics through Python Beancount",
+        .enabled(if: PythonBeancountLocator.path != nil, "Python Beancount unavailable")
+    )
+    func projectsPostingSemanticsThroughPythonBeancount() async throws {
+        let python = try #require(PythonBeancountLocator.path)
+        try await Self.withEnvironment([
+            "TABLEPRO_BEANCOUNT_BACKEND": "python",
+            "TABLEPRO_BEANCOUNT_PYTHON": python
+        ]) {
+            try await Self.withPostingSemanticsLedger(Self.expectPostingSemantics)
+        }
+    }
 
-            2024-01-05 * "Broker" "Buy stock"
-              Assets:Stock        10 HOOL {100.00 USD}
-              Assets:Cash    -1,000.00 USD
-            """.write(to: ledger, atomically: true, encoding: .utf8)
+    @Test(
+        "keeps posting source locations and metadata when the backend lacks the semantic columns",
+        .enabled(if: RustledgerLocator.path != nil, "rledger executable unavailable")
+    )
+    func keepsPostingSourceDetailWhenSemanticColumnsAreUnsupported() async throws {
+        let rledger = try #require(RustledgerLocator.path)
+        let directory = try Self.makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
 
+        let wrapper = directory.appendingPathComponent("rledger")
+        try """
+        #!/bin/sh
+        for argument in "$@"; do
+          case "$argument" in
+            *posting_flag*)
+              echo "evaluation error: column 'posting_flag' not found in subquery result" >&2
+              exit 1
+              ;;
+          esac
+        done
+        exec "\(rledger)" "$@"
+        """.write(to: wrapper, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: wrapper.path)
+
+        let ledger = directory.appendingPathComponent("main.beancount")
+        try """
+        2024-01-01 open Assets:Cash USD
+        2024-01-01 open Expenses:Food USD
+
+        2024-01-05 * "Cafe" "Coffee"
+          Expenses:Food  3.00 USD
+            method: "card"
+          Assets:Cash
+        """.write(to: ledger, atomically: true, encoding: .utf8)
+
+        try await Self.withEnvironment([
+            "TABLEPRO_BEANCOUNT_BACKEND": "rledger",
+            "TABLEPRO_RUSTLEDGER_BINARY": wrapper.path
+        ]) {
             let driver = BeancountPluginDriver(config: Self.config(ledger))
             try await driver.connect()
             defer { driver.disconnect() }
 
-            let result = try await driver.execute(query: """
-                SELECT account, amount, commodity, cost_number, cost_currency
-                FROM postings ORDER BY account
+            let postings = try await driver.execute(query: """
+                SELECT account, flag, price_number, line FROM postings ORDER BY account
                 """)
-            let byAccount = Dictionary(
-                uniqueKeysWithValues: result.rows.compactMap { row -> (String, [PluginCellValue])? in
-                    guard let account = row[0].asText else { return nil }
-                    return (account, row)
-                }
-            )
+            #expect(postings.rows.map { $0.map(\.asText) } == [
+                ["Assets:Cash", nil, nil, "7"],
+                ["Expenses:Food", nil, nil, "5"]
+            ])
 
-            let cash = try #require(byAccount["Assets:Cash"])
-            #expect(cash[1].asText == "-1000.00")
-            #expect(cash[2].asText == "USD")
-
-            let stock = try #require(byAccount["Assets:Stock"])
-            #expect(stock[1].asText == "10")
-            #expect(stock[2].asText == "HOOL")
-            #expect(stock[3].asText == "100.00")
-            #expect(stock[4].asText == "USD")
+            let metadata = try await driver.execute(query: """
+                SELECT key, value FROM posting_metadata ORDER BY key
+                """)
+            #expect(metadata.rows.map { $0.map(\.asText) } == [["method", "card"]])
         }
     }
 
@@ -735,6 +771,42 @@ struct BeancountPluginDriverTests {
         defer { driver.disconnect() }
 
         try await body(driver, ledger)
+    }
+
+    private static func withPostingSemanticsLedger(
+        _ body: (BeancountPluginDriver) async throws -> Void
+    ) async throws {
+        let directory = try Self.makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let ledger = directory.appendingPathComponent("main.beancount")
+        try """
+        2023-12-31 open Assets:Brokerage HOOL
+        2023-12-31 open Assets:Cash USD
+
+        2024-01-02 * "Broker" "Buy"
+          ! Assets:Brokerage  2 HOOL {100 USD, 2023-12-31, "opening-lot"} @ 110 USD
+          Assets:Cash       -200 USD
+        """.write(to: ledger, atomically: true, encoding: .utf8)
+
+        let driver = BeancountPluginDriver(config: Self.config(ledger))
+        try await driver.connect()
+        defer { driver.disconnect() }
+
+        try await body(driver)
+    }
+
+    private static func expectPostingSemantics(_ driver: BeancountPluginDriver) async throws {
+        let result = try await driver.execute(query: """
+            SELECT account, amount, commodity, flag,
+                   cost_number, cost_currency, cost_date, cost_label,
+                   price_number, price_currency
+            FROM postings ORDER BY account
+            """)
+        #expect(result.rows.map { $0.map(\.asText) } == [
+            ["Assets:Brokerage", "2", "HOOL", "!", "100", "USD", "2023-12-31", "opening-lot", "110", "USD"],
+            ["Assets:Cash", "-200", "USD", nil, nil, nil, nil, nil, nil, nil]
+        ])
     }
 
     private static func expectRichDirectives(_ driver: BeancountPluginDriver, ledger: URL) async throws {
