@@ -41,6 +41,8 @@ struct WorkspaceRailStoreTests {
         target: ContainerSwitchTarget? = .database,
         tabs: [UUID: [QueryTab]] = [:],
         opened: [UUID: Set<String>] = [:],
+        closing: [UUID: String] = [:],
+        openedAt: [UUID: Date] = [:],
         storedOrder: [WorkspaceID] = []
     ) -> [WorkspaceRailEntry] {
         WorkspaceRailStore.resolveEntries(
@@ -51,6 +53,8 @@ struct WorkspaceRailStoreTests {
             containerTarget: { _ in target },
             tabs: { tabs[$0] ?? [] },
             openedContainers: { opened[$0] ?? [] },
+            closingContainers: { closing[$0] },
+            openedAt: openedAt,
             storedOrder: storedOrder
         )
     }
@@ -262,6 +266,34 @@ struct WorkspaceRailStoreTests {
         #expect(entries[0].container.isEmpty)
     }
 
+    /// A disconnect deletes the session, and the order used to come from the session's
+    /// `connectedAt`, so the connection lost its timestamp and its entries dropped to the bottom of
+    /// the strip. Reconnecting minted a new session with a new timestamp, so they never came back.
+    @Test("A disconnected connection keeps its place in the strip")
+    func orderSurvivesADisconnect() {
+        let first = TestFixtures.makeConnection(database: "one")
+        let second = TestFixtures.makeConnection(database: "two")
+        let opened: [UUID: Date] = [
+            first.id: Date(timeIntervalSince1970: 100),
+            second.id: Date(timeIntervalSince1970: 200),
+        ]
+
+        let connected = resolve(
+            openConnectionIds: [first.id, second.id],
+            sessions: [first.id: makeSession(first), second.id: makeSession(second)],
+            openedAt: opened
+        )
+        #expect(connected.map(\.container) == ["one", "two"])
+
+        let afterDisconnect = resolve(
+            openConnectionIds: [first.id, second.id],
+            sessions: [second.id: makeSession(second)],
+            hostedConnections: [first.id: first],
+            openedAt: opened
+        )
+        #expect(afterDisconnect.map(\.container) == ["one", "two"])
+    }
+
     @Test("Entries follow the stored arrangement")
     func entriesFollowStoredOrder() {
         let first = TestFixtures.makeConnection(database: "one")
@@ -347,6 +379,35 @@ struct WorkspaceRailStoreTests {
         )
         let entry = try #require(entries.first)
         #expect(entry.status == .connecting)
+    }
+
+    /// Leaving a container is a reconnect and a schema reload on the engines that cannot change
+    /// database on a live connection, and the browse cursor earns a row the whole time. Waiting for
+    /// it left the entry the user had just closed on screen for seconds, so a close names the
+    /// container it is leaving and the strip drops it at once.
+    @Test("The container a close is leaving stops being listed before the cursor moves")
+    func closingContainerLeavesTheStripImmediately() {
+        let connection = TestFixtures.makeConnection(database: "app")
+        let entries = resolve(
+            openConnectionIds: [connection.id],
+            sessions: [connection.id: makeSession(connection, browseDatabase: "app")],
+            opened: [connection.id: ["logs"]],
+            closing: [connection.id: "app"]
+        )
+        #expect(entries.map(\.container) == ["logs"])
+    }
+
+    /// Except when it is all the connection has left. A strip that listed nothing for a connection
+    /// its window still hosts would be unreachable, and this state lasts only as long as the switch.
+    @Test("A connection keeps a row even while its last container is closing")
+    func closingTheOnlyContainerStillLeavesARow() {
+        let connection = TestFixtures.makeConnection(database: "app")
+        let entries = resolve(
+            openConnectionIds: [connection.id],
+            sessions: [connection.id: makeSession(connection, browseDatabase: "app")],
+            closing: [connection.id: "app"]
+        )
+        #expect(entries.map(\.container) == ["app"])
     }
 }
 

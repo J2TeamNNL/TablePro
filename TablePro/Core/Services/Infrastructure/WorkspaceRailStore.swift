@@ -63,6 +63,8 @@ internal enum WorkspaceRailStore {
             /// closed tab kept a container listed and made a closed entry come back.
             tabs: { workspacesById[$0]?.sessionState?.coordinator.tabManager.tabs ?? [] },
             openedContainers: { workspacesById[$0]?.openedContainers ?? [] },
+            closingContainers: { workspacesById[$0]?.closingContainer },
+            openedAt: workspacesById.mapValues(\.openedAt),
             storedOrder: WorkspaceRailOrderStore.shared.order
         )
     }
@@ -81,6 +83,8 @@ internal enum WorkspaceRailStore {
         containerTarget: (DatabaseType) -> ContainerSwitchTarget?,
         tabs: (UUID) -> [QueryTab],
         openedContainers: (UUID) -> Set<String> = { _ in [] },
+        closingContainers: (UUID) -> String? = { _ in nil },
+        openedAt: [UUID: Date] = [:],
         storedOrder: [WorkspaceID]
     ) -> [WorkspaceRailEntry] {
         var connections: [UUID: DatabaseConnection] = [:]
@@ -106,6 +110,7 @@ internal enum WorkspaceRailStore {
                 for: resolved,
                 tabs: tabs(connectionId),
                 opened: openedContainers(connectionId),
+                closing: closingContainers(connectionId),
                 target: target
             )
             for container in held {
@@ -116,7 +121,7 @@ internal enum WorkspaceRailStore {
         let ranked = WorkspaceRailOrdering.ranked(
             openIds: workspaces,
             storedOrder: storedOrder,
-            openedAt: sessions.mapValues(\.connectedAt)
+            openedAt: openedAt
         )
 
         return ranked.compactMap { workspace in
@@ -211,6 +216,7 @@ internal enum WorkspaceRailStore {
         for resolved: ResolvedConnection,
         tabs: [QueryTab],
         opened: Set<String>,
+        closing: String?,
         target: ContainerSwitchTarget?
     ) -> Set<String> {
         var containers = WorkspaceAnchoring.containers(in: tabs, target: target)
@@ -219,7 +225,13 @@ internal enum WorkspaceRailStore {
         if let browsed = resolved.session.flatMap({
             WorkspaceAnchoring.browsedContainer(of: $0, target: target)
         }) {
-            containers.insert(browsed)
+            /// Except while a close is leaving it. The connection is still standing there until the
+            /// switch lands, which on an engine that reconnects to change database is seconds away,
+            /// and keeping the row until then left a closed entry on screen long after the click.
+            /// It comes back if the switch fails, because the connection never left after all.
+            if browsed != closing || containers.isEmpty {
+                containers.insert(browsed)
+            }
         } else if containers.isEmpty,
                   let saved = WorkspaceAnchoring.defaultContainer(of: resolved.connection, target: target) {
             containers.insert(saved)
