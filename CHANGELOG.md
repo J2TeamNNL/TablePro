@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Support TablePro in the Help menu, and a standing link in the welcome window and sidebar until a license is active.
+- Releasing a seat on another Mac from Settings > License, on a license with nobody else on it.
+- Team roster in Settings > License, listing members and seats used against seats bought.
+- Last use and macOS version on each activated Mac, and your role on a team license.
+- Copy Key in Settings > License, which copies the real key and keeps it out of clipboard history.
 - Account booking, note tags and links, balance assertion details, and a `directives` table with metadata for every dated Beancount directive that is not a transaction. (#2415)
 - Named query and typed custom directives as read-only Beancount tables. (#2413)
 - Pad directives as a read-only Beancount table, including their target and source accounts and source locations. (#2399)
@@ -28,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Sync Paused, a separate state for a license the app could not check, offering to check again rather than to buy.
 - The PRO badge beside a gated control names what the feature does and links to the pricing page.
+- Settings > Account is now Settings > License, and holds licensing alone.
+- iCloud Sync has its own Settings pane, and Linked Folders moved to General.
+- The license pane states an expired, suspended or unverified license inline, with one action, instead of a banner floating over it.
+- An expired or suspended license offers the key field and a purchase link, instead of details you cannot act on.
+- One Refresh in Settings > License, replacing separate Refresh and Check Status buttons.
+- The license key is masked and no longer selectable, so a screen share cannot carry the whole credential.
 - Beancount postings preserve their own flag, price, and resolved lot date and label in the SQL projection.
 - Beancount connections report the active `rledger` or Python Beancount version instead of a generic backend name.
 - Third-party plugins a Beancount ledger declares are skipped unless the connection turns on Run Ledger Plugins.
@@ -49,10 +59,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The welcome window offering Activate License to a Mac that already holds one and has just been offline.
 - iCloud Sync reporting that a license is required when the license was only unverified.
 - iCloud Sync still reporting a live sync after the license was removed from that Mac.
+- The app freezing after turning on iCloud Sync with many saved column layouts.
+- The sync record cache filling the preferences file past the 4 MB the system allows, which made every settings write fail.
 - The sync status returning to Synced when sync was turned off while a sync was running.
 - The license server never being contacted again after removing and re-adding a license in one session.
-- The Activations error staying on screen after a later refresh loaded the list.
+- The device list error staying on screen after a later refresh loaded the list.
 - A renewal warning counting down zero days above a status that already reads Expired.
+- A previous team's shared connections and saved queries surviving after deactivating.
 - The connections strip disappearing when you click the entry you came from.
 - Cancelling a close from the connections strip leaving the window on the connection it revealed.
 - Save on a bulk tab close applying to the tab on screen instead of the tabs being closed.
