@@ -547,6 +547,7 @@ final class BeancountPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
             let initialSignatures = signatures(for: initialGraph.reloadDependencies)
             let projectionSource = try projectionRows(
                 ledgerPath: ledgerURL.path,
+                sourceGraph: initialGraph,
                 allowsLedgerPlugins: allowsLedgerPlugins
             )
             let finalGraph = try BeancountIncludeResolver().resolve(fileURL: ledgerURL)
@@ -578,8 +579,10 @@ final class BeancountPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
     private static func projectionRows(
         ledgerPath: String,
+        sourceGraph: BeancountSourceGraph,
         allowsLedgerPlugins: Bool
     ) throws -> (rows: BeancountProjectionRows, backendVersion: String) {
+        let directives = BeancountDirectiveProjectionReader.read(sourceGraph: sourceGraph)
         let backend = try resolveProjectionBackend()
         switch backend {
         case .rledger:
@@ -599,6 +602,8 @@ final class BeancountPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
                 events: directiveRows(ledgerPath: ledgerPath, bql: eventsQuery, table: "events"),
                 pads: pads.rows,
                 closes: directiveRows(ledgerPath: ledgerPath, bql: closesQuery, table: "closes"),
+                queries: directives.queries,
+                custom: directives.custom,
                 diagnostics: validationDiagnostics(ledgerPath: ledgerPath) + pads.diagnostics
             )
             return (rows, backendVersion(backend))
@@ -621,6 +626,8 @@ final class BeancountPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
                 events: rows["events"] ?? [],
                 pads: rows["pads"] ?? [],
                 closes: rows["closes"] ?? [],
+                queries: directives.queries,
+                custom: directives.custom,
                 diagnostics: rows["diagnostics"] ?? []
             )
             return (projectionRows, backendVersion(backend))
