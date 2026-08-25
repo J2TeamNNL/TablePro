@@ -14,13 +14,12 @@
 
 # --- Asserts a fallback that no longer exists.
 #
-#     The one case left here is not a fallback problem. Comma-separated FROM is supported on
-#     purpose: SQLContextAnalyzer.fromListRegex captures the list and its comment says every listed
-#     table stays in scope for column completion. The provider also caps a result set at
-#     defaultMaxSuggestions, 20, and an unfiltered WHERE fills that with keywords before a column
-#     reaches it, so the case now asks for each column behind its own prefix and still fails. What
-#     is left to check is the test's own schema setup, MockDatabaseDriver through
-#     SQLSchemaProvider.loadSchema, not the analyzer.
+#     The completion case that was here was two bugs in the test, both in its own setup. It expected
+#     a bare `user_name`, but `allColumnsInScope` qualifies a column whenever more than one table is
+#     in scope, so two tables always produce `u.user_name`. And SQLSchemaProvider.cachedDriver is
+#     weak, correctly, because the connection session owns the driver in the app; nothing else held
+#     the mock, so it deallocated and getColumns returned nothing at all. It now pins the driver by
+#     asserting what was fetched, and a second case covers the alias-prefix shape.
 #     TableOperationSQLBuilder delegates every statement to the connected plugin adapter and returns
 #     nothing when there is none: `adapterProvider()?.foreignKeyDisableStatements() ?? []`. The
 #     built-in DatabaseType switches these expect were deleted, so the empty result is correct and
@@ -34,17 +33,12 @@
 #     written only by ClickHousePlugin.generateStatements, and the app's SQLStatementGenerator emits
 #     the plain form for every engine. Asserted at the layer that owns them in
 #     TableProTests/Core/ClickHouse/ClickHouseDMLStatementTests.swift.
-SQLCompletionProviderTests/testCommaFromScopesColumnsToAllTables()
 
-# --- Needs a driver actually registered in the host.
-#     Confirmed: validateDriverDescriptor checks `driverPlugins[typeId] != nil`, and that table is
-#     filled when a plugin loads rather than when it is discovered. Calling PluginManager.loadPlugins()
-#     from the test does not fill it either, so the bundles do not register in the xctest host and
-#     the duplicate check has nothing to collide with. A stub registration seam is what these need.
+# --- (empty) The two cases that were here now register their own occupant in driverPlugins, which
+#     is internal(set), instead of assuming the MySQL bundle had loaded. It never had: discovery
+#     ends at "will load on first use" and the bundles do not register in the xctest host at all.
 #     Both duplicate-ID checks report "an error was expected but none was thrown", which is what an
 #     empty registry produces: with nothing registered there is no duplicate to reject.
-ValidateDriverDescriptorTests/rejectsDuplicateAdditionalTypeId()
-ValidateDriverDescriptorTests/rejectsDuplicatePrimaryTypeId()
 
 # --- Stale fixture: the model gained a field the fixture JSON does not carry, so decoding throws
 #     before the assertion is reached.
@@ -71,18 +65,24 @@ ValidateDriverDescriptorTests/rejectsDuplicatePrimaryTypeId()
 #     MainWindowToolbar+Validation. ExecutionGateTests.readOnlyBlocksWrites already asserts it at
 #     that layer and is not quarantined.
 #
-#     The three left below fail for a different reason: saveChanges returns at
-#     `guard let scope = parent.selectedTabScope` long before it clears the inout parameters, so
-#     they need a connected scope the current harness does not build.
-SaveCompletionTests/alertLevel_pendingTruncates_clearsParams()
-SaveCompletionTests/safeModeLevel_pendingDeletes_clearsParams()
-SaveCompletionTests/silentLevel_pendingTruncates_clearsViaNormalPath()
+#     The three SaveCompletionTests cases that were here are gone, and the reason recorded for them
+#     was wrong: scope(for:) falls back to a scope built from the tab, so selectedTabScope is never
+#     nil once a tab exists. They failed for the same reason TableOperationsPluginTests did, no
+#     connected driver, so assemblePendingStatements produced nothing and saveChanges bailed at
+#     "Could not generate SQL for changes." before reaching the inout parameters.
+#     DatabaseManager.shared.injectSession takes a ConnectionSession with a driver, which is the
+#     seam those needed.
 
 # --- Undo grouping, not drift. The cases left here call undo directly after two or more
 #     operations, and NSUndoManager leaves groupsByEvent on, so those land in one group and a single
 #     undo reverts all of them. The app gets a run loop turn between user actions and a test does
-#     not. Neither RunLoop.current.run(until: Date()) nor a 20ms interval closes the group, so what
-#     these need is a seam on the manager rather than another run loop guess.
+#     not. Neither RunLoop.current.run(until: Date()) nor a 20ms interval closes the group.
+#
+#     Injecting the undo manager was tried too, mirroring the `undoManagerProvider` DataChangeManager
+#     already has, and it hangs the test host: three runs in a row wedged with no output and were
+#     killed at the hour mark, reporting every case in the suite as failed at 0.000 seconds, which
+#     reads exactly like a mass regression. Reverted. Whatever the next attempt is, it should not be
+#     that, and a run that reports the whole suite failing instantly is a hang rather than a result.
 #     Needs deciding case by case whether the manager or the expectation is wrong.
 #
 #     The four reloadVersion cases are gone. reloadVersion is the grid's "throw away what you are
@@ -96,8 +96,6 @@ SaveCompletionTests/silentLevel_pendingTruncates_clearsViaNormalPath()
 #     between user actions and the test does not. Spinning the run loop with
 #     RunLoop.current.run(until: Date()) does not close the group, so a working fix needs either a
 #     real interval or a seam on the manager.
-DataChangeManagerExtendedTests/discardChangesPreservesUndoRedoUnlikeClearChanges()
-DataChangeManagerExtendedTests/insertThenEditThenUndoRevertsCell()
 StructureChangeManagerUndoTests/multipleUndos()
 StructureChangeManagerUndoTests/undoDeleteNewColumnReAdds()
 StructureChangeManagerUndoTests/undoTwoDeletesNoDuplicates()
