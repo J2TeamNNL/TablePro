@@ -9,10 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Query results stop fetching at the row limit on MySQL, PostgreSQL, SQLite, MSSQL, Oracle, Cassandra, Redis, DynamoDB, BigQuery, Snowflake, Trino and ClickHouse. (#2427)
+- ClickHouse reads a capped result in one request instead of a separate `LIMIT 0` round trip for the columns.
 - Structure editor undo steps are now set by the operation instead of run loop timing.
 
 ### Fixed
 
+- Row limit ignored for a parenthesised `SELECT`, a `TABLE` statement or a `VALUES` list. (#2427)
+- Cancelling an export or a schema compare left the database still sending rows on MySQL, PostgreSQL, MSSQL, Oracle, Cassandra and Trino.
+- An aborted PostgreSQL read charged its leftover rows to the next query on that connection.
+- Syntax error when sorting a query result whose SQL ends in `LIMIT`.
+- The user's own `LIMIT` dropped when sorting replaced an existing `ORDER BY`.
+- Fetch All sending the previous run's parameters after a query that had none.
+- A SQLite `UPDATE` or `DELETE` alone in a query tab reporting success instead of the rows affected.
 - Stall on switching between two loaded table tabs, growing with the rows they hold. (#2424)
 - Scroll position lost when switching away from a table tab and back. (#2424)
 - A table statistics command on every switch between two table tabs. (#2424)
