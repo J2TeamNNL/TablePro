@@ -182,55 +182,50 @@ final class SyncCoordinator {
     /// because the favorite store is an actor and must be read asynchronously.
     private func markSQLFavoritesDirty() async {
         let favorites = await services.sqlFavoriteManager.fetchFavorites()
-        for favorite in favorites {
-            changeTracker.markDirty(.favorite, id: favorite.id.uuidString)
-        }
+        changeTracker.markDirty(.favorite, ids: favorites.map { $0.id.uuidString })
+
         let folders = await services.sqlFavoriteManager.fetchFolders()
-        for folder in folders {
-            changeTracker.markDirty(.favoriteFolder, id: folder.id.uuidString)
-        }
+        changeTracker.markDirty(.favoriteFolder, ids: folders.map { $0.id.uuidString })
     }
 
-    /// Marks all existing local data as dirty so it will be pushed on the next sync.
-    /// Called when sync is first enabled to upload existing connections/groups/tags/settings.
+    /// Marks every synced record dirty so the first sync after enabling pushes the lot.
+    ///
+    /// Every type is marked as one batch. Marking record by record posted a change notification per
+    /// record, and the observer cancels the in-flight sync and awaits it before scheduling the next,
+    /// so an account with a few hundred saved column layouts built a chain of hundreds of tasks each
+    /// waiting on its predecessor and the app stopped responding to the switch that started it.
     private func markAllLocalDataDirty() {
         let connections = services.connectionStorage.loadConnections()
-        for connection in connections where !connection.localOnly {
-            changeTracker.markDirty(.connection, id: connection.id.uuidString)
-        }
+        changeTracker.markDirty(
+            .connection,
+            ids: connections.filter { !$0.localOnly }.map { $0.id.uuidString }
+        )
 
         let groups = services.groupStorage.loadGroups()
-        for group in groups {
-            changeTracker.markDirty(.group, id: group.id.uuidString)
-        }
+        changeTracker.markDirty(.group, ids: groups.map { $0.id.uuidString })
 
         let tags = services.tagStorage.loadTags()
-        for tag in tags {
-            changeTracker.markDirty(.tag, id: tag.id.uuidString)
-        }
+        changeTracker.markDirty(.tag, ids: tags.map { $0.id.uuidString })
 
         let sshProfiles = services.sshProfileStorage.loadProfiles()
-        for profile in sshProfiles {
-            changeTracker.markDirty(.sshProfile, id: profile.id.uuidString)
-        }
+        changeTracker.markDirty(.sshProfile, ids: sshProfiles.map { $0.id.uuidString })
 
         let favoriteTables = services.favoriteTablesStorage.loadFavorites()
-        for entry in favoriteTables {
-            changeTracker.markDirty(.tableFavorite, id: FavoriteTablesStorage.syncId(for: entry))
-        }
+        changeTracker.markDirty(
+            .tableFavorite,
+            ids: favoriteTables.map { FavoriteTablesStorage.syncId(for: $0) }
+        )
 
         let favoriteDatabases = services.favoriteDatabasesStorage.loadFavorites()
-        for entry in favoriteDatabases {
-            changeTracker.markDirty(.favoriteDatabase, id: FavoriteDatabasesStorage.syncId(for: entry))
-        }
+        changeTracker.markDirty(
+            .favoriteDatabase,
+            ids: favoriteDatabases.map { FavoriteDatabasesStorage.syncId(for: $0) }
+        )
 
-        for category in AppSettingsCategory.synced + [CustomSlashCommandStorage.syncCategory] {
-            changeTracker.markDirty(.settings, id: category)
-        }
-
-        for storageKey in FileColumnLayoutPersister.shared.customizedStorageKeys() {
-            changeTracker.markDirty(.settings, id: FileColumnLayoutPersister.syncCategory(for: storageKey))
-        }
+        let settingsCategories = AppSettingsCategory.synced + [CustomSlashCommandStorage.syncCategory]
+        let columnLayoutCategories = FileColumnLayoutPersister.shared.customizedStorageKeys()
+            .map { FileColumnLayoutPersister.syncCategory(for: $0) }
+        changeTracker.markDirty(.settings, ids: settingsCategories + columnLayoutCategories)
 
         let summary = [
             "connections=\(connections.count)",
