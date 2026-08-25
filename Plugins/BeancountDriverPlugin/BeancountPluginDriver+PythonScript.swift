@@ -126,6 +126,7 @@ rows = {
     "events": [],
     "pads": [],
     "closes": [],
+    "directives": [],
     "diagnostics": [],
 }
 balances = defaultdict(Decimal)
@@ -138,8 +139,21 @@ for plugin_name in suppressed:
         "message": "Ledger-declared Python plugin not run: " + plugin_name,
     })
 
+directive_id = 0
+
 for entry in entries:
     entry_type = type(entry).__name__
+    if entry_type != "Transaction":
+        directive_id += 1
+        rows["directives"].append({
+            "id": directive_id,
+            "type": entry_type.lower(),
+            "date": date_value(getattr(entry, "date", None)),
+            "filename": source_file(entry.meta),
+            "lineno": source_line(entry.meta),
+            "location": source_location(entry.meta),
+            "_entry_meta": user_meta(entry.meta),
+        })
     if entry_type == "Transaction":
         transaction_id += 1
         entry_meta = user_meta(entry.meta)
@@ -201,6 +215,8 @@ for entry in entries:
             "date": date_value(entry.date),
             "account": entry.account,
             "comment": entry.comment,
+            "tags": name_list(getattr(entry, "tags", None)),
+            "links": name_list(getattr(entry, "links", None)),
         })
     elif entry_type == "Event":
         rows["events"].append({
@@ -227,6 +243,7 @@ for entry in entries:
             "account": entry.account,
             "open": date_value(entry.date),
             "currencies": list(entry.currencies or []),
+            "booking": getattr(getattr(entry, "booking", None), "value", None),
         })
     elif entry_type == "Price":
         rows["prices"].append({

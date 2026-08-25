@@ -57,6 +57,29 @@ private enum PostingsColumnLevel: String, CaseIterable {
     case core
 }
 
+private struct BookedSeriesKey: Hashable {
+    let account: String
+    let currency: String
+}
+
+private struct BookedSeries {
+    let cumulative: [(date: String, running: Decimal)]
+
+    func total(before date: String) -> Decimal {
+        var low = 0
+        var high = cumulative.count
+        while low < high {
+            let middle = (low + high) / 2
+            if cumulative[middle].date < date {
+                low = middle + 1
+            } else {
+                high = middle
+            }
+        }
+        return low == 0 ? .zero : cumulative[low - 1].running
+    }
+}
+
 private enum BeancountBackend {
     case rledger(String)
     case python(String)
@@ -87,7 +110,8 @@ final class BeancountPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     private static let postingsSourceColumns =
         "filename, lineno, location, tags, links, _entry_meta, _posting_meta"
     private static let postingsSemanticColumns = "posting_flag, price, cost_date, cost_label"
-    private static let accountsQuery = "SELECT account, open, currencies FROM #accounts ORDER BY account"
+    private static let accountsQuery = "SELECT account, open, currencies, booking FROM #accounts ORDER BY account"
+    private static let accountsCoreQuery = "SELECT account, open, currencies FROM #accounts ORDER BY account"
     private static let pricesQuery = "SELECT date, currency, amount FROM #prices ORDER BY date, currency"
     private static let balancesQuery =
         "SELECT account, sum(position) AS balance FROM #postings GROUP BY account ORDER BY account"
@@ -100,6 +124,12 @@ final class BeancountPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     private static let padsQuery =
         "SELECT id, date, filename, lineno FROM #entries WHERE type = 'pad' ORDER BY id"
     private static let padDirectivesQuery = "PRINT FROM FALSE"
+    // `_entry_meta` is the backend's own metadata for a directive, alongside the entry id and the
+    // authoritative filename and line the parser recorded. Re-deriving any of that by reading the
+    // ledger text would be a second, weaker parser that cannot see plugin-generated entries.
+    private static let directivesQuery =
+        "SELECT id, type, date, filename, lineno, _entry_meta FROM #entries "
+            + "WHERE type != 'transaction' ORDER BY id"
     private static let closesQuery =
         "SELECT account, close FROM #accounts WHERE close IS NOT NULL ORDER BY close, account"
     private static let logger = Logger(subsystem: "com.TablePro", category: "BeancountPluginDriver")
@@ -582,28 +612,38 @@ final class BeancountPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         sourceGraph: BeancountSourceGraph,
         allowsLedgerPlugins: Bool
     ) throws -> (rows: BeancountProjectionRows, backendVersion: String) {
-        let directives = BeancountDirectiveProjectionReader.read(sourceGraph: sourceGraph)
+        let details = BeancountDirectiveDetailsReader.read(sourceGraph: sourceGraph)
+        let sourceDirectives = BeancountDirectiveProjectionReader.read(sourceGraph: sourceGraph)
         let backend = try resolveProjectionBackend()
         switch backend {
         case .rledger:
             let transactions = try transactionRows(ledgerPath: ledgerPath)
             let postings = try postingRows(ledgerPath: ledgerPath)
             let pads = padProjection(ledgerPath: ledgerPath)
+            let assertions = balanceRowsByAddingDetails(
+                try query(ledgerPath: ledgerPath, bql: balanceAssertionsQuery),
+                details: details.balances,
+                postings: postings
+            )
             let rows = BeancountProjectionRows(
                 transactions: transactionRowsByAddingPostingDetails(transactions, postings: postings),
                 postings: postings,
-                accounts: try query(ledgerPath: ledgerPath, bql: accountsQuery),
+                accounts: try accountRows(ledgerPath: ledgerPath),
                 prices: try query(ledgerPath: ledgerPath, bql: pricesQuery),
                 balances: try query(ledgerPath: ledgerPath, bql: balancesQuery),
-                balanceAssertions: try query(ledgerPath: ledgerPath, bql: balanceAssertionsQuery),
+                balanceAssertions: assertions,
                 commodities: directiveRows(ledgerPath: ledgerPath, bql: commoditiesQuery, table: "commodities"),
                 documents: directiveRows(ledgerPath: ledgerPath, bql: documentsQuery, table: "documents"),
-                notes: directiveRows(ledgerPath: ledgerPath, bql: notesQuery, table: "notes"),
+                notes: noteRowsByAddingDetails(
+                    directiveRows(ledgerPath: ledgerPath, bql: notesQuery, table: "notes"),
+                    details: details.notes
+                ),
                 events: directiveRows(ledgerPath: ledgerPath, bql: eventsQuery, table: "events"),
                 pads: pads.rows,
                 closes: directiveRows(ledgerPath: ledgerPath, bql: closesQuery, table: "closes"),
-                queries: directives.queries,
-                custom: directives.custom,
+                queries: sourceDirectives.queries,
+                custom: sourceDirectives.custom,
+                directives: directiveRows(ledgerPath: ledgerPath, bql: directivesQuery, table: "directives"),
                 diagnostics: validationDiagnostics(ledgerPath: ledgerPath) + pads.diagnostics
             )
             return (rows, backendVersion(backend))
@@ -613,24 +653,142 @@ final class BeancountPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
                 executablePath: executablePath,
                 allowsLedgerPlugins: allowsLedgerPlugins
             )
+            let postings = rows["postings"] ?? []
             let projectionRows = BeancountProjectionRows(
                 transactions: rows["transactions"] ?? [],
-                postings: rows["postings"] ?? [],
+                postings: postings,
                 accounts: rows["accounts"] ?? [],
                 prices: rows["prices"] ?? [],
                 balances: rows["balances"] ?? [],
-                balanceAssertions: rows["balance_assertions"] ?? [],
+                balanceAssertions: balanceRowsByAddingDetails(
+                    rows["balance_assertions"] ?? [],
+                    details: details.balances,
+                    postings: postings
+                ),
                 commodities: rows["commodities"] ?? [],
                 documents: rows["documents"] ?? [],
-                notes: rows["notes"] ?? [],
+                notes: noteRowsByAddingDetails(rows["notes"] ?? [], details: details.notes),
                 events: rows["events"] ?? [],
                 pads: rows["pads"] ?? [],
                 closes: rows["closes"] ?? [],
-                queries: directives.queries,
-                custom: directives.custom,
+                queries: sourceDirectives.queries,
+                custom: sourceDirectives.custom,
+                directives: rows["directives"] ?? [],
                 diagnostics: rows["diagnostics"] ?? []
             )
             return (projectionRows, backendVersion(backend))
+        }
+    }
+
+    private static func accountRows(ledgerPath: String) throws -> [[String: Any]] {
+        do {
+            return try query(ledgerPath: ledgerPath, bql: accountsQuery)
+        } catch {
+            logger.warning("Beancount account booking unavailable, projecting core columns: \(error)")
+            return try query(ledgerPath: ledgerPath, bql: accountsCoreQuery)
+        }
+    }
+
+    static func noteRowsByAddingDetails(
+        _ rows: [[String: Any]],
+        details: [[String: Any]]
+    ) -> [[String: Any]] {
+        var pending: [String: [[String: Any]]] = [:]
+        for detail in details {
+            pending[noteKey(detail), default: []].append(detail)
+        }
+
+        return rows.map { row in
+            let key = noteKey(row)
+            guard var queue = pending[key], !queue.isEmpty else { return row }
+            let detail = queue.removeFirst()
+            pending[key] = queue
+            return row.merging(detail, uniquingKeysWith: { _, detail in detail })
+        }
+    }
+
+    private static func noteKey(_ row: [String: Any]) -> String {
+        [
+            stringValue(row["date"]),
+            stringValue(row["account"]),
+            stringValue(row["comment"])
+        ]
+        .map { $0 ?? "" }
+        .joined(separator: "\u{1F}")
+    }
+
+    static func balanceRowsByAddingDetails(
+        _ rows: [[String: Any]],
+        details: [[String: Any]],
+        postings: [[String: Any]]
+    ) -> [[String: Any]] {
+        var pending: [String: [[String: Any]]] = [:]
+        for detail in details {
+            pending[balanceKey(detail), default: []].append(detail)
+        }
+        let history = bookedHistory(postings)
+
+        return rows.map { row in
+            guard let date = stringValue(row["date"]),
+                  let account = stringValue(row["account"]),
+                  let amount = row["amount"] as? [String: Any],
+                  let expectedText = stringValue(amount["number"]),
+                  let currency = stringValue(amount["currency"]),
+                  let expected = Decimal(string: expectedText, locale: Locale(identifier: "en_US_POSIX")) else {
+                return row
+            }
+
+            var enriched = row
+            let key = balanceKey(["date": date, "account": account, "currency": currency])
+            if var queue = pending[key], !queue.isEmpty {
+                let detail = queue.removeFirst()
+                pending[key] = queue
+                enriched.merge(detail, uniquingKeysWith: { _, detail in detail })
+            }
+
+            let booked = history[BookedSeriesKey(account: account, currency: currency)]?
+                .total(before: date) ?? .zero
+            enriched["difference_amount"] = NSDecimalNumber(decimal: booked - expected).stringValue
+            enriched["difference_currency"] = currency
+            return enriched
+        }
+    }
+
+    private static func balanceKey(_ row: [String: Any]) -> String {
+        [
+            stringValue(row["date"]),
+            stringValue(row["account"]),
+            stringValue(row["currency"])
+        ]
+        .map { $0 ?? "" }
+        .joined(separator: "\u{1F}")
+    }
+
+    /// A balance assertion holds for the start of its date, so its booked side is the running total
+    /// of every earlier posting on that account and commodity. Scanning the whole posting array per
+    /// assertion is quadratic, so the postings are bucketed once into a sorted running total and
+    /// each assertion binary-searches it.
+    private static func bookedHistory(_ postings: [[String: Any]]) -> [BookedSeriesKey: BookedSeries] {
+        var buckets: [BookedSeriesKey: [(date: String, number: Decimal)]] = [:]
+        for posting in postings {
+            guard let account = stringValue(posting["account"]),
+                  let currency = stringValue(posting["currency"]),
+                  let date = stringValue(posting["date"]),
+                  let numberText = stringValue(posting["number"]),
+                  let number = Decimal(string: numberText, locale: Locale(identifier: "en_US_POSIX")) else {
+                continue
+            }
+            buckets[BookedSeriesKey(account: account, currency: currency), default: []]
+                .append((date: date, number: number))
+        }
+
+        return buckets.mapValues { entries in
+            var running = Decimal.zero
+            let cumulative = entries.sorted { $0.date < $1.date }.map { entry -> (String, Decimal) in
+                running += entry.number
+                return (entry.date, running)
+            }
+            return BookedSeries(cumulative: cumulative)
         }
     }
 

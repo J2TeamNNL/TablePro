@@ -73,6 +73,7 @@ struct BeancountProjectionRows: @unchecked Sendable {
     var closes: [[String: Any]] = []
     var queries: [[String: Any]] = []
     var custom: [[String: Any]] = []
+    var directives: [[String: Any]] = []
     var diagnostics: [[String: Any]] = []
 }
 
@@ -111,6 +112,7 @@ extension BeancountPluginDriver {
             try loadCloses(rows.closes, into: writer)
             try loadQueries(rows.queries, into: writer)
             try loadCustom(rows.custom, into: writer)
+            try loadDirectives(rows.directives, into: writer)
             try loadDiagnostics(rows.diagnostics, into: writer)
             try loadSourceFiles(sourceFiles, into: writer)
             try exec(handle, "PRAGMA query_only = ON")
@@ -155,7 +157,8 @@ extension BeancountPluginDriver {
             CREATE TABLE accounts (
                 name TEXT PRIMARY KEY,
                 open_date DATE,
-                currencies TEXT
+                currencies TEXT,
+                booking TEXT
             );
             CREATE TABLE prices (
                 id INTEGER PRIMARY KEY,
@@ -175,7 +178,10 @@ extension BeancountPluginDriver {
                 date DATE NOT NULL,
                 account TEXT NOT NULL,
                 amount TEXT NOT NULL,
-                commodity TEXT NOT NULL
+                commodity TEXT NOT NULL,
+                tolerance TEXT,
+                difference_amount TEXT,
+                difference_currency TEXT
             );
             CREATE TABLE commodities (
                 id INTEGER PRIMARY KEY,
@@ -194,7 +200,9 @@ extension BeancountPluginDriver {
                 id INTEGER PRIMARY KEY,
                 date DATE NOT NULL,
                 account TEXT NOT NULL,
-                comment TEXT
+                comment TEXT,
+                tags TEXT,
+                links TEXT
             );
             CREATE TABLE events (
                 id INTEGER PRIMARY KEY,
@@ -279,6 +287,20 @@ extension BeancountPluginDriver {
             );
             CREATE TABLE source_files (
                 path TEXT PRIMARY KEY
+            );
+            CREATE TABLE directives (
+                id INTEGER PRIMARY KEY,
+                type TEXT NOT NULL,
+                date DATE,
+                source_file TEXT,
+                line INTEGER,
+                source_location TEXT
+            );
+            CREATE TABLE directive_metadata (
+                id INTEGER PRIMARY KEY,
+                directive_id INTEGER NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT
             );
             """)
     }
@@ -520,8 +542,11 @@ extension BeancountPluginDriver {
                   let account = stringValue(row["account"]) else { continue }
             noteId += 1
             try writer.insert(sql: """
-                INSERT INTO notes (id, date, account, comment) VALUES (?, ?, ?, ?)
-                """, values: [String(noteId), date, account, stringValue(row["comment"])])
+                INSERT INTO notes (id, date, account, comment, tags, links) VALUES (?, ?, ?, ?, ?, ?)
+                """, values: [
+                    String(noteId), date, account, stringValue(row["comment"]),
+                    joinedList(row["tags"]), joinedList(row["links"])
+                ])
         }
     }
 
@@ -604,12 +629,13 @@ extension BeancountPluginDriver {
         for row in rows {
             guard let name = stringValue(row["account"]) else { continue }
             try writer.insert(sql: """
-                INSERT OR REPLACE INTO accounts (name, open_date, currencies)
-                VALUES (?, ?, ?)
+                INSERT OR REPLACE INTO accounts (name, open_date, currencies, booking)
+                VALUES (?, ?, ?, ?)
                 """, values: [
                     name,
                     stringValue(row["open"]),
-                    joinedList(row["currencies"])
+                    joinedList(row["currencies"]),
+                    stringValue(row["booking"])
                 ])
         }
     }
@@ -654,9 +680,41 @@ extension BeancountPluginDriver {
             guard let number = amount.number, let commodity = amount.currency else { continue }
             balanceId += 1
             try writer.insert(sql: """
-                INSERT INTO balance_assertions (id, date, account, amount, commodity)
-                VALUES (?, ?, ?, ?, ?)
-                """, values: [String(balanceId), date, account, number, commodity])
+                INSERT INTO balance_assertions
+                    (id, date, account, amount, commodity, tolerance, difference_amount, difference_currency)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, values: [
+                    String(balanceId), date, account, number, commodity,
+                    stringValue(row["tolerance"]), stringValue(row["difference_amount"]),
+                    stringValue(row["difference_currency"])
+                ])
+        }
+    }
+
+    private static func loadDirectives(
+        _ rows: [[String: Any]],
+        into writer: BeancountProjectionWriter
+    ) throws {
+        var metadataId = 0
+        for row in rows {
+            guard let type = stringValue(row["type"]),
+                  let directiveId = intValue(row["id"]) else { continue }
+            let position = sourcePosition(file: row["filename"], line: row["lineno"], formatted: row["location"])
+            try writer.insert(sql: """
+                INSERT INTO directives (id, type, date, source_file, line, source_location)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, values: [
+                    String(directiveId), type, stringValue(row["date"]), position?.file,
+                    position?.line.map(String.init), position?.formatted
+                ])
+
+            for pair in metadataPairs(row["_entry_meta"]) {
+                metadataId += 1
+                try writer.insert(sql: """
+                    INSERT INTO directive_metadata (id, directive_id, key, value)
+                    VALUES (?, ?, ?, ?)
+                    """, values: [String(metadataId), String(directiveId), pair.key, pair.value])
+            }
         }
     }
 
