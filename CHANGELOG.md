@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Support TablePro in the Help menu, and a standing link in the welcome window and sidebar until a license is active.
 - Account booking, note tags and links, balance assertion details, and a `directives` table with metadata for every dated Beancount directive that is not a transaction. (#2415)
 - Named query and typed custom directives as read-only Beancount tables. (#2413)
 - Pad directives as a read-only Beancount table, including their target and source accounts and source locations. (#2399)
@@ -25,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The PRO badge beside a gated control names what the feature does and links to the pricing page.
 - Beancount postings preserve their own flag, price, and resolved lot date and label in the SQL projection.
 - Beancount connections report the active `rledger` or Python Beancount version instead of a generic backend name.
 - Third-party plugins a Beancount ledger declares are skipped unless the connection turns on Run Ledger Plugins.
