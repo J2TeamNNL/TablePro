@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.68.0] - 2026-08-25
+
 ### Added
 
 - Compare & Sync between two databases, over schema objects or row data. Starter license. (#721)
@@ -3369,7 +3371,8 @@ TablePro is a native macOS database client built with SwiftUI and AppKit, design
     - Custom SQL query templates
     - Performance optimized for large datasets
 
-[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.67.1...HEAD
+[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.68.0...HEAD
+[0.68.0]: https://github.com/TableProApp/TablePro/compare/v0.67.1...v0.68.0
 [0.67.1]: https://github.com/TableProApp/TablePro/compare/v0.67.0...v0.67.1
 [0.67.0]: https://github.com/TableProApp/TablePro/compare/v0.66.0...v0.67.0
 [0.66.0]: https://github.com/TableProApp/TablePro/compare/v0.65.0...v0.66.0
