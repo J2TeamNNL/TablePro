@@ -7,11 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.68.1] - 2026-08-26
+
 ### Changed
 
 - Query results stop fetching at the row limit on MySQL, PostgreSQL, SQLite, MSSQL, Oracle, Cassandra, Redis, DynamoDB, BigQuery, Snowflake, Trino and ClickHouse. (#2427)
 - ClickHouse reads a capped result in one request instead of a separate `LIMIT 0` round trip for the columns.
-- Structure editor undo steps are now set by the operation instead of run loop timing.
+- Structure editor undo granularity set by the operation instead of run loop timing.
 
 ### Fixed
 
@@ -3397,7 +3399,8 @@ TablePro is a native macOS database client built with SwiftUI and AppKit, design
     - Custom SQL query templates
     - Performance optimized for large datasets
 
-[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.68.0...HEAD
+[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.68.1...HEAD
+[0.68.1]: https://github.com/TableProApp/TablePro/compare/v0.68.0...v0.68.1
 [0.68.0]: https://github.com/TableProApp/TablePro/compare/v0.67.1...v0.68.0
 [0.67.1]: https://github.com/TableProApp/TablePro/compare/v0.67.0...v0.67.1
 [0.67.0]: https://github.com/TableProApp/TablePro/compare/v0.66.0...v0.67.0
