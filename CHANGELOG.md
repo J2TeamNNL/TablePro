@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A data grid shortcut bound to `Cmd+G` silently taking the key from Find Next, with no conflict warning.
 - Stale cells after fitting, hiding or reordering a data grid column on a result narrower than the window. (#2446)
 - Autocomplete keeping an earlier prefix's ordering after the typed word becomes an exact match. (#2444)
 - Whole MySQL and MariaDB result set fetched before a capped query returned its first rows. (#2427)
