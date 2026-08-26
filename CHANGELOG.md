@@ -64,6 +64,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A reordered column snapping back on the next refresh in the Structure tab and in query results.
 - Double-clicking a cell editing the wrong row, after deleting one of several rows added in the same session.
 - VoiceOver reading a cell's value under a different row's number after such a delete.
+- Snowflake `DATE`, `TIME` and `TIMESTAMP_*` cells showing the raw epoch number the server sends. (#2454)
+- Snowflake `BINARY` cells showing the hex of their hex, which the hex editor then wrote back.
+- A date cell the app cannot read opening a picker set to today, which overwrote the value on OK. (#2454)
+- Snowflake reporting no rows changed for an `UPDATE` or `MERGE`, and a `SELECT`'s own result for a column named `number of rows`.
+- Two saved Snowflake connections to one account sharing a session, so switching database in one window moved the other.
+- Stop on a Snowflake query cancelling every other query on the same connection, including a sidebar refresh or a save.
+
+### Security
+
+- SQL injection through a Snowflake schema or routine name containing a backslash.
 
 ## [0.68.1] - 2026-08-26
 
