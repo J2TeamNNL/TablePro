@@ -10,8 +10,25 @@ import TableProPluginKit
 final class RowEditingCoordinator {
     @ObservationIgnored unowned let parent: MainContentCoordinator
 
+    /// A save is between assembling its statements and hearing back.
+    ///
+    /// Nothing clears the pending changes until the write returns, so a second Cmd+S inside the
+    /// round trip finds them still there, assembles the same statements again and commits them
+    /// twice. Over a slow link that is easy to do by accident.
+    @ObservationIgnored private(set) var isSaveInFlight = false
+
     init(parent: MainContentCoordinator) {
         self.parent = parent
+    }
+
+    func beginSaveInFlight() -> Bool {
+        guard !isSaveInFlight else { return false }
+        isSaveInFlight = true
+        return true
+    }
+
+    func endSaveInFlight() {
+        isSaveInFlight = false
     }
 
     /// A row command selects the row it just made so the grid can highlight it and scroll to it.
@@ -254,8 +271,11 @@ final class RowEditingCoordinator {
         let tabId = tab.id
 
         var application = RowOperationsManager.UndoApplicationResult(adjustedSelection: nil, delta: .none)
+        let displayIDs = parent.activeGridDisplayIDs
         parent.mutateActiveTableRows(for: tabId) { rows in
-            let applied = parent.rowOperationsManager.applyUndoResult(result, tableRows: &rows)
+            let applied = parent.rowOperationsManager.applyUndoResult(
+                result, displayIDs: displayIDs, tableRows: &rows
+            )
             application = applied
             return applied.delta
         }

@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Restore Previous Values in the Edit menu, taking back a save that already committed. Starter license. (#2107)
+- Data Rewind settings in Settings > Data & Results, with an off switch and Clear Saved Changes.
+- Restore Previous Values in the toolbar's Table Actions group.
+
+### Fixed
+
+- Save reporting the number of statements it ran as the number of rows it changed.
+- An edit or a delete on a table with no primary key changing every identical row. (#2107)
+- The same statements committed twice when Cmd+S is pressed again during a slow save.
+- Switching tabs during a save clearing the edits of the tab switched to, and re-running its query.
+- Placeholder SQL with no values in the Safe Mode confirmation and the authorization prompt.
+- Deleting one row of a pasted batch dropping the other rows, or saving them with another row's values.
+- Undoing the deletion of a new row putting its values in the wrong columns.
+- Undoing a cell edit reverting the wrong row while a column filter is active.
+- A save that deletes a row and reuses its unique value failing on the constraint.
+- "Ignore foreign key checks" doing nothing on SQLite, libSQL and Cloudflare D1.
+- A save reported as failed on an engine without transactions after some statements had been written.
 - Keep Open for a preview tab, by double-clicking it in the tab strip or from its contextual menu. (#2436)
 - Kafka driver plugin: topics in the grid, consumer group lag, and KafkaQL for seeking and producing. (#2419)
 

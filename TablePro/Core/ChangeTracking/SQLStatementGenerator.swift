@@ -16,6 +16,13 @@ struct ParameterizedStatement: @unchecked Sendable {
     let parameters: [Any?]
 }
 
+/// A statement plus the number of rows it is meant to touch, so a caller can hold the server to it.
+struct AttributedStatement: @unchecked Sendable {
+    let statement: ParameterizedStatement
+    let kind: RowWriteKind
+    let rowCount: Int
+}
+
 /// Generates SQL statements from data changes
 struct SQLStatementGenerator {
     private static let logger = Logger(subsystem: "com.TablePro", category: "SQLStatementGenerator")
@@ -73,45 +80,60 @@ struct SQLStatementGenerator {
         deletedRowIndices: Set<Int>,
         insertedRowIndices: Set<Int>
     ) -> [ParameterizedStatement] {
-        var statements: [ParameterizedStatement] = []
+        generateAttributedStatements(
+            from: changes,
+            insertedRowData: insertedRowData,
+            deletedRowIndices: deletedRowIndices,
+            insertedRowIndices: insertedRowIndices
+        ).map(\.statement)
+    }
 
-        // Collect UPDATE and DELETE changes to batch them
-        var updateChanges: [RowChange] = []
-        var deleteChanges: [RowChange] = []
+    /// The same statements, each carrying how many rows it is meant to touch.
+    ///
+    /// Emitted in the order the user made the changes, because that order can be load-bearing: a
+    /// row deleted to free a unique value, and a new row taking that value, only work if the
+    /// DELETE runs first. Grouping every INSERT ahead of every DELETE, which is what this used to
+    /// do, turned that save into a constraint violation and rolled the whole thing back.
+    ///
+    /// Deletes still batch, but only across a consecutive run of them. That keeps the case that
+    /// matters, selecting many rows and pressing Delete, on one statement, while a delete
+    /// separated from another delete by an insert stays on its own side of it.
+    func generateAttributedStatements(
+        from changes: [RowChange],
+        insertedRowData: [Int: [PluginCellValue]],
+        deletedRowIndices: Set<Int>,
+        insertedRowIndices: Set<Int>
+    ) -> [AttributedStatement] {
+        var statements: [AttributedStatement] = []
+        var deleteRun: [RowChange] = []
 
-        for change in changes {
+        func flushDeleteRun() {
+            guard !deleteRun.isEmpty else { return }
+            statements.append(contentsOf: generateDeleteStatements(for: deleteRun))
+            deleteRun.removeAll(keepingCapacity: true)
+        }
+
+        for change in changes.sorted(by: { $0.sequence < $1.sequence }) {
             switch change.type {
             case .update:
-                updateChanges.append(change)
+                flushDeleteRun()
+                if let stmt = generateUpdateSQL(for: change) {
+                    statements.append(AttributedStatement(statement: stmt, kind: .update, rowCount: 1))
+                }
             case .insert:
                 // SAFETY: Verify the row is still marked as inserted
-                guard insertedRowIndices.contains(change.rowIndex) else {
-                    continue
-                }
+                guard insertedRowIndices.contains(change.rowIndex) else { continue }
+                flushDeleteRun()
                 if let stmt = generateInsertSQL(for: change, insertedRowData: insertedRowData) {
-                    statements.append(stmt)
+                    statements.append(AttributedStatement(statement: stmt, kind: .insert, rowCount: 1))
                 }
             case .delete:
                 // SAFETY: Verify the row is still marked as deleted
-                guard deletedRowIndices.contains(change.rowIndex) else {
-                    continue
-                }
-                deleteChanges.append(change)
+                guard deletedRowIndices.contains(change.rowIndex) else { continue }
+                deleteRun.append(change)
             }
         }
-
-        // Generate individual UPDATE statements (safer than batched CASE/WHEN)
-        if !updateChanges.isEmpty {
-            for change in updateChanges {
-                if let stmt = generateUpdateSQL(for: change) {
-                    statements.append(stmt)
-                }
-            }
-        }
-
-        if !deleteChanges.isEmpty {
-            statements.append(contentsOf: generateDeleteStatements(for: deleteChanges))
-        }
+        flushDeleteRun()
 
         return statements
     }
@@ -346,18 +368,24 @@ struct SQLStatementGenerator {
         let boundValue: PluginCellValue?
     }
 
-    private func generateDeleteStatements(for changes: [RowChange]) -> [ParameterizedStatement] {
+    private func generateDeleteStatements(for changes: [RowChange]) -> [AttributedStatement] {
         let rowMatches = changes.compactMap { deleteRowMatches(for: $0) }
         guard !rowMatches.isEmpty else { return [] }
 
-        var statements: [ParameterizedStatement] = []
+        var statements: [AttributedStatement] = []
         var chunk: [[DeleteColumnMatch]] = []
         var chunkParameterCount = 0
+
+        func flush() {
+            statements.append(
+                AttributedStatement(statement: deleteStatement(for: chunk), kind: .delete, rowCount: chunk.count)
+            )
+        }
 
         for matches in rowMatches {
             let rowParameterCount = matches.count(where: { $0.boundValue != nil })
             if !chunk.isEmpty, chunkParameterCount + rowParameterCount > maxBindParameters {
-                statements.append(deleteStatement(for: chunk))
+                flush()
                 chunk = []
                 chunkParameterCount = 0
             }
@@ -366,7 +394,7 @@ struct SQLStatementGenerator {
         }
 
         if !chunk.isEmpty {
-            statements.append(deleteStatement(for: chunk))
+            flush()
         }
 
         return statements
