@@ -108,8 +108,8 @@ struct ValidateDriverDescriptorTests {
 
     @Test("rejects duplicate primary type ID already registered")
     @MainActor func rejectsDuplicatePrimaryTypeId() {
-        withRegisteredDriver(typeId: "occupied-test-db-type") { manager in
-            MockDriverPlugin.reset(typeId: "occupied-test-db-type", displayName: "Fake Occupant")
+        withRegisteredDriver(typeId: "occupied-primary-id") { manager in
+            MockDriverPlugin.reset(typeId: "occupied-primary-id", displayName: "Fake Occupant")
             #expect(throws: PluginError.self) {
                 try manager.validateDriverDescriptor(MockDriverPlugin.self, pluginId: "test")
             }
@@ -118,11 +118,11 @@ struct ValidateDriverDescriptorTests {
 
     @Test("rejects duplicate additional type ID already registered")
     @MainActor func rejectsDuplicateAdditionalTypeId() {
-        withRegisteredDriver(typeId: "occupied-test-db-type-2") { manager in
+        withRegisteredDriver(typeId: "occupied-additional-id") { manager in
             MockDriverPlugin.reset(
                 typeId: "unique-test-db-type-2",
                 displayName: "Test DB",
-                additionalIds: ["occupied-test-db-type-2"]
+                additionalIds: ["occupied-additional-id"]
             )
             #expect(throws: PluginError.self) {
                 try manager.validateDriverDescriptor(MockDriverPlugin.self, pluginId: "test")

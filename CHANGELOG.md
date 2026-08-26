@@ -46,6 +46,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Outside MCP tools always require approval and are audited per call, with the payload's size and hash but not its contents.
 
+## [0.68.1] - 2026-08-26
+
+### Changed
+
+- Query results stop fetching at the row limit on MySQL, PostgreSQL, SQLite, MSSQL, Oracle, Cassandra, Redis, DynamoDB, BigQuery, Snowflake, Trino and ClickHouse. (#2427)
+- ClickHouse reads a capped result in one request instead of a separate `LIMIT 0` round trip for the columns.
+- Structure editor undo granularity set by the operation instead of run loop timing.
+
+### Fixed
+
+- Row limit ignored for a parenthesised `SELECT`, a `TABLE` statement or a `VALUES` list. (#2427)
+- Cancelling an export or a schema compare left the database still sending rows on MySQL, PostgreSQL, MSSQL, Oracle, Cassandra and Trino.
+- An aborted PostgreSQL read charged its leftover rows to the next query on that connection.
+- Syntax error when sorting a query result whose SQL ends in `LIMIT`.
+- The user's own `LIMIT` dropped when sorting replaced an existing `ORDER BY`.
+- Fetch All sending the previous run's parameters after a query that had none.
+- A SQLite `UPDATE` or `DELETE` alone in a query tab reporting success instead of the rows affected.
+- Stall on switching between two loaded table tabs, growing with the rows they hold. (#2424)
+- Scroll position lost when switching away from a table tab and back. (#2424)
+- A table statistics command on every switch between two table tabs. (#2424)
+- Another table's size and row count in Table Info when its statistics arrive late. (#2424)
+- Active editor tab barely distinguishable from the inactive ones, worst in light appearance. (#2428)
+- No selected editor tab at all in a background window on macOS 14 and 15. (#2428)
+- Editor tab strip ignoring Increase Contrast and Reduce Transparency. (#2428)
+- Crash when a file changes in a linked SQL folder. (#2432)
+- Crash when a file changes in a linked connection folder, and on quit with one configured.
+- iOS: crash the first time the system reports memory pressure.
+
 ## [0.68.0] - 2026-08-25
 
 ### Added
@@ -3410,7 +3438,8 @@ TablePro is a native macOS database client built with SwiftUI and AppKit, design
     - Custom SQL query templates
     - Performance optimized for large datasets
 
-[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.68.0...HEAD
+[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.68.1...HEAD
+[0.68.1]: https://github.com/TableProApp/TablePro/compare/v0.68.0...v0.68.1
 [0.68.0]: https://github.com/TableProApp/TablePro/compare/v0.67.1...v0.68.0
 [0.67.1]: https://github.com/TableProApp/TablePro/compare/v0.67.0...v0.67.1
 [0.67.0]: https://github.com/TableProApp/TablePro/compare/v0.66.0...v0.67.0

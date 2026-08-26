@@ -246,6 +246,9 @@ final class MainContentCoordinator {
 
     @ObservationIgnored var displayFormatsCache: [UUID: DisplayFormatsCacheEntry] = [:]
     @ObservationIgnored var displayOrderCache: [UUID: DisplayOrderCacheEntry] = [:]
+    @ObservationIgnored var displayStateCache: [UUID: DisplayStateCacheEntry] = [:]
+    @ObservationIgnored var tableMetadataCache: [UUID: TableMetadataCacheEntry] = [:]
+    @ObservationIgnored var displayStateClock = 0
 
     @ObservationIgnored let schemaColumns = SchemaColumnStore()
     @ObservationIgnored var columnScopeRequeryTask: Task<Void, Never>?
@@ -886,6 +889,8 @@ final class MainContentCoordinator {
         createTableDrafts.removeAll()
         displayFormatsCache.removeAll()
         displayOrderCache.removeAll()
+        displayStateCache.removeAll()
+        tableMetadataCache.removeAll()
         schemaColumns.removeAll()
         columnScopeRequeryTask?.cancel()
 
@@ -1509,12 +1514,6 @@ final class MainContentCoordinator {
         return result
     }
 
-    // MARK: - SQL Helpers
-
-    static func stripTrailingOrderBy(from sql: String) -> String {
-        QuerySqlParser.stripTrailingOrderBy(from: sql)
-    }
-
     // MARK: - SQL Parsing
 
     func extractTableName(from sql: String) -> String? {
@@ -1543,14 +1542,17 @@ final class MainContentCoordinator {
             let capturedColumns = tableRows.columns
             confirmDiscardChangesIfNeeded(action: .sort) { [weak self] confirmed in
                 guard let self, confirmed else { return }
-                let strippedQuery = Self.stripTrailingOrderBy(from: baseQuery)
                 let orderClause = capturedSort.columns.compactMap { sortCol -> String? in
                     guard sortCol.columnIndex >= 0, sortCol.columnIndex < capturedColumns.count else { return nil }
                     let columnName = capturedColumns[sortCol.columnIndex]
                     let direction = sortCol.direction == .ascending ? "ASC" : "DESC"
                     return "\(self.queryBuilder.quoteIdentifier(columnName)) \(direction)"
                 }.joined(separator: ", ")
-                let orderQuery = orderClause.isEmpty ? strippedQuery : "\(strippedQuery) ORDER BY \(orderClause)"
+                let orderQuery = QuerySqlParser.applyingOrderBy(
+                    orderClause,
+                    to: baseQuery,
+                    lexicalDialect: self.sqlDialect
+                )
                 guard self.tabManager.mutate(tabId: tabId, { tab in
                     tab.sortState = capturedSort
                     tab.hasUserInteraction = true

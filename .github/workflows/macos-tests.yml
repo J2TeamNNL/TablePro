@@ -29,10 +29,21 @@ on:
   workflow_dispatch:
   workflow_call:
 
-# Only one run per PR/branch at a time; new pushes cancel pending older ones.
+# One run per PR/branch at a time. On a pull request a new push cancels the run in flight, because
+# only the newest commit's verdict is wanted and the older one is about to be replaced anyway.
+#
+# A push to main is different: its run is the only verdict that commit will ever get, and cancelling
+# it leaves main untested. That is not hypothetical. Of the last 30 main runs of this workflow, 13
+# were cancelled by the next merge, and the merges are frequent enough that whole days passed with
+# no conclusive result on main at all.
+#
+# Queueing them does not pile up. With cancel-in-progress false GitHub still replaces the *pending*
+# run in the group: "any existing pending job or workflow in the same concurrency group will be
+# canceled and the new queued job or workflow will take its place." So a burst of merges holds at
+# most one running plus one queued, and the one that ends up queued is the newest.
 concurrency:
   group: macos-tests-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # A downgrade or an exact match is always allowed for a called workflow; only asking for more than
 # the caller holds fails at run creation. Declaring read here therefore cannot break build.yml's
@@ -291,17 +302,27 @@ jobs:
       - name: Run unit tests
         run: |
           set -o pipefail
+          # To a file on its own line, not through a process substitution. `< <(...)` discards the
+          # producer's exit status, so the script refusing an entry that would skip nothing printed
+          # its diagnostic, exited 1, and the step carried on to run the whole suite unskipped and
+          # report success. The refusal the comment above promises never once failed a job.
+          SKIP_FILE="${RUNNER_TEMP:-.}/quarantine-skip-args.txt"
+          scripts/ci/quarantine-args.sh .github/macos-test-quarantine.txt TableProTests "$XCTESTRUN" "$TEST_DESTINATION" > "$SKIP_FILE"
           # A read loop, not mapfile: the macOS runner's /bin/bash is 3.2, which has neither
           # mapfile nor readarray, and a `run:` block gets that bash.
           SKIP_ARGS=()
           while IFS= read -r arg; do
+            # A blank line would become a literal empty argument, and xcodebuild reads that as a
+            # build action and refuses the whole run. An empty array expands to nothing and is
+            # fine; one empty string is not.
+            [ -n "$arg" ] || continue
             SKIP_ARGS+=("$arg")
-          done < <(scripts/ci/quarantine-args.sh .github/macos-test-quarantine.txt TableProTests "$XCTESTRUN" "$TEST_DESTINATION")
+          done < "$SKIP_FILE"
           xcodebuild test-without-building \
             -xctestrun "$XCTESTRUN" \
             -destination "$TEST_DESTINATION" \
             -only-testing:TableProTests \
-            "${SKIP_ARGS[@]}" \
+            ${SKIP_ARGS[@]+"${SKIP_ARGS[@]}"} \
             -parallel-testing-enabled NO \
             -resultBundlePath TestResults.xcresult \
             | xcbeautify --renderer github-actions
@@ -369,17 +390,22 @@ jobs:
           SHARD_COUNT: ${{ matrix.of }}
         run: |
           set -o pipefail
+          # To a file on its own line, so a failure of the lister fails the step. A process
+          # substitution discards its exit status, which reads here as "the shard selected nothing".
+          ONLY_FILE="${RUNNER_TEMP:-.}/shard-only-args.txt"
+          scripts/ci/list-tests.sh \
+            --xctestrun "$XCTESTRUN" \
+            --target TableProUITests \
+            --quarantine .github/macos-ui-test-quarantine.txt \
+            --shard "$SHARD/$SHARD_COUNT" > "$ONLY_FILE"
           # A read loop, not mapfile: the macOS runner's /bin/bash is 3.2, which has neither.
           ONLY_ARGS=()
           while IFS= read -r arg; do
+            # The count check below cannot see an empty argument: one blank line makes the count 1
+            # and xcodebuild then reads that empty argument as a build action.
+            [ -n "$arg" ] || continue
             ONLY_ARGS+=("$arg")
-          done < <(
-            scripts/ci/list-tests.sh \
-              --xctestrun "$XCTESTRUN" \
-              --target TableProUITests \
-              --quarantine .github/macos-ui-test-quarantine.txt \
-              --shard "$SHARD/$SHARD_COUNT"
-          )
+          done < "$ONLY_FILE"
           [ "${#ONLY_ARGS[@]}" -gt 0 ] || { echo "::error::shard $SHARD selected no cases"; exit 1; }
           echo "shard $SHARD of $SHARD_COUNT runs ${#ONLY_ARGS[@]} cases"
           xcodebuild test-without-building \
