@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Size All Columns to Fit slowing down with the square of the column count.
+- Column-resize cursor over the leading edge of the data grid header, where there is no divider to drag.
 - A data grid shortcut bound to `Cmd+G` silently taking the key from Find Next, with no conflict warning.
 - Stale cells after fitting, hiding or reordering a data grid column on a result narrower than the window. (#2446)
 - A shortcut recorded with only Option or Shift beeping with no reason given, against docs that said it would work.
@@ -49,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Editor tab strip tests reporting four appearances while running plain Aqua and Dark Aqua twice.
 - Icon cut off the entry at the top of a scrolled connections strip. (#2452)
 - Connections strip not scrolling to the entry you switch to.
-- Grid cells left at the old column positions until the next click, after a resize, an auto-fit, a reorder, hiding a column, or a row-number width change. (#2449)
+- Grid cells left at the old column positions until the next click, after a resize, an auto-fit, a reorder, hiding a column, or a row-number width change. (#2449, #2446)
 - The row-number column draggable out of first place, which walked it to the far right on the next refresh.
 - A reordered column snapping back on the next refresh in the Structure tab and in query results.
 - Double-clicking a cell editing the wrong row, after deleting one of several rows added in the same session.
