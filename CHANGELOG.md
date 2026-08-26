@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A data grid shortcut bound to `Cmd+G` silently taking the key from Find Next, with no conflict warning.
 - Stale cells after fitting, hiding or reordering a data grid column on a result narrower than the window. (#2446)
+- A shortcut recorded with only Option or Shift beeping with no reason given, against docs that said it would work.
 - A rebound shortcut silently killing Quit, Minimize, Hide, Settings, Show Toolbar or Enter Full Screen.
 - `Ctrl+Cmd+J` accepted in Settings > Keyboard while the SQL editor kept it for Jump to Definition.
 - Autocomplete keeping an earlier prefix's ordering after the typed word becomes an exact match. (#2444)
