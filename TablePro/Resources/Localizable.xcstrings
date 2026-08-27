@@ -111783,7 +111783,7 @@
     "Run Maintenance" : {
 
     },
-    "Run one destructive statement (DROP, TRUNCATE, ALTER ... DROP). The user approves it before it runs: through your elicitation prompt when your client supports elicitation, otherwise through TablePro's own confirmation dialog on the user's Mac. Needs tools:write and a connection the user left writable for external clients." : {
+    "Run one destructive statement (DROP, TRUNCATE, ALTER...DROP). The user approves it before it runs: through your elicitation prompt when your client supports elicitation, otherwise through TablePro's own confirmation dialog on the user's Mac. Needs tools:write and a connection the user left writable for external clients." : {
 
     },
     "Run one statement. Reads need tools:read; anything that writes needs tools:write and is subject to the connection's Safe Mode, which asks the user to approve it. DROP and TRUNCATE go through confirm_destructive_operation instead. Statements that read or write files, or run server-side code, are refused. Send one statement per call." : {
