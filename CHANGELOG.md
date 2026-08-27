@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Connections strip absent from a window whose selected connection has nothing to show, when Show Connections is off.
+- Switch Connection disabled, in the Database menu and the toolbar, while the selected connection is disconnected.
+- One floating switcher panel per connection in a window, each centred on the same point.
 - Leaked socket on every SSH Test Connection against a server reached without jump hosts.
 - Leaked listening port, socket and session each time an SSH tunnel died from sleep or a dropped network.
 - Selection highlight missing from part of a long selection after scrolling back up to it.
