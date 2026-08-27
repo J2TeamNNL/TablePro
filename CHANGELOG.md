@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.69.0] - 2026-08-27
+
 ### Added
 
 - Restore Previous Values in the Edit menu, taking back a save that already committed. Starter license. (#2107)
@@ -88,12 +90,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Connections strip not scrolling to the entry you switch to.
 - Background connections stuck on the session preparation screen after connecting. (#2545)
 - Blank sidebar, grid and inspector on a connection opened into a window that was already on screen.
-- Connections strip hidden, with Switch Connection and the Show Next and Previous Connection items disabled, whenever the connection on screen was not connected.
-- Rows, tabs and an enabled toolbar left on screen over a connection that had stopped responding, while the connections strip showed it as failed.
+- Connections strip hidden, and its switch commands disabled, whenever the connection on screen was disconnected.
+- Rows, tabs and an enabled toolbar over a connection the connections strip already showed as failed.
 - Reconnect doing nothing on a connection whose automatic reconnect had already given up.
 - Health monitor waking every 30 seconds for the life of the app after it stopped trying to reconnect.
 - Choosing a connection from the connection list re-fronting its window without switching to it.
-- Grid cells left at the old column positions until the next click, after a resize, an auto-fit, a reorder, hiding a column, or a row-number width change. (#2449, #2446)
+- Grid cells left at their old column positions until the next click, after any column geometry change. (#2449, #2446)
 - The row-number column draggable out of first place, which walked it to the far right on the next refresh.
 - A time entered into a date cell discarded when the stored value carried no time.
 - A timestamp with an offset showing one day in the grid and another in its date picker.
@@ -105,17 +107,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Snowflake `DATE`, `TIME` and `TIMESTAMP_*` cells showing the raw epoch number the server sends. (#2454)
 - Snowflake `BINARY` cells showing the hex of their hex, which the hex editor then wrote back.
 - A date cell the app cannot read opening a picker set to today, which overwrote the value on OK. (#2454)
-- Snowflake reporting no rows changed for an `UPDATE` or `MERGE`, and a `SELECT`'s own result for a column named `number of rows`.
-- Two saved Snowflake connections to one account sharing a session, so switching database in one window moved the other.
+- Snowflake reporting no rows changed for an `UPDATE` or `MERGE`, and misreading a `number of rows` column.
+- A database switch moving both windows, when two saved Snowflake connections to one account shared a session.
 - Stop on a Snowflake query cancelling every other query on the same connection, including a sidebar refresh or a save.
-- `tablepro://` deep links ignored on iPhone and iPad, from the widget, a Live Activity and the Open Connection shortcut.
-- iOS PostgreSQL and Redshift reading another schema's table of the same name in the columns, indexes and foreign keys it showed.
-- iOS SQL Server reading and writing the login's default schema rather than the one the toolbar showed, Truncate Table and Drop Table included.
+- `tablepro://` deep links ignored on iPhone and iPad, from the widget, a Live Activity or a shortcut.
+- iOS PostgreSQL and Redshift reading another schema's table of the same name for columns, indexes and foreign keys.
+- iOS SQL Server using the login's default schema rather than the one the toolbar showed, Truncate and Drop included.
 - Computed SQL Server columns offered as editable and written into the `INSERT`, on both Mac and iOS.
 - A CSV export writing a real NULL and the text `NULL` identically.
 - A JSON export emitting a leading-zero string such as `01234` as an unquoted number, which no JSON parser accepts.
 - A SQL `INSERT` export quoting identifiers for ANSI on every engine, which MySQL and MariaDB reject outright.
-- Insert Row on iPhone and iPad writing every column, so a `NOT NULL` column with a default could not be inserted. (#2543)
+- Insert Row on iPhone and iPad writing every column, blocking a `NOT NULL` column with a default. (#2543)
 - NULL offered on a `NOT NULL` column in Insert Row and the row editor on iPhone and iPad.
 - Insert Row on iPhone and iPad writing a generated column, which every engine refuses.
 - Both halves of a composite integer primary key left out of the insert on iPhone and iPad.
@@ -130,7 +132,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - SQL injection through a Snowflake schema or routine name containing a backslash.
-- Safe Mode on iPhone and iPad no longer lets a write run when it follows a comment or a CTE; an unrecognized statement is treated as a write.
+- Safe Mode on iPhone and iPad letting a write run when it followed a comment or a CTE.
 
 ## [0.68.1] - 2026-08-26
 
@@ -3524,7 +3526,8 @@ TablePro is a native macOS database client built with SwiftUI and AppKit, design
     - Custom SQL query templates
     - Performance optimized for large datasets
 
-[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.68.1...HEAD
+[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.69.0...HEAD
+[0.69.0]: https://github.com/TableProApp/TablePro/compare/v0.68.1...v0.69.0
 [0.68.1]: https://github.com/TableProApp/TablePro/compare/v0.68.0...v0.68.1
 [0.68.0]: https://github.com/TableProApp/TablePro/compare/v0.67.1...v0.68.0
 [0.67.1]: https://github.com/TableProApp/TablePro/compare/v0.67.0...v0.67.1
