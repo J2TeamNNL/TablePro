@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Generated and Expression fields on the column row, with a stored or virtual choice. (#2478)
 - `check_constraints` and `generation_expression` in the MCP `describe_table` response.
 - Remote File pane for SQLite, opening a read-only copy of a database that lives on an SSH server. (#2474)
+- Rename on a table's right-click menu, editing the row's label in place. (#2482)
+- Rename Database and Rename Schema on the sidebar's container rows, where the engine has them. (#2482)
 
 ### Changed
 

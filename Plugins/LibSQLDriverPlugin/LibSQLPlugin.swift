@@ -14,6 +14,9 @@ final class LibSQLPlugin: NSObject, TableProPlugin, DriverPlugin {
     static let capabilities: [PluginCapability] = [.databaseDriver]
 
     static let databaseTypeId = "libSQL"
+
+    static let supportsRenameTable = true
+    static let supportsRenameView = false
     static let additionalDatabaseTypeIds = ["Turso"]
     static let databaseDisplayName = "libSQL / Turso"
     static let iconName = "libsql-icon"

@@ -635,6 +635,22 @@ final class MongoDBPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         )
     }
 
+    /// `renameCollection` runs against `admin` and nowhere else, and it names both sides with the
+    /// full `database.collection`, so the two halves cannot be quoted or qualified the way a SQL
+    /// driver's would be. Atlas grants only the same-database form, which is all this offers.
+    func renameTable(name: String, schema: String?, to newName: String, objectType: String) async throws {
+        guard let conn = mongoConnection else {
+            throw MongoDBPluginError.notConnected
+        }
+        let database = schema ?? currentDb
+        let from = "\"\(escapeJsonString("\(database).\(name)"))\""
+        let to = "\"\(escapeJsonString("\(database).\(newName)"))\""
+        _ = try await conn.runCommand(
+            "{\"renameCollection\": \(from), \"to\": \(to)}",
+            database: "admin"
+        )
+    }
+
     func dropDatabase(name: String) async throws {
         guard let conn = mongoConnection else {
             throw MongoDBPluginError.notConnected
