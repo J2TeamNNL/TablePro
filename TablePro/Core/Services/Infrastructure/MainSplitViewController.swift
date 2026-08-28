@@ -57,9 +57,8 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     var phase: ConnectionWindowPhase {
         get { workspaces.selected?.phase ?? .idle }
         set {
-            guard let selected = workspaces.selected, selected.phase != newValue else { return }
-            selected.phase = newValue
-            applyPhase()
+            guard let connectionId = workspaces.selectedConnectionId else { return }
+            transition(to: newValue, for: connectionId)
         }
     }
 
@@ -105,8 +104,6 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     var tabStripObservationIsArmed = false
     var tabStripObservedManager: ObjectIdentifier?
 
-    private var chromeState: ChromeState = .unapplied
-
     // MARK: - Panel Layout State
 
     /// One name for the window's split view, because one `NSSplitView` can only carry one.
@@ -124,6 +121,20 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     private var splitAutosaveName: NSSplitView.AutosaveName {
         "com.TablePro.mainSplit"
     }
+
+    // MARK: - Switcher Surfaces
+
+    /// The window's one floating panel and the presenter that drives it, owned here rather than by
+    /// a connection's coordinator.
+    ///
+    /// `QuickSwitcherPanelController` positions itself from its parent window's frame alone, so
+    /// two of them over one window centre on the same point with neither able to see or dismiss
+    /// the other. One per coordinator meant exactly that, once a window began hosting several
+    /// connections. It also put Switch Connection, which lists every saved connection and needs
+    /// nothing from the session, behind the session that had just gone away.
+    let quickSwitcherPanel = QuickSwitcherPanelController()
+
+    lazy var switcherPresenter = ToolbarSwitcherPresenter(panelController: quickSwitcherPanel)
 
     // MARK: - Toolbar
 
@@ -153,6 +164,10 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         super.init(nibName: nil, bundle: nil)
 
         if let workspace {
+            /// It arrives with its panes already built, by the controller it is leaving. Every
+            /// closure in them calls back into that one, so they have to be produced again here
+            /// even though nothing about the connection has changed.
+            workspace.panes.invalidate()
             workspaces.insert(workspace)
         } else {
             adoptWorkspace(payload: payload, autoConnect: autoConnect)
@@ -199,14 +214,19 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
             }
         }
 
-        let phase: ConnectionWindowPhase
-        if resolvedSession?.driver != nil {
-            phase = .connected
-        } else if resolvedSession != nil {
-            phase = .connecting
-        } else {
-            phase = .idle
-        }
+        /// Resolved through the same machine every later status event uses. Reading the driver
+        /// directly adopted a connection as connected over a handle a reconnect had already given up
+        /// on, and a monitor that has given up sends no further event to correct it.
+        let phase = ConnectionWindowPhaseMachine.onSessionChanged(
+            phase: resolvedSession == nil ? .idle : .connecting,
+            session: ConnectionSessionSnapshot(
+                exists: resolvedSession != nil,
+                hasDriver: resolvedSession?.driver != nil,
+                disconnectInfo: DatabaseManager.shared.disconnectReason(for: connectionId),
+                liveness: resolvedSession?.liveness ?? .live
+            ),
+            ownsAttempt: false
+        )
 
         let workspace = ConnectionWorkspace(
             connectionId: connectionId,
@@ -250,6 +270,10 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         navigationSidebar.railController.host = self
         navigationSidebar.railController.onLayoutChange = { [weak self] _ in
             self?.navigationSidebar.applyRailWidth(animated: false)
+            /// The row size is a setting, so the rail's own width changes under a sidebar already
+            /// narrowed to it. Reapplying the clamp is what moves both thicknesses onto the new
+            /// allowance rather than clipping the rail against the old one.
+            self?.reapplySidebarClampIfNarrowed()
             self?.recomputeWindowMinSize()
         }
         sidebarSplitItem = NSSplitViewItem(sidebarWithViewController: navigationSidebar)
@@ -297,7 +321,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         }
 
         restoreUserPaneLayout()
-        refreshSelectedPanes()
+        syncSelectedPanes()
         showSelectedPanes()
         applyPaneChrome()
     }
@@ -391,6 +415,11 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
             /// while the panel is open would see the form save and nothing change.
             workspace.rightPanelState?.refreshConnectionRecord(record)
             workspace.sessionState?.toolbarState.update(from: record)
+            /// The one repaint the render key cannot decide, so the only one that skips it. Deleting
+            /// a connection whose session is still open purges the per-connection registries the
+            /// panes hold without changing the record they were built from, and a pane left holding
+            /// the purged `SharedSidebarState` stops seeing what the rest of the window does to the
+            /// newly registered one.
             refreshPanes(of: workspace)
             if workspaces.selectedConnectionId == connectionId { repaint = true }
         }
@@ -408,6 +437,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         guard let window = view.window else { return }
         let owner = toolbarOwner ?? MainWindowToolbar()
         toolbarOwner = owner
+        owner.subject.windowController = self
         /// Pointed at the connection before the toolbar reaches the window, so the delegate builds
         /// its items with a subject already in place and nothing has to be rebuilt afterwards.
         owner.repoint(to: coordinator)
@@ -443,24 +473,30 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
             exists: session != nil,
             hasDriver: session?.driver != nil,
             disconnectInfo: DatabaseManager.shared.disconnectReason(for: sid),
-            wasDisconnectedByUser: DatabaseManager.shared.wasDisconnectedByUser(sid)
+            wasDisconnectedByUser: DatabaseManager.shared.wasDisconnectedByUser(sid),
+            liveness: session?.liveness ?? .live
         )
         let nextPhase = ConnectionWindowPhaseMachine.onSessionChanged(
             phase: workspace.phase,
             session: snapshot,
             ownsAttempt: workspace.attemptToken != nil
         )
+        /// Nothing here paints. The panes are built from the phase, so they can only be built once
+        /// the phase is final, and `transition(to:for:)` is where that happens. Adopting a session
+        /// bumps the workspace's session revision, which is what tells the sync that a session
+        /// whose phase did not move still has to be redrawn.
+        ///
+        /// `isContentViewEquivalent` answers whether the views would draw the same, not whether it
+        /// is the same session: it excludes the driver, the effective connection and the cached
+        /// password on purpose. A connection arriving back at `.connected` therefore adopts whatever
+        /// the manager now holds even when the two would draw alike, or a tunnel recovery would
+        /// leave the workspace holding the driver it just disconnected, and that driver's cached
+        /// credentials, until something else replaced the session.
         if nextPhase == .connected, let session {
-            let alreadyRendered = workspace.session?.isContentViewEquivalent(to: session) ?? false
-            if alreadyRendered, workspace.phase == nextPhase { return }
-            adoptSession(session, into: workspace)
-            /// Repainted whether or not this workspace is the one on screen, and whether or not it
-            /// already had this phase. The equality guard can never hold on the first `.connecting`
-            /// to `.connected` step, and `transition(to:for:)` repaints only the selected workspace,
-            /// so a connection that finished connecting while the user was looking at another one
-            /// kept whatever placeholder it last rendered: its `MainContentView` never mounted, its
-            /// `commandActions` stayed nil, and every command aimed at it did nothing.
-            refreshPanes(of: workspace)
+            let drawsTheSame = workspace.session?.isContentViewEquivalent(to: session) ?? false
+            if !drawsTheSame || workspace.phase != nextPhase {
+                adoptSession(session, into: workspace)
+            }
         } else if workspace.phase == .connected, nextPhase != .connected, !snapshot.exists {
             releaseSession(workspace)
         }
@@ -521,8 +557,9 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         }
         /// The panes are rebuilt rather than dropped: the workspace stays in the registry so it can
         /// render its own phase, and its content view is now the not-connected pane. Leaving the
-        /// old tree mounted would keep the torn-down coordinator alive through it.
-        refreshPanes(of: workspace)
+        /// old tree mounted would keep the torn-down coordinator alive through it. Clearing the
+        /// session above bumped the revision, so the sync at the end of the transition this is part
+        /// of is what does it, after the phase has stopped saying `.connected`.
         if isShowing(workspace) {
             navigationSidebar.objectBrowser.updateSidebarState(nil)
         }
@@ -558,6 +595,11 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
             toolbarOwner?.repoint(to: nil)
         }
 
+        /// A workspace can reach the window already built and never repainted: `adoptWorkspace`
+        /// hands one over with a live session and no phase change to follow, so its panes still
+        /// held the empty view they were constructed with and the connection opened blank. This
+        /// costs a key comparison when nothing has moved, which is what the record is for.
+        syncSelectedPanes()
         showSelectedPanes()
         applyDetailMinimumThicknessForSelection()
         applyPaneChrome()
@@ -569,7 +611,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     }
 
     private func applyPhase() {
-        refreshSelectedPanes()
+        syncSelectedPanes()
         applyPaneChrome()
         applyWindowTitle()
         SessionRecoveryTracker.sync()
@@ -594,18 +636,24 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         phase = next
     }
 
-    /// A window now hosts several connections, so a phase change has to name the one it belongs
-    /// to. Repainting is skipped for a workspace the user is not looking at: its state is still
-    /// correct, it simply is not the thing on screen.
+    /// A window now hosts several connections, so a phase change has to name the one it belongs to,
+    /// and this is the only place a phase is written outside a window close.
+    ///
+    /// The sync runs whether or not this workspace is the one on screen, because a background one
+    /// owns persistent panes that would otherwise keep the phase they last rendered (#2545), and
+    /// whether or not the phase moved, because a session can be replaced under an unchanged one as
+    /// a database switch does. Only the window's own chrome is gated on the phase moving.
     internal func transition(to next: ConnectionWindowPhase, for connectionId: UUID) {
         guard let workspace = workspaces.workspace(for: connectionId) else { return }
-        guard workspace.phase != next else { return }
+        let phaseChanged = workspace.phase != next
         workspace.phase = next
+        syncPanes(of: workspace)
+        guard phaseChanged else { return }
         if workspaces.selectedConnectionId == connectionId {
-            applyPhase()
-        } else {
-            SessionRecoveryTracker.sync()
+            applyPaneChrome()
+            applyWindowTitle()
         }
+        SessionRecoveryTracker.sync()
     }
 
     internal func refreshFromActiveSessions() {
@@ -616,6 +664,12 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     /// `.closing` on its own. Leaving a background one behind would let it keep a restore
     /// intent for a window that no longer exists.
     internal func markWindowClosing() {
+        /// The panel is an independent floating `NSPanel` with no parent-child relationship to the
+        /// window, so nothing takes it down with the window that opened it. The toolbar used to do
+        /// this on the way past, through the connection whose coordinator owned the presenter; the
+        /// window owns it now and can present it with no coordinator at all, which is exactly the
+        /// case that left a chooser on screen over a window that had gone.
+        switcherPresenter.dismiss()
         for workspace in workspaces.workspaces {
             workspace.phase = ConnectionWindowPhaseMachine.onWindowClosing(phase: workspace.phase)
         }
@@ -633,12 +687,24 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     // MARK: - Pane Construction
 
     /// Rebuilds one connection's panes into its own hosting controllers, whether or not it is the
-    /// one on screen. This is the only place a pane's content is produced.
+    /// one on screen, and records what they were built from. This is the only place all four panes
+    /// are produced, and the only writer of the record; `rebuildInspectorPane()` refines the
+    /// inspector alone once `commandActions` exists, which is a redraw of the same key rather than
+    /// a different one.
+    ///
+    /// Reaching a pane that is not on screen is safe and deliberate. A `rootView` write on an
+    /// unparented hosting controller is deferred, and the last value written is what mounts when
+    /// the pane is put back. That is enough while only the data changes. Assistant mode changes
+    /// which view is mounted, so a background connection that left browse for assistant (or the
+    /// reverse) has to reconcile now: `layoutUnparented()` forces that pass. Do not call it on a
+    /// pane that is on screen; `teardown()` still needs the same force because those panes are
+    /// never parented again.
     internal func refreshPanes(of workspace: ConnectionWorkspace) {
         workspace.panes.sidebar.rootView = AnyView(buildSidebarView(for: workspace))
         workspace.panes.detail.rootView = AnyView(buildDetailView(for: workspace))
         workspace.panes.inspector.rootView = AnyView(buildInspectorView(for: workspace))
         refreshTabStripPane(of: workspace)
+        workspace.panes.markRendered(workspace.paneRenderKey)
         guard isShowing(workspace) else {
             workspace.panes.layoutUnparented()
             return
@@ -646,9 +712,17 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         bindSidebarChrome(to: workspace)
     }
 
-    private func refreshSelectedPanes() {
+    /// The single entry point for a repaint, so a caller never has to know whether one is due. The
+    /// record is what makes it free when nothing has moved, which is what lets a workspace switch
+    /// ask for one without paying for the rebuild the panes exist to avoid.
+    private func syncPanes(of workspace: ConnectionWorkspace) {
+        guard workspace.paneRenderKey != workspace.panes.renderedKey else { return }
+        refreshPanes(of: workspace)
+    }
+
+    private func syncSelectedPanes() {
         guard let selected = workspaces.selected else { return }
-        refreshPanes(of: selected)
+        syncPanes(of: selected)
     }
 
     /// Puts the selected connection's already-built panes on screen. This is the whole cost of a
@@ -680,20 +754,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     }
 
     var currentPane: ConnectionWindowPane {
-        workspaces.selected.map(Self.pane) ?? .unavailable(.notConnected)
-    }
-
-    /// The pane a given workspace shows, which is not always the one on screen. Each workspace owns
-    /// its panes now, so a background connection that fails or reconnects repaints itself instead of
-    /// waiting for the user to switch to it and the switch to rebuild everything.
-    private static func pane(of workspace: ConnectionWorkspace) -> ConnectionWindowPane {
-        ConnectionWindowPaneResolver.pane(
-            phase: workspace.phase,
-            hasConnection: workspace.connection != nil,
-            hasRenderableSession: workspace.session != nil
-                && workspace.rightPanelState != nil
-                && workspace.sessionState != nil
-        )
+        workspaces.selected?.resolvedPane ?? .unavailable(.notConnected)
     }
 
     /// The one answer to "does this window have a database to talk to". `releaseSession` keeps the
@@ -733,7 +794,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
 
     @ViewBuilder
     private func buildObjectBrowserView(for workspace: ConnectionWorkspace) -> some View {
-        if Self.pane(of: workspace) == .content,
+        if workspace.resolvedPane == .content,
            let session = workspace.session,
            let sessionState = workspace.sessionState {
             SidebarView(
@@ -754,7 +815,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
 
     @ViewBuilder
     private func buildDetailView(for workspace: ConnectionWorkspace) -> some View {
-        let pane = Self.pane(of: workspace)
+        let pane = workspace.resolvedPane
         if workspace.contentMode == .assistant, pane == .content {
             buildAgentConversationView(for: workspace)
         } else if ConnectionWindowPaneResolver.showsPreConnectAssistant(
@@ -771,7 +832,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     /// a prompt typed before the connection was ready stays visible and recoverable.
     @ViewBuilder
     private func buildBrowseDetailView(for workspace: ConnectionWorkspace) -> some View {
-        let pane = Self.pane(of: workspace)
+        let pane = workspace.resolvedPane
         if pane == .connecting, let pendingConnection = workspace.connection {
             ConnectingStateView(connection: pendingConnection) { [weak self] in
                 self?.cancelConnectionAttempt(for: workspace.connectionId)
@@ -935,25 +996,32 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         AppSettingsManager.shared.general.showWorkspaceRail.toggle()
     }
 
-    /// A rail listing one workspace is a switcher with nothing to switch to, so it earns
-    /// its width only once a second connection or database is open.
-    static func shouldShowWorkspaceRail(settingEnabled: Bool, workspaceCount: Int) -> Bool {
-        settingEnabled && workspaceCount > 1
-    }
+    /// How many workspaces the strip has to offer, which is an app-wide count: every window's
+    /// strip lists every workspace, and picking one raises the window that hosts it. Held rather
+    /// than re-read, so the pane changing can re-decide the strip without `applyPaneChrome`
+    /// reaching for a global of its own.
+    private var hostedWorkspaceCount = 0
 
+    /// The strip's own visibility, and then everything standing on it. Called directly whenever
+    /// the app-wide count moves, which happens without this window's phase moving at all: a
+    /// sibling connection opening or closing is enough.
     func applyRailVisibility(workspaceCount: Int) {
+        hostedWorkspaceCount = workspaceCount
         setWorkspaceRailVisible(
-            Self.shouldShowWorkspaceRail(
-                settingEnabled: AppSettingsManager.shared.general.showWorkspaceRail,
-                workspaceCount: workspaceCount
+            ConnectionWindowPaneResolver.showsWorkspaceRail(
+                preferenceEnabled: AppSettingsManager.shared.general.showWorkspaceRail,
+                workspaceCount: workspaceCount,
+                pane: currentPane,
+                isClosing: phase == .closing
             )
         )
+        applyChromeStandingOnRail()
     }
 
     /// The sidebar item's minimum is a required constraint, so it lands on the very next layout
     /// pass. Applying it outside the rail's own animation snapped the pane its full width wide in
     /// one frame while the rail slid in behind it, so the object browser lurched and settled back.
-    func setWorkspaceRailVisible(_ visible: Bool) {
+    private func setWorkspaceRailVisible(_ visible: Bool) {
         guard let navigationSidebar, navigationSidebar.isRailVisible != visible else { return }
         navigationSidebar.setRailVisible(visible, animated: view.window != nil) { [weak self] in
             self?.recomputeWindowMinSize()
@@ -966,8 +1034,25 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
 
     // MARK: - Sidebar
 
+    /// Whether the object browser is off screen, which is the question every caller is really
+    /// asking: the toolbar's segment, the Show/Hide Sidebar title and the reveal actions. A sidebar
+    /// narrowed to the workspace rail is an open split item with no object browser in it, so the
+    /// item's own flag is not the answer on its own.
     var isSidebarCollapsed: Bool {
-        sidebarSplitItem?.isCollapsed ?? true
+        guard sidebarChromeMode.showsObjectBrowser else { return true }
+        return sidebarSplitItem?.isCollapsed ?? true
+    }
+
+    var isSidebarUserCollapsible: Bool {
+        sidebarSplitItem?.canCollapse ?? false
+    }
+
+    var sidebarThicknessRange: (min: CGFloat, max: CGFloat) {
+        (sidebarSplitItem?.minimumThickness ?? 0, sidebarSplitItem?.maximumThickness ?? 0)
+    }
+
+    var railAllowance: CGFloat {
+        navigationSidebar?.railAllowance ?? 0
     }
 
     /// Every collapse route reaches AppKit's own `toggleSidebar(_:)`: the View menu sends the
@@ -980,6 +1065,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     }
 
     func focusSidebarSearch() {
+        guard sidebarChromeMode.showsObjectBrowser else { return }
         if sidebarSplitItem?.isCollapsed == true {
             sidebarSplitItem?.animator().isCollapsed = false
         }
@@ -987,6 +1073,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     }
 
     func presentDatabaseFilter() {
+        guard sidebarChromeMode.showsObjectBrowser else { return }
         guard let connectionId = currentSession?.connection.id else { return }
         if sidebarSplitItem?.isCollapsed == true {
             sidebarSplitItem?.isCollapsed = false
@@ -1004,7 +1091,11 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         state.databaseFilterSelected = []
     }
 
+    /// Refused while the sidebar is narrowed to the workspace rail. The item is open, so the
+    /// collapse branch below would read it as showing and collapse it, taking the rail and every
+    /// route to the window's other connections with it.
     func setSidebarTab(_ tab: SidebarTab) {
+        guard sidebarChromeMode.showsObjectBrowser else { return }
         guard let connectionId = currentSession?.connection.id else { return }
         let sidebarState = SharedSidebarState.forConnection(connectionId)
 
@@ -1106,8 +1197,12 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         )
     }
 
+    /// Inert while the sidebar is clamped to the rail. Seven other call sites reach
+    /// `recomputeWindowMinSize`, and any of them writing the object browser's minimum back over the
+    /// clamp would leave a minimum above the maximum.
     private func applySidebarMinimumThickness() {
         guard let sidebarSplitItem else { return }
+        guard appliedSidebarMode ?? .revealed == .revealed else { return }
         let resolved = Self.resolveSidebarMinimumThickness(
             railAllowance: navigationSidebar?.railAllowance ?? 0
         )
@@ -1152,12 +1247,6 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
 
     // MARK: - Pane Chrome
 
-    private enum ChromeState {
-        case unapplied
-        case hidden
-        case revealed
-    }
-
     private var userPaneLayout: ChromePaneLayout?
 
     /// Where the user had the inspector before assistant mode opened the artifact pane over it.
@@ -1165,16 +1254,35 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     /// is idempotent and can run on every chrome pass.
     private var browseInspectorCollapsed: Bool?
 
+    /// What this window's sidebar is currently showing, and `nil` before the first application.
+    /// The resolver decides the mode; this records which one has been put on screen.
+    private var appliedSidebarMode: SidebarChromeMode?
+
+    internal var sidebarChromeMode: SidebarChromeMode {
+        ConnectionWindowPaneResolver.sidebarChromeMode(
+            for: currentPane,
+            hasRail: navigationSidebar?.isRailVisible ?? false,
+            mode: contentMode
+        )
+    }
+
     /// A split item's collapse state is written into the autosave record, which is how the
     /// inspector remembers being hidden. Collapsing the sidebar for a phase the user did not
     /// choose would persist that as their layout and lose the width they set, so autosaving is
-    /// switched off for the whole span the chrome is hidden and switched back on to restore it.
+    /// switched off for the whole span the chrome is not revealed and switched back on to restore
+    /// it. The same is true of a clamp, which writes its narrow width into the record the way a
+    /// collapse writes the collapsed flag.
+    ///
+    /// The strip is settled first, because everything after it reads whether one is on screen: the
+    /// sidebar clamps to a width the strip's own constraints report, and that width is zero until
+    /// the strip is laid out. Running the pane through it is also what brings a hidden strip back
+    /// when a connection goes down, which is the window's last route to the ones it still hosts.
     func applyPaneChrome() {
-        if ConnectionWindowPaneResolver.hidesChrome(for: currentPane, mode: contentMode) {
-            hideWindowChrome()
-        } else {
-            revealWindowChrome()
-        }
+        applyRailVisibility(workspaceCount: hostedWorkspaceCount)
+    }
+
+    private func applyChromeStandingOnRail() {
+        applySidebarChromeMode(sidebarChromeMode)
         applyArtifactPaneVisibility()
         applyTabStripVisibility()
         toolbarOwner?.syncContentModeSelection()
@@ -1190,16 +1298,16 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     /// pane therefore opens only when the frame already fits it, and stays collapsible either way.
     ///
     /// Autosaving is off for the whole span assistant mode is active, for the same reason
-    /// `hideWindowChrome()` switches it off: a collapse state the user did not choose must not be
-    /// written over the layout they did choose. The state captured on the way in is what gives the
-    /// inspector back, because assigning an autosave name to a split view that has already laid out
-    /// restores nothing.
+    /// `applySidebarChromeMode` switches it off on the way out of `.revealed`: a collapse state the
+    /// user did not choose must not be written over the layout they did choose. The state captured
+    /// on the way in is what gives the inspector back, because assigning an autosave name to a
+    /// split view that has already laid out restores nothing.
     ///
     /// One window can host a browse connection and an assistant connection at once, and they share
     /// one inspector item, so this reconciles from the selected workspace's mode on every chrome
     /// pass instead of acting once at the switch.
     private func applyArtifactPaneVisibility() {
-        guard chromeState == .revealed else { return }
+        guard appliedSidebarMode == .revealed else { return }
         guard contentMode == .assistant else {
             guard let restored = browseInspectorCollapsed else { return }
             browseInspectorCollapsed = nil
@@ -1229,29 +1337,73 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         return window.frame.width >= required
     }
 
-    private func hideWindowChrome() {
-        guard chromeState != .hidden else { return }
-        chromeState = .hidden
+    private func applySidebarChromeMode(_ mode: SidebarChromeMode) {
+        guard appliedSidebarMode != mode else { return }
+        let previous = appliedSidebarMode
+        appliedSidebarMode = mode
 
-        resignFirstResponderInsideChrome()
-        splitView.autosaveName = nil
-        userPaneLayout = ChromePaneLayout(
-            isSidebarCollapsed: sidebarSplitItem.isCollapsed,
-            isInspectorCollapsed: inspectorSplitItem.isCollapsed
-        )
-        sidebarSplitItem.isCollapsed = true
+        guard mode != .revealed else {
+            revealWindowChrome()
+            return
+        }
+
+        /// Captured on the way out of `revealed` and never again, because the geometry a
+        /// `railOnly` to `hidden` step would see is the clamp, not the width the user chose.
+        if previous == nil || previous == .revealed {
+            resignFirstResponderInsideChrome()
+            splitView.autosaveName = nil
+            userPaneLayout = ChromePaneLayout(
+                isSidebarCollapsed: sidebarSplitItem.isCollapsed,
+                isInspectorCollapsed: inspectorSplitItem.isCollapsed
+            )
+        }
+
         inspectorSplitItem.isCollapsed = true
+        switch mode {
+        case .railOnly:
+            sidebarSplitItem.isCollapsed = false
+            clampSidebarToRail()
+        case .hidden:
+            releaseSidebarClamp()
+            sidebarSplitItem.isCollapsed = true
+        case .revealed:
+            break
+        }
         view.window?.recalculateKeyViewLoop()
     }
 
-    /// Autosaving is off while the chrome is hidden, so the record still holds what the user had.
-    /// AppKit will not re-apply it though: assigning an autosave name to a split view that has
+    /// Narrowed rather than collapsed, so the rail stays on screen while the object browser it
+    /// shares a split item with goes. Measured: clamping and later releasing returns the item to
+    /// the width the user set, but a `setPosition` while the clamp holds discards it, which is why
+    /// nothing else may write the sidebar's thickness for the span.
+    private func clampSidebarToRail() {
+        let allowance = navigationSidebar?.railAllowance ?? 0
+        sidebarSplitItem.minimumThickness = allowance
+        sidebarSplitItem.maximumThickness = allowance
+        /// A clamp is not a lock. AppKit still collapses a collapsible item on a divider
+        /// double-click or a drag to the edge, which no menu or toolbar validation sees, and the
+        /// mode is already applied so nothing would open it again.
+        sidebarSplitItem.canCollapse = false
+    }
+
+    internal func reapplySidebarClampIfNarrowed() {
+        guard appliedSidebarMode == .railOnly else { return }
+        clampSidebarToRail()
+    }
+
+    private func releaseSidebarClamp() {
+        sidebarSplitItem.canCollapse = true
+        sidebarSplitItem.maximumThickness = Self.sidebarMaxThickness
+        applySidebarMinimumThickness()
+    }
+
+    /// Autosaving is off while the chrome is not revealed, so the record still holds what the user
+    /// had. AppKit will not re-apply it though: assigning an autosave name to a split view that has
     /// already laid out restores nothing. The state captured on the way in is therefore what gives
     /// the panes back. Forcing the sidebar open here instead reopened a sidebar the user had
     /// deliberately hidden, every time a connection dropped and came back.
     private func revealWindowChrome() {
-        guard chromeState != .revealed else { return }
-        chromeState = .revealed
+        releaseSidebarClamp()
 
         /// Only a reveal that follows a hide has something to put back. A first reveal is a window
         /// opening on a live connection, where the panes are already where the user's autosaved

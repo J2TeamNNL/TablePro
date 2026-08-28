@@ -142,7 +142,15 @@ internal class UITestCase: XCTestCase {
     /// under the outline rather than stopping at the first. Together they cost seconds per
     /// iteration once the window holds a loaded grid, so the timeout expires against the query
     /// instead of against the app, and the failure reads as a launch that never finished.
-    internal func waitForSampleDatabaseWindow(in app: XCUIApplication, timeout: TimeInterval = 30) -> Bool {
+    /// The timeout is contention headroom, not a guess at how long opening takes. Three UI shards
+    /// share a runner with the unit job and both arch builds, and the tests that miss the window
+    /// are different on every run: this release's tag build lost `testTheBannerCanBeDismissed`,
+    /// `testSwitchConnectionOpensWithTheToolbarHidden` and
+    /// `testToggleFoldRunsWithTheCursorInsideAStatement`, and earlier runs lost an unrelated set.
+    /// A suite that reports a launch failure because a sibling shard had the CPU is measuring the
+    /// runner. Locally the wait settles in about two seconds, so the extra ceiling costs nothing
+    /// on a machine that is not starved.
+    internal func waitForSampleDatabaseWindow(in app: XCUIApplication, timeout: TimeInterval = 90) -> Bool {
         let firstObject = app.children(matching: .window).firstMatch
             .descendants(matching: .outline).firstMatch
             .descendants(matching: .staticText).firstMatch

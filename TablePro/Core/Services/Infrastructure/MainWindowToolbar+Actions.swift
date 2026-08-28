@@ -7,8 +7,11 @@ import AppKit
 import Combine
 
 extension MainWindowToolbar {
+    /// Straight to the window, because the switcher is the window's. Every other item here needs
+    /// the connection on screen; this one is the way off it, so it cannot be reached through that
+    /// connection's coordinator, which a disconnect nils.
     @objc func performOpenConnectionSwitcher(_ sender: Any?) {
-        coordinator?.commandActions?.openConnectionSwitcher()
+        subject.windowController?.openConnectionSwitcher()
     }
 
     @objc func performOpenDatabaseSwitcher(_ sender: Any?) {
@@ -37,6 +40,10 @@ extension MainWindowToolbar {
 
     @objc func performAddRow(_ sender: Any?) {
         NSApp.sendAction(#selector(MainSplitViewController.addRow(_:)), to: nil, from: nil)
+    }
+
+    @objc func performRestorePreviousValues(_ sender: Any?) {
+        NSApp.sendAction(#selector(MainSplitViewController.restorePreviousValues(_:)), to: nil, from: nil)
     }
 
     @objc func performNewTab(_ sender: Any?) {

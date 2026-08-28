@@ -74,6 +74,8 @@ final class MSSQLPlugin: NSObject, TableProPlugin, DriverPlugin {
     static let capabilities: [PluginCapability] = [.databaseDriver]
 
     static let databaseTypeId = "SQL Server"
+
+    static let supportsRenameTable = true
     static let databaseDisplayName = "SQL Server"
     static let iconName = "mssql-icon"
     static let defaultPort = 1433
@@ -195,6 +197,9 @@ final class MSSQLPlugin: NSObject, TableProPlugin, DriverPlugin {
     static let supportsRoutines = true
     static let supportsDatabaseTriggerBrowse = true
     static let supportsTriggerEditing = true
+    static let supportsCheckConstraints = true
+    static let supportsCheckConstraintEditing = true
+    static let supportsGeneratedColumns = false
 
     func createDriver(config: DriverConnectionConfig) -> any PluginDatabaseDriver {
         MSSQLPluginDriver(config: config)
@@ -214,6 +219,11 @@ final class MSSQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     /// rejects explicit values for IDENTITY columns unless IDENTITY_INSERT is ON,
     /// and the value the user typed is server-allocated anyway.
     var identityColumnsByTable: [String: Set<String>] = [:]
+
+    /// Computed columns observed during a column fetch, keyed by table name. SQL Server rejects an
+    /// explicit value for one the same way it does for IDENTITY: "The column cannot be modified
+    /// because it is either a computed column or is the result of a UNION operator."
+    var computedColumnsByTable: [String: Set<String>] = [:]
     let identityCacheLock = NSLock()
 
     private static let logger = Logger(subsystem: "com.TablePro", category: "MSSQLPluginDriver")
@@ -492,6 +502,7 @@ final class MSSQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         var nonDefaultColumns: [String] = []
         var parameters: [PluginCellValue] = []
         let identityColumns = cachedIdentityColumns(for: table)
+        let computedColumns = cachedComputedColumns(for: table)
 
         for (index, value) in values.enumerated() {
             if value.asText == "__DEFAULT__" { continue }
@@ -501,6 +512,7 @@ final class MSSQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
             // an explicit value fail unless `SET IDENTITY_INSERT <table> ON` was issued,
             // so always omit them and let the server assign the next value.
             if identityColumns.contains(columnName) { continue }
+            if computedColumns.contains(columnName) { continue }
             nonDefaultColumns.append("[\(columnName.replacingOccurrences(of: "]", with: "]]"))]")
             parameters.append(value)
         }

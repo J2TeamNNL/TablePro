@@ -133,8 +133,9 @@ internal final class MainWindowToolbar: NSObject, NSToolbarDelegate {
         /// The switcher used to close itself here, because its popover lived inside a view keyed
         /// `.id(coordinator.connectionId)` and SwiftUI tore that identity down on a repoint. The
         /// presenter owns the surface now, so the dismissal has to be explicit or a workspace
-        /// switch would leave the chooser open over the connection it no longer belongs to.
-        subject.coordinator?.switcherPresenter.dismiss()
+        /// switch would leave the chooser open over the connection it no longer belongs to. It goes
+        /// through the window, because a repoint to no connection at all is one of the switches.
+        subject.windowController?.switcherPresenter.dismiss()
         /// The chip's chooser is SwiftUI-presented and dies with the view a repoint destroys, but
         /// its state does not, so it would spring open again on the way back to this connection.
         subject.coordinator?.presentedScopeSwitcher = nil
@@ -150,8 +151,9 @@ internal final class MainWindowToolbar: NSObject, NSToolbarDelegate {
     func invalidate() {
         /// Window close reaches here rather than through `repoint`, and the panel surface is an
         /// independent floating `NSPanel` with no parent-child relationship to the window, so
-        /// nothing else would take it down with the window that opened it.
-        subject.coordinator?.switcherPresenter.dismiss()
+        /// nothing else would take it down with the window that opened it. A window whose
+        /// connection was released has no coordinator to reach it through.
+        subject.windowController?.switcherPresenter.dismiss()
         pendingChangeObservationGeneration += 1
         sidebarGroup = nil
         contentModeGroup = nil
@@ -235,6 +237,7 @@ internal final class MainWindowToolbar: NSObject, NSToolbarDelegate {
     static let exportTables = NSToolbarItem.Identifier("com.TablePro.toolbar.export")
     static let importTables = NSToolbarItem.Identifier("com.TablePro.toolbar.import")
     static let refreshSaveGroup = NSToolbarItem.Identifier("com.TablePro.toolbar.refreshSaveGroup")
+    static let restorePreviousValues = NSToolbarItem.Identifier("com.TablePro.toolbar.restorePreviousValues")
     static let exportImportGroup = NSToolbarItem.Identifier("com.TablePro.toolbar.exportImportGroup")
     static let sidebarToggle = NSToolbarItem.Identifier("com.TablePro.toolbar.sidebarToggle")
     static let contentMode = NSToolbarItem.Identifier("com.TablePro.toolbar.contentMode")

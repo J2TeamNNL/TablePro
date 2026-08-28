@@ -21,7 +21,7 @@ struct DatabaseTreeMenuSpecTests {
 
     private func context(
         clicked: DatabaseTreeNode.Kind?,
-        selectedTables: Set<TableInfo> = [],
+        selectedTables: Set<DatabaseTreeTableRef> = [],
         selectedContainers: [DatabaseContainerRef] = [],
         isReadOnly: Bool = false,
         isFavorite: Bool = false,
@@ -30,7 +30,8 @@ struct DatabaseTreeMenuSpecTests {
         activeSchema: String? = "public",
         canReachOtherDatabases: Bool = true,
         canFilterDatabases: Bool = false,
-        hasDatabaseFilter: Bool = false
+        hasDatabaseFilter: Bool = false,
+        supportsRename: Bool = true
     ) -> DatabaseTreeMenuContext {
         DatabaseTreeMenuContext(
             clicked: clicked,
@@ -49,6 +50,15 @@ struct DatabaseTreeMenuSpecTests {
                 activeSchema: activeSchema,
                 supportsDropDatabase: true,
                 supportsDropSchema: true,
+                isReadOnly: isReadOnly
+            ),
+            renameEligibility: ObjectRenameEligibility.Context(
+                activeDatabase: activeDatabase,
+                activeSchema: activeSchema,
+                supportsRenameTable: supportsRename,
+                supportsRenameView: supportsRename,
+                supportsRenameDatabase: supportsRename,
+                supportsRenameSchema: supportsRename,
                 isReadOnly: isReadOnly
             ),
             containerEntityName: "Database",
@@ -196,7 +206,7 @@ struct DatabaseTreeMenuSpecTests {
     func clickedTableOutsideSelectionActsOnItself() {
         let clicked = tableRef("orders")
         let items = DatabaseTreeMenuSpec.items(
-            for: context(clicked: .table(clicked), selectedTables: [tableRef("users").table])
+            for: context(clicked: .table(clicked), selectedTables: [tableRef("users")])
         )
 
         #expect(commands(items).contains(.copyTableNames(["orders"])))
@@ -208,7 +218,7 @@ struct DatabaseTreeMenuSpecTests {
         let items = DatabaseTreeMenuSpec.items(
             for: context(
                 clicked: .table(clicked),
-                selectedTables: [clicked.table, tableRef("users").table]
+                selectedTables: [clicked, tableRef("users")]
             )
         )
 
@@ -221,8 +231,8 @@ struct DatabaseTreeMenuSpecTests {
         let items = DatabaseTreeMenuSpec.items(for: context(clicked: .table(clicked), isReadOnly: true))
         let issued = commands(items)
 
-        #expect(!issued.contains(.truncateTables(names: ["orders"], ref: clicked)))
-        #expect(!issued.contains(.dropTables(names: ["orders"], ref: clicked)))
+        #expect(!issued.contains(.truncateTables(targets: [clicked], ref: clicked)))
+        #expect(!issued.contains(.dropTables(targets: [clicked], ref: clicked)))
         #expect(!issued.contains(.createView))
         #expect(issued.contains(.copyTableNames(["orders"])))
     }
@@ -239,9 +249,102 @@ struct DatabaseTreeMenuSpecTests {
         )
         let issued = commands(DatabaseTreeMenuSpec.items(for: context(clicked: .table(elsewhere))))
 
-        #expect(issued.contains(.truncateTables(names: ["orders"], ref: elsewhere)))
-        #expect(issued.contains(.dropTables(names: ["orders"], ref: elsewhere)))
+        #expect(issued.contains(.truncateTables(targets: [elsewhere], ref: elsewhere)))
+        #expect(issued.contains(.dropTables(targets: [elsewhere], ref: elsewhere)))
         #expect(issued.contains(.exportTables(names: ["orders"], ref: elsewhere)))
+    }
+
+    /// One save runs against one database, so a queue must not gather rows from two of them. A
+    /// tree selection can span databases, and a right-click inside it used to stage the lot under
+    /// bare names, which the save then resolved against whatever the tab in front pointed at.
+    @Test("A table menu narrows a cross-database selection to the clicked row's own database")
+    func crossDatabaseSelectionNarrowsToTheClickedDatabase() {
+        let clicked = tableRef("orders")
+        let elsewhere = DatabaseTreeTableRef(
+            database: "reporting",
+            schema: "public",
+            table: TableInfo(name: "orders", type: .table, rowCount: nil, schema: "public")
+        )
+        let issued = commands(DatabaseTreeMenuSpec.items(
+            for: context(clicked: .table(clicked), selectedTables: [clicked, elsewhere])
+        ))
+
+        #expect(issued.contains(.dropTables(targets: [clicked], ref: clicked)))
+        #expect(!issued.contains(.dropTables(targets: [clicked, elsewhere], ref: clicked)))
+    }
+
+    @Test("A table row offers Rename where the engine can do it")
+    func tableOffersRename() {
+        let clicked = tableRef("orders")
+        let issued = commands(DatabaseTreeMenuSpec.items(for: context(clicked: .table(clicked))))
+
+        #expect(issued.contains(.beginRenameTable(ref: clicked, isRecentRow: false)))
+    }
+
+    /// No ellipsis, because it opens the row's own field rather than a sheet. Finder spells its
+    /// own inline rename the same way.
+    @Test("Rename carries no ellipsis")
+    func renameHasNoEllipsis() {
+        let clicked = tableRef("orders")
+        let items = DatabaseTreeMenuSpec.items(for: context(clicked: .table(clicked)))
+
+        #expect(titles(items).contains(String(localized: "Rename")))
+    }
+
+    /// Omitted rather than dimmed, which is what this menu already does for a Drop the engine
+    /// cannot perform.
+    @Test("An engine that cannot rename a table omits the item")
+    func engineWithoutRenameOmitsTheItem() {
+        let clicked = tableRef("orders")
+        let issued = commands(DatabaseTreeMenuSpec.items(
+            for: context(clicked: .table(clicked), supportsRename: false)
+        ))
+
+        #expect(!issued.contains(.beginRenameTable(ref: clicked, isRecentRow: false)))
+    }
+
+    @Test("Read-only safe mode hides Rename with the other writes")
+    func readOnlyOmitsRename() {
+        let clicked = tableRef("orders")
+        let issued = commands(DatabaseTreeMenuSpec.items(
+            for: context(clicked: .table(clicked), isReadOnly: true)
+        ))
+
+        #expect(!issued.contains(.beginRenameTable(ref: clicked, isRecentRow: false)))
+    }
+
+    /// A table drawn twice, once in its section and once under Recent, is one object with two
+    /// rows. The rename editor belongs on the row that was clicked; opening it on the section row
+    /// puts the field somewhere the user did not click, or nowhere while that section is collapsed.
+    @Test("Rename from a Recent row says so, so the editor lands on the clicked row")
+    func renameFromARecentRowCarriesThatRow() {
+        let clicked = tableRef("orders")
+        let issued = commands(DatabaseTreeMenuSpec.items(for: context(clicked: .recentTable(clicked))))
+
+        #expect(issued.contains(.beginRenameTable(ref: clicked, isRecentRow: true)))
+        #expect(!issued.contains(.beginRenameTable(ref: clicked, isRecentRow: false)))
+    }
+
+    /// Snowflake and Trino hang tables off schemas and draw no database rows, so their schemas
+    /// arrive as a hierarchical section. Both declare and implement a schema rename, and without
+    /// this the command has no row to be raised from.
+    @Test("A hierarchical schema row offers Rename")
+    func hierarchicalSchemaOffersRename() {
+        let issued = commands(DatabaseTreeMenuSpec.items(
+            for: context(clicked: .hierarchicalSchemaSection(schema: "reporting"))
+        ))
+        let expected = DatabaseContainerRef.schema(database: "app", schema: "reporting", isSystem: false)
+
+        #expect(issued.contains(.renameContainer(expected)))
+    }
+
+    @Test("A hierarchical schema row omits Rename where the engine has none")
+    func hierarchicalSchemaWithoutRenameOmitsIt() {
+        let issued = commands(DatabaseTreeMenuSpec.items(
+            for: context(clicked: .hierarchicalSchemaSection(schema: "reporting"), supportsRename: false)
+        ))
+
+        #expect(!issued.contains { if case .renameContainer = $0 { return true } else { return false } })
     }
 
     @Test("The favourite item names the action it will take")

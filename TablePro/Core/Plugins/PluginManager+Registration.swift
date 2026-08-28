@@ -503,6 +503,19 @@ extension PluginManager {
             .capabilities.supportsSSH ?? true
     }
 
+    /// Which connection field carries the local database file this type opens, or nil when it
+    /// reaches its database over the network.
+    func localFilePathField(for databaseType: DatabaseType) -> LocalFilePathField? {
+        PluginMetadataRegistry.shared.snapshot(for: databaseType)?
+            .capabilities.localFilePathField
+    }
+
+    /// Whether this type can point at a database file on an SSH server instead of a local one.
+    func supportsRemoteDatabaseFile(for databaseType: DatabaseType) -> Bool {
+        PluginMetadataRegistry.shared.snapshot(for: databaseType)?
+            .capabilities.supportsRemoteDatabaseFile ?? false
+    }
+
     func supportsSSL(for databaseType: DatabaseType) -> Bool {
         PluginMetadataRegistry.shared.snapshot(for: databaseType)?
             .capabilities.supportsSSL ?? true
@@ -531,6 +544,26 @@ extension PluginManager {
     func supportsDropSchema(for databaseType: DatabaseType) -> Bool {
         PluginMetadataRegistry.shared.snapshot(for: databaseType)?
             .capabilities.supportsDropSchema ?? false
+    }
+
+    func supportsRenameTable(for databaseType: DatabaseType) -> Bool {
+        PluginMetadataRegistry.shared.snapshot(for: databaseType)?
+            .capabilities.supportsRenameTable ?? false
+    }
+
+    func supportsRenameView(for databaseType: DatabaseType) -> Bool {
+        PluginMetadataRegistry.shared.snapshot(for: databaseType)?
+            .capabilities.supportsRenameView ?? false
+    }
+
+    func supportsRenameDatabase(for databaseType: DatabaseType) -> Bool {
+        PluginMetadataRegistry.shared.snapshot(for: databaseType)?
+            .capabilities.supportsRenameDatabase ?? false
+    }
+
+    func supportsRenameSchema(for databaseType: DatabaseType) -> Bool {
+        PluginMetadataRegistry.shared.snapshot(for: databaseType)?
+            .capabilities.supportsRenameSchema ?? false
     }
 
     func autoLimitStyle(for databaseType: DatabaseType) -> AutoLimitStyle {

@@ -83,11 +83,20 @@ final class PostgreSQLPlugin: NSObject, TableProPlugin, DriverPlugin {
     static let requiresReconnectForDatabaseSwitch = true
     static let parameterStyle: ParameterStyle = .dollar
     static let supportsDropDatabase = true
+    static let supportsRenameTable = true
+    static let supportsRenameDatabase = true
+    static let supportsRenameSchema = true
     static let supportsDropSchema = true
     static let supportsTriggers = true
     static let supportsRoutines = true
     static let supportsDatabaseTriggerBrowse = true
     static let supportsTriggerEditing = true
+    static let structureColumnFields: [StructureColumnField] =
+        [.name, .type, .nullable, .defaultValue, .generated, .generationExpression, .autoIncrement, .comment]
+
+    static let supportsCheckConstraints = true
+    static let supportsCheckConstraintEditing = true
+    static let supportsGeneratedColumns = true
 
     static let sqlDialect: SQLDialectDescriptor? = PostgreSQLDialect.descriptor
 

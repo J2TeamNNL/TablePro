@@ -10,7 +10,7 @@ import SwiftUI
 import TableProPluginKit
 
 @MainActor
-final class DatabaseTreeOutlineCoordinator: NSObject {
+final class DatabaseTreeOutlineCoordinator: NSObject, NSTextFieldDelegate {
     internal weak var outlineView: NSOutlineView?
     internal let service = DatabaseTreeMetadataService.shared
     private static let cellIdentifier = NSUserInterfaceItemIdentifier("DatabaseTreeCell")
@@ -27,8 +27,8 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
     private var isConnected = false
     internal var activeDatabase: String?
     internal var activeSchema: String?
-    private var pendingTruncates: Set<String> = []
-    private var pendingDeletes: Set<String> = []
+    private var pendingTruncates: Set<DatabaseTreeTableRef> = []
+    private var pendingDeletes: Set<DatabaseTreeTableRef> = []
     internal var showRecentTables = true
     private var rowSize: SidebarRowSize = .medium
 
@@ -38,11 +38,14 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
     /// Whether a routine row shows its signature depends on the other rows in its own section, so
     /// the label is decided where the section is built and looked up here when the row draws.
     internal var routineDisplayLabels: [String: String] = [:]
+
+    /// A rename in progress, held as identity only. See `DatabaseTreeOutlineCoordinator+Rename`.
+    internal var renameSession: DatabaseTreeRenameSession?
     private var cachedRowContext: DatabaseTreeRowContext?
     private var cachedRowActions: DatabaseTreeRowActions?
     private var lastSelection: Set<DatabaseTreeTableRef> = []
     private var lastSelectedNodeIds: [String] = []
-    private var publishedTables: Set<TableInfo> = []
+    private var publishedTables: Set<DatabaseTreeTableRef> = []
     private var publishedSelectionDatabase: String?
     private var isModelSelectionAdoptionPending = false
     private var openSelectionDepth = 0
@@ -239,6 +242,7 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
         outlineView.reloadData()
         applyDesiredExpansion()
         syncSelectionToModel()
+        restoreRenameAfterReload()
         isReloading = false
         beginObserving()
     }
@@ -368,9 +372,15 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
         publishedTables = selectedTables
         publishedSelectionDatabase = selectionDatabase
 
+        /// Matched on the object and scoped to the database on screen, in that order, rather than
+        /// on the whole reference. The model holds the row the user picked, database included, but
+        /// browsing elsewhere is meant to move the highlight onto that database's copy of the same
+        /// object; comparing references pins it to the database it was picked in and leaves the
+        /// tree with nothing selected the moment the browse cursor moves.
+        let selectedObjects = Set(selectedTables.map(\.table))
         var nodes: [DatabaseTreeNode] = []
         for node in nodeCache.values {
-            guard case .table(let ref) = node.kind, selectedTables.contains(ref.table) else { continue }
+            guard case .table(let ref) = node.kind, selectedObjects.contains(ref.table) else { continue }
             guard selectionDatabase == nil || ref.database == selectionDatabase else { continue }
             nodes.append(node)
         }
@@ -378,7 +388,7 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
         lastSelection = Set(DatabaseTreeSelection.tableRefs(of: nodes))
         /// Still pending while a selected table has no row in the database being browsed: the row is
         /// usually one that has not been built yet, and the next sync adopts it.
-        isModelSelectionAdoptionPending = Set(lastSelection.map(\.table)) != selectedTables
+        isModelSelectionAdoptionPending = Set(lastSelection.map(\.table)) != selectedObjects
     }
 
     private var modelSelectionDatabase: String? {
@@ -423,7 +433,7 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
     private func publishSelection() {
         guard let windowState else { return }
         let nodes = selectedNodes()
-        let tables = DatabaseTreeSelection.tableInfos(of: nodes)
+        let tables = Set(DatabaseTreeSelection.tableRefs(of: nodes))
         publishedTables = tables
         publishedSelectionDatabase = modelSelectionDatabase
         isModelSelectionAdoptionPending = false
@@ -638,6 +648,42 @@ extension DatabaseTreeOutlineCoordinator: NSOutlineViewDataSource {
 
     func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
         (item as? DatabaseTreeNode)?.isExpandable ?? false
+    }
+}
+
+extension DatabaseTreeOutlineCoordinator {
+    // MARK: - NSTextFieldDelegate
+
+    /// The rename editor's callbacks. They live here rather than in the rename extension because
+    /// they are `@objc` and an extension cannot supply them for the conformance.
+    internal func controlTextDidChange(_ obj: Notification) {
+        guard let field = obj.object as? NSTextField else { return }
+        renameSession?.pendingName = field.stringValue
+    }
+
+    /// The click-away path, which commits the way Finder and the Xcode navigator do.
+    internal func controlTextDidEndEditing(_ obj: Notification) {
+        guard renameSession != nil else { return }
+        endRename(commit: true)
+    }
+
+    internal func control(
+        _ control: NSControl,
+        textView: NSTextView,
+        doCommandBy selector: Selector
+    ) -> Bool {
+        if selector == #selector(NSResponder.insertNewline(_:)) {
+            endRename(commit: true)
+            return true
+        }
+        if selector == #selector(NSResponder.cancelOperation(_:)) {
+            /// `abortEditing` discards the edit without posting `controlTextDidEndEditing`, so the
+            /// cancel does not immediately arrive back as a commit.
+            (control as? NSTextField)?.abortEditing()
+            endRename(commit: false)
+            return true
+        }
+        return false
     }
 }
 

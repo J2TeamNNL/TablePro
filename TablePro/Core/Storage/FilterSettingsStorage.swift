@@ -255,6 +255,74 @@ final class FilterSettingsStorage {
         }
     }
 
+    /// Moves a table's saved filters onto its new name. A rename keeps the columns the filters
+    /// name, so the working set is still valid; leaving it behind would silently drop it.
+    func renameLastFilters(
+        from oldTableName: String,
+        to newTableName: String,
+        connectionId: UUID,
+        databaseName: String,
+        schemaName: String?
+    ) {
+        let oldKey = compositeKey(
+            tableName: oldTableName, connectionId: connectionId,
+            databaseName: databaseName, schemaName: schemaName
+        )
+        let newKey = compositeKey(
+            tableName: newTableName, connectionId: connectionId,
+            databaseName: databaseName, schemaName: schemaName
+        )
+        guard oldKey != newKey else { return }
+        if let cached = lastFiltersCache.removeValue(forKey: oldKey) {
+            lastFiltersCache[newKey] = cached
+        }
+        let source = fileURL(forKey: oldKey)
+        let destination = fileURL(forKey: newKey)
+        ioQueue.async {
+            guard FileManager.default.fileExists(atPath: source.path) else { return }
+            try? FileManager.default.removeItem(at: destination)
+            try? FileManager.default.moveItem(at: source, to: destination)
+        }
+    }
+
+    /// Moves every table's saved filters from one container to another, by rewriting the part of
+    /// each key that names the container. Keyed by prefix rather than by walking the table list,
+    /// because that list is loaded lazily and a table nobody opened this session still has a file.
+    func renameScope(
+        connectionId: UUID,
+        fromDatabase: String,
+        fromSchema: String?,
+        toDatabase: String,
+        toSchema: String?
+    ) {
+        let oldPrefix = TableScope.storagePrefix(
+            connectionId: connectionId, database: fromDatabase, schema: fromSchema
+        )
+        let newPrefix = TableScope.storagePrefix(
+            connectionId: connectionId, database: toDatabase, schema: toSchema
+        )
+        guard oldPrefix != newPrefix else { return }
+
+        for key in lastFiltersCache.keys where key.hasPrefix(oldPrefix) {
+            let moved = newPrefix + key.dropFirst(oldPrefix.count)
+            lastFiltersCache[moved] = lastFiltersCache.removeValue(forKey: key)
+        }
+
+        let directory = filterStateDirectory
+        ioQueue.async {
+            let fm = FileManager.default
+            guard let files = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            else { return }
+            for file in files where file.pathExtension == "json" {
+                let key = file.deletingPathExtension().lastPathComponent
+                guard key.hasPrefix(oldPrefix) else { continue }
+                let moved = directory.appendingPathComponent("\(newPrefix + key.dropFirst(oldPrefix.count)).json")
+                try? fm.removeItem(at: moved)
+                try? fm.moveItem(at: file, to: moved)
+            }
+        }
+    }
+
     func waitForPendingDiskWrites() {
         ioQueue.sync {}
     }

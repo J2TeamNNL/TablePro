@@ -3,6 +3,275 @@
     <channel>
         <title>TablePro</title>
         <item>
+            <title>0.69.0</title>
+            <pubDate>Thu, 27 Aug 2026 16:03:07 +0000</pubDate>
+            <sparkle:version>125</sparkle:version>
+            <sparkle:shortVersionString>0.69.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description><![CDATA[<h3>Added</h3>
+<ul>
+<li>Restore Previous Values in the Edit menu, taking back a save that already committed. Starter license. (#2107)</li>
+<li>Data Rewind settings in Settings > Data & Results, with an off switch and Clear Saved Changes.</li>
+<li>Restore Previous Values in the toolbar's Table Actions group.</li>
+<li>Rebindable Find shortcut in Settings > Keyboard, for giving `Cmd+F` to the filter bar instead.</li>
+<li>Constraints tab in the structure editor, listing check constraints with their expression. (#2478)</li>
+<li>Generated and Expression fields on the column row, with a stored or virtual choice. (#2478)</li>
+<li>`check_constraints` and `generation_expression` in the MCP `describe_table` response.</li>
+<li>Remote File pane for SQLite, opening a read-only copy of a database that lives on an SSH server. (#2474)</li>
+<li>Rename on a table's right-click menu, editing the row's label in place. (#2482)</li>
+<li>Rename Database and Rename Schema on the sidebar's container rows, where the engine has them. (#2482)</li>
+<li>Turso in the New Connection picker as an engine of its own, offered before the libSQL plugin installs.</li>
+</ul>
+<h3>Changed</h3>
+<ul>
+<li>Editor tabs drawn as a segmented tab picker rather than in Liquid Glass, on every macOS version. (#2439)</li>
+<li>A connection opens full screen on iPhone and iPad, with its four sections in a sidebar on iPad. (#2544)</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>Column charset and collation lost when reordering a MySQL column by dragging its row.</li>
+<li>Free-text cells for foreign key actions and index types in Create Table, where Structure shows a menu.</li>
+<li>A generated column comparing equal to a plain one in Compare & Sync.</li>
+<li>Empty Indexes, Foreign Keys or DDL tab, with no error, when the structure read fails.</li>
+<li>Connections strip absent from a window whose selected connection has nothing to show, when Show Connections is off.</li>
+<li>Switch Connection disabled, in the Database menu and the toolbar, while the selected connection is disconnected.</li>
+<li>One floating switcher panel per connection in a window, each centred on the same point.</li>
+<li>Leaked socket on every SSH Test Connection against a server reached without jump hosts.</li>
+<li>Leaked listening port, socket and session each time an SSH tunnel died from sleep or a dropped network.</li>
+<li>Selection highlight missing from part of a long selection after scrolling back up to it.</li>
+<li>Editor not scrolling to follow a selection extended past the edge of the viewport.</li>
+<li>Find highlight and the run band covering only the first line of a match that spans several lines.</li>
+<li>Nothing selected when double-clicking `=`, `<`, `>` or any other SQL operator.</li>
+<li>Shift+Arrow extending the wrong end of a selection made by dragging.</li>
+<li>Selection starting a few characters away from the press point on a quick drag.</li>
+<li>A pause before the pointer responds when pressing inside selected text.</li>
+<li>Shift+double-click and Shift+triple-click doing nothing.</li>
+<li>Drag-select scrolling faster on a mouse than on a trackpad, and stalling mid-drag.</li>
+<li>Statement selection with `Option+Shift+Down` leaving the highlight behind.</li>
+<li>No arrow-key movement or Shift+Arrow selection in the JSON, DDL and SQL preview editors.</li>
+<li>Explain with AI acting on the previous selection after a right-click somewhere else.</li>
+<li>Selection painted in the accent colour in a window that is not the active one.</li>
+<li>Selection bounds reported to VoiceOver covering only the first line, and no announcement when the selection moved.</li>
+<li>An abandoned editor tab drag reordering the strip anyway, and keeping that order across relaunch.</li>
+<li>An editor tab reorder stopping partway when the pointer strayed a couple of points off the track.</li>
+<li>Text dropped on the editor tab strip reported as accepted and then discarded.</li>
+<li>An editor tab left faded and the strip's separators hidden after a cancelled drag.</li>
+<li>Size All Columns to Fit slowing down with the square of the column count.</li>
+<li>Column-resize cursor over the leading edge of the data grid header, where there is no divider to drag.</li>
+<li>A data grid shortcut bound to `Cmd+G` silently taking the key from Find Next, with no conflict warning.</li>
+<li>Stale cells after fitting, hiding or reordering a data grid column on a result narrower than the window. (#2446)</li>
+<li>A shortcut recorded with only Option or Shift beeping with no reason given, against docs that said it would work.</li>
+<li>A rebound shortcut silently killing Quit, Minimize, Hide, Settings, Show Toolbar or Enter Full Screen.</li>
+<li>`Ctrl+Cmd+J` accepted in Settings > Keyboard while the SQL editor kept it for Jump to Definition.</li>
+<li>Autocomplete keeping an earlier prefix's ordering after the typed word becomes an exact match. (#2444)</li>
+<li>Whole MySQL and MariaDB result set fetched before a capped query returned its first rows. (#2427)</li>
+<li>KILL sent to a different server when a MySQL or MariaDB connection's host is spelled `localhost`.</li>
+<li>Stop on a MySQL or MariaDB connection freezing the app for up to five seconds when the server stopped answering.</li>
+<li>A MySQL or MariaDB read re-run after a dropped connection, advancing a sequence or taking a lock twice.</li>
+<li>Save reporting the number of statements it ran as the number of rows it changed.</li>
+<li>An edit or a delete on a table with no primary key changing every identical row. (#2107)</li>
+<li>The same statements committed twice when Cmd+S is pressed again during a slow save.</li>
+<li>Switching tabs during a save clearing the edits of the tab switched to, and re-running its query.</li>
+<li>Placeholder SQL with no values in the Safe Mode confirmation and the authorization prompt.</li>
+<li>Deleting one row of a pasted batch dropping the other rows, or saving them with another row's values.</li>
+<li>Undoing the deletion of a new row putting its values in the wrong columns.</li>
+<li>Undoing a cell edit reverting the wrong row while a column filter is active.</li>
+<li>A save that deletes a row and reuses its unique value failing on the constraint.</li>
+<li>"Ignore foreign key checks" doing nothing on SQLite, libSQL and Cloudflare D1.</li>
+<li>A save reported as failed on an engine without transactions after some statements had been written.</li>
+<li>Keep Open for a preview tab, by double-clicking it in the tab strip or from its contextual menu. (#2436)</li>
+<li>Kafka driver plugin: topics in the grid, consumer group lag, and KafkaQL for seeking and producing. (#2419)</li>
+<li>Active editor tab indistinguishable from the inactive ones in light appearance. (#2439)</li>
+<li>Active editor tab drawn darker than its track on macOS 27, and inverting when the window lost focus.</li>
+<li>Editor tab selection changing with the desktop picture behind the window.</li>
+<li>Editor tab strip tests reporting four appearances while running plain Aqua and Dark Aqua twice.</li>
+<li>Icon cut off the entry at the top of a scrolled connections strip. (#2452)</li>
+<li>Connections strip not scrolling to the entry you switch to.</li>
+<li>Background connections stuck on the session preparation screen after connecting. (#2545)</li>
+<li>Blank sidebar, grid and inspector on a connection opened into a window that was already on screen.</li>
+<li>Connections strip hidden, and its switch commands disabled, whenever the connection on screen was disconnected.</li>
+<li>Rows, tabs and an enabled toolbar over a connection the connections strip already showed as failed.</li>
+<li>Reconnect doing nothing on a connection whose automatic reconnect had already given up.</li>
+<li>Health monitor waking every 30 seconds for the life of the app after it stopped trying to reconnect.</li>
+<li>Choosing a connection from the connection list re-fronting its window without switching to it.</li>
+<li>Grid cells left at their old column positions until the next click, after any column geometry change. (#2449, #2446)</li>
+<li>The row-number column draggable out of first place, which walked it to the far right on the next refresh.</li>
+<li>A time entered into a date cell discarded when the stored value carried no time.</li>
+<li>A timestamp with an offset showing one day in the grid and another in its date picker.</li>
+<li>Opening a date picker and confirming without changing anything rewriting the cell.</li>
+<li>Cell overlay appearance test failing at random when its window was released before the appearance changed.</li>
+<li>A reordered column snapping back on the next refresh in the Structure tab and in query results.</li>
+<li>Double-clicking a cell editing the wrong row, after deleting one of several rows added in the same session.</li>
+<li>VoiceOver reading a cell's value under a different row's number after such a delete.</li>
+<li>Snowflake `DATE`, `TIME` and `TIMESTAMP_*` cells showing the raw epoch number the server sends. (#2454)</li>
+<li>Snowflake `BINARY` cells showing the hex of their hex, which the hex editor then wrote back.</li>
+<li>A date cell the app cannot read opening a picker set to today, which overwrote the value on OK. (#2454)</li>
+<li>Snowflake reporting no rows changed for an `UPDATE` or `MERGE`, and misreading a `number of rows` column.</li>
+<li>A database switch moving both windows, when two saved Snowflake connections to one account shared a session.</li>
+<li>Stop on a Snowflake query cancelling every other query on the same connection, including a sidebar refresh or a save.</li>
+<li>`tablepro://` deep links ignored on iPhone and iPad, from the widget, a Live Activity or a shortcut.</li>
+<li>iOS PostgreSQL and Redshift reading another schema's table of the same name for columns, indexes and foreign keys.</li>
+<li>iOS SQL Server using the login's default schema rather than the one the toolbar showed, Truncate and Drop included.</li>
+<li>Computed SQL Server columns offered as editable and written into the `INSERT`, on both Mac and iOS.</li>
+<li>A CSV export writing a real NULL and the text `NULL` identically.</li>
+<li>A JSON export emitting a leading-zero string such as `01234` as an unquoted number, which no JSON parser accepts.</li>
+<li>A SQL `INSERT` export quoting identifiers for ANSI on every engine, which MySQL and MariaDB reject outright.</li>
+<li>Insert Row on iPhone and iPad writing every column, blocking a `NOT NULL` column with a default. (#2543)</li>
+<li>NULL offered on a `NOT NULL` column in Insert Row and the row editor on iPhone and iPad.</li>
+<li>Insert Row on iPhone and iPad writing a generated column, which every engine refuses.</li>
+<li>Both halves of a composite integer primary key left out of the insert on iPhone and iPad.</li>
+<li>Typed values discarded when Insert Row opened before the column list had loaded on iPhone and iPad.</li>
+<li>Insert Row offered on Redis connections on iPhone and iPad, where it can only fail.</li>
+<li>Missing search field in a connection's Tables tab on iPhone and iPad. (#2544)</li>
+<li>A search from one connection or table still filtering another's list on iPhone and iPad.</li>
+<li>A staged drop or truncate running against the database in front at Save time rather than the one it was staged in.</li>
+<li>Unqualified `DROP TABLE` for every object on Oracle, Dameng, Trino, Snowflake and BigQuery, whatever its kind.</li>
+<li>Dropping a table closing the tab on a same-named table in another schema or database.</li>
+</ul>
+<h3>Security</h3>
+<ul>
+<li>SQL injection through a Snowflake schema or routine name containing a backslash.</li>
+<li>Safe Mode on iPhone and iPad letting a write run when it followed a comment or a CTE.</li>
+</ul>
+]]></description>
+            <enclosure url="https://github.com/TableProApp/TablePro/releases/download/v0.69.0/TablePro-0.69.0-arm64.zip" length="25835052" type="application/octet-stream" sparkle:edSignature="I4jeUNcZHYxdEoy2r27A8c6d/j5sxBy/tYM4XlsCNyVMsV3Z2boA9FvxLbK73BG9cOordsXhBoWjSgiY+nvmDg=="/>
+        </item>
+        <item>
+            <title>0.69.0</title>
+            <pubDate>Thu, 27 Aug 2026 16:03:08 +0000</pubDate>
+            <sparkle:version>125</sparkle:version>
+            <sparkle:shortVersionString>0.69.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<h3>Added</h3>
+<ul>
+<li>Restore Previous Values in the Edit menu, taking back a save that already committed. Starter license. (#2107)</li>
+<li>Data Rewind settings in Settings > Data & Results, with an off switch and Clear Saved Changes.</li>
+<li>Restore Previous Values in the toolbar's Table Actions group.</li>
+<li>Rebindable Find shortcut in Settings > Keyboard, for giving `Cmd+F` to the filter bar instead.</li>
+<li>Constraints tab in the structure editor, listing check constraints with their expression. (#2478)</li>
+<li>Generated and Expression fields on the column row, with a stored or virtual choice. (#2478)</li>
+<li>`check_constraints` and `generation_expression` in the MCP `describe_table` response.</li>
+<li>Remote File pane for SQLite, opening a read-only copy of a database that lives on an SSH server. (#2474)</li>
+<li>Rename on a table's right-click menu, editing the row's label in place. (#2482)</li>
+<li>Rename Database and Rename Schema on the sidebar's container rows, where the engine has them. (#2482)</li>
+<li>Turso in the New Connection picker as an engine of its own, offered before the libSQL plugin installs.</li>
+</ul>
+<h3>Changed</h3>
+<ul>
+<li>Editor tabs drawn as a segmented tab picker rather than in Liquid Glass, on every macOS version. (#2439)</li>
+<li>A connection opens full screen on iPhone and iPad, with its four sections in a sidebar on iPad. (#2544)</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>Column charset and collation lost when reordering a MySQL column by dragging its row.</li>
+<li>Free-text cells for foreign key actions and index types in Create Table, where Structure shows a menu.</li>
+<li>A generated column comparing equal to a plain one in Compare & Sync.</li>
+<li>Empty Indexes, Foreign Keys or DDL tab, with no error, when the structure read fails.</li>
+<li>Connections strip absent from a window whose selected connection has nothing to show, when Show Connections is off.</li>
+<li>Switch Connection disabled, in the Database menu and the toolbar, while the selected connection is disconnected.</li>
+<li>One floating switcher panel per connection in a window, each centred on the same point.</li>
+<li>Leaked socket on every SSH Test Connection against a server reached without jump hosts.</li>
+<li>Leaked listening port, socket and session each time an SSH tunnel died from sleep or a dropped network.</li>
+<li>Selection highlight missing from part of a long selection after scrolling back up to it.</li>
+<li>Editor not scrolling to follow a selection extended past the edge of the viewport.</li>
+<li>Find highlight and the run band covering only the first line of a match that spans several lines.</li>
+<li>Nothing selected when double-clicking `=`, `<`, `>` or any other SQL operator.</li>
+<li>Shift+Arrow extending the wrong end of a selection made by dragging.</li>
+<li>Selection starting a few characters away from the press point on a quick drag.</li>
+<li>A pause before the pointer responds when pressing inside selected text.</li>
+<li>Shift+double-click and Shift+triple-click doing nothing.</li>
+<li>Drag-select scrolling faster on a mouse than on a trackpad, and stalling mid-drag.</li>
+<li>Statement selection with `Option+Shift+Down` leaving the highlight behind.</li>
+<li>No arrow-key movement or Shift+Arrow selection in the JSON, DDL and SQL preview editors.</li>
+<li>Explain with AI acting on the previous selection after a right-click somewhere else.</li>
+<li>Selection painted in the accent colour in a window that is not the active one.</li>
+<li>Selection bounds reported to VoiceOver covering only the first line, and no announcement when the selection moved.</li>
+<li>An abandoned editor tab drag reordering the strip anyway, and keeping that order across relaunch.</li>
+<li>An editor tab reorder stopping partway when the pointer strayed a couple of points off the track.</li>
+<li>Text dropped on the editor tab strip reported as accepted and then discarded.</li>
+<li>An editor tab left faded and the strip's separators hidden after a cancelled drag.</li>
+<li>Size All Columns to Fit slowing down with the square of the column count.</li>
+<li>Column-resize cursor over the leading edge of the data grid header, where there is no divider to drag.</li>
+<li>A data grid shortcut bound to `Cmd+G` silently taking the key from Find Next, with no conflict warning.</li>
+<li>Stale cells after fitting, hiding or reordering a data grid column on a result narrower than the window. (#2446)</li>
+<li>A shortcut recorded with only Option or Shift beeping with no reason given, against docs that said it would work.</li>
+<li>A rebound shortcut silently killing Quit, Minimize, Hide, Settings, Show Toolbar or Enter Full Screen.</li>
+<li>`Ctrl+Cmd+J` accepted in Settings > Keyboard while the SQL editor kept it for Jump to Definition.</li>
+<li>Autocomplete keeping an earlier prefix's ordering after the typed word becomes an exact match. (#2444)</li>
+<li>Whole MySQL and MariaDB result set fetched before a capped query returned its first rows. (#2427)</li>
+<li>KILL sent to a different server when a MySQL or MariaDB connection's host is spelled `localhost`.</li>
+<li>Stop on a MySQL or MariaDB connection freezing the app for up to five seconds when the server stopped answering.</li>
+<li>A MySQL or MariaDB read re-run after a dropped connection, advancing a sequence or taking a lock twice.</li>
+<li>Save reporting the number of statements it ran as the number of rows it changed.</li>
+<li>An edit or a delete on a table with no primary key changing every identical row. (#2107)</li>
+<li>The same statements committed twice when Cmd+S is pressed again during a slow save.</li>
+<li>Switching tabs during a save clearing the edits of the tab switched to, and re-running its query.</li>
+<li>Placeholder SQL with no values in the Safe Mode confirmation and the authorization prompt.</li>
+<li>Deleting one row of a pasted batch dropping the other rows, or saving them with another row's values.</li>
+<li>Undoing the deletion of a new row putting its values in the wrong columns.</li>
+<li>Undoing a cell edit reverting the wrong row while a column filter is active.</li>
+<li>A save that deletes a row and reuses its unique value failing on the constraint.</li>
+<li>"Ignore foreign key checks" doing nothing on SQLite, libSQL and Cloudflare D1.</li>
+<li>A save reported as failed on an engine without transactions after some statements had been written.</li>
+<li>Keep Open for a preview tab, by double-clicking it in the tab strip or from its contextual menu. (#2436)</li>
+<li>Kafka driver plugin: topics in the grid, consumer group lag, and KafkaQL for seeking and producing. (#2419)</li>
+<li>Active editor tab indistinguishable from the inactive ones in light appearance. (#2439)</li>
+<li>Active editor tab drawn darker than its track on macOS 27, and inverting when the window lost focus.</li>
+<li>Editor tab selection changing with the desktop picture behind the window.</li>
+<li>Editor tab strip tests reporting four appearances while running plain Aqua and Dark Aqua twice.</li>
+<li>Icon cut off the entry at the top of a scrolled connections strip. (#2452)</li>
+<li>Connections strip not scrolling to the entry you switch to.</li>
+<li>Background connections stuck on the session preparation screen after connecting. (#2545)</li>
+<li>Blank sidebar, grid and inspector on a connection opened into a window that was already on screen.</li>
+<li>Connections strip hidden, and its switch commands disabled, whenever the connection on screen was disconnected.</li>
+<li>Rows, tabs and an enabled toolbar over a connection the connections strip already showed as failed.</li>
+<li>Reconnect doing nothing on a connection whose automatic reconnect had already given up.</li>
+<li>Health monitor waking every 30 seconds for the life of the app after it stopped trying to reconnect.</li>
+<li>Choosing a connection from the connection list re-fronting its window without switching to it.</li>
+<li>Grid cells left at their old column positions until the next click, after any column geometry change. (#2449, #2446)</li>
+<li>The row-number column draggable out of first place, which walked it to the far right on the next refresh.</li>
+<li>A time entered into a date cell discarded when the stored value carried no time.</li>
+<li>A timestamp with an offset showing one day in the grid and another in its date picker.</li>
+<li>Opening a date picker and confirming without changing anything rewriting the cell.</li>
+<li>Cell overlay appearance test failing at random when its window was released before the appearance changed.</li>
+<li>A reordered column snapping back on the next refresh in the Structure tab and in query results.</li>
+<li>Double-clicking a cell editing the wrong row, after deleting one of several rows added in the same session.</li>
+<li>VoiceOver reading a cell's value under a different row's number after such a delete.</li>
+<li>Snowflake `DATE`, `TIME` and `TIMESTAMP_*` cells showing the raw epoch number the server sends. (#2454)</li>
+<li>Snowflake `BINARY` cells showing the hex of their hex, which the hex editor then wrote back.</li>
+<li>A date cell the app cannot read opening a picker set to today, which overwrote the value on OK. (#2454)</li>
+<li>Snowflake reporting no rows changed for an `UPDATE` or `MERGE`, and misreading a `number of rows` column.</li>
+<li>A database switch moving both windows, when two saved Snowflake connections to one account shared a session.</li>
+<li>Stop on a Snowflake query cancelling every other query on the same connection, including a sidebar refresh or a save.</li>
+<li>`tablepro://` deep links ignored on iPhone and iPad, from the widget, a Live Activity or a shortcut.</li>
+<li>iOS PostgreSQL and Redshift reading another schema's table of the same name for columns, indexes and foreign keys.</li>
+<li>iOS SQL Server using the login's default schema rather than the one the toolbar showed, Truncate and Drop included.</li>
+<li>Computed SQL Server columns offered as editable and written into the `INSERT`, on both Mac and iOS.</li>
+<li>A CSV export writing a real NULL and the text `NULL` identically.</li>
+<li>A JSON export emitting a leading-zero string such as `01234` as an unquoted number, which no JSON parser accepts.</li>
+<li>A SQL `INSERT` export quoting identifiers for ANSI on every engine, which MySQL and MariaDB reject outright.</li>
+<li>Insert Row on iPhone and iPad writing every column, blocking a `NOT NULL` column with a default. (#2543)</li>
+<li>NULL offered on a `NOT NULL` column in Insert Row and the row editor on iPhone and iPad.</li>
+<li>Insert Row on iPhone and iPad writing a generated column, which every engine refuses.</li>
+<li>Both halves of a composite integer primary key left out of the insert on iPhone and iPad.</li>
+<li>Typed values discarded when Insert Row opened before the column list had loaded on iPhone and iPad.</li>
+<li>Insert Row offered on Redis connections on iPhone and iPad, where it can only fail.</li>
+<li>Missing search field in a connection's Tables tab on iPhone and iPad. (#2544)</li>
+<li>A search from one connection or table still filtering another's list on iPhone and iPad.</li>
+<li>A staged drop or truncate running against the database in front at Save time rather than the one it was staged in.</li>
+<li>Unqualified `DROP TABLE` for every object on Oracle, Dameng, Trino, Snowflake and BigQuery, whatever its kind.</li>
+<li>Dropping a table closing the tab on a same-named table in another schema or database.</li>
+</ul>
+<h3>Security</h3>
+<ul>
+<li>SQL injection through a Snowflake schema or routine name containing a backslash.</li>
+<li>Safe Mode on iPhone and iPad letting a write run when it followed a comment or a CTE.</li>
+</ul>
+]]></description>
+            <enclosure url="https://github.com/TableProApp/TablePro/releases/download/v0.69.0/TablePro-0.69.0-x86_64.zip" length="27528180" type="application/octet-stream" sparkle:edSignature="AkIOGUR4r2oi1/6tlPqGVEHc21tzt4W9LMCYUV6J8Jleu/+bZO/pMfiki4zqAohbj/V94tZjmNNHiHqDyvaYAw=="/>
+        </item>
+        <item>
             <title>0.68.1</title>
             <pubDate>Wed, 26 Aug 2026 02:14:58 +0000</pubDate>
             <sparkle:version>124</sparkle:version>

@@ -110,6 +110,7 @@ protocol DatabaseDriver: AnyObject, Sendable {
 
     /// Fetch triggers for a specific table
     func fetchTriggers(table: String) async throws -> [TriggerInfo]
+    func fetchCheckConstraints(table: String) async throws -> [CheckConstraintInfo]
 
     /// Trigger editing hooks (optional — nil when unsupported)
     func createTriggerTemplate(table: String) -> String?
@@ -198,6 +199,12 @@ protocol DatabaseDriver: AnyObject, Sendable {
     func dropDatabase(name: String) async throws
 
     func dropSchema(name: String) async throws
+
+    func renameTable(name: String, schema: String?, to newName: String, objectType: String) async throws
+
+    func renameDatabase(name: String, to newName: String) async throws
+
+    func renameSchema(name: String, to newName: String) async throws
 
     func fetchSessionContexts() async throws -> [PluginSessionContext]?
 
@@ -336,6 +343,8 @@ extension DatabaseDriver {
 
     func fetchTriggers(table: String) async throws -> [TriggerInfo] { [] }
 
+    func fetchCheckConstraints(table: String) async throws -> [CheckConstraintInfo] { [] }
+
     func createTriggerTemplate(table: String) -> String? { nil }
     func fetchTriggerDefinition(name: String, table: String) async throws -> String? { nil }
     func generateDropTriggerSQL(name: String, table: String) -> String? { nil }
@@ -360,6 +369,18 @@ extension DatabaseDriver {
     func dropSchema(name: String) async throws {
         throw NSError(domain: "DatabaseDriver", code: -1,
                       userInfo: [NSLocalizedDescriptionKey: "Drop schema is not supported by this driver"])
+    }
+
+    func renameTable(name: String, schema: String?, to newName: String, objectType: String) async throws {
+        throw PluginDriverUnsupportedOperation.renameTable
+    }
+
+    func renameDatabase(name: String, to newName: String) async throws {
+        throw PluginDriverUnsupportedOperation.renameDatabase
+    }
+
+    func renameSchema(name: String, to newName: String) async throws {
+        throw PluginDriverUnsupportedOperation.renameSchema
     }
 
     func createDatabaseFormSpec() async throws -> CreateDatabaseFormSpec? { nil }
@@ -581,6 +602,7 @@ enum DatabaseDriverFactory {
             additionalFields["enableCleartextPlugin"] = "true"
         }
         additionalFields["queryTimeoutSeconds"] = String(AppSettingsManager.shared.general.queryTimeoutSeconds)
+        additionalFields["connectionId"] = connection.id.uuidString
         let config = DriverConnectionConfig(
             host: connection.host,
             port: connection.port,

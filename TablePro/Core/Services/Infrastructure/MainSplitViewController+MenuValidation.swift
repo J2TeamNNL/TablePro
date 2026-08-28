@@ -24,6 +24,7 @@ struct MenuValidationContext: Equatable {
     /// Export Results exports the selected tab's rows, so an empty grid has nothing to offer.
     var hasResultRows = false
     var isCurrentTabEditable = false
+    var canRestorePreviousValues = false
     var isQueryExecuting = false
     var hasQueryText = false
     var hasPendingChanges = false
@@ -86,7 +87,6 @@ extension MainSplitViewController: NSMenuItemValidation {
              #selector(exportTables(_:)),
              #selector(refreshDatabase(_:)),
              #selector(openQuickSwitcher(_:)),
-             #selector(switchConnection(_:)),
              #selector(toggleQueryHistory(_:)),
              #selector(toggleResults(_:)),
              #selector(showPreviousResult(_:)),
@@ -116,6 +116,11 @@ extension MainSplitViewController: NSMenuItemValidation {
         case #selector(newEditorTab(_:)):
             return context.isConnected
         case #selector(closeConnection(_:)):
+            return context.hasSelectedWorkspace
+        /// Not `isConnected`, unlike the rest of the Database menu. The switcher lists the app's
+        /// open connections and the user's saved ones, needs nothing from the session, and is the
+        /// command that leaves a connection that has stopped working.
+        case #selector(switchConnection(_:)):
             return context.hasSelectedWorkspace
         case #selector(selectNextEditorTab(_:)), #selector(selectPreviousEditorTab(_:)):
             return context.isConnected
@@ -157,6 +162,8 @@ extension MainSplitViewController: NSMenuItemValidation {
 
         case #selector(addRow(_:)), #selector(duplicateRow(_:)):
             return context.isConnected && context.isCurrentTabEditable && !context.isReadOnly
+        case #selector(restorePreviousValues(_:)):
+            return context.isConnected && context.canRestorePreviousValues && !context.isReadOnly
         case #selector(truncateTable(_:)):
             return context.isConnected && context.hasTableSelection && !context.isReadOnly
         case #selector(performFind(_:)):
@@ -226,9 +233,15 @@ extension MainSplitViewController: NSMenuItemValidation {
         }
     }
 
+    /// The workspace-rail facts come from the window in both branches. They are true of the window,
+    /// not of the connection it happens to be showing, and reading them off a connection that has
+    /// no coordinator left disabled the only menu route to the window's other connections.
     var menuValidationContext: MenuValidationContext {
         guard let actions = commandActions else {
-            return MenuValidationContext(hasSelectedWorkspace: workspaces.selectedConnectionId != nil)
+            return MenuValidationContext(
+                hasSelectedWorkspace: workspaces.selectedConnectionId != nil,
+                canToggleWorkspaceRail: canToggleWorkspaceRail
+            )
         }
         return MenuValidationContext(
             hasSelectedWorkspace: workspaces.selectedConnectionId != nil,
@@ -239,6 +252,7 @@ extension MainSplitViewController: NSMenuItemValidation {
             isQueryTab: actions.isQueryTab,
             hasResultRows: actions.hasResultRows,
             isCurrentTabEditable: actions.isCurrentTabEditable,
+            canRestorePreviousValues: actions.canRestorePreviousValues,
             isQueryExecuting: actions.isQueryExecuting,
             hasQueryText: actions.hasQueryText,
             hasPendingChanges: actions.hasPendingChanges,
@@ -255,7 +269,7 @@ extension MainSplitViewController: NSMenuItemValidation {
             canNavigateForward: actions.canNavigateForward,
             canSaveAsFavorite: actions.canSaveAsFavorite,
             canSwitchSidebarLayout: actions.canSwitchSidebarLayout,
-            canToggleWorkspaceRail: actions.canToggleWorkspaceRail,
+            canToggleWorkspaceRail: canToggleWorkspaceRail,
             canShowTableStructure: actions.canShowTableStructure,
             canEditViewDefinition: actions.canEditViewDefinition,
             canCreateDatabase: actions.canCreateDatabase,

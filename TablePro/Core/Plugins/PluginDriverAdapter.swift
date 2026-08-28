@@ -268,7 +268,9 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
                 collation: col.collation,
                 comment: col.comment,
                 isGenerated: col.isGenerated,
-                allowedValues: col.allowedValues
+                allowedValues: col.allowedValues,
+                generationExpression: col.generationExpression,
+                generationKind: col.generationKind
             )
         }
     }
@@ -299,6 +301,20 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
                 referencedSchema: fk.referencedSchema,
                 onDelete: fk.onDelete,
                 onUpdate: fk.onUpdate
+            )
+        }
+    }
+
+    func fetchCheckConstraints(table: String) async throws -> [CheckConstraintInfo] {
+        let pluginConstraints = try await pluginDriver.fetchCheckConstraints(
+            table: table, schema: pluginDriver.currentSchema
+        )
+        return pluginConstraints.map { constraint in
+            CheckConstraintInfo(
+                name: constraint.name,
+                expression: constraint.expression,
+                columns: constraint.columns,
+                isValidated: constraint.isValidated
             )
         }
     }
@@ -455,6 +471,18 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
 
     func dropSchema(name: String) async throws {
         try await pluginDriver.dropSchema(name: name)
+    }
+
+    func renameTable(name: String, schema: String?, to newName: String, objectType: String) async throws {
+        try await pluginDriver.renameTable(name: name, schema: schema, to: newName, objectType: objectType)
+    }
+
+    func renameDatabase(name: String, to newName: String) async throws {
+        try await pluginDriver.renameDatabase(name: name, to: newName)
+    }
+
+    func renameSchema(name: String, to newName: String) async throws {
+        try await pluginDriver.renameSchema(name: name, to: newName)
     }
 
     func fetchSessionContexts() async throws -> [PluginSessionContext]? {

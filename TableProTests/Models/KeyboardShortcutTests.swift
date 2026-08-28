@@ -7,6 +7,7 @@
 //  and migration from the legacy character-string storage.
 //
 
+import AppKit
 import Foundation
 @testable import TablePro
 import Testing
@@ -181,6 +182,35 @@ struct BareKeyValidationTests {
         #expect(!ShortcutAction.executeQuery.allowsBareKey)
     }
 
+    /// The recorder tells the user a shortcut needs Command or Control, so the capture rule has
+    /// to be exactly that. Option and Shift only ever qualify a combo, they never carry one, and
+    /// a letter key held with either alone is a text-input keystroke rather than a shortcut.
+    @Test("Option and Shift cannot hold a shortcut without Command or Control")
+    func optionAndShiftAloneAreNotRecordable() {
+        func capture(_ flags: NSEvent.ModifierFlags) -> BoundKey? {
+            let event = NSEvent.keyEvent(
+                with: .keyDown,
+                location: .zero,
+                modifierFlags: flags,
+                timestamp: 0,
+                windowNumber: 0,
+                context: nil,
+                characters: "e",
+                charactersIgnoringModifiers: "e",
+                isARepeat: false,
+                keyCode: 14
+            )
+            return event.flatMap(BoundKey.init(from:))
+        }
+
+        #expect(capture(.option) == nil)
+        #expect(capture(.shift) == nil)
+        #expect(capture([.option, .shift]) == nil)
+        #expect(capture(.command) != nil)
+        #expect(capture(.control) != nil)
+        #expect(capture([.command, .option]) != nil)
+    }
+
     @Test("hasModifier reflects the combo")
     func hasModifierReflectsCombo() {
         #expect(BoundKey.character("r", command: true).hasModifier)
@@ -223,10 +253,21 @@ struct ShortcutConflictTests {
         #expect(conflict == .refresh)
     }
 
-    @Test("Editor action does not conflict with the data-grid Cmd+F filter")
-    func crossContextDoesNotConflict() {
+    @Test("Cmd+F is held by the global Find action, so an editor binding collides with it")
+    func commandFConflictsWithFind() {
         let settings = KeyboardSettings.default
         let conflict = settings.findConflict(for: .character("f", command: true), excluding: .executeQuery)
+        #expect(conflict == .find)
+    }
+
+    @Test("A data-grid binding does not conflict with an editor-only default")
+    func crossContextDoesNotConflict() {
+        let settings = KeyboardSettings.default
+        #expect(KeyboardSettings.defaultShortcuts[.formatQuery] == .character("l", command: true, shift: true))
+        let conflict = settings.findConflict(
+            for: .character("l", command: true, shift: true),
+            excluding: .previousPage
+        )
         #expect(conflict == nil)
     }
 }

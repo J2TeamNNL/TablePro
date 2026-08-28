@@ -72,6 +72,30 @@ struct MainMenuStructureTests {
         #expect(duplicates.isEmpty, "AppKit blanks the loser when two items claim one combo: \(duplicates)")
     }
 
+    /// A menu builder that hardcodes a key equivalent takes that combo off the table for every
+    /// `ShortcutAction`, and only `reservedAppShortcuts` tells the recorder so. Nothing else
+    /// forces the two to agree, so a hardcoded item added without a matching entry ships a
+    /// binding the recorder accepts and AppKit then blanks.
+    @Test("Every hardcoded menu key equivalent is reserved against user binding")
+    func hardcodedKeyEquivalentsAreReserved() {
+        func canonical(_ key: BoundKey) -> String? {
+            key.menuKeyEquivalent.map { "\(key.modifierFlags.rawValue)-\($0)" }
+        }
+
+        let keyboard = KeyboardSettings()
+        let customizable = Set(ShortcutAction.allCases.compactMap { keyboard.shortcut(for: $0).flatMap(canonical) })
+        let reserved = Set(ShortcutAction.reservedAppShortcuts.compactMap { canonical($0.key) })
+
+        let hardcoded = flatten(buildMenu())
+            .filter { !$0.keyEquivalent.isEmpty }
+            .map { (combo: "\($0.keyEquivalentModifierMask.rawValue)-\($0.keyEquivalent)", title: $0.title) }
+            .filter { !customizable.contains($0.combo) }
+        #expect(!hardcoded.isEmpty, "Found no hardcoded menu shortcuts, so this guard would pass vacuously")
+
+        let unreserved = hardcoded.filter { !reserved.contains($0.combo) }.map(\.title)
+        #expect(unreserved.isEmpty, "Hardcoded menu shortcuts missing from reservedAppShortcuts: \(unreserved)")
+    }
+
     @Test("Every menu item carries an action")
     func everyItemHasAnAction() {
         let dead = flatten(buildMenu())
@@ -122,14 +146,96 @@ struct MainMenuShortcutCoverageTests {
         #expect(item?.keyEquivalentModifierMask == [.command, .shift])
     }
 
-    @Test("Find keeps Cmd+F and the filter bar no longer competes for it")
-    func findOwnsCommandF() {
+    @Test("Find ships on Cmd+F and the filter bar keeps Cmd+Option+F")
+    func findAndFilterDefaultsHold() {
+        #expect(KeyboardSettings.defaultShortcuts[.find] == .character("f", command: true))
         #expect(KeyboardSettings.defaultShortcuts[.toggleFilters] == .character("f", command: true, option: true))
         #expect(
             KeyboardSettings.defaultShortcuts[.focusSidebarSearch]
                 == .character("f", command: true, option: true, control: true)
         )
-        #expect(ShortcutAction.reservedAppShortcuts.contains { $0.key == .character("f", command: true) })
+    }
+
+    @Test("Cmd+F is customizable rather than reserved")
+    func commandFIsNoLongerReserved() {
+        let commandF = BoundKey.character("f", command: true)
+        #expect(!ShortcutAction.reservedAppShortcuts.contains { $0.key == commandF })
+        #expect(!ShortcutAction.editorBuiltIns.contains { $0.key == commandF })
+        #expect(ShortcutAction.reservedConflict(for: commandF, context: .dataGrid) == nil)
+        #expect(ShortcutAction.reservedConflict(for: commandF, context: .editor) == nil)
+    }
+
+    @Test("Cmd+F for the filter bar is no longer refused outright, only reported against Find")
+    func recorderReportsFindRatherThanRefusingCommandF() {
+        let commandF = BoundKey.character("f", command: true)
+        #expect(ShortcutAction.reservedConflict(for: commandF, context: ShortcutAction.toggleFilters.context) == nil)
+        #expect(KeyboardSettings.default.findConflict(for: commandF, excluding: .toggleFilters) == .find)
+    }
+
+    @Test("Cmd+F parked on Find Next is still reported against a later claim from the filter bar")
+    func commandFOnFindNextStillConflictsWithFilterBar() {
+        let commandF = BoundKey.character("f", command: true)
+        var keyboard = KeyboardSettings()
+        keyboard.setShortcut(commandF, for: .findNext)
+
+        #expect(keyboard.findConflict(for: commandF, excluding: .toggleFilters) == .findNext)
+        #expect(keyboard.findConflict(for: commandF, excluding: .find) == .findNext)
+    }
+
+    @Test("A grid binding conflicts with Find Next, which owns a window-wide key equivalent")
+    func gridBindingConflictsWithFindNext() {
+        let commandG = BoundKey.character("g", command: true)
+        #expect(KeyboardSettings.defaultShortcuts[.findNext] == commandG)
+        #expect(KeyboardSettings.default.findConflict(for: commandG, excluding: .nextPage) == .findNext)
+    }
+
+    @Test("Every find command shares one context so none can be shadowed by a grid binding")
+    func findCommandsAreGlobal() {
+        #expect(ShortcutAction.find.context == .global)
+        #expect(ShortcutAction.findNext.context == .global)
+        #expect(ShortcutAction.findPrevious.context == .global)
+    }
+
+    @Test("Reassigning Cmd+F leaves Find on its default so it recovers when the filter bar moves back")
+    func reassigningCommandFDoesNotStrandFind() {
+        var keyboard = KeyboardSettings()
+        #expect(!keyboard.isCustomized(.find))
+
+        keyboard.setShortcut(.character("f", command: true), for: .toggleFilters)
+        #expect(keyboard.shortcut(for: .find) == nil)
+        #expect(!keyboard.isCustomized(.find))
+
+        keyboard.setShortcut(.character("f", command: true, option: true), for: .toggleFilters)
+        #expect(keyboard.shortcut(for: .find) == .character("f", command: true))
+    }
+
+    @Test("Find yields Cmd+F to a user-bound filter bar instead of sharing it")
+    func findYieldsCommandFToFilterBar() {
+        var keyboard = KeyboardSettings()
+        keyboard.setShortcut(.character("f", command: true), for: .toggleFilters)
+
+        #expect(keyboard.shortcut(for: .find) == nil)
+        #expect(keyboard.shortcut(for: .toggleFilters) == .character("f", command: true))
+
+        let menu = buildMenu()
+        MainMenuKeyEquivalentSync.apply(keyboard: keyboard, to: menu)
+        let claimants = flatten(menu).filter {
+            $0.keyEquivalent == "f" && $0.keyEquivalentModifierMask == [.command]
+        }
+        #expect(claimants.count == 1)
+        #expect(claimants.first?.identifier == MenuItemFactory.identifier(for: .toggleFilters))
+    }
+
+    @Test("Find… carries no hardcoded key equivalent")
+    func findMenuItemFollowsKeyboardSettings() {
+        var keyboard = KeyboardSettings()
+        keyboard.setShortcut(.character("f", command: true, shift: true), for: .find)
+
+        let menu = buildMenu()
+        MainMenuKeyEquivalentSync.apply(keyboard: keyboard, to: menu)
+        let item = flatten(menu).first { $0.identifier == MenuItemFactory.identifier(for: .find) }
+        #expect(item?.keyEquivalent == "f")
+        #expect(item?.keyEquivalentModifierMask == [.command, .shift])
     }
 }
 

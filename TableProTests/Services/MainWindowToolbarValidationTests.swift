@@ -33,6 +33,7 @@ struct MainWindowToolbarValidationTests {
         MainWindowToolbar.newTab,
         MainWindowToolbar.exportTables,
         MainWindowToolbar.sidebarToggle,
+        MainWindowToolbar.contentMode,
         MainWindowToolbar.saveChanges,
         MainWindowToolbar.previewSQL,
         MainWindowToolbar.database,
@@ -45,6 +46,7 @@ struct MainWindowToolbarValidationTests {
         connected: Bool = true,
         isTableTab: Bool = false,
         canAddRow: Bool = false,
+        canRestorePreviousValues: Bool = false,
         hasPendingChanges: Bool = false,
         hasDataPendingChanges: Bool = false,
         blocksAllWrites: Bool = false,
@@ -59,6 +61,7 @@ struct MainWindowToolbarValidationTests {
             connected: connected,
             isTableTab: isTableTab,
             canAddRow: canAddRow,
+            canRestorePreviousValues: canRestorePreviousValues,
             hasPendingChanges: hasPendingChanges,
             hasDataPendingChanges: hasDataPendingChanges,
             blocksAllWrites: blocksAllWrites,
@@ -191,11 +194,62 @@ struct MainWindowToolbarValidationTests {
         #expect(MainWindowToolbar.isEnabled(itemIdentifier: MainWindowToolbar.history, context: disconnected) == true)
     }
 
+    ///  said Switch Connection stays enabled and the runtime disagreed: validation
+    /// returned false before reaching that case whenever the connection had gone, which is the one
+    /// state the command exists for. It answers off the window now, ahead of any session context.
+    @Test("Switch Connection answers without a connection behind the toolbar")
+    func connectionItemIsWindowScoped() {
+        #expect(MainWindowToolbar.isWindowScoped(MainWindowToolbar.connection))
+    }
+
+    /// Everything else here acts on the connection that is showing, so no subject still disables
+    /// it rather than leaving a live-looking button that does nothing.
+    @Test("Every other toolbar item still needs the connection it acts on")
+    func otherItemsAreNotWindowScoped() {
+        let connectionScoped = [
+            MainWindowToolbar.database,
+            MainWindowToolbar.refresh,
+            MainWindowToolbar.newTab,
+            MainWindowToolbar.exportTables,
+            MainWindowToolbar.sidebarToggle,
+            MainWindowToolbar.contentMode,
+            MainWindowToolbar.addRow,
+            MainWindowToolbar.saveChanges,
+            MainWindowToolbar.dashboard
+        ]
+        for identifier in connectionScoped {
+            #expect(!MainWindowToolbar.isWindowScoped(identifier))
+        }
+    }
+
     @Test("Unknown identifier defaults to enabled")
     func unknownIdentifierEnabled() {
         let context = makeContext(connected: false)
         let unknown = NSToolbarItem.Identifier("com.test.unknown")
         #expect(MainWindowToolbar.isEnabled(itemIdentifier: unknown, context: context) == true)
+    }
+
+    @Test("Sidebar toggle is disabled when the object browser is not showing")
+    func sidebarToggleRequiresObjectBrowser() {
+        var context = makeContext(connected: true)
+        context.showsObjectBrowser = false
+        #expect(MainWindowToolbar.isEnabled(itemIdentifier: MainWindowToolbar.sidebarToggle, context: context) == false)
+    }
+
+    @Test("Content mode stays enabled whenever the session is live")
+    func contentModeFollowsTheSession() {
+        #expect(
+            MainWindowToolbar.isEnabled(
+                itemIdentifier: MainWindowToolbar.contentMode,
+                context: makeContext(connected: true)
+            )
+        )
+        #expect(
+            !MainWindowToolbar.isEnabled(
+                itemIdentifier: MainWindowToolbar.contentMode,
+                context: makeContext(connected: false)
+            )
+        )
     }
 
     /// The health monitor writes `.connecting` on every reconnect attempt while the window keeps
@@ -553,6 +607,7 @@ struct MainWindowToolbarNavigationValidationTests {
             connected: connected,
             isTableTab: true,
             canAddRow: false,
+            canRestorePreviousValues: false,
             hasPendingChanges: false,
             hasDataPendingChanges: false,
             blocksAllWrites: false,
@@ -624,11 +679,14 @@ struct MainWindowToolbarNavigationValidationTests {
 @Suite("MainWindowToolbar Add Row validation")
 @MainActor
 struct MainWindowToolbarAddRowValidationTests {
-    private func context(connected: Bool, canAddRow: Bool) -> MainWindowToolbar.ValidationContext {
+    private func context(
+        connected: Bool, canAddRow: Bool, canRestorePreviousValues: Bool = false
+    ) -> MainWindowToolbar.ValidationContext {
         MainWindowToolbar.ValidationContext(
             connected: connected,
             isTableTab: true,
             canAddRow: canAddRow,
+            canRestorePreviousValues: canRestorePreviousValues,
             hasPendingChanges: false,
             hasDataPendingChanges: false,
             blocksAllWrites: false,
@@ -654,6 +712,24 @@ struct MainWindowToolbarAddRowValidationTests {
         #expect(!MainWindowToolbar.isEnabled(
             itemIdentifier: MainWindowToolbar.addRow,
             context: context(connected: false, canAddRow: true)
+        ))
+    }
+
+    /// Reachable without a licence on purpose: the gate is at the point of use, where it can say
+    /// what the licence buys. A dimmed item explains nothing.
+    @Test("Restore Previous Values follows the tab, not the licence")
+    func restorePreviousValuesValidation() {
+        #expect(MainWindowToolbar.isEnabled(
+            itemIdentifier: MainWindowToolbar.restorePreviousValues,
+            context: context(connected: true, canAddRow: false, canRestorePreviousValues: true)
+        ))
+        #expect(!MainWindowToolbar.isEnabled(
+            itemIdentifier: MainWindowToolbar.restorePreviousValues,
+            context: context(connected: true, canAddRow: true, canRestorePreviousValues: false)
+        ))
+        #expect(!MainWindowToolbar.isEnabled(
+            itemIdentifier: MainWindowToolbar.restorePreviousValues,
+            context: context(connected: false, canAddRow: true, canRestorePreviousValues: true)
         ))
     }
 }

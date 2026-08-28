@@ -25,6 +25,9 @@ public protocol DriverPlugin: TableProPlugin {
     static var supportsForeignKeys: Bool { get }
     static var supportsTriggers: Bool { get }
     static var supportsTriggerEditing: Bool { get }
+    static var supportsCheckConstraints: Bool { get }
+    static var supportsCheckConstraintEditing: Bool { get }
+    static var supportsGeneratedColumns: Bool { get }
     static var supportsRoutines: Bool { get }
     static var supportsDatabaseTriggerBrowse: Bool { get }
     static var supportsSchemaEditing: Bool { get }
@@ -63,6 +66,10 @@ public protocol DriverPlugin: TableProPlugin {
     static var parameterStyle: ParameterStyle { get }
     static var supportsDropDatabase: Bool { get }
     static var supportsDropSchema: Bool { get }
+    static var supportsRenameTable: Bool { get }
+    static var supportsRenameView: Bool { get }
+    static var supportsRenameDatabase: Bool { get }
+    static var supportsRenameSchema: Bool { get }
 
     static var supportsAddColumn: Bool { get }
     static var supportsModifyColumn: Bool { get }
@@ -90,6 +97,9 @@ public extension DriverPlugin {
     static var supportsForeignKeys: Bool { true }
     static var supportsTriggers: Bool { false }
     static var supportsTriggerEditing: Bool { false }
+    static var supportsCheckConstraints: Bool { false }
+    static var supportsCheckConstraintEditing: Bool { false }
+    static var supportsGeneratedColumns: Bool { false }
 
     /// These say what the ENGINE has, so the app knows not to run a query that can only fail on
     /// Redis or DynamoDB. They never gate whether returned objects are shown: a driver that
@@ -146,6 +156,12 @@ public extension DriverPlugin {
     static var postConnectActions: [PostConnectAction] { [] }
     static var supportsDropDatabase: Bool { false }
     static var supportsDropSchema: Bool { false }
+    static var supportsRenameTable: Bool { false }
+    /// SQLite's `ALTER TABLE ... RENAME` refuses a view, and the engines built on it inherit that.
+    /// Everywhere else a view renames the way a table does.
+    static var supportsRenameView: Bool { supportsRenameTable }
+    static var supportsRenameDatabase: Bool { false }
+    static var supportsRenameSchema: Bool { false }
 
     static var supportsAddColumn: Bool { true }
     static var supportsModifyColumn: Bool { true }

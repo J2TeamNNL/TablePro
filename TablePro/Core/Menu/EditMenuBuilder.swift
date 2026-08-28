@@ -78,6 +78,15 @@ enum EditMenuBuilder {
                 keyboard: keyboard
             ),
             MenuItemFactory.separator,
+            /// Not Undo, and deliberately not next to it. Undo takes back an edit the user has not
+            /// saved yet and costs nothing; this one writes to the database, needs review and can
+            /// be refused. The HIG scopes Undo to the current document's content, and every Apple
+            /// reversal of something already committed is a separate, named command.
+            MenuItemFactory.item(
+                String(localized: "Restore Previous Values…"),
+                action: #selector(MainSplitViewController.restorePreviousValues(_:))
+            ),
+            MenuItemFactory.separator,
             tabularEditingSubmenu(keyboard: keyboard)
         ])
     }
@@ -110,8 +119,8 @@ enum EditMenuBuilder {
             MenuItemFactory.item(
                 String(localized: "Find…"),
                 action: #selector(MainSplitViewController.performFind(_:)),
-                keyEquivalent: "f",
-                modifiers: .command
+                shortcut: .find,
+                keyboard: keyboard
             ),
             MenuItemFactory.item(
                 String(localized: "Find Next"),

@@ -4,7 +4,6 @@
 //
 
 import SwiftUI
-import UniformTypeIdentifiers
 
 /// The editor tabs for one connection, drawn to the geometry of `NSTabBar`, the private control
 /// the system's own window tab bar is built from. Native window tabs cannot express this: a window
@@ -22,12 +21,20 @@ import UniformTypeIdentifiers
 /// concentric at their ends, the selected one inset two points inside the track, which is why it
 /// never overruns the track's curve.
 ///
-/// Track, selected tab and new-tab button are all glass, which is what the system does too, but
-/// the track and the tab on it are not the same glass. Two `.regular` surfaces stacked carry no
-/// step of their own, because each samples the backdrop under the window rather than the glass it
-/// sits on, so the selection would be whatever the content behind the strip happened to be.
-/// `EditorTabStripEmphasis` holds them apart, and carries the measurements that set the distance.
+/// The track and the selected tab are opaque fills, and only the new-tab button is
+/// glass. A selection cannot be drawn in glass, because glass takes its colour from whatever is
+/// behind the window and a selection has to mean the same thing over every wallpaper. Measured
+/// across twenty arrangements on macOS 27, every glass surface nested in, beside, or unioned with
+/// another one rendered *darker* than its track in light appearance, and the pair that shipped
+/// inverted again whenever the window lost key. That is also what Apple asks for: "avoid applying
+/// the material to both layers. Instead, use fills, transparency, and vibrancy for the top
+/// elements" (WWDC25 session 219). The band is already the system's glass, so these fills are the
+/// top layer on it rather than a second pane of it.
 internal struct EditorTabStrip: View {
+    /// The space a reorder measures the pointer in. Named on the scroll view's content, so it spans
+    /// the whole run of tabs rather than the part of it currently on screen.
+    private static let trackContentSpace = "editor-tab-track-content"
+
     internal let tabManager: QueryTabManager
     /// The dimension this engine's tabs are anchored to, so a label can name the container it
     /// shares a title with. Resolved by the window, because a view has no business asking the
@@ -42,10 +49,20 @@ internal struct EditorTabStrip: View {
     internal var surfaceStyle: EditorTabStripSurfaceStyle?
 
     @State private var hoveredTabId: UUID?
-    /// The tab under the pointer during a reorder. Held here rather than in the item, because the
-    /// separators are a property of the row: they are hidden for the whole strip while a tab is in
-    /// flight, so a line does not appear between two tabs that are mid-swap.
-    @State private var draggingTabId: UUID?
+    /// The reorder in flight, holding both the order the strip draws and the order it came from.
+    /// Held here rather than in the item, because the order is a property of the row: the strip
+    /// draws from it, and the separators are hidden for the whole strip while a tab is in flight so
+    /// a line does not appear between two tabs that are mid-swap.
+    ///
+    /// The manager is not written until the pointer comes up. Writing it live, as this did before,
+    /// saved the tab list to disk on every neighbour crossed, so a drag the user abandoned was
+    /// already committed and could not be taken back.
+    @State private var reorder: EditorTabReorder?
+    /// Latched by a cancel and cleared only when the gesture itself ends. `reorder == nil` cannot
+    /// carry this: it means both "not started" and "cancelled", so the next `onChanged` of a
+    /// gesture the user had already abandoned started a fresh reorder from the manager's order and
+    /// the release committed it. Escape read as working and then reordered the strip anyway.
+    @State private var reorderCancelled = false
     /// The tab the previous click activated, so the second click of a double-click can be told
     /// from a click on a neighbour that happened to land inside the double-click window.
     @State private var lastActivatedTabId: UUID?
@@ -78,9 +95,17 @@ internal struct EditorTabStrip: View {
         /// otherwise light up under a pointer that never moved onto it.
         .onChange(of: tabManager.tabs.map(\.id)) { _, ids in
             if let hoveredTabId, !ids.contains(hoveredTabId) { self.hoveredTabId = nil }
-            if let draggingTabId, !ids.contains(draggingTabId) { self.draggingTabId = nil }
             if let lastActivatedTabId, !ids.contains(lastActivatedTabId) { self.lastActivatedTabId = nil }
+            dropClosedTabsFromReorder(keeping: ids)
         }
+        /// The pointer and the keyboard are independent streams, so `Cmd+W` can close the tab that
+        /// is mid-drag, and `Cmd+T` can add one beside it. Neither may reach the commit: a stale id
+        /// would put back a tab that is gone, and a new one would be left out of the order.
+        ///
+        /// Switching connection unparents this pane while the state survives, which SwiftUI reports
+        /// as `onDisappear`, so the drag is ended there too. Nothing here needs rebuilding on the
+        /// way back: a reorder belongs to the gesture, not to the view's lifetime.
+        .onDisappear(perform: cancelReorder)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("Editor Tabs"))
         .accessibilityAddTraits(.isTabBar)
@@ -107,20 +132,22 @@ internal struct EditorTabStrip: View {
     private var track: some View {
         GeometryReader { proxy in
             ScrollViewReader { scroller in
-                let labels = EditorTabLabelResolver.resolve(tabs: tabManager.tabs, target: containerTarget)
+                let tabs = displayedTabs
+                let labels = EditorTabLabelResolver.resolve(tabs: tabs, target: containerTarget)
+                let tabWidth = EditorTabStripLayout.tabWidth(forTrack: proxy.size.width, count: tabs.count)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 0) {
-                        ForEach(Array(tabManager.tabs.enumerated()), id: \.element.id) { index, tab in
-                            item(for: tab, at: index, label: labels[tab.id])
-                                .frame(
-                                    width: EditorTabStripLayout.tabWidth(
-                                        forTrack: proxy.size.width,
-                                        count: tabManager.tabs.count
-                                    )
-                                )
+                        ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
+                            item(for: tab, at: index, in: tabs, label: labels[tab.id], tabWidth: tabWidth)
+                                .frame(width: tabWidth)
                                 .id(tab.id)
                         }
                     }
+                    /// Named on the content rather than on the track, so a pointer position is
+                    /// measured against the whole run of tabs. A space named outside the scroll
+                    /// view is viewport-relative, which would place the drag one tab further along
+                    /// for every tab the track has scrolled past.
+                    .coordinateSpace(name: Self.trackContentSpace)
                 }
                 /// Cmd+1..9, opening a table from the sidebar and closing a tab can all land on
                 /// a tab that is scrolled out of sight, so the selection pulls itself into view.
@@ -136,20 +163,22 @@ internal struct EditorTabStrip: View {
                 }
             }
             .frame(height: EditorTabStripLayout.tabHeight)
-            /// Clipped to the same capsule the tabs are drawn as, so a tab scrolled under the
+            /// Clipped to the same shape the tabs are drawn as, so a tab scrolled under the
             /// track's rounded end is cut by that curve instead of squaring it off.
-            .clipShape(Capsule(style: .continuous))
+            .clipShape(EditorTabStripLayout.tabShape)
             .padding(EditorTabStripLayout.trackPadding)
         }
         .frame(height: EditorTabStripLayout.trackHeight)
-        .trackSurface(prefersSolidSurfaces: prefersSolidSurfaces)
-        .onDrop(of: [.text], delegate: EditorTabStripDropReset(draggingTabId: $draggingTabId))
+        .trackSurface()
+        .background(EditorTabReorderCancelMonitor(isReordering: reorder != nil, onCancel: cancelReorder))
     }
 
     private func item(
         for tab: QueryTab,
         at index: Int,
-        label: EditorTabLabelResolver.Label?
+        in tabs: [QueryTab],
+        label: EditorTabLabelResolver.Label?,
+        tabWidth: CGFloat
     ) -> some View {
         EditorTabStripItem(
             tab: tab,
@@ -157,22 +186,18 @@ internal struct EditorTabStrip: View {
             isSelected: tabManager.selectedTab?.id == tab.id,
             isHovered: hoveredTabId == tab.id,
             isWindowActive: isWindowActive,
-            prefersSolidSurfaces: prefersSolidSurfaces,
             showsLeadingSeparator: EditorTabStripLayout.showsSeparator(
                 before: index,
-                tabIds: tabManager.tabs.map(\.id),
+                tabIds: tabs.map(\.id),
                 selectedId: tabManager.selectedTab?.id,
                 hoveredId: hoveredTabId,
-                isReordering: draggingTabId != nil
+                isReordering: reorder != nil
             ),
             position: index + 1,
-            count: tabManager.tabs.count,
+            count: tabs.count,
             onHover: { hovering in
                 if hovering {
                     hoveredTabId = tab.id
-                    /// The one drag ending SwiftUI never reports is a cancel, so this is where a
-                    /// strip left mid-reorder by Escape comes back.
-                    draggingTabId = nil
                 } else if hoveredTabId == tab.id {
                     hoveredTabId = nil
                 }
@@ -188,21 +213,89 @@ internal struct EditorTabStrip: View {
             onMoveLeft: { tabManager.moveTab(id: tab.id, by: -1) },
             onMoveRight: { tabManager.moveTab(id: tab.id, by: 1) }
         )
-        .opacity(draggingTabId == tab.id ? EditorTabStripLayout.draggingOpacity : 1)
-        .onDrag {
-            draggingTabId = tab.id
-            /// The id travels as text so a tab dragged onto anything else is inert rather than
-            /// dropping a filename or a URL into it.
-            return NSItemProvider(object: tab.id.uuidString as NSString)
-        }
-        .onDrop(
-            of: [.text],
-            delegate: EditorTabDropDelegate(
-                targetId: tab.id,
-                draggingTabId: $draggingTabId,
-                tabManager: tabManager
+        .opacity(reorder?.draggedId == tab.id ? EditorTabStripLayout.draggingOpacity : 1)
+        /// Simultaneous rather than plain, so the tab's own button keeps the click that selects it.
+        /// A plain `.gesture` here would sit below that button and never see the press at all, and
+        /// a high-priority one would take the click away from it.
+        .simultaneousGesture(
+            DragGesture(
+                minimumDistance: EditorTabStripLayout.reorderThreshold,
+                coordinateSpace: .named(Self.trackContentSpace)
             )
+            .onChanged { value in updateReorder(of: tab.id, toward: value.location.x, tabWidth: tabWidth) }
+            .onEnded { _ in endReorder() }
         )
+    }
+
+    /// The order the strip draws: the reorder's while one is in flight, the manager's otherwise.
+    private var displayedTabs: [QueryTab] {
+        guard let reorder else { return tabManager.tabs }
+        let byId = Dictionary(tabManager.tabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return reorder.order.compactMap { byId[$0] }
+    }
+
+    /// Starts the reorder on the first movement past the threshold, then moves the tab as the
+    /// pointer passes each neighbour's centre.
+    private func updateReorder(of tabId: UUID, toward location: CGFloat, tabWidth: CGFloat) {
+        guard !reorderCancelled else { return }
+        var live = reorder ?? EditorTabReorder(draggedId: tabId, order: tabManager.tabs.map(\.id))
+        guard live.draggedId == tabId, let currentIndex = live.destinationIndex else { return }
+        let destination = EditorTabReorderResolver.settledDestination(
+            forLocation: location,
+            tabWidth: tabWidth,
+            currentIndex: currentIndex,
+            count: live.order.count
+        )
+        if let destination {
+            withMotion(.easeInOut(duration: 0.18)) {
+                live.move(to: destination)
+                reorder = live
+            }
+            return
+        }
+        reorder = live
+    }
+
+    /// The gesture is over: commit what it asked for, unless it was cancelled. Releasing is also
+    /// the only thing that lifts the cancel latch, so a gesture abandoned by Escape stays abandoned
+    /// however far the pointer travels afterwards.
+    private func endReorder() {
+        defer { reorderCancelled = false }
+        guard !reorderCancelled else { return }
+        commitReorder()
+    }
+
+    /// Writes the order to the manager once, on release, or not at all when nothing moved. This is
+    /// the only place a drag reaches `QueryTabManager`, which is what keeps a reorder out of the
+    /// persisted tab list until the user has finished asking for it.
+    private func commitReorder() {
+        guard let reorder else { return }
+        defer { self.reorder = nil }
+        guard reorder.movedFromOriginal, let destination = reorder.destinationIndex else { return }
+        tabManager.moveTab(id: reorder.draggedId, to: destination)
+    }
+
+    /// Escape, a closed tab, or the pane going away. The strip goes back to the manager's order,
+    /// which the drag never wrote to, so there is nothing to undo.
+    private func cancelReorder() {
+        guard reorder != nil else { return }
+        reorderCancelled = true
+        withMotion(.easeInOut(duration: 0.18)) {
+            reorder = nil
+        }
+    }
+
+    /// A tab that closed mid-drag leaves both orders, and the drag ends outright when the tab being
+    /// dragged is the one that went. A tab opened mid-drag is not folded in: the order it would
+    /// join is already stale, so the drag is abandoned rather than committed against a list the
+    /// user did not drag over.
+    private func dropClosedTabsFromReorder(keeping ids: [UUID]) {
+        guard var live = reorder else { return }
+        guard live.removingClosedTabs(keeping: ids), Set(live.order) == Set(ids) else {
+            cancelReorder()
+            return
+        }
+        reorder = live
     }
 
     /// Selects the tab, and keeps it when the click that got here was the second of a double-click.
@@ -233,8 +326,7 @@ internal struct EditorTabStrip: View {
         controlActiveState != .inactive
     }
 
-    /// One reader for the whole strip, so a track and the tab on it can never disagree about
-    /// whether they are glass.
+    /// Read only by the new-tab button now, which is the one surface still allowed to be glass.
     private var prefersSolidSurfaces: Bool {
         if let surfaceStyle { return surfaceStyle == .solid }
         return EditorTabStripEmphasis.prefersSolidSurfaces(
@@ -244,69 +336,12 @@ internal struct EditorTabStrip: View {
     }
 }
 
-/// Reorders the strip as a tab is dragged over its neighbours, rather than waiting for the drop.
-///
-/// The swap happens in `dropEntered`, so the tabs move under the pointer the way the system's own
-/// window tabs do. `performDrop` has nothing left to do but clear the drag, and returning true
-/// there is what tells AppKit the drag was accepted rather than snapping the tab back.
-private struct EditorTabDropDelegate: DropDelegate {
-    let targetId: UUID
-    @Binding var draggingTabId: UUID?
-    let tabManager: QueryTabManager
-
-    func dropEntered(info: DropInfo) {
-        guard let draggingTabId, draggingTabId != targetId else { return }
-        guard let destination = tabManager.tabs.firstIndex(where: { $0.id == targetId }) else { return }
-        withMotion(.easeInOut(duration: 0.18)) {
-            tabManager.moveTab(id: draggingTabId, to: destination)
-        }
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        draggingTabId = nil
-        return true
-    }
-
-    func validateDrop(info: DropInfo) -> Bool {
-        draggingTabId != nil
-    }
-}
-
-/// Ends the reorder when the drag finishes anywhere that is not a tab.
-///
-/// `onDrag` reports no cancellation, so the drag state has to be cleared from whatever happens
-/// next instead. Releasing over a gap in the track lands here, and leaving the track entirely fires
-/// `dropExited`. The remaining case is a drag cancelled with Escape, which reports nothing at all;
-/// the strip clears that on the next hover, because a pointer that cancelled a drag is still over
-/// the strip and about to move.
-private struct EditorTabStripDropReset: DropDelegate {
-    @Binding var draggingTabId: UUID?
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
-    }
-
-    func dropExited(info: DropInfo) {
-        draggingTabId = nil
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        draggingTabId = nil
-        return true
-    }
-}
-
 private struct EditorTabStripItem: View {
     let tab: QueryTab
     let label: EditorTabLabelResolver.Label
     let isSelected: Bool
     let isHovered: Bool
     let isWindowActive: Bool
-    let prefersSolidSurfaces: Bool
     let showsLeadingSeparator: Bool
     let position: Int
     let count: Int
@@ -401,8 +436,7 @@ private struct EditorTabStripItem: View {
         .tabSurface(
             isSelected: isSelected,
             isHovered: isHovered,
-            isWindowActive: isWindowActive,
-            prefersSolidSurfaces: prefersSolidSurfaces
+            isWindowActive: isWindowActive
         )
     }
 
@@ -556,36 +590,22 @@ private struct EditorTabStripNewButton: View {
 }
 
 private extension View {
-    /// The track is a material, not a wash. Sampling the system's own bar against three different
-    /// chrome colours shows it converging on a fixed tone rather than tinting whatever is behind
-    /// it: about 78 percent opaque over rgb(77) in dark, and 85 percent over rgb(228) in light.
-    /// `secondarySystemFill` is a white wash in dark and a black one in light, so it lands within a
-    /// few points of the system in dark and inverts in light, a track darker than the titlebar it
-    /// sits in.
-    ///
-    /// The tint is what makes it a *track* rather than a second pane at the same height as the tab
-    /// on it. `EditorTabStripEmphasis` carries the measurements.
-    ///
-    /// The glass goes on the track's own content rather than behind it as a `.background`, because
-    /// a `GlassEffectContainer` raises the glass it holds above the container's other content: a
-    /// track drawn as a sibling layer paints over the tabs it is supposed to sit under.
-    @ViewBuilder
-    func trackSurface(prefersSolidSurfaces: Bool) -> some View {
-        if #available(macOS 26.0, *), !prefersSolidSurfaces {
-            glassEffect(.regular.tint(EditorTabStripEmphasis.trackTint), in: Capsule(style: .continuous))
-        } else {
-            background(
-                Capsule(style: .continuous)
-                    .fill(EditorTabStripPalette.trackFill)
-                    .overlay(
-                        Capsule(style: .continuous)
-                            .strokeBorder(
-                                EditorTabStripPalette.trackEdge,
-                                lineWidth: EditorTabStripLayout.hairline
-                            )
-                    )
-            )
-        }
+    /// An opaque tone rather than a wash, for the same reason the system's own track is one: a
+    /// wash tints whatever is behind it, and the track has to stay below the selected tab whatever
+    /// that happens to be. The system's own tab bar measures a track of rgb(232) in light against
+    /// this fill's rgb(220), and rgb(71) in dark against this fill's rgb(70).
+    func trackSurface() -> some View {
+        background(
+            EditorTabStripLayout.trackShape
+                .fill(EditorTabStripPalette.trackFill)
+                .overlay(
+                    EditorTabStripLayout.trackShape
+                        .strokeBorder(
+                            EditorTabStripPalette.trackEdge,
+                            lineWidth: EditorTabStripLayout.hairline
+                        )
+                )
+        )
     }
 
     /// The selected tab is the one pane of glass the system raises out of the track. An unselected
@@ -595,45 +615,41 @@ private extension View {
     func tabSurface(
         isSelected: Bool,
         isHovered: Bool,
-        isWindowActive: Bool,
-        prefersSolidSurfaces: Bool
+        isWindowActive: Bool
     ) -> some View {
         if isSelected {
-            selectedTabSurface(prefersSolidSurfaces: prefersSolidSurfaces)
+            selectedTabSurface()
         } else if isHovered, isWindowActive {
-            background(Capsule(style: .continuous).fill(EditorTabStripPalette.hoverFill))
+            background(EditorTabStripLayout.tabShape.fill(EditorTabStripPalette.hoverFill))
         } else {
             self
         }
     }
 
-    /// Glass on macOS 26 and later, and the flat control fill that preceded it before that.
-    /// `controlBackgroundColor` is not the fallback: it matches the window background exactly in
-    /// dark mode, so the raised tab would read as a hole punched in its own track.
+    /// A fill and a rim, which is how the system draws a raised segment. A vertical section
+    /// through a selected segment reads track 236, rim 215, highlight 255, body 242: the fill
+    /// carries six levels and the edge carries twenty-one. Only the fill was drawn here before,
+    /// which is why the selection read as flat even at the distance the system uses.
+    ///
+    /// `controlBackgroundColor` is not the fill: it matches the window background exactly in dark,
+    /// so the raised tab would read as a hole punched in its own track.
     ///
     /// The fill does not step down for a background window. Reaching for the track's own
-    /// `unemphasizedSelectedContentBackgroundColor` there left the two identical, and the shadow
-    /// that was supposed to cover for it was drawn in light alone and clipped away by the track's
-    /// own 24pt capsule anyway, so a background window showed no selected tab at all. The system
-    /// keeps its selected tab drawn in a background window; only the labels step down, which they
-    /// already do in `titleColor`.
-    ///
-    /// The rim is the half of the selection that survives a background window on glass, where
-    /// macOS attenuates the tint.
-    @ViewBuilder
-    func selectedTabSurface(prefersSolidSurfaces: Bool) -> some View {
-        if #available(macOS 26.0, *), !prefersSolidSurfaces {
-            glassEffect(.regular.tint(EditorTabStripEmphasis.selectionTint), in: Capsule(style: .continuous))
+    /// `unemphasizedSelectedContentBackgroundColor` there left the two identical, so a background
+    /// window showed no selected tab at all. The system keeps its selected tab drawn there; only
+    /// the labels step down, which they already do in `titleColor`.
+    func selectedTabSurface() -> some View {
+        background(
+            EditorTabStripLayout.tabShape
+                .fill(EditorTabStripPalette.selectedFill)
                 .overlay(
-                    Capsule(style: .continuous)
+                    EditorTabStripLayout.tabShape
                         .strokeBorder(
-                            EditorTabStripEmphasis.selectionEdge,
-                            lineWidth: EditorTabStripEmphasis.selectionEdgeWidth
+                            EditorTabStripPalette.selectionEdge,
+                            lineWidth: EditorTabStripLayout.hairline
                         )
                 )
-        } else {
-            background(Capsule(style: .continuous).fill(EditorTabStripPalette.selectedFill))
-        }
+        )
     }
 
     /// The one genuine press target in the strip, so this is where interactive glass belongs.

@@ -19,6 +19,10 @@ nonisolated final class PostgreSQLDriver: DatabaseDriver, @unchecked Sendable {
     nonisolated(unsafe) private(set) var currentSchema: String? = "public"
     nonisolated(unsafe) private(set) var serverVersion: String?
 
+    nonisolated(unsafe) private var reportsIdentityColumns: Bool?
+
+    private var effectiveSchema: String { currentSchema ?? "public" }
+
     init(host: String, port: Int, user: String, password: String, database: String, ssl: DriverSSLConfiguration = .disabled) {
         self.host = host
         self.port = port
@@ -35,6 +39,13 @@ nonisolated final class PostgreSQLDriver: DatabaseDriver, @unchecked Sendable {
         try await actor.connect(host: host, port: port, user: user, password: password, database: database, ssl: ssl)
         _ = try? await actor.execute("SET standard_conforming_strings = on")
         serverVersion = await actor.serverVersion()
+        await adoptServerSchema()
+    }
+
+    private func adoptServerSchema() async {
+        guard let schema = try? await actor.execute("SELECT current_schema()").rows.first?.first ?? nil,
+              !schema.isEmpty else { return }
+        currentSchema = schema
     }
 
     func disconnect() async throws {
@@ -127,7 +138,7 @@ nonisolated final class PostgreSQLDriver: DatabaseDriver, @unchecked Sendable {
     // MARK: - Schema
 
     func fetchTables(schema: String?) async throws -> [TableInfo] {
-        let schemaName = schema ?? "public"
+        let schemaName = schema ?? effectiveSchema
         let safe = schemaName.replacingOccurrences(of: "'", with: "''")
         let raw = try await actor.execute("""
             SELECT table_name, table_type
@@ -150,34 +161,26 @@ nonisolated final class PostgreSQLDriver: DatabaseDriver, @unchecked Sendable {
     }
 
     func fetchColumns(table: String, schema: String?) async throws -> [ColumnInfo] {
-        let schemaName = schema ?? "public"
+        let schemaName = schema ?? effectiveSchema
         let safeTbl = table.replacingOccurrences(of: "'", with: "''")
         let safeSchema = schemaName.replacingOccurrences(of: "'", with: "''")
 
-        let raw = try await actor.execute("""
-            SELECT
-                c.column_name,
-                c.data_type,
-                c.is_nullable,
-                c.column_default,
-                c.character_maximum_length,
-                CASE WHEN pk.column_name IS NOT NULL THEN 'YES' ELSE 'NO' END AS is_pk
-            FROM information_schema.columns c
-            LEFT JOIN (
-                SELECT kcu.column_name
-                FROM information_schema.table_constraints tc
-                JOIN information_schema.key_column_usage kcu
-                    ON tc.constraint_name = kcu.constraint_name
-                    AND tc.table_schema = kcu.table_schema
-                WHERE tc.constraint_type = 'PRIMARY KEY'
-                    AND tc.table_schema = '\(safeSchema)'
-                    AND tc.table_name = '\(safeTbl)'
-            ) pk ON c.column_name = pk.column_name
-            WHERE c.table_schema = '\(safeSchema)' AND c.table_name = '\(safeTbl)'
-            ORDER BY c.ordinal_position
-            """)
+        let result: RawPGResult
+        if reportsIdentityColumns == false {
+            result = try await actor.execute(columnsQuery(schema: safeSchema, table: safeTbl, identity: false))
+        } else {
+            do {
+                result = try await actor.execute(columnsQuery(schema: safeSchema, table: safeTbl, identity: true))
+                reportsIdentityColumns = true
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                reportsIdentityColumns = false
+                result = try await actor.execute(columnsQuery(schema: safeSchema, table: safeTbl, identity: false))
+            }
+        }
 
-        return raw.rows.enumerated().compactMap { index, row in
+        return result.rows.enumerated().compactMap { index, row in
             guard row.count >= 6, let name = row[0], let dataType = row[1] else { return nil }
             let maxLen = row[4].flatMap { Int($0) }
             return ColumnInfo(
@@ -188,13 +191,45 @@ nonisolated final class PostgreSQLDriver: DatabaseDriver, @unchecked Sendable {
                 defaultValue: row[3],
                 comment: nil,
                 characterMaxLength: maxLen,
-                ordinalPosition: index
+                ordinalPosition: index,
+                isAutoIncrement: ColumnMetadataRules.postgresIsAutoIncrement(
+                    isIdentity: row.count > 6 ? row[6] : nil, columnDefault: row[3]
+                ),
+                isGenerated: ColumnMetadataRules.postgresIsGenerated(
+                    isGenerated: row.count > 7 ? row[7] : nil
+                )
             )
         }
     }
 
+    private func columnsQuery(schema: String, table: String, identity: Bool) -> String {
+        let identityColumns = identity ? ",\n                c.is_identity,\n                c.is_generated" : ""
+        return """
+            SELECT
+                c.column_name,
+                c.data_type,
+                c.is_nullable,
+                c.column_default,
+                c.character_maximum_length,
+                CASE WHEN pk.column_name IS NOT NULL THEN 'YES' ELSE 'NO' END AS is_pk\(identityColumns)
+            FROM information_schema.columns c
+            LEFT JOIN (
+                SELECT kcu.column_name
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu
+                    ON tc.constraint_name = kcu.constraint_name
+                    AND tc.table_schema = kcu.table_schema
+                WHERE tc.constraint_type = 'PRIMARY KEY'
+                    AND tc.table_schema = '\(schema)'
+                    AND tc.table_name = '\(table)'
+            ) pk ON c.column_name = pk.column_name
+            WHERE c.table_schema = '\(schema)' AND c.table_name = '\(table)'
+            ORDER BY c.ordinal_position
+            """
+    }
+
     func fetchIndexes(table: String, schema: String?) async throws -> [IndexInfo] {
-        let schemaName = schema ?? "public"
+        let schemaName = schema ?? effectiveSchema
         let safeTbl = table.replacingOccurrences(of: "'", with: "''")
         let safeSchema = schemaName.replacingOccurrences(of: "'", with: "''")
 
@@ -242,7 +277,7 @@ nonisolated final class PostgreSQLDriver: DatabaseDriver, @unchecked Sendable {
     }
 
     func fetchForeignKeys(table: String, schema: String?) async throws -> [ForeignKeyInfo] {
-        let schemaName = schema ?? "public"
+        let schemaName = schema ?? effectiveSchema
         let safeTbl = table.replacingOccurrences(of: "'", with: "''")
         let safeSchema = schemaName.replacingOccurrences(of: "'", with: "''")
 

@@ -41,15 +41,15 @@ extension RowEditingCoordinator {
             route: DatabaseManager.shared.executionRoute(for: scope),
             cancellation: .protectedWrite
         ) { driver in
-            try await Self.runStatementsInTransaction(statements, mode: mode, on: driver)
+            _ = try await DataWriteExecutor.run(statements: statements, mode: mode, on: driver)
         }
     }
 
     // MARK: - Discard
 
     func handleDiscard(
-        pendingTruncates: inout Set<String>,
-        pendingDeletes: inout Set<String>
+        pendingTruncates: inout Set<DatabaseTreeTableRef>,
+        pendingDeletes: inout Set<DatabaseTreeTableRef>
     ) {
         let originalValues = parent.changeManager.getOriginalValues()
         var deltas: [Delta] = []

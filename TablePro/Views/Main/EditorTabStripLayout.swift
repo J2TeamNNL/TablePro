@@ -5,12 +5,13 @@
 
 import CoreGraphics
 import Foundation
+import SwiftUI
 
 /// The geometry and visibility rules of the editor tab strip, kept apart from the view so they
-/// can be tested. Every number here was measured off `NSTabBar`, the private control Finder's own
-/// tab bar is built from, rather than designed: a runtime probe of its view tree on macOS 27 gives
-/// a 36pt titlebar accessory holding a 28pt bar, whose track is inset 8pt, then 4pt of gap, then a
-/// 28pt new-tab button, then 8pt to the trailing edge.
+/// can be tested. Every number here was measured off `NSTabBar`, the private control the system's
+/// own window tab bar is built from, rather than designed: a runtime probe of its view tree on
+/// macOS 27 gives a 36pt titlebar accessory holding a 28pt bar, whose track is inset 8pt, then 4pt
+/// of gap, then a 28pt new-tab button, then 8pt to the trailing edge.
 internal enum EditorTabStripLayout {
     internal static let unseenDotDiameter: CGFloat = 6
 
@@ -35,6 +36,14 @@ internal enum EditorTabStripLayout {
 
     internal static var bandBottomClearance: CGFloat { bandHeight - trackHeight }
 
+    /// Fully rounded, because that is what the system's own tab bar is: the runtime
+    /// probe reports `cornerRadius = 12` on each 24pt `NSGlassEffectView` tab, which is exactly
+    /// half its height, and a corner fit of the 28pt track lands at 12 to 14pt. An in-content
+    /// `NSSegmentedControl` is the shallower shape, `(height - 4) / 4`, but that is a different
+    /// control in a different place; this strip is the titlebar tab bar.
+    internal static var trackShape: Capsule { Capsule(style: .continuous) }
+    internal static var tabShape: Capsule { Capsule(style: .continuous) }
+
     /// Tabs share the track equally, and stop shrinking at a width that still fits a name so a
     /// long list scrolls instead of collapsing into slivers. The system staggers widths slightly
     /// by an undocumented rule; an equal share is within a couple of points of it.
@@ -47,6 +56,11 @@ internal enum EditorTabStripLayout {
     /// How far a tab fades while it is the one being dragged. Enough to read as lifted out of the
     /// strip, not so far that its title stops being legible on the way past its neighbours.
     internal static let draggingOpacity: CGFloat = 0.45
+
+    /// How far the pointer travels before a press on a tab becomes a reorder rather than a click.
+    /// The same distance AppKit uses to tell a click from a drag, so a hand that shifts a point or
+    /// two while clicking still selects the tab.
+    internal static let reorderThreshold: CGFloat = 4
 
     /// A separator is drawn at the leading edge of a tab only when both it and its leading
     /// neighbour are plain and untouched. A line against the raised capsule reads as a seam in

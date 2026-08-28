@@ -14,6 +14,7 @@ extension MainWindowToolbar: NSToolbarItemValidation {
         let connected: Bool
         let isTableTab: Bool
         let canAddRow: Bool
+        let canRestorePreviousValues: Bool
         let hasPendingChanges: Bool
         let hasDataPendingChanges: Bool
         let blocksAllWrites: Bool
@@ -23,6 +24,11 @@ extension MainWindowToolbar: NSToolbarItemValidation {
         let supportsServerDashboard: Bool
         let canNavigateBack: Bool
         let canNavigateForward: Bool
+        /// Separate from `connected` because a connection that is still dialing counts as alive
+        /// while its sidebar is narrowed to the workspace rail, and a segment that toggles an
+        /// object browser the window is not showing has nothing to toggle. Defaulted, because a
+        /// context built for a connected pane is describing a window that has one.
+        var showsObjectBrowser = true
     }
 
     /// Listed exhaustively so a new state has to choose a side instead of inheriting "alive".
@@ -45,11 +51,14 @@ extension MainWindowToolbar: NSToolbarItemValidation {
             return true
         case Self.database:
             return context.connected && !context.fileBased && context.supportsContainerSwitching
-        case Self.refresh, Self.quickSwitcher, Self.newTab, Self.exportTables, Self.sidebarToggle,
-             Self.contentMode:
+        case Self.refresh, Self.quickSwitcher, Self.newTab, Self.exportTables, Self.contentMode:
             return context.connected
+        case Self.sidebarToggle:
+            return context.connected && context.showsObjectBrowser
         case Self.addRow:
             return context.connected && context.canAddRow
+        case Self.restorePreviousValues:
+            return context.connected && context.canRestorePreviousValues
         case Self.navigateBack:
             return context.connected && context.canNavigateBack
         case Self.navigateForward:
@@ -75,6 +84,7 @@ extension MainWindowToolbar: NSToolbarItemValidation {
             connected: Self.hasLiveSession(state.connectionState),
             isTableTab: state.isTableTab,
             canAddRow: coordinator?.canAddRow ?? false,
+            canRestorePreviousValues: coordinator?.canRewindSelectedTab ?? false,
             hasPendingChanges: state.hasPendingChanges,
             hasDataPendingChanges: state.hasDataPendingChanges,
             blocksAllWrites: state.safeModeLevel.blocksAllWrites,
@@ -83,11 +93,21 @@ extension MainWindowToolbar: NSToolbarItemValidation {
             supportsImport: PluginManager.shared.supportsImport(for: state.databaseType),
             supportsServerDashboard: coordinator?.commandActions?.supportsServerDashboard ?? false,
             canNavigateBack: coordinator?.canNavigateBack ?? false,
-            canNavigateForward: coordinator?.canNavigateForward ?? false
+            canNavigateForward: coordinator?.canNavigateForward ?? false,
+            showsObjectBrowser: coordinator?.splitViewController?.sidebarChromeMode.showsObjectBrowser ?? false
         )
     }
 
+    /// Switch Connection is the window's, so it answers before a subject is required. Every other
+    /// item here needs the coordinator that presents it, and enabling one of those without a
+    /// subject would leave a live-looking button that does nothing, so no subject still disables
+    /// the rest of the toolbar.
+    static func isWindowScoped(_ itemIdentifier: NSToolbarItem.Identifier) -> Bool {
+        itemIdentifier == Self.connection
+    }
+
     func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
+        if Self.isWindowScoped(item.itemIdentifier) { return true }
         guard let context = validationContext() else { return false }
         return Self.isEnabled(itemIdentifier: item.itemIdentifier, context: context)
     }
@@ -102,6 +122,7 @@ extension MainWindowToolbar: NSToolbarItemValidation {
 extension MainWindowToolbar: NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         guard let itemIdentifier = itemIdentifier(forMenuFormAction: menuItem.action) else { return true }
+        if Self.isWindowScoped(itemIdentifier) { return true }
         guard let context = validationContext() else { return false }
         return Self.isEnabled(itemIdentifier: itemIdentifier, context: context)
     }

@@ -36,7 +36,7 @@ extension DatabaseTreeOutlineCoordinator: NSMenuDelegate {
         let settings = AppSettingsManager.shared.general
         return DatabaseTreeMenuContext(
             clicked: clicked?.kind,
-            selectedTables: Set(selectedRefs().map(\.table)),
+            selectedTables: Set(selectedRefs()),
             selectedContainers: selectedContainerRefs(),
             activeDatabase: activeDatabase,
             activeSchema: activeSchema,
@@ -51,6 +51,15 @@ extension DatabaseTreeOutlineCoordinator: NSMenuDelegate {
                 activeSchema: activeSchema,
                 supportsDropDatabase: PluginManager.shared.supportsDropDatabase(for: databaseType),
                 supportsDropSchema: PluginManager.shared.supportsDropSchema(for: databaseType),
+                isReadOnly: mainCoordinator?.safeModeLevel.blocksAllWrites ?? false
+            ),
+            renameEligibility: ObjectRenameEligibility.Context(
+                activeDatabase: activeDatabase,
+                activeSchema: activeSchema,
+                supportsRenameTable: PluginManager.shared.supportsRenameTable(for: databaseType),
+                supportsRenameView: PluginManager.shared.supportsRenameView(for: databaseType),
+                supportsRenameDatabase: PluginManager.shared.supportsRenameDatabase(for: databaseType),
+                supportsRenameSchema: PluginManager.shared.supportsRenameSchema(for: databaseType),
                 isReadOnly: mainCoordinator?.safeModeLevel.blocksAllWrites ?? false
             ),
             containerEntityName: PluginManager.shared.containerEntityName(for: databaseType),

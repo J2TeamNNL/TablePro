@@ -98,6 +98,7 @@ public protocol PluginDatabaseDriver: AnyObject, Sendable {
     func fetchIndexes(table: String, schema: String?) async throws -> [PluginIndexInfo]
     func fetchForeignKeys(table: String, schema: String?) async throws -> [PluginForeignKeyInfo]
     func fetchTriggers(table: String, schema: String?) async throws -> [PluginTriggerInfo]
+    func fetchCheckConstraints(table: String, schema: String?) async throws -> [PluginCheckConstraintInfo]
     func fetchAllTriggers(schema: String?) async throws -> [PluginTriggerInfo]
     func fetchTriggerDDL(_ trigger: PluginTriggerInfo) async throws -> String
     func fetchRoutines(schema: String?) async throws -> [PluginRoutineInfo]
@@ -143,6 +144,15 @@ public protocol PluginDatabaseDriver: AnyObject, Sendable {
     func createDatabase(_ request: PluginCreateDatabaseRequest) async throws
     func dropDatabase(name: String) async throws
     func dropSchema(name: String) async throws
+
+    /// Renaming runs rather than generating a statement, because for several engines it is not a
+    /// statement: MongoDB renames a collection through an admin command, SQL Server calls
+    /// `sp_rename`. The driver also owns the quoting, which differs even between two SQLite
+    /// builds here, and the rules for the new name: PostgreSQL and Oracle reject a qualified one,
+    /// Snowflake accepts one and treats it as a move.
+    func renameTable(name: String, schema: String?, to newName: String, objectType: String) async throws
+    func renameDatabase(name: String, to newName: String) async throws
+    func renameSchema(name: String, to newName: String) async throws
     func executeParameterized(query: String, parameters: [PluginCellValue]) async throws -> PluginQueryResult
 
     // Session contexts (optional, switchable session dimensions such as a warehouse or role)
@@ -166,6 +176,15 @@ public protocol PluginDatabaseDriver: AnyObject, Sendable {
     func generateStatements(table: String, columns: [String], primaryKeyColumns: [String], changes: [PluginRowChange], insertedRowData: [Int: [PluginCellValue]], deletedRowIndices: Set<Int>, insertedRowIndices: Set<Int>) -> [(statement: String, parameters: [PluginCellValue])]?
     func generateStatements(table: String, schema: String?, columns: [String], primaryKeyColumns: [String], changes: [PluginRowChange], insertedRowData: [Int: [PluginCellValue]], deletedRowIndices: Set<Int>, insertedRowIndices: Set<Int>) -> [(statement: String, parameters: [PluginCellValue])]?
 
+    /// Writes a row back exactly as it was, key included, to undo a delete.
+    ///
+    /// `generateStatements` writes an insert for a row the user just added, so it is free to let
+    /// the server pick the key and MongoDB's drops `_id` on purpose. Replaying that to undo a
+    /// delete produces a different document rather than the one that went missing. Return nil to
+    /// say this driver cannot restore a row's identity, and the host will refuse rather than write
+    /// something close.
+    func generateIdentityPreservingInsert(table: String, schema: String?, columns: [String], primaryKeyColumns: [String], rows: [[PluginCellValue]]) -> [(statement: String, parameters: [PluginCellValue])]?
+
     // Database switching (SQL Server USE, ClickHouse database switch, etc.)
     func switchDatabase(to database: String) async throws
 
@@ -183,6 +202,9 @@ public protocol PluginDatabaseDriver: AnyObject, Sendable {
     func generateDropIndexSQL(table: String, indexName: String) -> String?
     func generateAddForeignKeySQL(table: String, fk: PluginForeignKeyDefinition) -> String?
     func generateDropForeignKeySQL(table: String, constraintName: String) -> String?
+    func generateAddCheckConstraintSQL(table: String, constraint: PluginCheckConstraintDefinition) -> String?
+    func generateDropCheckConstraintSQL(table: String, constraintName: String) -> String?
+    func generateRenameCheckConstraintSQL(table: String, from oldName: String, to newName: String) -> String?
     func generateModifyPrimaryKeySQL(table: String, oldColumns: [String], newColumns: [String], constraintName: String?) -> [String]?
     func generateMoveColumnSQL(table: String, column: PluginColumnDefinition, afterColumn: String?) -> String?
     func generateCreateTableSQL(definition: PluginCreateTableDefinition) -> String?
@@ -243,6 +265,8 @@ public extension PluginDatabaseDriver {
     }
 
     func fetchTriggers(table: String, schema: String?) async throws -> [PluginTriggerInfo] { [] }
+
+    func fetchCheckConstraints(table: String, schema: String?) async throws -> [PluginCheckConstraintInfo] { [] }
 
     func fetchAllTriggers(schema: String?) async throws -> [PluginTriggerInfo] { [] }
 
@@ -410,6 +434,18 @@ public extension PluginDatabaseDriver {
         )
     }
 
+    func renameTable(name: String, schema: String?, to newName: String, objectType: String) async throws {
+        throw PluginDriverUnsupportedOperation.renameTable
+    }
+
+    func renameDatabase(name: String, to newName: String) async throws {
+        throw PluginDriverUnsupportedOperation.renameDatabase
+    }
+
+    func renameSchema(name: String, to newName: String) async throws {
+        throw PluginDriverUnsupportedOperation.renameSchema
+    }
+
     func dropDatabase(name: String) async throws {
         throw NSError(domain: "PluginDatabaseDriver", code: -1,
                       userInfo: [NSLocalizedDescriptionKey: "Drop database is not supported by this driver"])
@@ -461,6 +497,7 @@ public extension PluginDatabaseDriver {
             insertedRowData: insertedRowData, deletedRowIndices: deletedRowIndices, insertedRowIndices: insertedRowIndices
         )
     }
+    func generateIdentityPreservingInsert(table: String, schema: String?, columns: [String], primaryKeyColumns: [String], rows: [[PluginCellValue]]) -> [(statement: String, parameters: [PluginCellValue])]? { nil }
 
     func generateAddColumnSQL(table: String, column: PluginColumnDefinition) -> String? { nil }
     func generateModifyColumnSQL(table: String, oldColumn: PluginColumnDefinition, newColumn: PluginColumnDefinition) -> String? { nil }
@@ -469,6 +506,9 @@ public extension PluginDatabaseDriver {
     func generateDropIndexSQL(table: String, indexName: String) -> String? { nil }
     func generateAddForeignKeySQL(table: String, fk: PluginForeignKeyDefinition) -> String? { nil }
     func generateDropForeignKeySQL(table: String, constraintName: String) -> String? { nil }
+    func generateAddCheckConstraintSQL(table: String, constraint: PluginCheckConstraintDefinition) -> String? { nil }
+    func generateDropCheckConstraintSQL(table: String, constraintName: String) -> String? { nil }
+    func generateRenameCheckConstraintSQL(table: String, from oldName: String, to newName: String) -> String? { nil }
     func generateModifyPrimaryKeySQL(table: String, oldColumns: [String], newColumns: [String], constraintName: String?) -> [String]? { nil }
     func generateMoveColumnSQL(table: String, column: PluginColumnDefinition, afterColumn: String?) -> String? { nil }
     func generateCreateTableSQL(definition: PluginCreateTableDefinition) -> String? { nil }

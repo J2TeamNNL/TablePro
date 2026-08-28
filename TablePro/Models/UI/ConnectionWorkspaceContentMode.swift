@@ -14,7 +14,7 @@ import Foundation
 /// Also deliberately not `AIChatMode`. That one names which tools may run (Ask, Edit, Agent) and
 /// lives in the composer. Two controls both labelled Agent, meaning different things, is a support
 /// ticket generator, so the toolbar says Assistant and neither mode drives the other.
-internal enum ConnectionWorkspaceContentMode: String, Codable, Sendable, CaseIterable {
+internal enum ConnectionWorkspaceContentMode: String, Codable, Equatable, Sendable, CaseIterable {
     case browse
     case assistant
 }

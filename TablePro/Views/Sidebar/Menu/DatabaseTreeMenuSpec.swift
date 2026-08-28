@@ -12,7 +12,7 @@ import TableProPluginKit
 /// reports as `clickedRow == -1`. That case used to produce no menu at all.
 internal struct DatabaseTreeMenuContext {
     internal let clicked: DatabaseTreeNode.Kind?
-    internal let selectedTables: Set<TableInfo>
+    internal let selectedTables: Set<DatabaseTreeTableRef>
     internal let selectedContainers: [DatabaseContainerRef]
     internal let activeDatabase: String?
     internal let activeSchema: String?
@@ -25,6 +25,7 @@ internal struct DatabaseTreeMenuContext {
     internal let importFormats: [ImportFormatOption]
     internal let maintenanceOperations: [String]
     internal let dropEligibility: ContainerDropEligibility.Context
+    internal let renameEligibility: ObjectRenameEligibility.Context
     internal let containerEntityName: String
     internal let containerEntityNamePlural: String
     internal let schemaEntityName: String
@@ -60,7 +61,7 @@ internal enum DatabaseTreeMenuSpec {
         guard let clicked = context.clicked else { return backgroundItems(context) }
         switch clicked {
         case .recentTable(let ref):
-            return tableItems(ref, context: context) + [
+            return tableItems(ref, context: context, isRecentRow: true) + [
                 .separator,
                 .command(String(localized: "Remove from Recent"), .removeRecent(ref)),
                 .command(String(localized: "Clear Recent Tables"), .clearRecents)
@@ -83,7 +84,7 @@ internal enum DatabaseTreeMenuSpec {
         case .containerObjectKindSection(let group):
             return [.command(String(localized: "Refresh"), .refreshContainerObjectKind(group))]
         case .hierarchicalSchemaSection(let schema):
-            return [.command(String(localized: "Refresh"), .refreshHierarchicalSchema(schema))]
+            return hierarchicalSchemaItems(schema, context: context)
         case .redisNode(let node):
             return redisItems(node)
         case .status, .recentSection, .redisKeysSection:
@@ -95,10 +96,17 @@ internal enum DatabaseTreeMenuSpec {
 
     private static func tableItems(
         _ ref: DatabaseTreeTableRef,
-        context: DatabaseTreeMenuContext
+        context: DatabaseTreeMenuContext,
+        isRecentRow: Bool = false
     ) -> [DatabaseTreeMenuItem] {
-        let targets = SidebarMenuTarget.resolve(clicked: ref.table, selection: Array(context.selectedTables))
-        let names = targets.map(\.name).sorted()
+        /// Narrowed to the clicked row's own database, because a queued Truncate or Drop is
+        /// applied by one save against one database. A tree selection can span two of them, and
+        /// the second database's tables would then either run in the first or refuse the whole
+        /// save; asking for them separately is the honest shape.
+        let targets = SidebarMenuTarget
+            .resolve(clicked: ref, selection: Array(context.selectedTables))
+            .filter { $0.database == ref.database }
+        let names = targets.map(\.table.name).sorted()
         var items: [DatabaseTreeMenuItem] = [
             .command(String(localized: "Open in New Tab"), .openInNewTab(ref)),
             .command(String(localized: "Show Structure"), .showStructure(ref))
@@ -138,13 +146,16 @@ internal enum DatabaseTreeMenuSpec {
 
         guard !context.isReadOnly else { return items }
         items.append(.separator)
+        if ObjectRenameEligibility.canRename(table: ref.table, context: context.renameEligibility) {
+            items.append(.command(String(localized: "Rename"), .beginRenameTable(ref: ref, isRecentRow: isRecentRow)))
+        }
         items.append(.command(String(localized: "Create New View…"), .createView))
         if SidebarContextMenuLogic.truncateVisible(clickedTable: ref.table) {
-            items.append(.command(String(localized: "Truncate"), .truncateTables(names: names, ref: ref)))
+            items.append(.command(String(localized: "Truncate"), .truncateTables(targets: targets, ref: ref)))
         }
         items.append(.command(
             SidebarContextMenuLogic.deleteLabel(for: ref.table.type),
-            .dropTables(names: names, ref: ref)
+            .dropTables(targets: targets, ref: ref)
         ))
         return items
     }
@@ -216,6 +227,28 @@ internal enum DatabaseTreeMenuSpec {
         return items
     }
 
+    /// An engine whose tree hangs tables off schemas draws no database rows at all, so its schemas
+    /// arrive here rather than as `.schema`. Without this the rename an engine declares and
+    /// implements is unreachable on Snowflake and Trino, which are the two that do.
+    private static func hierarchicalSchemaItems(
+        _ schema: String,
+        context: DatabaseTreeMenuContext
+    ) -> [DatabaseTreeMenuItem] {
+        var items: [DatabaseTreeMenuItem] = [
+            .command(String(localized: "Refresh"), .refreshHierarchicalSchema(schema))
+        ]
+        let ref = DatabaseContainerRef.schema(
+            database: context.activeDatabase,
+            schema: schema,
+            isSystem: context.systemSchemas.contains(schema)
+        )
+        guard let renameable = ObjectRenameEligibility.renameable([ref], context: context.renameEligibility)
+        else { return items }
+        items.append(.separator)
+        items.append(.command(renameTitle(for: renameable, context: context), .renameContainer(renameable)))
+        return items
+    }
+
     // MARK: - Containers
 
     private static func containerItems(
@@ -256,9 +289,15 @@ internal enum DatabaseTreeMenuSpec {
             items.append(.separator)
             items.append(.command(String(localized: "Export…"), .exportContainers(targets)))
         }
-        guard !droppable.isEmpty else { return items }
+        let renameable = ObjectRenameEligibility.renameable(targets, context: context.renameEligibility)
+        guard renameable != nil || !droppable.isEmpty else { return items }
         items.append(.separator)
-        items.append(.command(dropTitle(for: droppable, context: context), .dropContainers(droppable)))
+        if let renameable {
+            items.append(.command(renameTitle(for: renameable, context: context), .renameContainer(renameable)))
+        }
+        if !droppable.isEmpty {
+            items.append(.command(dropTitle(for: droppable, context: context), .dropContainers(droppable)))
+        }
         return items
     }
 
@@ -314,6 +353,16 @@ internal enum DatabaseTreeMenuSpec {
             entityNamePlural: isSchema ? context.schemaEntityNamePlural : context.containerEntityNamePlural,
             dropsDependentObjects: isSchema
         ).menuTitle
+    }
+
+    /// The engine's own word for the container, so the item reads "Rename Keyspace" on Cassandra
+    /// and "Rename Dataset" on BigQuery. No ellipsis: it opens the row's own field, not a sheet.
+    private static func renameTitle(
+        for target: DatabaseContainerRef,
+        context: DatabaseTreeMenuContext
+    ) -> String {
+        let entity = target.kind == .schema ? context.schemaEntityName : context.containerEntityName
+        return String(format: String(localized: "Rename %@"), entity)
     }
 
     private static func copyNamesTitle(count: Int) -> String {
