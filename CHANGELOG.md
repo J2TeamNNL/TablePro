@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Up` and `Down` while editing a cell, moving the editor to the same column of the row above or below. (#2569)
 - Tab rows in Settings > General > Tabs, wrapping the strip instead of scrolling it. (#2438)
 - Autoscrolling while dragging a tab, so a tab can be moved past the run currently on screen. (#2438)
+- Move Tab to New Window on a tab's right-click menu, and by dragging a tab out of the strip. (#2438)
 
 ### Changed
 
