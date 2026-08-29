@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - MongoDB statements split as JavaScript rather than at every semicolon.
 - MongoDB editor diagnostics report JavaScript syntax errors rather than unsupported method names.
+- Connection-first labels with the database or schema on a second line in the connections strip. (#2550)
 
 ### Fixed
 
