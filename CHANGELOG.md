@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JavaScript shell for MongoDB queries, with mongosh's `db` API, cursors, variables, functions and `print`.
 - Per-connection MongoDB shell state, so a variable or function survives from one statement to the next.
 - Cursor method autocomplete after `find()` and `aggregate()`.
+- Copy To and Duplicate Database in the sidebar and the Database menu, carrying structure, data or both to any connection. (#2487)
 
 ### Changed
 
