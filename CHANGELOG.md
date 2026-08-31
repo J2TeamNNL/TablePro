@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cell editor opening off screen when `Tab` wrapped onto a row below the visible ones.
 - Cell cursor left on the old column after `Tab` carried the editor to the next one.
 - Every data grid switching to its accessibility layout after one `Tab` press, with no assistive app attached.
+- Crash loop on every launch after resizing a column on a database with a long file path, with iCloud sync on. (#2575)
 - SSH Agent auth prompting for a private key passphrase instead of reporting that the agent was never reached. (#2583)
 - "SSH password rejected" on an SSH connection that has no password, when the server offers no keyboard-interactive.
 
