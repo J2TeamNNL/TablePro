@@ -29,11 +29,16 @@ struct TableStructureView: View {
     let connection: DatabaseConnection
     let databaseName: String
     let schemaName: String?
+
+    /// Whether the Structure tab is open on a view rather than a table. Every reorder mechanism
+    /// emits table DDL, so a view is withheld rather than allowed to fail at the statement.
+    var isViewObject: Bool = false
+
     let toolbarState: ConnectionToolbarState
     let coordinator: MainContentCoordinator?
     let selectionState: GridSelectionState
 
-    @Environment(\.appServices) private var services
+    @Environment(\.appServices) var services
 
     /// Derived from the tab's own binding on every render so it can never go stale.
     var scope: DatabaseScope {
@@ -148,6 +153,7 @@ struct TableStructureView: View {
         connection: DatabaseConnection,
         databaseName: String,
         schemaName: String?,
+        isViewObject: Bool = false,
         toolbarState: ConnectionToolbarState,
         coordinator: MainContentCoordinator?,
         selectionState: GridSelectionState,
@@ -157,6 +163,7 @@ struct TableStructureView: View {
         self.connection = connection
         self.databaseName = databaseName
         self.schemaName = schemaName
+        self.isViewObject = isViewObject
         self.toolbarState = toolbarState
         self.coordinator = coordinator
         self.selectionState = selectionState
@@ -462,64 +469,16 @@ struct TableStructureView: View {
 
     func updateGridDelegate() {
         let provider = makeCurrentProvider()
-        let canEdit = connection.type.supportsSchemaEditing
 
         gridDelegate.selectedTab = selectedTab
         gridDelegate.currentProvider = provider
         gridDelegate.orderedFields = provider.orderedColumnFields
         coordinator?.inspectorRowSourceRevision += 1
 
-        let moveRowHandler: ((Int, Int) -> Void)? = {
-            guard selectedTab == .columns,
-                  canEdit,
-                  !structureChangeManager.hasChanges,
-                  PluginManager.shared.supportsColumnReorder(for: connection.type) else {
-                return nil
-            }
-            return { [self] fromIndex, toIndex in
-                let columnsSnapshot = structureChangeManager.workingColumns
-                let columnLayoutClearTarget = coordinator?.selectedColumnLayoutClearTarget()
-                Task { @MainActor in
-                    do {
-                        let executedSQL = try await StructureColumnReorderHandler.moveColumn(
-                            fromIndex: fromIndex,
-                            toIndex: toIndex,
-                            workingColumns: columnsSnapshot,
-                            tableName: tableName,
-                            connectionId: connection.id
-                        )
-                        await services.queryHistoryManager.record(
-                            QueryHistoryRecordRequest(
-                                query: executedSQL.hasSuffix(";") ? executedSQL : executedSQL + ";",
-                                connectionId: connection.id,
-                                databaseName: DatabaseManager.shared.browseDatabaseName(for: connection),
-                                databaseType: connection.type,
-                                source: .structureDDL,
-                                executionTime: 0,
-                                rowCount: -1,
-                                wasSuccessful: true
-                            )
-                        )
-                        isReloadingAfterSave = true
-                        await loadColumns()
-                        loadSchemaForEditing()
-                        isReloadingAfterSave = false
-                        if let columnLayoutClearTarget {
-                            coordinator?.clearColumnLayout(columnLayoutClearTarget)
-                        }
-                        AppCommands.shared.refreshData.send(DataRefreshRequest(connectionId: connection.id))
-                    } catch {
-                        AlertHelper.showErrorSheet(
-                            title: String(localized: "Column Reorder Failed"),
-                            message: error.localizedDescription,
-                            window: coordinator?.contentWindow
-                        )
-                    }
-                }
-            }
-        }()
-
-        gridDelegate.moveRowHandler = moveRowHandler
+        let availability = columnReorderAvailability
+        gridDelegate.moveRowHandler = availability.isAvailable ? { [self] fromIndex, toIndex in
+            beginColumnReorder(fromIndex: fromIndex, toIndex: toIndex)
+        } : nil
     }
 
     private var structureGrid: some View {
@@ -550,6 +509,10 @@ struct TableStructureView: View {
                 databaseType: connection.type
             ),
             delegate: gridDelegate,
+            rowReorder: DataGridRowReorder(
+                isEnabled: columnReorderAvailability.isAvailable,
+                unavailableReason: columnReorderAvailability.unavailableReason
+            ),
             selectedRowIndices: $selectedRows,
             sortState: $session.sortState,
             columnLayout: columnLayoutBinding(for: selectedTab),

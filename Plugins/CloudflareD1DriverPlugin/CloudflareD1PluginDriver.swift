@@ -714,6 +714,32 @@ final class CloudflareD1PluginDriver: PluginDatabaseDriver, @unchecked Sendable 
         "ALTER TABLE \(quoteIdentifier(table)) DROP COLUMN \(quoteIdentifier(columnName))"
     }
 
+    /// SQLite has no positional `ALTER`, so the order changes by rebuilding the table, using the
+    /// shared recipe every SQLite-derived driver follows.
+    ///
+    /// Never run by TablePro. D1 answers each statement over its own HTTP request, so nothing can
+    /// hold the rebuild's transaction open across them, and a half-applied rebuild is data loss.
+    func generateColumnReorderPlan(
+        table: String,
+        schema: String?,
+        columns: [PluginColumnDefinition],
+        desiredOrder: [String]
+    ) async throws -> PluginColumnReorderPlan? {
+        try await SQLiteColumnReorderPlanner.plan(
+            tableName: table,
+            desiredOrder: desiredOrder,
+            isRunnable: false,
+            execute: { try await self.execute(query: $0) }
+        )
+    }
+
+    func columnReorderSchemaFingerprint(table: String, schema: String?) async throws -> String? {
+        try await SQLiteColumnReorderPlanner.schemaFingerprint(
+            tableName: table,
+            execute: { try await self.execute(query: $0) }
+        )
+    }
+
     func generateAddIndexSQL(table: String, index: PluginIndexDefinition) -> String? {
         let uniqueStr = index.isUnique ? "UNIQUE " : ""
         let cols = index.columns.map { quoteIdentifier($0) }.joined(separator: ", ")

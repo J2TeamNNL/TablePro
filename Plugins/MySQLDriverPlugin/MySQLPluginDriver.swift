@@ -944,18 +944,31 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
     func generateMoveColumnSQL(table: String, column: PluginColumnDefinition, afterColumn: String?) -> String? {
         let tableName = quoteIdentifier(table)
-        let colName = quoteIdentifier(column.name)
+        let position = afterColumn.map { "AFTER \(quoteIdentifier($0))" } ?? "FIRST"
+        /// The same builder `ADD COLUMN` uses, rather than the attribute list alone. `MODIFY`
+        /// replaces the whole definition, and the attribute list does not carry
+        /// `GENERATED ALWAYS AS`, so moving a generated column with it dropped the expression and
+        /// left a plain column of stored defaults behind.
+        return "ALTER TABLE \(tableName) MODIFY COLUMN \(buildColumnDefinitionSQL(column)) \(position)"
+    }
 
-        let def = "\(column.dataType)" + mysqlColumnAttributesSQL(column)
-
-        let position: String
-        if let afterCol = afterColumn {
-            position = "AFTER \(quoteIdentifier(afterCol))"
-        } else {
-            position = "FIRST"
-        }
-
-        return "ALTER TABLE \(tableName) MODIFY COLUMN \(colName) \(def) \(position)"
+    /// `MODIFY COLUMN` replaces the whole definition, so every move restates the column in full.
+    /// Restating only the type is what drops charset, collation and `ON UPDATE`.
+    func generateColumnReorderPlan(
+        table: String,
+        schema: String?,
+        columns: [PluginColumnDefinition],
+        desiredOrder: [String]
+    ) async throws -> PluginColumnReorderPlan? {
+        let byName = Dictionary(columns.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
+        let statements = PluginColumnReorderPlanner
+            .moves(from: columns.map(\.name), to: desiredOrder)
+            .compactMap { move -> String? in
+                guard let column = byName[move.column] else { return nil }
+                return generateMoveColumnSQL(table: table, column: column, afterColumn: move.afterColumn)
+            }
+        guard !statements.isEmpty else { return nil }
+        return PluginColumnReorderPlan(statements: statements, cost: .metadataOnly)
     }
 
     // MARK: - View Templates

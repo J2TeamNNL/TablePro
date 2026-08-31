@@ -28,7 +28,7 @@ struct PluginMetadataSnapshot: Sendable {
     let editorLanguage: EditorLanguage
     let connectionMode: ConnectionMode
     let supportsDatabaseSwitching: Bool
-    let supportsColumnReorder: Bool
+    var columnReorder: ColumnReorderSupport = .unsupported
 
     let capabilities: CapabilityFlags
     let schema: SchemaInfo
@@ -241,7 +241,7 @@ struct PluginMetadataSnapshot: Sendable {
             brandColorHex: brandColorHex, queryLanguageName: queryLanguageName,
             editorLanguage: editorLanguage, connectionMode: connectionMode,
             supportsDatabaseSwitching: supportsDatabaseSwitching,
-            supportsColumnReorder: supportsColumnReorder,
+            columnReorder: columnReorder,
             capabilities: capabilities, schema: schema, editor: editor, connection: connection
         )
     }
@@ -258,7 +258,7 @@ struct PluginMetadataSnapshot: Sendable {
             brandColorHex: brandColorHex, queryLanguageName: queryLanguageName,
             editorLanguage: editorLanguage, connectionMode: connectionMode,
             supportsDatabaseSwitching: supportsDatabaseSwitching,
-            supportsColumnReorder: supportsColumnReorder,
+            columnReorder: columnReorder,
             capabilities: capabilities, schema: schema, editor: editor, connection: connection
         )
     }
@@ -275,7 +275,7 @@ struct PluginMetadataSnapshot: Sendable {
             brandColorHex: source.brandColorHex, queryLanguageName: queryLanguageName,
             editorLanguage: editorLanguage, connectionMode: connectionMode,
             supportsDatabaseSwitching: supportsDatabaseSwitching,
-            supportsColumnReorder: supportsColumnReorder,
+            columnReorder: columnReorder,
             capabilities: capabilities, schema: schema, editor: editor, connection: connection
         )
     }
@@ -292,7 +292,7 @@ struct PluginMetadataSnapshot: Sendable {
             brandColorHex: brandColorHex, queryLanguageName: queryLanguageName,
             editorLanguage: editorLanguage, connectionMode: connectionMode,
             supportsDatabaseSwitching: supportsDatabaseSwitching,
-            supportsColumnReorder: supportsColumnReorder,
+            columnReorder: columnReorder,
             capabilities: capabilities, schema: schema, editor: editor, connection: connection
         )
     }
@@ -309,7 +309,7 @@ struct PluginMetadataSnapshot: Sendable {
             brandColorHex: brandColorHex, queryLanguageName: queryLanguageName,
             editorLanguage: editorLanguage, connectionMode: connectionMode,
             supportsDatabaseSwitching: source.supportsDatabaseSwitching,
-            supportsColumnReorder: supportsColumnReorder,
+            columnReorder: columnReorder,
             capabilities: capabilities,
             schema: SchemaInfo(
                 defaultSchemaName: source.schema.defaultSchemaName,
@@ -562,7 +562,7 @@ final class PluginMetadataRegistry: @unchecked Sendable {
             editorLanguage: driverType.editorLanguage,
             connectionMode: driverType.connectionMode,
             supportsDatabaseSwitching: driverType.supportsDatabaseSwitching,
-            supportsColumnReorder: existingSnapshot?.supportsColumnReorder ?? false,
+            columnReorder: existingSnapshot?.columnReorder ?? .unsupported,
             capabilities: PluginMetadataSnapshot.CapabilityFlags(
                 supportsSchemaSwitching: driverType.supportsSchemaSwitching,
                 supportsImport: driverType.supportsImport,
