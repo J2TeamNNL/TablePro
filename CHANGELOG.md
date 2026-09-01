@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.70.0] - 2026-09-01
+
 ### Added
 
 - JSON tab in the inspector, showing the selected row as JSON, with Show Row as JSON on a row's right-click menu.
@@ -14,18 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Filter field in the JSON tab, taking text or a regular expression in slashes.
 - Always Expand Foreign Keys in the JSON tab, off until turned on.
 - JavaScript shell for MongoDB queries, with mongosh's `db` API, cursors, variables, functions and `print`.
-- Per-connection MongoDB shell state, so a variable or function survives from one statement to the next.
+- Per-connection MongoDB shell state, carried from one statement to the next.
 - Cursor method autocomplete after `find()` and `aggregate()`.
-- Copy To and Duplicate Database in the sidebar and the Database menu, carrying structure, data or both to any connection. (#2487)
+- Copy To and Duplicate Database, carrying structure, data or both to any connection. (#2487)
 - Search in the connection, database and schema picker that Copy To and Compare & Sync share. (#2487)
 - Move Column Up and Move Column Down on a column's right-click menu, with the reason where the engine cannot. (#2479)
 - Copy on a column's right-click menu in Structure, for the cell under the pointer.
 - `Up` and `Down` while editing a cell, moving the editor to the same column of the row above or below. (#2569)
 - Tab rows in Settings > General > Tabs, wrapping the strip instead of scrolling it. (#2438)
-- Autoscrolling while dragging a tab, so a tab can be moved past the run currently on screen. (#2438)
+- Autoscrolling while dragging a tab past the end of the strip. (#2438)
 - Move Tab to New Window on a tab's right-click menu, and by dragging a tab out of the strip. (#2438)
 - Column reorder by dragging on ClickHouse and Oracle. (#2479)
-- Column reorder on PostgreSQL, SQLite, libSQL, Turso and Cloudflare D1, through a table rebuild shown before anything runs. (#2479)
+- Column reorder on PostgreSQL, SQLite, libSQL, Turso and Cloudflare D1, through a previewed table rebuild. (#2479)
 - Recognition of SQLite and DuckDB databases by their contents, whatever they are named. (#2476)
 - `.parquet` files in Finder's Open With, read through DuckDB. (#2476)
 - Prompt to install the driver a file needs, before the file opens. (#2476)
@@ -59,21 +61,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Crash loop on every launch after resizing a column on a database with a long file path, with iCloud sync on. (#2575)
 - SSH Agent auth prompting for a private key passphrase instead of reporting that the agent was never reached. (#2583)
 - "SSH password rejected" on an SSH connection that has no password, when the server offers no keyboard-interactive.
-- NULL pre-filled into an identity column on Add Row, so the insert failed on PostgreSQL. (#2588)
+- NULL pre-filled into an identity column on Add Row, failing the insert on PostgreSQL. (#2588)
 - No "Default" in a cell's Set Value menu for an identity column. (#2588)
 - Duplicate Row copying an identity column that is not the primary key. (#2588)
 - Editing a `GENERATED ALWAYS AS IDENTITY` cell, which the server rejects on save. (#2588)
 - Generated and identity columns editable again after a tab switch or a refresh that reused cached metadata.
 - A new row of nothing but server-assigned columns silently dropped from the save.
 - `OVERRIDING SYSTEM VALUE` and `setval` in a SQL export of a SQL Server database.
-- PGlite treated as a generic SQL dialect, so `$$` bodies split at their inner semicolons.
-- Paste, Fill Column and the row inspector staging an edit to a column the server owns, which the save then discarded. (#2588)
+- PGlite `$$` bodies split at their inner semicolons, from treating PGlite as a generic SQL dialect.
+- Paste, Fill Column and the row inspector staging an edit to a column the server owns. (#2588)
 - A rerun answered from cache adopting another pinned result's column metadata. (#2588)
-- Add Row and Duplicate Row offered before a table's schema has loaded, when nothing yet knows which columns the server fills in. (#2588)
-- Missing `SET IDENTITY_INSERT` around a SQL Server table's rows in a SQL export, so the dump could not be restored. (#2588)
-- Fill Column offered on a generated or identity column.
-- Pasted rows carrying a value for an identity or generated column, which the save then discarded. (#2588)
-- Row inspector offering an editor for a column the server owns, leaving an edit that Save could never clear. (#2588)
+- Add Row and Duplicate Row offered before a table's schema has loaded. (#2588)
+- Missing `SET IDENTITY_INSERT` around a SQL Server table's rows in a SQL export. (#2588)
 - Row inspector editing a column the driver marks immutable, such as MongoDB's `_id`.
 - Add Row and Duplicate Row inert for good on a result the user switched away from while its schema was loading. (#2588)
 
@@ -3596,7 +3595,8 @@ TablePro is a native macOS database client built with SwiftUI and AppKit, design
     - Custom SQL query templates
     - Performance optimized for large datasets
 
-[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.69.0...HEAD
+[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.70.0...HEAD
+[0.70.0]: https://github.com/TableProApp/TablePro/compare/v0.69.0...v0.70.0
 [0.69.0]: https://github.com/TableProApp/TablePro/compare/v0.68.1...v0.69.0
 [0.68.1]: https://github.com/TableProApp/TablePro/compare/v0.68.0...v0.68.1
 [0.68.0]: https://github.com/TableProApp/TablePro/compare/v0.67.1...v0.68.0
