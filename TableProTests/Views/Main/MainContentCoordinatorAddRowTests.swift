@@ -5,6 +5,7 @@
 
 import Foundation
 import SwiftUI
+import TableProPluginKit
 import Testing
 
 @testable import TablePro
@@ -16,7 +17,8 @@ struct MainContentCoordinatorAddRowTests {
         viewMode: ResultsViewMode = .data,
         tableName: String? = "users",
         isEditable: Bool = true,
-        isView: Bool = false
+        isView: Bool = false,
+        hasAuthoritativeSchema: Bool = true
     ) -> MainContentCoordinator {
         let tabManager = QueryTabManager()
         let coordinator = MainContentCoordinator(
@@ -32,6 +34,15 @@ struct MainContentCoordinatorAddRowTests {
         tab.display.resultsViewMode = viewMode
         tabManager.tabs.append(tab)
         tabManager.selectedTabId = tab.id
+        coordinator.setActiveTableRows(
+            TableRows.from(
+                queryRows: [[.text("1"), .text("Alice")]],
+                columns: ["id", "name"],
+                columnTypes: [.text(rawType: nil), .text(rawType: nil)],
+                hasAuthoritativeSchema: hasAuthoritativeSchema
+            ),
+            for: tab.id
+        )
         return coordinator
     }
 
@@ -51,6 +62,14 @@ struct MainContentCoordinatorAddRowTests {
         #expect(!makeCoordinator(tableName: nil).canAddRow)
         #expect(!makeCoordinator(isEditable: false).canAddRow)
         #expect(!makeCoordinator(isView: true).canAddRow)
+    }
+
+    /// A new row is pre-filled from the schema's account of which columns the server fills in, so
+    /// offering the command before that account arrives stages NULL into an identity column.
+    @Test("A row waits for the schema that says which columns the server fills in")
+    func addRowWaitsForTheAuthoritativeSchema() {
+        #expect(!makeCoordinator(hasAuthoritativeSchema: false).canAddRow)
+        #expect(makeCoordinator(hasAuthoritativeSchema: true).canAddRow)
     }
 }
 
