@@ -50,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Compare & Sync publishing one pair's results after the pickers moved to another.
 - Clicks and hovers in the scrolled tab strip's edge padding landing on a tab clipped off the edge.
 - SSH Agent auth offering every key the agent holds, exhausting the server's `MaxAuthTries`. (#2601)
+- Crash when opening CSV and TSV files on macOS 27. (#2600)
 
 ## [0.70.0] - 2026-09-01
 
