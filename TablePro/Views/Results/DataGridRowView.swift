@@ -475,6 +475,16 @@ class DataGridRowView: NSTableRowView {
             menu.addItem(pasteItem)
         }
 
+        menu.addItem(NSMenuItem.separator())
+
+        let jsonViewItem = NSMenuItem(
+            title: String(localized: "Show Row as JSON"),
+            action: #selector(showRowAsJSON),
+            keyEquivalent: ""
+        )
+        jsonViewItem.target = self
+        menu.addItem(jsonViewItem)
+
         let tableRows = coordinator.tableRowsProvider()
         addForeignKeyMenuItems(to: menu, dataColumnIndex: dataColumnIndex, tableRows: tableRows)
 
@@ -723,6 +733,10 @@ class DataGridRowView: NSTableRowView {
             at: coordinator.currentRowSelection(fallbackRow: rowIndex),
             columnIndex: columnIndex
         )
+    }
+
+    @objc private func showRowAsJSON() {
+        coordinator?.delegate?.dataGridShowRowAsJSON()
     }
 
     @objc private func previewForeignKey(_ sender: NSMenuItem) {

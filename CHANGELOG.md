@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- JSON tab in the inspector, showing the selected row as JSON, with Show Row as JSON on a row's right-click menu.
+- Foreign key expansion in the JSON tab, fetching the referenced row on click, five levels deep.
+- Filter field in the JSON tab, taking text or a regular expression in slashes.
+- Always Expand Foreign Keys in the JSON tab, off until turned on.
 - JavaScript shell for MongoDB queries, with mongosh's `db` API, cursors, variables, functions and `print`.
 - Per-connection MongoDB shell state, so a variable or function survives from one statement to the next.
 - Cursor method autocomplete after `find()` and `aggregate()`.
@@ -37,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Row inspector lag on hover, on a tab switch and on every keystroke, from re-parsing each field's value.
 - The data grid's row commands on a column's right-click menu in Structure, when the column was already selected.
 - Wrong keyboard shortcuts shown beside Copy Name and Duplicate in the Structure right-click menu.
 - Plugin download reporting no progress at all when a connection or a file needs a driver installed.

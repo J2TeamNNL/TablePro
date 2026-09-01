@@ -10,21 +10,33 @@ struct UnifiedRightPanelView: View {
     let connection: DatabaseConnection
 
     private let settingsManager = AppSettingsManager.shared
+    @Environment(\.commandActions) private var commandActions
     @State private var showClearConfirmation = false
 
+    /// AI Chat is the only tab a setting can take away, and a tab that is gone cannot stay
+    /// selected: the picker would show no selection and the panel no content.
+    private var availableTabs: [RightPanelTab] {
+        RightPanelTab.available(isAIEnabled: settingsManager.ai.enabled)
+    }
+
+    /// Every read of the active tab goes through the resolution, because the stored value is
+    /// restored per connection without asking whether the tab still exists and no change
+    /// notification fires for a value that was already wrong when the panel appeared.
+    private var activeTab: RightPanelTab {
+        RightPanelTab.resolved(state.activeTab, isAIEnabled: settingsManager.ai.enabled)
+    }
+
+    /// Writes the resolution back so the stored tab stops naming one the panel cannot show, and
+    /// only when it differs: every assignment persists, and the panel appears on every switch.
+    private func normalizeActiveTab() {
+        guard state.activeTab != activeTab else { return }
+        state.activeTab = activeTab
+    }
+
     var body: some View {
-        Group {
-            if settingsManager.ai.enabled {
-                splitContent
-            } else {
-                detailsView
-            }
-        }
-        .onChange(of: settingsManager.ai.enabled) {
-            if !settingsManager.ai.enabled {
-                state.activeTab = .details
-            }
-        }
+        splitContent
+        .task { normalizeActiveTab() }
+        .onChange(of: settingsManager.ai.enabled) { normalizeActiveTab() }
         .alert(
             String(localized: "Clear All Conversations?"),
             isPresented: $showClearConfirmation
@@ -42,8 +54,28 @@ struct UnifiedRightPanelView: View {
         VStack(spacing: 0) {
             inspectorHeader
             Divider()
-            switch state.activeTab {
-            case .details: detailsView
+            tabContent
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// Details stays mounted and is hidden rather than rebuilt.
+    ///
+    /// Its field list is a `List`, so leaving the tab tears down an `NSTableView` and a field editor
+    /// per column, and coming back builds them again: the switch cost grows with the row's width.
+    /// The other two tabs are cheap to rebuild and are left conditional, which also keeps the AI
+    /// chat's view model and its conversation load off a window that never opens that tab.
+    private var tabContent: some View {
+        ZStack(alignment: .topLeading) {
+            detailsView
+                .opacity(activeTab == .details ? 1 : 0)
+                .allowsHitTesting(activeTab == .details)
+                .disabled(activeTab != .details)
+                .accessibilityHidden(activeTab != .details)
+
+            switch activeTab {
+            case .details: EmptyView()
+            case .json:    jsonView
             case .aiChat:  aiChatView
             }
         }
@@ -54,7 +86,7 @@ struct UnifiedRightPanelView: View {
         HStack(alignment: .center, spacing: 4) {
             tabPicker
             Spacer(minLength: 8)
-            if state.activeTab == .aiChat {
+            if activeTab == .aiChat {
                 historyMenu
                 newConversationButton
             }
@@ -64,8 +96,8 @@ struct UnifiedRightPanelView: View {
     }
 
     private var tabPicker: some View {
-        Picker("", selection: $state.activeTab) {
-            ForEach(RightPanelTab.allCases, id: \.self) { tab in
+        Picker("", selection: Binding(get: { activeTab }, set: { state.activeTab = $0 })) {
+            ForEach(availableTabs, id: \.self) { tab in
                 Text(tab.localizedTitle).tag(tab)
             }
         }
@@ -142,6 +174,16 @@ struct UnifiedRightPanelView: View {
             isRowDeleted: ctx.isRowDeleted,
             editState: state.editState,
             databaseType: connection.type
+        )
+    }
+
+    private var jsonView: some View {
+        JSONRowInspectorView(
+            viewModel: state.jsonViewModel,
+            snapshot: state.inspectorContext.jsonRow,
+            onOpenReferencedTable: { reference, value in
+                commandActions?.openForeignKeyTable(reference: reference, value: value)
+            }
         )
     }
 
