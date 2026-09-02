@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `explain_query` chat tool, so the assistant can ask for a query plan without running the statement.
 - Start an AI session from the welcome window, with running and stopped sessions listed there.
 - Outside MCP servers as tool sources for AI sessions, allowlisted per connection.
+- Mode submenu in the View menu, switching a window between Browse and Assistant.
 
 ### Changed
 
@@ -54,6 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Every proposed tool call taking `Return`, so the key acted on whichever button AppKit reached first.
 - VoiceOver reading the Browse and Assistant control as its SF Symbol names.
 - Two GitHub Copilot chats on one provider sharing a single server-side conversation, so each was answered with the other's context.
+- VoiceOver reading the sidebar toggle as its SF Symbol names, "List" and "favorite".
+- Tables and Favorites doing nothing when chosen from the toolbar's overflow menu.
 
 ### Security
 

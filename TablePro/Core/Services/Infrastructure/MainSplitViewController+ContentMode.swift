@@ -80,10 +80,6 @@ internal extension MainSplitViewController {
         }
     }
 
-    func toggleContentMode() {
-        setContentMode(contentMode == .assistant ? .browse : .assistant)
-    }
-
     /// Sends a prompt that was queued against a connection which is already up.
     ///
     /// `adoptSession` flushes the queue when a connect lands, which covers a prompt typed at Welcome
