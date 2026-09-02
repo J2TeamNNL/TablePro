@@ -600,8 +600,14 @@ internal final class WorkspaceRailViewController: NSViewController {
         close(workspace)
     }
 
+    /// Named for the rail rather than for the command, because `closeConnection(_:)` is the File
+    /// menu's own nil-target action on `MainSplitViewController`. `@objc` puts this in the
+    /// responder chain whatever its access level, and the rail sits ahead of the controller there,
+    /// so sharing the name meant the menu bar's Close Connection resolved here instead, found a
+    /// sender carrying no `representedObject`, and returned having done nothing at all. The rail's
+    /// own items set `target` explicitly, so nothing here depends on the selector's spelling.
     @objc
-    private func closeConnection(_ sender: NSMenuItem) {
+    private func closeWorkspaceConnection(_ sender: NSMenuItem) {
         guard let workspace = sender.representedObject as? WorkspaceID else { return }
         close(connectionId: workspace.connectionId)
     }
@@ -720,7 +726,7 @@ extension WorkspaceRailViewController: NSMenuDelegate {
         addItem(
             to: menu,
             title: String(format: String(localized: "Close Connection “%@”"), entry.connection.name),
-            action: #selector(closeConnection(_:)),
+            action: #selector(closeWorkspaceConnection(_:)),
             workspace: entry.workspace
         )
     }
