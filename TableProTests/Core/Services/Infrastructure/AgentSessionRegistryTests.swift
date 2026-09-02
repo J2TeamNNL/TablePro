@@ -186,7 +186,7 @@ struct AgentSessionRegistryTests {
             approvals: ToolApprovalCenter(),
             connectionLookup: { $0 == survivor.id ? survivor : nil }
         )
-        await registry.restore()
+        registry.restoreIfNeeded()
 
         #expect(registry.sessions.map(\.connectionId) == [survivor.id])
     }
@@ -212,7 +212,7 @@ struct AgentSessionRegistryTests {
             approvals: ToolApprovalCenter(),
             connectionLookup: { _ in connection }
         )
-        await registry.restore()
+        registry.restoreIfNeeded()
 
         #expect(registry.sessions.filter { $0.status == .failed }.count == 1)
         #expect(registry.sessions.filter { $0.status == .stopped }.count == 2)
@@ -234,8 +234,8 @@ struct AgentSessionRegistryTests {
             approvals: ToolApprovalCenter(),
             connectionLookup: { _ in connection }
         )
-        await registry.restore()
-        await registry.restore()
+        registry.restoreIfNeeded()
+        registry.restoreIfNeeded()
 
         #expect(registry.sessions.count == 1)
     }
@@ -279,7 +279,7 @@ struct AgentSessionRegistryTests {
             approvals: ToolApprovalCenter(),
             connectionLookup: { _ in connection }
         )
-        await registry.restore()
+        registry.restoreIfNeeded()
         let session = try #require(registry.sessions.first)
 
         await registry.loadTranscript(for: session)

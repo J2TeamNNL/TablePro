@@ -52,7 +52,8 @@ internal final class AgentSessionRegistry {
     // MARK: - Reads
 
     internal func existingSession(id: UUID) -> AgentSession? {
-        sessions.first { $0.id == id }
+        restoreIfNeeded()
+        return sessions.first { $0.id == id }
     }
 
     internal func sessions(for connectionId: UUID) -> [AgentSession] {
@@ -75,6 +76,7 @@ internal final class AgentSessionRegistry {
     /// would put that back.
     @discardableResult
     internal func makeSession(connection: DatabaseConnection, title: String? = nil) -> AgentSession {
+        restoreIfNeeded()
         let viewModel = AIChatViewModel(services: services, connection: connection)
         let session = AgentSession(
             connectionId: connection.id,
@@ -96,6 +98,7 @@ internal final class AgentSessionRegistry {
     /// action (choosing the AI tab, switching to Assistant mode, sending from Welcome) or an
     /// explicit `.task`.
     internal func session(for connection: DatabaseConnection) -> AgentSession {
+        restoreIfNeeded()
         if let existing = existingDefaultSession(for: connection.id) {
             existing.connectionName = connection.name
             existing.viewModel.connection = connection
@@ -200,13 +203,22 @@ internal final class AgentSessionRegistry {
 
     // MARK: - Restore
 
-    /// Rebuilds the list from disk once per launch. A record whose connection has since been deleted
-    /// is dropped rather than restored against a connection that no longer exists: the session could
-    /// not be opened, and a row that cannot be opened is worse than no row.
-    internal func restore() async {
+    /// Rebuilds the list from disk once per launch, before this registry answers anything.
+    ///
+    /// Synchronous, and called from every read and every create rather than kicked off at launch.
+    /// An asynchronous restore leaves a window between the launch that starts it and the load that
+    /// finishes it, and a `session(for:)` in that window finds an empty list, mints a session, and
+    /// is then joined by the stored one: two sessions on one conversation, both persisted, both in
+    /// the rail. Restoring on first use closes the window by construction and costs launch nothing,
+    /// because nothing on the launch path asks the registry a question.
+    ///
+    /// A record whose connection has since been deleted is dropped rather than restored against a
+    /// connection that no longer exists: the session could not be opened, and a row that cannot be
+    /// opened is worse than no row.
+    internal func restoreIfNeeded() {
         guard !didRestore else { return }
         didRestore = true
-        let stored = await store.load()
+        let stored = store.load()
         guard !stored.isEmpty else { return }
         var restored: [AgentSession] = []
         for record in stored {
@@ -230,10 +242,19 @@ internal final class AgentSessionRegistry {
             )
             restored.append(session)
         }
-        sessions.append(contentsOf: restored.filter { restoredSession in
+        let adopted = restored.filter { restoredSession in
             !sessions.contains { $0.id == restoredSession.id }
-        })
+        }
+        sessions.append(contentsOf: adopted)
         persist()
+        /// Restored sessions authorize their connection's outside MCP servers exactly as a new one
+        /// does. Only `makeSession` used to attach, so an allowlisted server's tools were missing
+        /// from every session that came back from disk until the user started a fresh one.
+        Task {
+            for session in adopted {
+                await MCPRemoteToolCoordinator.shared.attach(session: session)
+            }
+        }
     }
 
     /// Pulls a restored session's turns in on demand. Reading the whole conversation directory for

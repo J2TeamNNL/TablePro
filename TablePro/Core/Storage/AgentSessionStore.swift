@@ -77,7 +77,11 @@ internal actor AgentSessionStore {
         }
     }
 
-    internal func load() -> [AgentSessionRecord] {
+    /// Reads on the calling thread, so the registry can restore before it answers its first
+    /// question rather than racing a task that fills the list afterwards. Nothing but `fileURL` is
+    /// touched, and that is a `let`. The file holds one small record per session, no transcripts,
+    /// so the read is not worth an actor hop and the correctness of not having one is worth a lot.
+    nonisolated internal func load() -> [AgentSessionRecord] {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return [] }
         do {
             let data = try Data(contentsOf: fileURL)
