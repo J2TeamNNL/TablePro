@@ -32,6 +32,9 @@ internal actor MCPRemoteServerTransport {
     private let timeout: Duration
 
     private var negotiatedSessionId: String?
+    /// What the server agreed to, which starts as what TablePro asks for and is replaced by the
+    /// initialize response. Sent on every request from then on.
+    private var protocolVersion: MCPProtocolVersion = .latest
     private var isClosed = false
 
     internal init(
@@ -52,6 +55,14 @@ internal actor MCPRemoteServerTransport {
             configuration.httpShouldSetCookies = false
             self.urlSession = URLSession(configuration: configuration)
         }
+    }
+
+    /// Takes the version the server chose during initialization. Ignored when the server names one
+    /// TablePro does not implement, because sending back a version this client cannot speak is
+    /// worse than continuing to name the one it can.
+    internal func adopt(protocolVersion negotiated: MCPProtocolVersion) {
+        guard negotiated.isSupported else { return }
+        protocolVersion = negotiated
     }
 
     /// Sends one request and returns its response payload.
@@ -162,7 +173,7 @@ internal actor MCPRemoteServerTransport {
     }
 
     private func applyCommonHeaders(to request: inout URLRequest) {
-        request.setValue(MCPProtocolVersion.latest.rawValue, forHTTPHeaderField: "MCP-Protocol-Version")
+        request.setValue(protocolVersion.rawValue, forHTTPHeaderField: "MCP-Protocol-Version")
         request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
         if let negotiatedSessionId {
             request.setValue(negotiatedSessionId, forHTTPHeaderField: Self.sessionIdHeader)

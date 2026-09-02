@@ -259,6 +259,65 @@ struct MCPClientHandshakeTests {
         #expect(tools.map(\.name) == ["search"])
     }
 
+    /// `tools/list` is paginated. A client that stops at the first page silently offers the model a
+    /// subset of what the server has, and nothing anywhere says so.
+    @Test("Every page of a paginated tool list is read")
+    func followsToolListPagination() async throws {
+        let firstPage = #"{"tools":[{"name":"one","description":"d"}],"nextCursor":"page-2"}"#
+        let secondPage = #"{"tools":[{"name":"two","description":"d"}]}"#
+        let session = Self.makeSession(replies: [
+            .init(body: Self.rpcResult(id: 1, result: #"{"protocolVersion":"2026-07-28"}"#)),
+            .init(status: 202),
+            .init(body: Self.rpcResult(id: 2, result: firstPage)),
+            .init(body: Self.rpcResult(id: 3, result: secondPage))
+        ])
+
+        let tools = try await session.listTools()
+
+        #expect(tools.map(\.name) == ["one", "two"])
+        let cursors = StubMCPServerProtocol.requests.compactMap { request -> String? in
+            guard let object = try? JSONSerialization.jsonObject(with: request.body) as? [String: Any],
+                  let params = object["params"] as? [String: Any]
+            else { return nil }
+            return params["cursor"] as? String
+        }
+        #expect(cursors == ["page-2"])
+    }
+
+    /// The specification has the client send the negotiated version on every later request. A server
+    /// that answered with an older one is being told TablePro ignored it otherwise.
+    @Test("The version the server chose is what later requests carry")
+    func carriesTheNegotiatedProtocolVersion() async throws {
+        let older = MCPProtocolVersion.v20250618.rawValue
+        let session = Self.makeSession(replies: [
+            .init(body: Self.rpcResult(id: 1, result: #"{"protocolVersion":"\#(older)"}"#)),
+            .init(status: 202),
+            .init(body: Self.rpcResult(id: 2, result: Self.emptyToolList))
+        ])
+
+        _ = try await session.listTools()
+
+        let versions = StubMCPServerProtocol.requests.map { $0.headers["MCP-Protocol-Version"] }
+        #expect(versions.first == MCPProtocolVersion.latest.rawValue)
+        #expect(versions.dropFirst().allSatisfy { $0 == older })
+    }
+
+    @Test("A version TablePro does not implement is not echoed back")
+    func ignoresAnUnsupportedNegotiatedVersion() async throws {
+        let session = Self.makeSession(replies: [
+            .init(body: Self.rpcResult(id: 1, result: #"{"protocolVersion":"1999-01-01"}"#)),
+            .init(status: 202),
+            .init(body: Self.rpcResult(id: 2, result: Self.emptyToolList))
+        ])
+
+        _ = try await session.listTools()
+
+        #expect(
+            StubMCPServerProtocol.requests
+                .allSatisfy { $0.headers["MCP-Protocol-Version"] == MCPProtocolVersion.latest.rawValue }
+        )
+    }
+
     @Test("TablePro's own bridge headers are never sent to an outside server")
     func sendsNoBridgeHeaders() async throws {
         let session = Self.makeSession(replies: [

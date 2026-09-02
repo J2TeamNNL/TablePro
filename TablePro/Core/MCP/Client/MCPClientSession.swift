@@ -88,13 +88,33 @@ internal actor MCPClientSession {
         )
     }
 
+    /// Every page of the server's tools.
+    ///
+    /// `tools/list` is paginated: a server with more tools than it wants to send at once answers
+    /// with a `nextCursor`, and a client that ignores it registers the first page and silently
+    /// offers the model a subset of what the server has. Pages are followed until the cursor stops
+    /// coming, bounded so a server that returns a cursor forever cannot loop here.
     internal func listTools() async throws -> [MCPRemoteTool] {
-        let result = try await call(method: "tools/list", params: nil)
-        guard case .object(let fields) = result, case .array(let rawTools)? = fields["tools"] else {
-            throw MCPClientError.malformedResponse
+        var tools: [MCPRemoteTool] = []
+        var cursor: String?
+        for _ in 0..<Self.maximumToolPages {
+            let params: JsonValue? = cursor.map { .object(["cursor": .string($0)]) }
+            let result = try await call(method: "tools/list", params: params)
+            guard case .object(let fields) = result, case .array(let rawTools)? = fields["tools"] else {
+                throw MCPClientError.malformedResponse
+            }
+            tools.append(contentsOf: rawTools.compactMap(Self.decodeTool))
+            guard case .string(let next)? = fields["nextCursor"], !next.isEmpty else { return tools }
+            cursor = next
         }
-        return rawTools.compactMap(Self.decodeTool)
+        Self.logger.warning(
+            "MCP server \(self.configuration.id, privacy: .public) kept paginating its tools; stopping"
+        )
+        return tools
     }
+
+    /// Enough for any real server and a backstop against one that always returns a cursor.
+    private static let maximumToolPages = 20
 
     /// Calls one tool and returns its content as text.
     ///
@@ -180,7 +200,14 @@ internal actor MCPClientSession {
         guard let body = try? JsonRpcCodec.encode(.request(request)) else {
             throw MCPClientError.malformedResponse
         }
-        _ = try await transport.send(request: body, isInitialize: true)
+        let result = try await transport.send(request: body, isInitialize: true)
+
+        /// The version the server chose, not the one TablePro asked for. A server may answer an
+        /// older one, and every request after this carries `MCP-Protocol-Version`, so continuing to
+        /// send the newest is telling it something it just declined.
+        if case .object(let fields) = result, case .string(let negotiated)? = fields["protocolVersion"] {
+            await transport.adopt(protocolVersion: MCPProtocolVersion(negotiated))
+        }
 
         let initialized = JsonRpcNotification(method: "notifications/initialized")
         guard let notificationBody = try? JsonRpcCodec.encode(.notification(initialized)) else {
