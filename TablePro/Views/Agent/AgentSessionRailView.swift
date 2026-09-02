@@ -31,13 +31,24 @@ internal struct AgentSessionRailView: View {
     }
 
     internal var body: some View {
+        content
+            .safeAreaInset(edge: .bottom) { newSessionBar }
+    }
+
+    /// The empty state offers the action rather than describing where to find it, which is what
+    /// `ContentUnavailableView` is shaped for and what the rest of the app's empty states do. It
+    /// used to read "Ask a question below", and there is no composer below the rail.
+    @ViewBuilder
+    private var content: some View {
         if registry.sessions.isEmpty {
             EmptyStateView(
                 icon: "sparkles",
                 title: String(localized: "No session yet"),
-                description: String(localized: "Choose New Session to start one.")
+                description: String(localized: "Start one to ask the assistant about this connection."),
+                actionTitle: onNewSession == nil ? nil : String(localized: "New Session"),
+                actionSystemImage: onNewSession == nil ? nil : "plus",
+                action: onNewSession
             )
-            .safeAreaInset(edge: .bottom) { newSessionBar }
         } else {
             List(selection: selectionBinding) {
                 if !currentSessions.isEmpty {
@@ -56,7 +67,6 @@ internal struct AgentSessionRailView: View {
                 }
             }
             .listStyle(.sidebar)
-            .safeAreaInset(edge: .bottom) { newSessionBar }
         }
     }
 
