@@ -16,27 +16,40 @@ internal struct AgentArtifactPlanView: View {
     internal var body: some View {
         List {
             ForEach(steps) { step in
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: Self.icon(for: step.state))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(Self.tint(for: step.state))
-                        .frame(width: 14)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(step.title)
-                            .font(.caption)
-                        if let detail = step.detail {
-                            Text(detail)
-                                .font(.caption2)
-                                .fontDesign(.monospaced)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(3)
-                        }
-                    }
-                }
-                .padding(.vertical, 2)
+                row(step)
             }
         }
         .listStyle(.inset)
+    }
+
+    /// The state is spoken, not only drawn. The icon is the whole of what tells a step apart from
+    /// the one above it, and an unlabelled `Image` leaves VoiceOver reading the title with no idea
+    /// whether it finished, failed or is waiting on the reader.
+    private func row(_ step: AgentStep) -> some View {
+        HStack(spacing: 0) {
+            Label {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(step.title)
+                        .font(.callout)
+                    if let detail = step.detail {
+                        Text(detail)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(3)
+                    }
+                }
+            } icon: {
+                Image(systemName: Self.icon(for: step.state))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(Self.tint(for: step.state))
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 7)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            String(format: String(localized: "%1$@, %2$@"), Self.stateName(step.state), step.title)
+        )
     }
 
     private static func icon(for state: AgentStep.State) -> String {
@@ -54,6 +67,15 @@ internal struct AgentArtifactPlanView: View {
         case .inFlight: return .accentColor
         case .waitingOnYou: return .orange
         case .failed: return .red
+        }
+    }
+
+    private static func stateName(_ state: AgentStep.State) -> String {
+        switch state {
+        case .done: return String(localized: "Done")
+        case .inFlight: return String(localized: "Working")
+        case .waitingOnYou: return String(localized: "Waiting on you")
+        case .failed: return String(localized: "Failed")
         }
     }
 }

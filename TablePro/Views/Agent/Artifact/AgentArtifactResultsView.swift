@@ -34,10 +34,9 @@ private struct AgentArtifactRunRow: View {
     private var summary: QueryRunSummary? { QueryRunSummary.decode(run.resultJSON) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 3) {
             Text(run.sql)
-                .font(.caption)
-                .fontDesign(.monospaced)
+                .font(.system(.callout, design: .monospaced))
                 .textSelection(.enabled)
                 .lineLimit(4)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -45,29 +44,30 @@ private struct AgentArtifactRunRow: View {
             if let summary {
                 metrics(summary)
                 if !summary.columns.isEmpty, !summary.rows.isEmpty {
-                    rowTable(summary)
+                    resultTable(summary)
                 }
                 if summary.rowCount > summary.rows.count {
                     truncationNotice(summary)
                 }
                 if let statusMessage = summary.statusMessage {
                     Text(statusMessage)
-                        .font(.caption2)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             } else {
                 Text(String(localized: "This result could not be read back."))
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             planSection
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 7)
+        .contextMenu { CopySQLButton(sql: run.sql) }
     }
 
     private func metrics(_ summary: QueryRunSummary) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Label(
                 String(format: String(localized: "%d rows"), summary.rowCount),
                 systemImage: "tablecells"
@@ -86,44 +86,63 @@ private struct AgentArtifactRunRow: View {
             }
             Spacer()
         }
-        .font(.caption2)
+        .font(.caption)
         .foregroundStyle(.secondary)
         .labelStyle(.titleAndIcon)
     }
 
-    private func rowTable(_ summary: QueryRunSummary) -> some View {
-        ScrollView(.horizontal, showsIndicators: true) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 12) {
+    /// `Grid`, which is a layout that aligns columns, rather than a stack of `HStack`s that only
+    /// looks like one.
+    ///
+    /// The version this replaces gave every cell `minWidth: 60` and let it grow with its own
+    /// content, so a column was only as wide as each cell independently decided and the columns did
+    /// not line up between rows at all: one long value in row three shifted every value to its
+    /// right, on that row alone. `Grid` sizes a column once from every cell in it, which is the
+    /// whole reason it exists.
+    ///
+    /// `Table` would be better still, for the selection and the resizable headers it brings, but
+    /// its columns have to be known at compile time and these are the result's own.
+    /// `TableColumnForEach` lifts that and needs macOS 14.4; the app supports 14.0.
+    private func resultTable(_ summary: QueryRunSummary) -> some View {
+        ScrollView([.horizontal, .vertical]) {
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 3) {
+                GridRow {
                     ForEach(Array(summary.columns.enumerated()), id: \.offset) { column in
                         Text(column.element)
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                            .frame(minWidth: 60, alignment: .leading)
+                            .font(.caption)
+                            .bold()
+                            .lineLimit(1)
                     }
                 }
-                Divider()
+                Divider().gridCellUnsizedAxes(.horizontal)
                 ForEach(Array(summary.rows.enumerated()), id: \.offset) { row in
-                    HStack(spacing: 12) {
+                    GridRow {
                         ForEach(Array(row.element.enumerated()), id: \.offset) { cell in
                             Text(cell.element)
-                                .font(.caption2)
-                                .fontDesign(.monospaced)
+                                .font(.system(.caption, design: .monospaced))
                                 .lineLimit(1)
-                                .frame(minWidth: 60, alignment: .leading)
+                                .help(cell.element)
                         }
                     }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(Self.rowLabel(columns: summary.columns, cells: row.element))
                 }
             }
-            .padding(6)
+            .padding(8)
         }
-        .frame(maxHeight: 220)
-        .background(
-            RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor))
-        )
+        .frame(maxHeight: 240)
+        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
         .overlay(
             RoundedRectangle(cornerRadius: 6).stroke(Color(nsColor: .separatorColor), lineWidth: 1)
         )
+    }
+
+    /// A row read as "column: value", so VoiceOver says which column a value came from. The grid
+    /// used to publish a flat run of `Text` in which a value carried no column at all.
+    private static func rowLabel(columns: [String], cells: [String]) -> String {
+        zip(columns, cells)
+            .map { String(format: String(localized: "%1$@: %2$@"), $0.0, $0.1) }
+            .joined(separator: ", ")
     }
 
     /// The pane shows a window onto a large result and says so, with the way to the whole thing
@@ -138,7 +157,7 @@ private struct AgentArtifactRunRow: View {
                     summary.rowCount
                 )
             )
-            .font(.caption2)
+            .font(.caption)
             .foregroundStyle(.secondary)
             if let connectionId {
                 Button(String(localized: "Open as Query")) {
@@ -151,8 +170,8 @@ private struct AgentArtifactRunRow: View {
                         )
                     )
                 }
-                .buttonStyle(.link)
-                .font(.caption2)
+                .buttonStyle(.borderless)
+                .controlSize(.small)
             }
             Spacer()
         }
@@ -163,12 +182,11 @@ private struct AgentArtifactRunRow: View {
         if let planText = run.planText {
             DisclosureGroup(String(localized: "Query plan")) {
                 Text(planText)
-                    .font(.caption2)
-                    .fontDesign(.monospaced)
+                    .font(.system(.caption, design: .monospaced))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .font(.caption)
+            .font(.callout)
         }
     }
 }

@@ -54,14 +54,20 @@ internal struct WelcomeAgentPanel: View {
                     .fontWeight(.medium)
                     .lineLimit(1)
                 Spacer()
+                /// A command, so a button. `.link` styles a control that navigates to content, and
+                /// this one opens the object browser on the connection already selected.
                 Button(String(localized: "Browse database")) {
                     onBrowse(connection)
                 }
-                .buttonStyle(.link)
-                .font(.caption)
+                .buttonStyle(.borderless)
+                .controlSize(.small)
             }
 
-            HStack(spacing: 8) {
+            /// An ordinary push button, not a bare glyph. `.plain` on an `Image` gives a control
+            /// with no border, no press state, no focus ring and no name of its own, which is a
+            /// custom button drawn to look like the one iMessage has; the send here is a command in
+            /// a form and reads as one.
+            HStack(alignment: .bottom, spacing: 8) {
                 TextField(
                     String(localized: "Ask the assistant"),
                     text: $prompt,
@@ -72,15 +78,13 @@ internal struct WelcomeAgentPanel: View {
                 .focused($promptFocused)
                 .onSubmit { ask(connection) }
 
-                Button {
+                Button(String(localized: "Ask")) {
                     ask(connection)
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.title2)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .keyboardShortcut(.defaultAction)
                 .disabled(trimmedPrompt.isEmpty)
-                .help(String(localized: "Ask the assistant"))
             }
         }
         .padding(.horizontal, 12)
@@ -96,43 +100,54 @@ internal struct WelcomeAgentPanel: View {
                 .padding(.horizontal, 12)
                 .padding(.top, 8)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(sessions) { session in
-                        Button {
-                            onOpenSession(session)
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: session.status.icon)
-                                    .symbolRenderingMode(.hierarchical)
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 14)
-                                Text(session.displayTitle)
-                                    .font(.caption)
-                                    .lineLimit(1)
-                                Spacer(minLength: 8)
-                                Text(session.status.localizedTitle)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 3)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(
-                            String(
-                                format: String(localized: "%1$@, %2$@"),
-                                session.displayTitle,
-                                session.status.localizedTitle
-                            )
-                        )
-                    }
+            /// A `List`, not a `ScrollView` of `.plain` buttons. The hand-rolled version had no
+            /// selection, no hover, no keyboard navigation and no row semantics for VoiceOver, and a
+            /// list of things you open is exactly what a list is for. `.onKeyPress` is not needed:
+            /// a `List` selection already answers arrow keys, and `Return` opens through
+            /// `onOpenSession`.
+            List(sessions, selection: openBinding) { session in
+                HStack(spacing: 6) {
+                    Image(systemName: session.status.icon)
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 14)
+                        .accessibilityHidden(true)
+                    Text(session.displayTitle)
+                        .font(.callout)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    Text(session.status.localizedTitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                .padding(.bottom, 6)
+                .contentShape(Rectangle())
+                .tag(session.id)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    String(
+                        format: String(localized: "%1$@, %2$@"),
+                        session.displayTitle,
+                        session.status.localizedTitle
+                    )
+                )
             }
-            .frame(maxHeight: 120)
+            .listStyle(.inset)
+            .scrollContentBackground(.hidden)
+            .frame(maxHeight: 132)
         }
+    }
+
+    /// Selecting a row is what opens it, so the binding never holds a value: it takes the id,
+    /// opens, and reports nothing selected. A stored selection would light a row in a panel whose
+    /// window is about to close.
+    private var openBinding: Binding<UUID?> {
+        Binding(
+            get: { nil },
+            set: { id in
+                guard let id, let session = sessions.first(where: { $0.id == id }) else { return }
+                onOpenSession(session)
+            }
+        )
     }
 
     private var trimmedPrompt: String {

@@ -25,6 +25,12 @@ struct ToolApprovalActionsRow: View {
         return ApprovalRequestID(sessionId: sessionId, toolUseId: toolUseId)
     }
 
+    /// Every button names the tool it would act on.
+    ///
+    /// A turn that proposes three writes puts three of these rows in the transcript, and without the
+    /// name VoiceOver and Voice Control both see three buttons called "Run" with nothing to tell
+    /// them apart: "click Run" is ambiguous and the rotor lists the same word three times. The
+    /// visible title stays the verb, which is what a reader looking at the card beside it needs.
     var body: some View {
         HStack(spacing: 8) {
             Button {
@@ -35,6 +41,7 @@ struct ToolApprovalActionsRow: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
             .keyboardShortcut(isPrimary ? .defaultAction : nil)
+            .accessibilityLabel(String(format: String(localized: "Run %@"), toolName))
 
             Button {
                 resolve(.alwaysAllow)
@@ -60,6 +67,7 @@ struct ToolApprovalActionsRow: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
             .keyboardShortcut(isPrimary ? .cancelAction : nil)
+            .accessibilityLabel(String(format: String(localized: "Cancel %@"), toolName))
 
             Spacer()
         }

@@ -81,7 +81,7 @@ internal struct AgentPreConnectView: View {
                 systemImage: "exclamationmark.triangle"
             )
             .font(.callout)
-            .fontWeight(.semibold)
+            .bold()
             ForEach(
                 Array(ConnectionUnavailablePresentation.detailLines(reason: reason).enumerated()),
                 id: \.offset

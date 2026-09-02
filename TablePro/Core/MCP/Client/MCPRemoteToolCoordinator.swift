@@ -131,11 +131,25 @@ internal final class MCPRemoteToolCoordinator {
     }
 
     /// Connects a server once to see whether it answers and what it offers, without registering
-    /// anything. The settings pane's Test.
-    internal func probe(_ configuration: MCPServerConfiguration) async -> Result<[MCPRemoteTool], MCPClientError> {
-        guard let client = MCPClientSession.make(configuration: configuration, store: store) else {
-            return .failure(.notConfigured)
-        }
+    /// anything and without storing anything. The settings pane's Test.
+    ///
+    /// The token is passed in rather than read back out of the Keychain, so testing a server does
+    /// not first have to create it. It used to: Test wrote the configuration and its credential and
+    /// then probed what it had written, so a reader checking an endpoint they had typed wrong ended
+    /// up with a server in their list they never asked to add.
+    internal func probe(
+        _ configuration: MCPServerConfiguration,
+        token: String
+    ) async -> Result<[MCPRemoteTool], MCPClientError> {
+        guard !token.isEmpty else { return .failure(.notConfigured) }
+        let client = MCPClientSession(
+            configuration: configuration,
+            transport: MCPRemoteServerTransport(
+                endpoint: configuration.endpoint,
+                bearerToken: token,
+                timeout: MCPClientSession.defaultTimeout
+            )
+        )
         defer { Task { await client.close() } }
         do {
             return .success(try await client.listTools())

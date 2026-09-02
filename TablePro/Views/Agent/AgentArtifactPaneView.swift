@@ -97,17 +97,32 @@ internal struct AgentArtifactPaneView: View {
         )
     }
 
+    /// The floor notice sits under the content, not between the picker and it.
+    ///
+    /// It appears and disappears with the mode, and above the divider that made the whole pane jump
+    /// by its height each time. A `safeAreaInset` puts it in the pane's own bottom bar, which is
+    /// where a standing condition belongs and where its arrival scrolls the list rather than moving
+    /// the picker the reader is aiming at.
     internal var body: some View {
         VStack(spacing: 0) {
             picker
-            if let connectionId {
-                AssistantFloorNoticeView(connectionId: connectionId)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 6)
-            }
             Divider()
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if let connectionId {
+                VStack(spacing: 0) {
+                    Divider()
+                    HStack(spacing: 0) {
+                        AssistantFloorNoticeView(connectionId: connectionId)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                }
+                .background(.bar)
+            }
         }
     }
 

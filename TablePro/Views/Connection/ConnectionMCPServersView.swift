@@ -34,13 +34,14 @@ internal struct ConnectionMCPServersView: View {
             } header: {
                 Text(String(localized: "Outside MCP Servers"))
             } footer: {
+                /// No font or colour of its own. A `Section` footer is already secondary and already
+                /// sized for the platform, and restating both here overrides whatever the pane's
+                /// form style would have chosen.
                 Text(String(localized: """
                     A session on this connection may call the servers ticked here. Every call waits \
                     for your approval and is recorded in the audit log. Add servers in \
                     Settings > Integrations.
                     """))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
     }

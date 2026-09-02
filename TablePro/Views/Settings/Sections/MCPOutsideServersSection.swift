@@ -19,6 +19,7 @@ internal struct MCPOutsideServersSection: View {
     @State private var error: MCPServerConfigurationError?
     @State private var probeResult: String?
     @State private var isProbing = false
+    @State private var pendingRemoval: MCPServerConfiguration?
 
     internal var body: some View {
         Section(String(localized: "Outside MCP Servers")) {
@@ -56,9 +57,13 @@ internal struct MCPOutsideServersSection: View {
                     .foregroundStyle(.secondary)
             }
 
+            /// Add wants the token too. A server stored without one is inert: every call builds its
+            /// session through `MCPClientSession.make`, which refuses to reach a configured endpoint
+            /// with no credential, so adding one without a token produced an entry that could be
+            /// ticked onto a connection and would never answer.
             HStack(spacing: 8) {
                 Button(String(localized: "Add")) { add() }
-                    .disabled(name.isEmpty || endpoint.isEmpty)
+                    .disabled(isProbing || name.isEmpty || endpoint.isEmpty || token.isEmpty)
                 Button(String(localized: "Test")) { Task { await test() } }
                     .disabled(isProbing || endpoint.isEmpty || token.isEmpty)
                 if isProbing {
@@ -76,14 +81,41 @@ internal struct MCPOutsideServersSection: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }
+        .confirmationDialog(
+            pendingRemoval.map {
+                String(format: String(localized: "Remove %@?"), $0.name)
+            } ?? "",
+            isPresented: Binding(
+                get: { pendingRemoval != nil },
+                set: { if !$0 { pendingRemoval = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingRemoval
+        ) { server in
+            Button(String(localized: "Remove"), role: .destructive) {
+                store.remove(id: server.id)
+                pendingRemoval = nil
+            }
+            Button(String(localized: "Cancel"), role: .cancel) { pendingRemoval = nil }
+        } message: { _ in
+            Text(String(localized: """
+                Its bearer token is deleted from the Keychain and every connection allowed to reach \
+                it loses that permission. This cannot be undone.
+                """))
+        }
     }
 
+    /// Remove is a push button, not a link, and it asks first.
+    ///
+    /// It drops the server's bearer token from the Keychain and its allowlist along with it, none of
+    /// which comes back, and `.link` gave a destructive command the styling of a navigation one and
+    /// swallowed the `.destructive` role's own treatment.
     private func serverRow(_ server: MCPServerConfiguration) -> some View {
         LabeledContent {
             Button(String(localized: "Remove"), role: .destructive) {
-                store.remove(id: server.id)
+                pendingRemoval = server
             }
-            .buttonStyle(.link)
+            .buttonStyle(.borderless)
         } label: {
             VStack(alignment: .leading, spacing: 2) {
                 Text(server.name)
@@ -122,20 +154,27 @@ internal struct MCPOutsideServersSection: View {
         token = ""
     }
 
-    /// Test writes the server first, because the credential lives in the Keychain under the server's
-    /// id and there is nothing to read a token from until it does. A test that fails leaves the entry
-    /// in place with no connection allowed, which reaches nothing.
+    /// Test adds nothing. It builds a throwaway session against what is typed in the fields and
+    /// throws it away again, so checking an endpoint is a question rather than a commitment. It used
+    /// to write the server and its credential first and then probe what it had written, which left a
+    /// reader who mistyped a URL with a server in their list they never asked to add.
+    ///
+    /// The name is still validated, because Test reports on a configuration and a configuration with
+    /// a reserved name is one the user cannot keep.
     private func test() async {
         probeResult = nil
         guard let configuration = draft() else {
             error = .invalidEndpoint
             return
         }
-        error = store.upsert(configuration, token: token)
-        guard error == nil else { return }
+        if let invalid = MCPServerConfigurationValidator.validate(name: name, endpoint: configuration.endpoint) {
+            error = invalid
+            return
+        }
+        error = nil
         isProbing = true
         defer { isProbing = false }
-        switch await MCPRemoteToolCoordinator.shared.probe(configuration) {
+        switch await MCPRemoteToolCoordinator.shared.probe(configuration, token: token) {
         case .success(let tools):
             probeResult = String(
                 format: String(localized: "Answered with %d tools."),

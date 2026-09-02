@@ -78,6 +78,7 @@ internal struct AgentSessionRailView: View {
             Image(systemName: session.status.icon)
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(session.displayTitle)
                     .lineLimit(1)
@@ -94,6 +95,10 @@ internal struct AgentSessionRailView: View {
                 onRemove(session.id)
             }
         }
+        /// Combined first, then named. Without the combine the row publishes three children and the
+        /// label lands on the container, so VoiceOver reads the title and the status twice: once as
+        /// the row's name and again as it walks into it.
+        .accessibilityElement(children: .combine)
         .accessibilityLabel(
             String(
                 format: String(localized: "%1$@, %2$@"),

@@ -20,15 +20,20 @@ internal struct AssistantFloorNoticeView: View {
         AssistantSafeModeFloor.isActive(for: connectionId)
     }
 
+    /// A plain inline label, with no chrome of its own.
+    ///
+    /// Two surfaces show it: the chat composer, where it sits inside an already-padded stack, and
+    /// the result pane, which frames it as a bottom bar. Giving the notice a divider and a bar here
+    /// would put both inside the composer, so the framing belongs to whichever host wants it.
     internal var body: some View {
         if isActive {
-            HStack(spacing: 5) {
-                Image(systemName: "exclamationmark.triangle")
-                    .symbolRenderingMode(.hierarchical)
-                Text(String(localized: "Confirm Writes while in Assistant mode"))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
+            Label(
+                String(localized: "Confirm Writes while in Assistant mode"),
+                systemImage: "exclamationmark.triangle"
+            )
+            .symbolRenderingMode(.hierarchical)
+            .lineLimit(1)
+            .truncationMode(.tail)
             .font(.caption)
             .foregroundStyle(.secondary)
             .help(String(

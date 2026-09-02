@@ -59,6 +59,8 @@ Four views of one session. A view with nothing in it says what would appear ther
 | **Results** | Rows, row count, and duration for each query it ran, plus the query plan when it asked for one |
 | **Schema** | Columns, indexes, and constraints a `CREATE` or `ALTER` would add or remove, destructive lines marked |
 
+Right-click any statement, schema change, or result in the pane for **Copy**, which puts its SQL on the clipboard.
+
 **Run** and **Reject** in the SQL view and the buttons on the conversation card are the same decision: acting in one updates the other. Review statements in any order; the reply resumes once each has a decision. `Return` acts on the first statement still waiting.
 
 A rejected statement stays in the list with its state, and the model is told it was rejected, so it can propose something else.
