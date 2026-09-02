@@ -25,8 +25,8 @@ internal final class MCPRemoteToolCoordinator {
 
     private var registrations: [UUID: Registration] = [:]
 
-    @ObservationIgnored private let store: MCPServerStore
-    @ObservationIgnored private let registry: ChatToolRegistry
+    private let store: MCPServerStore
+    private let registry: ChatToolRegistry
 
     internal init(store: MCPServerStore = .shared, registry: ChatToolRegistry = .shared) {
         self.store = store
@@ -74,6 +74,18 @@ internal final class MCPRemoteToolCoordinator {
                 """
             )
             await detachAll(serverId: configuration.id)
+            return
+        }
+
+        /// The listing was awaited, so the registration this is about to fill may be gone: the last
+        /// session holding it can end while a slow server is still answering. Registering the tools
+        /// then would leave adapters in the registry that nothing tracks the names of and that call
+        /// a transport already closed, so the whole batch is dropped instead.
+        guard registrations[configuration.id] != nil else {
+            Self.logger.info(
+                "MCP server \(configuration.id, privacy: .public) listed its tools after the last session left"
+            )
+            await client.close()
             return
         }
 

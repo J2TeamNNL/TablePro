@@ -18,6 +18,9 @@ internal enum MCPClientError: Error, Equatable, Sendable {
     case transport(String)
     case server(code: Int, message: String)
     case malformedResponse
+    /// The server forgot the session it issued. Recoverable by initializing again, which is what
+    /// separates it from `transport`: the call is retried once rather than reported.
+    case sessionExpired
 
     internal var localizedMessage: String {
         switch self {
@@ -31,16 +34,18 @@ internal enum MCPClientError: Error, Equatable, Sendable {
             return message
         case .malformedResponse:
             return String(localized: "The server's answer could not be read.")
+        case .sessionExpired:
+            return String(localized: "The server ended the session.")
         }
     }
 }
 
 /// One conversation with an outside MCP server: initialize, list its tools, call one.
 ///
-/// The transport underneath is fire-and-forget with a single inbound stream, so request and response
-/// are correlated here by JSON-RPC id. Every call carries its own deadline, because a server that
-/// never answers must fail the call rather than park the chat stream behind it for as long as URLSession
-/// is willing to wait.
+/// The transport underneath answers each request on its own response, so there is no id correlation
+/// here and no reader task to own. What is left is the protocol's own lifecycle, which has three
+/// parts a client does not get to skip: `initialize`, the `notifications/initialized` that follows
+/// it, and the session id the server may issue on the way through.
 internal actor MCPClientSession {
     nonisolated private static let logger = Logger(subsystem: "com.TablePro", category: "MCPClientSession")
 
@@ -49,23 +54,18 @@ internal actor MCPClientSession {
     internal static let defaultTimeout: Duration = .seconds(30)
 
     private let configuration: MCPServerConfiguration
-    private let transport: MCPStreamableHttpClientTransport
-    private let timeout: Duration
+    private let transport: MCPRemoteServerTransport
 
-    private var pending: [JsonRpcId: CheckedContinuation<JsonValue, Error>] = [:]
-    private var readerTask: Task<Void, Never>?
     private var nextRequestId = 1
-    private var didInitialize = false
+    private var handshake: Task<Void, Error>?
     private var isClosed = false
 
     internal init(
         configuration: MCPServerConfiguration,
-        transport: MCPStreamableHttpClientTransport,
-        timeout: Duration = MCPClientSession.defaultTimeout
+        transport: MCPRemoteServerTransport
     ) {
         self.configuration = configuration
         self.transport = transport
-        self.timeout = timeout
     }
 
     /// Builds a session against a stored server, or nil when it has no credential. A server with no
@@ -78,18 +78,18 @@ internal actor MCPClientSession {
         timeout: Duration = MCPClientSession.defaultTimeout
     ) -> MCPClientSession? {
         guard let token = store.token(for: configuration.id) else { return nil }
-        let credentials = MCPUpstreamCredentials(endpoint: configuration.endpoint, bearerToken: token)
-        let provider = MCPCachedUpstreamCredentialsProvider(initial: credentials) { credentials }
         return MCPClientSession(
             configuration: configuration,
-            transport: MCPStreamableHttpClientTransport(credentialsProvider: provider),
-            timeout: timeout
+            transport: MCPRemoteServerTransport(
+                endpoint: configuration.endpoint,
+                bearerToken: token,
+                timeout: timeout
+            )
         )
     }
 
     internal func listTools() async throws -> [MCPRemoteTool] {
-        try await initializeIfNeeded()
-        let result = try await send(method: "tools/list", params: nil)
+        let result = try await call(method: "tools/list", params: nil)
         guard case .object(let fields) = result, case .array(let rawTools)? = fields["tools"] else {
             throw MCPClientError.malformedResponse
         }
@@ -102,8 +102,7 @@ internal actor MCPClientSession {
     /// is data: a result that reads like an instruction is shown to the reader and ignored by
     /// everything else.
     internal func callTool(name: String, arguments: JsonValue) async throws -> String {
-        try await initializeIfNeeded()
-        let result = try await send(
+        let result = try await call(
             method: "tools/call",
             params: .object(["name": .string(name), "arguments": arguments])
         )
@@ -113,24 +112,61 @@ internal actor MCPClientSession {
     internal func close() async {
         guard !isClosed else { return }
         isClosed = true
-        readerTask?.cancel()
-        readerTask = nil
-        let outstanding = pending
-        pending.removeAll()
-        for (_, continuation) in outstanding {
-            continuation.resume(throwing: MCPClientError.transport(
-                String(localized: "The connection to the server was closed.")
-            ))
-        }
+        handshake?.cancel()
+        handshake = nil
         await transport.close()
     }
 
     // MARK: - Protocol
 
+    /// Runs the handshake if it has not run, then the call, retrying once when the server reports
+    /// that it has forgotten the session. A session id can expire between two turns of a
+    /// conversation, and re-initializing is the specification's own answer to that.
+    private func call(method: String, params: JsonValue?) async throws -> JsonValue {
+        guard !isClosed else { throw MCPClientError.transport(Self.closedMessage) }
+        try await initializeIfNeeded()
+        do {
+            return try await send(method: method, params: params)
+        } catch MCPClientError.sessionExpired {
+            Self.logger.info(
+                "MCP server \(self.configuration.id, privacy: .public) ended its session; initializing again"
+            )
+            handshake = nil
+            try await initializeIfNeeded()
+            return try await send(method: method, params: params)
+        }
+    }
+
+    /// The handshake is held as a task rather than a `Bool`.
+    ///
+    /// A flag set before the round trip leaves a failed initialize looking finished, so every later
+    /// call runs against a server that never handshook and gets refused for a reason nothing here
+    /// reports. A flag set after it lets two concurrent calls each run one. The task does both: the
+    /// second caller awaits the first one's, and a throw clears it so the next call tries again.
     private func initializeIfNeeded() async throws {
-        guard !didInitialize else { return }
-        didInitialize = true
-        _ = try await send(
+        if let handshake {
+            try await handshake.value
+            return
+        }
+        let task = Task { try await performHandshake() }
+        handshake = task
+        do {
+            try await task.value
+        } catch {
+            handshake = nil
+            throw error
+        }
+    }
+
+    /// `initialize`, then `notifications/initialized`.
+    ///
+    /// The notification is not optional. The specification has the client send it once the
+    /// initialize response is in, and a server that holds itself to the lifecycle refuses
+    /// `tools/list` until it arrives, so a client that skips it lists no tools at all on exactly the
+    /// servers that implement the protocol most carefully.
+    private func performHandshake() async throws {
+        let request = JsonRpcRequest(
+            id: takeRequestId(),
             method: "initialize",
             params: .object([
                 "protocolVersion": .string(MCPProtocolVersion.latest.rawValue),
@@ -141,85 +177,33 @@ internal actor MCPClientSession {
                 ])
             ])
         )
+        guard let body = try? JsonRpcCodec.encode(.request(request)) else {
+            throw MCPClientError.malformedResponse
+        }
+        _ = try await transport.send(request: body, isInitialize: true)
+
+        let initialized = JsonRpcNotification(method: "notifications/initialized")
+        guard let notificationBody = try? JsonRpcCodec.encode(.notification(initialized)) else {
+            throw MCPClientError.malformedResponse
+        }
+        try await transport.send(notification: notificationBody)
     }
 
     private func send(method: String, params: JsonValue?) async throws -> JsonValue {
-        guard !isClosed else { throw MCPClientError.transport(String(localized: "The session is closed.")) }
-        startReaderIfNeeded()
-
-        let id = JsonRpcId.number(Int64(nextRequestId))
-        nextRequestId += 1
-        let request = JsonRpcRequest(id: id, method: method, params: params)
-        let body: Data
-        do {
-            body = try JsonRpcCodec.encode(.request(request))
-        } catch {
+        let request = JsonRpcRequest(id: takeRequestId(), method: method, params: params)
+        guard let body = try? JsonRpcCodec.encode(.request(request)) else {
             throw MCPClientError.malformedResponse
         }
-
-        let deadline = Task { [timeout, weak self] in
-            try? await Task.sleep(for: timeout)
-            guard !Task.isCancelled else { return }
-            await self?.failPending(id: id, error: .timedOut)
-        }
-        defer { deadline.cancel() }
-
-        return try await withCheckedThrowingContinuation { continuation in
-            pending[id] = continuation
-            Task {
-                do {
-                    try await transport.send(
-                        MCPUpstreamFrame(body: body, method: method, name: nil, requestId: id)
-                    )
-                } catch {
-                    await self.failPending(id: id, error: .transport(String(describing: error)))
-                }
-            }
-        }
+        return try await transport.send(request: body)
     }
 
-    private func startReaderIfNeeded() {
-        guard readerTask == nil else { return }
-        readerTask = Task { [weak self] in
-            guard let self else { return }
-            do {
-                for try await payload in await self.transport.inbound {
-                    await self.receive(payload)
-                }
-            } catch {
-                await self.failAll(error: .transport(String(describing: error)))
-            }
-        }
+    private func takeRequestId() -> JsonRpcId {
+        defer { nextRequestId += 1 }
+        return .number(Int64(nextRequestId))
     }
 
-    private func receive(_ payload: Data) {
-        guard let message = try? JsonRpcCodec.decode(payload) else { return }
-        switch message {
-        case .successResponse(let response):
-            pending.removeValue(forKey: response.id)?.resume(returning: response.result)
-        case .errorResponse(let response):
-            guard let id = response.id else { return }
-            pending.removeValue(forKey: id)?.resume(
-                throwing: MCPClientError.server(code: response.error.code, message: response.error.message)
-            )
-        case .request, .notification:
-            /// A server-initiated request is not answered. TablePro is the client here, and a client
-            /// that served a sampling or elicitation request would be letting the server drive the
-            /// session, which is the whole thing the approval gate exists to prevent.
-            Self.logger.debug("Ignoring server-initiated message from an outside MCP server")
-        }
-    }
-
-    private func failPending(id: JsonRpcId, error: MCPClientError) {
-        pending.removeValue(forKey: id)?.resume(throwing: error)
-    }
-
-    private func failAll(error: MCPClientError) {
-        let outstanding = pending
-        pending.removeAll()
-        for (_, continuation) in outstanding {
-            continuation.resume(throwing: error)
-        }
+    private static var closedMessage: String {
+        String(localized: "The connection to the server was closed.")
     }
 
     // MARK: - Decoding
