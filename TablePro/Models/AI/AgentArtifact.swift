@@ -149,6 +149,13 @@ internal struct SchemaChangePreview: Identifiable, Equatable, Sendable {
     internal let target: String?
     internal let lines: [SchemaChangeLine]
     internal let isDestructive: Bool
+
+    /// The same preview under the id of the call that proposed it. What a statement would change is
+    /// a property of the statement, so it is read once and named per call; the id is what the pane
+    /// lists it by and the only part that belongs to the call.
+    internal func identified(as id: String) -> SchemaChangePreview {
+        SchemaChangePreview(id: id, sql: sql, target: target, lines: lines, isDestructive: isDestructive)
+    }
 }
 
 internal struct SchemaChangeLine: Identifiable, Equatable, Sendable {
@@ -190,6 +197,54 @@ internal enum AgentArtifactProjection {
     private static let statementTools: Set<String> = ["execute_query", "confirm_destructive_operation"]
     private static let explainTool = "explain_query"
 
+    /// What a statement means, which is the expensive half of this projection and the half that
+    /// never changes once the statement is written.
+    private struct StatementAnalysis {
+        let tier: QueryTier
+        /// Nil when the statement changes no schema. Carries no id: the id belongs to the call, and
+        /// the same statement proposed twice is analysed once and labelled twice.
+        let schemaChange: SchemaChangePreview?
+    }
+
+    /// Memoizes that analysis across the passes this projection is run on.
+    ///
+    /// The pane recomputes on every render so it can never disagree with the transcript, and that
+    /// is the right call, but the transcript is rewritten twenty times a second while a reply
+    /// streams (`AIChatViewModel.streamFlushInterval` is 50ms). Without this, every one of those
+    /// passes ran `QueryClassifier.classifyTier` and the whole of `DDLChangeReader.preview` over
+    /// every statement the conversation had ever proposed, so the cost of drawing the pane grew
+    /// with the length of the conversation and was paid at 20Hz.
+    ///
+    /// Keyed by the statement and the engine, which is everything the analysis reads, so a hit is
+    /// exact rather than probable. Streaming text changes neither, so the cache answers every pass
+    /// between one tool call and the next.
+    private static var analyses: [AnalysisKey: StatementAnalysis] = [:]
+
+    private struct AnalysisKey: Hashable {
+        let sql: String
+        let databaseType: String
+    }
+
+    /// Statements are short and a conversation proposes few, but a session left open for a day
+    /// should not grow this without bound. Cleared wholesale rather than evicted one at a time: the
+    /// next pass repopulates only what the transcript still holds, which is the working set.
+    private static let analysisCapacity = 512
+
+    private static func analysis(sql: String, databaseType: DatabaseType) -> StatementAnalysis {
+        let key = AnalysisKey(sql: sql, databaseType: databaseType.rawValue)
+        if let cached = analyses[key] { return cached }
+        let tier = QueryClassifier.classifyTier(sql, databaseType: databaseType)
+        let analysis = StatementAnalysis(
+            tier: tier,
+            schemaChange: tier == .destructive || DDLChangeReader.looksLikeDDL(sql)
+                ? DDLChangeReader.preview(id: "", sql: sql, databaseType: databaseType)
+                : nil
+        )
+        if analyses.count >= analysisCapacity { analyses.removeAll(keepingCapacity: true) }
+        analyses[key] = analysis
+        return analysis
+    }
+
     internal static func build(
         from messages: [ChatTurn],
         connectionName: String,
@@ -220,21 +275,19 @@ internal enum AgentArtifactProjection {
             let sql = Self.statementText(from: use)
 
             if Self.statementTools.contains(use.name), let sql {
-                let tier = QueryClassifier.classifyTier(sql, databaseType: databaseType)
+                let analysis = Self.analysis(sql: sql, databaseType: databaseType)
                 artifact.statements.append(
                     ProposedStatement(
                         id: use.id,
                         toolName: use.name,
                         sql: sql,
                         connectionName: connectionName,
-                        tier: tier,
+                        tier: analysis.tier,
                         state: Self.state(for: use, result: result)
                     )
                 )
-                if tier == .destructive || DDLChangeReader.looksLikeDDL(sql) {
-                    artifact.schemaChanges.append(
-                        DDLChangeReader.preview(id: use.id, sql: sql, databaseType: databaseType)
-                    )
+                if let schemaChange = analysis.schemaChange {
+                    artifact.schemaChanges.append(schemaChange.identified(as: use.id))
                 }
             }
 

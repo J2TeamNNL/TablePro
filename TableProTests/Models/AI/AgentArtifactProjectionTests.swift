@@ -253,4 +253,72 @@ struct AgentArtifactProjectionTests {
 
         #expect(build(live) == build(restored))
     }
+
+    /// The pane rebuilds this on every render, twenty times a second while a reply streams, so the
+    /// per-statement analysis is memoized. These cover what a memo can get wrong: an answer that
+    /// changes when it should not, one statement's schema change appearing under another's id, and
+    /// two engines sharing a verdict.
+
+    @Test("Building the same transcript twice gives the same artifact")
+    @MainActor
+    func repeatedBuildsAgree() {
+        let turns = transcript([
+            .toolUse(execute("DROP TABLE orders", id: "d1", state: .approved)),
+            .toolResult(ToolResultBlock(toolUseId: "d1", content: "{}")),
+            .toolUse(execute("SELECT 1", id: "r1", state: .approved))
+        ])
+
+        #expect(build(turns) == build(turns))
+        #expect(build(turns) == build(turns))
+    }
+
+    @Test("One statement proposed twice is listed under each call's own id")
+    @MainActor
+    func sameStatementKeepsPerCallIdentity() {
+        let turns = transcript([
+            .toolUse(execute("DROP TABLE orders", id: "first", state: .approved)),
+            .toolResult(ToolResultBlock(toolUseId: "first", content: "{}")),
+            .toolUse(execute("DROP TABLE orders", id: "second", state: .pending))
+        ])
+
+        let artifact = build(turns)
+
+        #expect(artifact.statements.map(\.id) == ["first", "second"])
+        #expect(artifact.schemaChanges.map(\.id) == ["first", "second"])
+        #expect(artifact.statements.map(\.state) == [.ran, .waiting])
+    }
+
+    @Test("The same statement on two engines is classified for each of them")
+    @MainActor
+    func analysisIsPerDatabaseType() {
+        let turns = transcript([
+            .toolUse(execute("CREATE TABLE t (id INT)", id: "c1", state: .approved))
+        ])
+
+        let mysql = AgentArtifactProjection.build(
+            from: turns, connectionName: "localhost", databaseType: .mysql
+        )
+        let postgres = AgentArtifactProjection.build(
+            from: turns, connectionName: "localhost", databaseType: .postgresql
+        )
+
+        #expect(mysql.schemaChanges.count == 1)
+        #expect(postgres.schemaChanges.count == 1)
+        #expect(mysql.statements.first?.tier == postgres.statements.first?.tier)
+    }
+
+    @Test("A statement's state still follows the call, not the memoized analysis")
+    @MainActor
+    func stateIsNotMemoized() throws {
+        let waiting = transcript([
+            .toolUse(execute("DELETE FROM users WHERE id = 1", id: "w1", state: .pending))
+        ])
+        #expect(try #require(build(waiting).statements.first).state == .waiting)
+
+        let approved = transcript([
+            .toolUse(execute("DELETE FROM users WHERE id = 1", id: "w1", state: .approved)),
+            .toolResult(ToolResultBlock(toolUseId: "w1", content: #"{"rows_affected":1}"#))
+        ])
+        #expect(try #require(build(approved).statements.first).state == .ran)
+    }
 }

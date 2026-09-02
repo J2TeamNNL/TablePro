@@ -34,6 +34,12 @@ internal final class AgentSession: Identifiable, Equatable {
     /// prompt owned by a view is lost the moment that view is replaced by the connecting pane.
     internal var pendingPrompt: String?
 
+    /// Which segment the result pane is showing. On the session rather than in the pane's own
+    /// `@State`, because the pane is unparented and rebuilt by every mode change, connection switch
+    /// and rail selection, and a reader who opened Schema to check a `DROP` should not be returned
+    /// to SQL by looking at another connection and coming back.
+    internal var artifactSegment: AgentArtifactSegment = .sql
+
     internal let viewModel: AIChatViewModel
 
     /// Held rather than reached for, so a status refresh driven by the engine asks the same queue a

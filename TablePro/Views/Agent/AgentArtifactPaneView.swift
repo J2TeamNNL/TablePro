@@ -68,11 +68,18 @@ internal struct AgentArtifactPaneView: View {
     /// so a pane with no session is the same as a pane with an empty one.
     internal let session: AgentSession?
 
-    @State private var segment: AgentArtifactSegment = .sql
+    /// The chosen segment lives on the session, which outlives this view. Held here only for the
+    /// sessionless pane, which has nowhere else to put it and nothing to show in any case.
+    @State private var sessionlessSegment: AgentArtifactSegment = .sql
 
     internal init(connectionId: UUID? = nil, session: AgentSession? = nil) {
         self.connectionId = connectionId
         self.session = session
+    }
+
+    private var segment: Binding<AgentArtifactSegment> {
+        guard let session else { return $sessionlessSegment }
+        return Binding(get: { session.artifactSegment }, set: { session.artifactSegment = $0 })
     }
 
     /// Recomputed from the transcript on every pass rather than cached beside it.
@@ -104,15 +111,19 @@ internal struct AgentArtifactPaneView: View {
         }
     }
 
+    /// Every arm resolves to a view, including the ones that cannot happen. A `@ViewBuilder` branch
+    /// with no `else` renders nothing at all, and the SQL arm had one: a statement with no session
+    /// is unreachable today only because the projection is empty without one, which is a fact about
+    /// another type rather than a guarantee this view can rely on.
     @ViewBuilder
     private var content: some View {
         let artifact = artifact
-        switch segment {
+        switch segment.wrappedValue {
         case .sql:
-            if artifact.statements.isEmpty {
-                emptyState
-            } else if let session {
+            if let session, !artifact.statements.isEmpty {
                 AgentArtifactSQLView(statements: artifact.statements, sessionId: session.id)
+            } else {
+                emptyState
             }
         case .plan:
             if artifact.steps.isEmpty {
@@ -136,15 +147,19 @@ internal struct AgentArtifactPaneView: View {
     }
 
     private var emptyState: some View {
-        EmptyStateView(
+        let segment = segment.wrappedValue
+        return EmptyStateView(
             icon: segment.icon,
             title: segment.emptyTitle,
             description: segment.emptyDescription
         )
     }
 
+    /// The label is real and then hidden, rather than empty with an accessibility label bolted on:
+    /// a `Picker` takes its accessibility name from its own label, so naming it once is what makes
+    /// the visible layout and VoiceOver agree without a second string to keep in step.
     private var picker: some View {
-        Picker("", selection: $segment) {
+        Picker(String(localized: "Artifact"), selection: segment) {
             ForEach(AgentArtifactSegment.allCases) { candidate in
                 Text(candidate.localizedTitle).tag(candidate)
             }
@@ -153,6 +168,5 @@ internal struct AgentArtifactPaneView: View {
         .labelsHidden()
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .accessibilityLabel(String(localized: "Artifact"))
     }
 }
