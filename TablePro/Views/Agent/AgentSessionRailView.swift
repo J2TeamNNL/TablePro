@@ -35,8 +35,9 @@ internal struct AgentSessionRailView: View {
             EmptyStateView(
                 icon: "sparkles",
                 title: String(localized: "No session yet"),
-                description: String(localized: "Ask a question below to start one.")
+                description: String(localized: "Choose New Session to start one.")
             )
+            .safeAreaInset(edge: .bottom) { newSessionBar }
         } else {
             List(selection: selectionBinding) {
                 if !currentSessions.isEmpty {
@@ -110,18 +111,31 @@ internal struct AgentSessionRailView: View {
         return String(format: String(localized: "%1$@ · %2$@"), session.connectionName, status)
     }
 
+    /// The bottom bar a source list carries its add affordance in, which is where the system puts
+    /// one: a small borderless `+` at the leading edge rather than a full-width row.
+    ///
+    /// It was a `.plain` button spanning the bar, which is a custom row wearing a button's name: no
+    /// press state, no hover, no focus ring, and a hit area covering the whole width of a control
+    /// whose meaning is a single glyph. `.borderless` is the style the system's own source lists
+    /// use here, and it brings all four back.
     @ViewBuilder
     private var newSessionBar: some View {
         if let onNewSession {
             VStack(spacing: 0) {
                 Divider()
-                Button(action: onNewSession) {
-                    Label(String(localized: "New Session"), systemImage: "plus")
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 0) {
+                    Button(action: onNewSession) {
+                        Label(String(localized: "New Session"), systemImage: "plus")
+                            .labelStyle(.iconOnly)
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .help(String(localized: "New Session"))
+                    .accessibilityLabel(String(localized: "New Session"))
+                    Spacer()
                 }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
             }
             .background(.bar)
         }

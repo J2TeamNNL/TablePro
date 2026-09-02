@@ -12,15 +12,20 @@ import SwiftUI
 /// inline with **Try Again**, never an alert: the HIG rules alerts out at startup, and N restored
 /// connections would mean N modals.
 ///
-/// Deliberately smaller than `AIChatPanelView`, which takes a non-optional connection. Transcript
-/// and composer only: no tool cards, no history menu, no model picker. It swaps to the real panel
-/// the moment the connection is up.
+/// The transcript and the composer are the same ones the connected panel uses, `AIChatMessageView`
+/// and `ChatComposerView`. A second renderer here drew every turn as one unstyled paragraph and a
+/// hand-built rectangle that looked like a text field but took no text, so the surface changed
+/// appearance the instant the connection landed and the prompt could not be corrected while the
+/// user watched it wait. What this surface leaves out is what genuinely needs a live connection:
+/// retry, regenerate, the model picker and the tool cards.
 internal struct AgentPreConnectView: View {
     internal let connection: DatabaseConnection
     internal let session: AgentSession
     internal let failure: ConnectionUnavailableReason?
     internal let onRetry: () -> Void
     internal let onCancel: () -> Void
+
+    @State private var mentionState = MentionPopoverState()
 
     internal var body: some View {
         VStack(spacing: 0) {
@@ -37,24 +42,21 @@ internal struct AgentPreConnectView: View {
         if session.viewModel.messages.isEmpty {
             EmptyStateView(
                 icon: "sparkles",
-                title: String(
-                    format: String(localized: "Opening %@"),
-                    connection.name
-                ),
+                title: String(format: String(localized: "Opening %@"), connection.name),
                 description: String(localized: "Your request is sent as soon as the connection is up.")
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(session.viewModel.messages) { turn in
-                        Text(turn.plainText)
-                            .font(.callout)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                LazyVStack(spacing: 0) {
+                    ForEach(session.viewModel.messages) { message in
+                        AIChatMessageView(message: message)
+                            .equatable()
+                            .padding(.vertical, 4)
                     }
                 }
-                .padding(16)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 12)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -63,89 +65,110 @@ internal struct AgentPreConnectView: View {
     @ViewBuilder
     private var status: some View {
         if let failure {
-            VStack(alignment: .leading, spacing: 8) {
-                Label(
-                    ConnectionUnavailablePresentation.headline(
-                        reason: failure,
-                        connectionName: connection.name
-                    ),
-                    systemImage: "exclamationmark.triangle"
-                )
-                .font(.callout)
-                .fontWeight(.semibold)
-                ForEach(
-                    Array(ConnectionUnavailablePresentation.detailLines(reason: failure).enumerated()),
-                    id: \.offset
-                ) { line in
-                    Text(line.element)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
-                HStack(spacing: 8) {
-                    Button(
-                        ConnectionUnavailablePresentation.primaryActionTitle(reason: failure),
-                        action: onRetry
-                    )
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    Spacer()
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
+            failureNotice(failure)
         } else {
-            HStack(spacing: 8) {
-                ProgressView()
-                    .controlSize(.small)
-                Text(
-                    String(
-                        format: String(localized: "Connecting to %@…"),
-                        connection.name
-                    )
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                Spacer()
-                Button(String(localized: "Cancel"), action: onCancel)
-                    .buttonStyle(.link)
-                    .font(.caption)
-            }
-            .padding(12)
+            connectingNotice
         }
     }
 
-    /// The pending prompt is shown in a disabled field rather than an editable one. Editing it would
-    /// need the send path this surface does not have, and a field that takes text nothing will send
-    /// is worse than one that plainly waits.
-    private var composer: some View {
-        VStack(spacing: 6) {
-            Divider()
-            HStack(alignment: .bottom, spacing: 8) {
-                Text(session.pendingPrompt ?? "")
-                    .font(.callout)
-                    .foregroundStyle(session.pendingPrompt == nil ? .secondary : .primary)
-                    .frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
-                    .padding(8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
-                    )
+    private func failureNotice(_ reason: ConnectionUnavailableReason) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(
+                ConnectionUnavailablePresentation.headline(
+                    reason: reason,
+                    connectionName: connection.name
+                ),
+                systemImage: "exclamationmark.triangle"
+            )
+            .font(.callout)
+            .fontWeight(.semibold)
+            ForEach(
+                Array(ConnectionUnavailablePresentation.detailLines(reason: reason).enumerated()),
+                id: \.offset
+            ) { line in
+                Text(line.element)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                     .textSelection(.enabled)
-                Button {
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.title2)
-                }
-                .buttonStyle(.plain)
-                .disabled(true)
-                .help(String(localized: "Sends once the connection is up"))
             }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 12)
+            HStack(spacing: 8) {
+                Button(
+                    ConnectionUnavailablePresentation.primaryActionTitle(reason: reason),
+                    action: onRetry
+                )
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                Spacer()
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+    }
+
+    /// Cancel is an ordinary push button, not a link. A link style says the control navigates
+    /// somewhere, and this one stops the connect the sentence beside it is describing.
+    private var connectingNotice: some View {
+        HStack(spacing: 8) {
+            ProgressView()
+                .controlSize(.small)
+            Text(String(format: String(localized: "Connecting to %@…"), connection.name))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button(String(localized: "Cancel"), action: onCancel)
+                .controlSize(.small)
+        }
+        .padding(12)
+        .accessibilityElement(children: .contain)
+    }
+
+    /// The prompt is editable while the connection is being made, because a connect can take long
+    /// enough to notice a typo in and a field that shows text it will not let you change is worse
+    /// than no field. What is typed here is what `sendPendingPromptIfReady` sends, so there is
+    /// nothing to submit to yet and `Return` inserts a newline like it would in any composer whose
+    /// send is not available.
+    private var composer: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Divider()
+            /// Mentions stay closed here rather than being offered and left empty: `@` completes
+            /// against tables and columns, which is a schema read this connection cannot answer
+            /// yet. With no text change reported, nothing is ever proposed and `onAttach` is
+            /// unreachable, so neither is a control that does nothing.
+            ChatComposerView(
+                text: pendingPromptBinding,
+                placeholder: String(localized: "Ask about your database…"),
+                minLines: 1,
+                maxLines: 5,
+                mentionState: mentionState,
+                onTextChange: { _, _ in },
+                onSubmit: {},
+                onAttach: { _ in }
+            )
+            queuedNotice
+        }
+        .padding(8)
+    }
+
+    @ViewBuilder
+    private var queuedNotice: some View {
+        if let prompt = session.pendingPrompt, !prompt.trimmingCharacters(in: .whitespaces).isEmpty {
+            Label(
+                String(localized: "Sends as soon as the connection is up."),
+                systemImage: "clock"
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    /// `pendingPrompt` is optional because a session usually has none, and the composer wants a
+    /// string. Empty text clears it rather than queuing a blank turn.
+    private var pendingPromptBinding: Binding<String> {
+        Binding(
+            get: { session.pendingPrompt ?? "" },
+            set: { text in
+                session.pendingPrompt = text.isEmpty ? nil : text
+            }
+        )
     }
 }

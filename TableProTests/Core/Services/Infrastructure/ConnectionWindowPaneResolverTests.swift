@@ -94,6 +94,17 @@ struct ConnectionWindowPaneResolverTests {
         ))
     }
 
+    /// The grace keeps a progress indicator off screen for a wait too short to report. The assistant
+    /// surface is not one: it carries the prompt the user typed, so withholding it draws nothing for
+    /// the grace and then flashes the conversation in.
+    @Test("A sub-grace connect still mounts the assistant surface, and still draws nothing in browse")
+    func preparingMountsTheAssistantSurface() {
+        #expect(ConnectionWindowPaneResolver.showsPreConnectAssistant(for: .preparing, mode: .assistant))
+        #expect(!ConnectionWindowPaneResolver.showsPreConnectAssistant(for: .preparing, mode: .browse))
+        #expect(!ConnectionWindowPaneResolver.hidesChrome(for: .preparing, mode: .assistant))
+        #expect(!ConnectionWindowPaneResolver.hidesChrome(for: .preparing, mode: .browse))
+    }
+
     @Test("Assistant mode reveals the sidebar while connecting so the session rail is not clamped away")
     func assistantModeRevealsSidebarDuringPreConnect() {
         #expect(
