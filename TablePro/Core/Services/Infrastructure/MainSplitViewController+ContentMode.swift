@@ -84,10 +84,28 @@ internal extension MainSplitViewController {
         setContentMode(contentMode == .assistant ? .browse : .assistant)
     }
 
+    /// Sends a prompt that was queued against a connection which is already up.
+    ///
+    /// `adoptSession` flushes the queue when a connect lands, which covers a prompt typed at Welcome
+    /// for a connection that then has to dial. It does not cover the connection whose window is
+    /// already open and connected: nothing about its session changes, so `reconcileStatus` adopts
+    /// nothing and the queue is never read. Asking about a database already on screen therefore
+    /// queued the text and dropped it silently, which is the worst shape a lost message can take.
+    ///
+    /// Safe to call from anywhere and as often as it takes. `sendPendingPromptIfReady` clears the
+    /// prompt before it dispatches, so a second call after a first has sent finds nothing to send.
+    func flushPendingPrompt(for workspace: ConnectionWorkspace) {
+        guard let connection = workspace.session?.connection else { return }
+        selectedSession(of: workspace)?.sendPendingPromptIfReady(connection: connection)
+    }
+
     /// Repaints one connection after its mode changed: its three panes, the detail pane's minimum,
     /// the tab strip band, and the toolbar's segment.
     func applyContentMode(of workspace: ConnectionWorkspace) {
         refreshPanes(of: workspace)
+        if workspace.contentMode == .assistant {
+            flushPendingPrompt(for: workspace)
+        }
         guard workspaces.selectedConnectionId == workspace.connectionId else { return }
         updateDetailMinimumThickness(
             for: workspace.sessionState?.tabManager.selectedTab?.tabType,

@@ -79,6 +79,13 @@ internal enum AgentSessionLauncher {
             controller.selectHostedConnection(connectionId)
             controller.setContentMode(.assistant)
             controller.selectSession(id: sessionId)
+            /// `setContentMode` returns without repainting when the workspace is already in
+            /// assistant mode, so its flush does not run and a window already showing the assistant
+            /// would keep the prompt queued. Asking again about the connection on screen is the
+            /// ordinary case, not the edge one.
+            if let workspace = controller.workspaces.workspace(for: connectionId) {
+                controller.flushPendingPrompt(for: workspace)
+            }
             return
         }
     }

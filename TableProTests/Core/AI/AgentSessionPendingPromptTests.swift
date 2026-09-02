@@ -64,6 +64,25 @@ struct AgentSessionPendingPromptTests {
         #expect(sent.values == ["count the rows"])
     }
 
+    /// The flush is called from more than one place, because the one that existed only fired when a
+    /// connect landed. A connection already open and connected changes nothing about its session,
+    /// so nothing adopted it and asking about a database already on screen queued the text and
+    /// dropped it. Every flush site has to be safe to call whether or not one already has.
+    @Test("Flushing repeatedly, from any number of sites, sends the prompt exactly once")
+    @MainActor
+    func repeatedFlushesFromEverySiteSendOnce() {
+        let (session, connection, sent, directory) = makeSession()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        session.pendingPrompt = "which customers churned?"
+
+        for _ in 0..<5 {
+            session.sendPendingPromptIfReady(connection: connection)
+        }
+
+        #expect(sent.values == ["which customers churned?"])
+        #expect(session.pendingPrompt == nil)
+    }
+
     @Test("A session with no pending prompt sends nothing")
     @MainActor
     func noPromptSendsNothing() {
