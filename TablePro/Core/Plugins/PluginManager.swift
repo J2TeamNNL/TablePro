@@ -14,7 +14,22 @@ import TableProPluginKit
 @MainActor @Observable
 final class PluginManager {
     static let shared = PluginManager()
-    nonisolated static let currentPluginKitVersion = 19
+    /// Raised to 21 for two additions: `tableDDLIncludesForeignKeys` on `PluginDatabaseDriver` and
+    /// `PluginExportDataSource`, and `PluginQueryTiming` with the `PluginQueryResult` initializer
+    /// that carries it. Raised to 20 before that for the whole-schema index and table metadata
+    /// requirements.
+    ///
+    /// Every one of these is safe in the direction Library Evolution covers, so an already-built
+    /// v19 or v20 plugin keeps loading here. The break is the other way round: a plugin compiled
+    /// against the new API emits undefined references to symbols an older host does not have.
+    /// Measured on a rebuilt ClickHouseDriver, whose `nm -u` lists
+    /// `PluginQueryTiming.init(total:firstRow:server:)` and that type's metadata accessor, and on a
+    /// rebuilt CassandraDriver for the v20 requirements it implements none of. Left at 20, such a
+    /// plugin passes `validateBundleVersions` in a shipped v20 app and then fails
+    /// `Bundle.loadAndReturnError`; at 21 that app refuses it and says to update.
+    nonisolated static let currentPluginKitVersion = 21
+
+    /// Still 19, so every plugin already published for the previous release keeps loading.
     nonisolated static let minimumCompatiblePluginKitVersion = 19
     nonisolated static let currentInspectorKitVersion = 1
     private static let disabledPluginsKey = "com.TablePro.disabledPlugins"
@@ -120,6 +135,10 @@ final class PluginManager {
     @ObservationIgnored internal var pluginNetworkMonitor: NWPathMonitor?
     @ObservationIgnored internal var lastNetworkSatisfied = false
     @ObservationIgnored internal var installsInFlight: Set<String> = []
+
+    /// User-installed bundles discovered but not yet signature-checked. `sweepPluginSignatures()`
+    /// drains it after the first frame.
+    @ObservationIgnored internal var pendingSignatureChecks: [URL] = []
 
     var queryBuildingDriverCache: [String: (any PluginDatabaseDriver)?] = [:]
 
@@ -303,24 +322,6 @@ final class PluginManager {
             }
             return
         }
-        if source == .userInstalled {
-            do {
-                try verifyCodeSignature(bundle: bundle)
-            } catch {
-                Self.logger.error("Lazy plugin '\(manifest.bundleId)' failed code-sign check: \(error.localizedDescription)")
-                rejectedPlugins.append(RejectedPlugin(
-                    url: url,
-                    bundleId: manifest.bundleId,
-                    registryId: Self.readRegistryMetadata(for: url)?.pluginId,
-                    name: manifest.bundleId,
-                    reason: error.localizedDescription,
-                    isOutdated: false,
-                    providedDatabaseTypeIds: manifest.providedDatabaseTypeIds
-                ))
-                return
-            }
-        }
-
         let bundleId = manifest.bundleId
         let primaryTypeId = manifest.providedDatabaseTypeIds.first
         let additionalTypeIds = Array(manifest.providedDatabaseTypeIds.dropFirst())
@@ -384,6 +385,65 @@ final class PluginManager {
         Self.logger.debug("Registered lazy plugin '\(bundleId)': drivers=\(manifest.providedDatabaseTypeIds), exports=\(manifest.providedExportFormatIds), imports=\(manifest.providedImportFormatIds), inspectors=\(manifest.providedInspectorIds)")
     }
 
+    /// Takes back everything `registerLazyManifest` published for this bundle, so a plugin the app
+    /// would refuse to activate stops being offered as an installed one.
+    internal func withdrawPlugin(at url: URL, reason: Error) {
+        let manifest = Bundle(url: url).flatMap { PluginManifest(bundle: $0) }
+
+        plugins.removeAll { $0.url == url }
+        rebuildLazyRegistrations()
+
+        guard !rejectedPlugins.contains(where: { $0.url == url }) else { return }
+        let name = manifest?.bundleId ?? url.deletingPathExtension().lastPathComponent
+        rejectedPlugins.append(RejectedPlugin(
+            url: url,
+            bundleId: manifest?.bundleId,
+            registryId: Self.readRegistryMetadata(for: url)?.pluginId,
+            name: name,
+            reason: reason.localizedDescription,
+            isOutdated: false,
+            providedDatabaseTypeIds: manifest?.providedDatabaseTypeIds ?? []
+        ))
+    }
+
+    /// Rebuilt from the surviving manifests rather than filtered by URL.
+    ///
+    /// Two bundles may declare the same driver, format or inspector key, and the one registered
+    /// last owns it. Deleting the withdrawn bundle's keys would take the shared key with it and
+    /// leave the valid plugin listed but unreachable for the rest of the process.
+    private func rebuildLazyRegistrations() {
+        lazyDriverURLs = [:]
+        lazyExportURLs = [:]
+        lazyImportURLs = [:]
+        lazyInspectorURLs = [:]
+        lazyInspectorFileExtensions = [:]
+        lazyInspectorUTIs = [:]
+
+        for entry in plugins {
+            guard let bundle = Bundle(url: entry.url),
+                  let manifest = PluginManifest(bundle: bundle),
+                  manifest.supportsLazyLoad else { continue }
+            for typeId in manifest.providedDatabaseTypeIds {
+                lazyDriverURLs[typeId] = entry.url
+            }
+            for formatId in manifest.providedExportFormatIds {
+                lazyExportURLs[formatId] = entry.url
+            }
+            for formatId in manifest.providedImportFormatIds {
+                lazyImportURLs[formatId] = entry.url
+            }
+            for inspectorId in manifest.providedInspectorIds {
+                lazyInspectorURLs[inspectorId] = entry.url
+            }
+            for ext in manifest.providedInspectorFileExtensions {
+                lazyInspectorFileExtensions[ext.lowercased()] = entry.url
+            }
+            for uti in manifest.providedInspectorUTIs {
+                lazyInspectorUTIs[uti] = entry.url
+            }
+        }
+    }
+
     func activateDriver(databaseTypeId typeId: String) {
         guard driverPlugins[typeId] == nil else { return }
         guard let url = lazyDriverURLs[typeId] else { return }
@@ -427,14 +487,12 @@ final class PluginManager {
 
         let entry = plugins.first(where: { $0.id == bundleId })
 
-        if entry?.source != .builtIn {
-            do {
-                try verifyCodeSignature(bundle: bundle)
-            } catch {
-                Self.logger.error("Refusing to activate lazy plugin '\(bundleId)': code-signature re-check failed before load: \(error.localizedDescription)")
-                recordLazyActivationRejection(url: url, bundleId: bundleId, entry: entry, error: error)
-                return
-            }
+        do {
+            try assertLoadable(bundle, source: entry?.source ?? .userInstalled)
+        } catch {
+            Self.logger.error("Refusing to activate lazy plugin '\(bundleId)': failed the load gate: \(error.localizedDescription)")
+            recordLazyActivationRejection(url: url, bundleId: bundleId, entry: entry, error: error)
+            return
         }
 
         do {
@@ -489,7 +547,7 @@ final class PluginManager {
         let bundle: Bundle
     }
 
-    nonisolated private static func validateBundleVersions(_ bundle: Bundle) throws {
+    nonisolated internal static func validateBundleVersions(_ bundle: Bundle) throws {
         let infoPlist = bundle.infoDictionary ?? [:]
         let declaredPluginKit = infoPlist["TableProPluginKitVersion"] as? Int
         let declaredInspectorKit = infoPlist["TableProInspectorKitVersion"] as? Int
@@ -794,8 +852,14 @@ final class PluginManager {
 
         try Self.validateBundleVersions(bundle)
 
+        /// The signature is not checked here. `SecStaticCodeCheckValidity` hashes the whole bundle,
+        /// measured at 13ms per user-installed plugin and linear in how many are installed, and
+        /// discovery loads nothing: it only records the URL. The two gates that decide whether a
+        /// bundle's code runs both stay where they are, `validateAndLoadBundle` for an eager plugin
+        /// and `activateLazyBundle` for a lazy one, and `sweepPluginSignatures()` re-checks these
+        /// off the main actor once the first window is up so the Plugins pane still lists a bad one.
         if source == .userInstalled {
-            try verifyCodeSignature(bundle: bundle)
+            pendingSignatureChecks.append(url)
         }
 
         pendingPluginURLs.append((url: url, source: source))

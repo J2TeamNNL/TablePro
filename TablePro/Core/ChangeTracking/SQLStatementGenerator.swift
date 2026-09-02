@@ -28,6 +28,11 @@ struct SQLStatementGenerator {
     private static let logger = Logger(subsystem: "com.TablePro", category: "SQLStatementGenerator")
 
     let tableName: String
+    /// Written into every statement when set, so a generator can address a table outside whatever
+    /// schema the connection happens to be on. A grid edit leaves it nil and keeps the unqualified
+    /// name it has always produced; a copy between two databases sets it, because the table it
+    /// writes is not the one the driver is pointed at.
+    let schemaName: String?
     let columns: [String]
     let primaryKeyColumns: [String]
     /// Server-computed columns. They reject any written value, so they are
@@ -39,6 +44,7 @@ struct SQLStatementGenerator {
 
     init(
         tableName: String,
+        schemaName: String? = nil,
         columns: [String],
         primaryKeyColumns: [String],
         databaseType: DatabaseType,
@@ -48,6 +54,7 @@ struct SQLStatementGenerator {
         quoteIdentifier: ((String) -> String)? = nil
     ) throws {
         self.tableName = tableName
+        self.schemaName = schemaName?.isEmpty == true ? nil : schemaName
         self.columns = columns
         self.primaryKeyColumns = primaryKeyColumns
         self.generatedColumns = generatedColumns
@@ -59,6 +66,12 @@ struct SQLStatementGenerator {
             let resolvedDialect = try resolveSQLDialect(for: databaseType, explicit: dialect)
             self.quoteIdentifierFn = quoteIdentifierFromDialect(resolvedDialect)
         }
+    }
+
+    /// The table as every statement spells it.
+    var qualifiedTableName: String {
+        guard let schemaName else { return quoteIdentifierFn(tableName) }
+        return "\(quoteIdentifierFn(schemaName)).\(quoteIdentifierFn(tableName))"
     }
 
     private static func defaultParameterStyle(for databaseType: DatabaseType) -> ParameterStyle {
@@ -183,15 +196,34 @@ struct SQLStatementGenerator {
             }
         }
 
-        guard !nonDefaultColumns.isEmpty else { return nil }
+        guard !nonDefaultColumns.isEmpty else { return allDefaultsInsertStatement() }
 
         let columnList = nonDefaultColumns.joined(separator: ", ")
         let placeholders = placeholderParts.joined(separator: ", ")
 
         let sql =
-            "INSERT INTO \(quoteIdentifierFn(tableName)) (\(columnList)) VALUES (\(placeholders))"
+            "INSERT INTO \(qualifiedTableName) (\(columnList)) VALUES (\(placeholders))"
 
         return ParameterizedStatement(sql: sql, parameters: bindParameters)
+    }
+
+    /// A row whose every column the server fills in names no column at all, which is legal SQL and
+    /// has its own spelling per engine. Returning nothing instead dropped the row from the batch
+    /// while the rest of the save committed and reported success, so a new row in a table of
+    /// nothing but an identity column and defaults vanished without a word.
+    private func allDefaultsInsertStatement() -> ParameterizedStatement? {
+        switch SqlDialect.from(databaseTypeId: databaseType.rawValue) {
+        case .postgres, .sqlite:
+            return ParameterizedStatement(
+                sql: "INSERT INTO \(qualifiedTableName) DEFAULT VALUES", parameters: []
+            )
+        case .mysql:
+            return ParameterizedStatement(
+                sql: "INSERT INTO \(qualifiedTableName) () VALUES ()", parameters: []
+            )
+        default:
+            return nil
+        }
     }
 
     func insertStatement(columns insertColumns: [String], values: [PluginCellValue])
@@ -207,7 +239,7 @@ struct SQLStatementGenerator {
         }.joined(separator: ", ")
 
         let sql =
-            "INSERT INTO \(quoteIdentifierFn(tableName)) (\(columnList)) VALUES (\(placeholders))"
+            "INSERT INTO \(qualifiedTableName) (\(columnList)) VALUES (\(placeholders))"
 
         return ParameterizedStatement(sql: sql, parameters: bindParameters)
     }
@@ -229,7 +261,7 @@ struct SQLStatementGenerator {
         }.joined(separator: ", ")
 
         let sql =
-            "INSERT INTO \(quoteIdentifierFn(tableName)) (\(columnList)) VALUES \(rowTuples)"
+            "INSERT INTO \(qualifiedTableName) (\(columnList)) VALUES \(rowTuples)"
 
         return ParameterizedStatement(sql: sql, parameters: bindParameters)
     }
@@ -243,7 +275,7 @@ struct SQLStatementGenerator {
     }
 
     func deleteAllRowsStatement() -> String {
-        "DELETE FROM \(quoteIdentifierFn(tableName))"
+        "DELETE FROM \(qualifiedTableName)"
     }
 
     private func generateInsertSQLFromCellChanges(for change: RowChange) -> ParameterizedStatement?
@@ -272,7 +304,7 @@ struct SQLStatementGenerator {
         }.joined(separator: ", ")
 
         let sql =
-            "INSERT INTO \(quoteIdentifierFn(tableName)) (\(columnNames)) VALUES (\(placeholders))"
+            "INSERT INTO \(qualifiedTableName) (\(columnNames)) VALUES (\(placeholders))"
 
         return ParameterizedStatement(sql: sql, parameters: parameters)
     }
@@ -328,7 +360,7 @@ struct SQLStatementGenerator {
 
             let whereClause = conditions.joined(separator: " AND ")
             let sql =
-                "UPDATE \(quoteIdentifierFn(tableName)) SET \(setClauses) WHERE \(whereClause)"
+                "UPDATE \(qualifiedTableName) SET \(setClauses) WHERE \(whereClause)"
             return ParameterizedStatement(sql: sql, parameters: parameters)
         } else {
             guard let originalRow = change.originalRow else {
@@ -355,7 +387,7 @@ struct SQLStatementGenerator {
 
             let whereClause = conditions.joined(separator: " AND ")
             let sql =
-                "UPDATE \(quoteIdentifierFn(tableName)) SET \(setClauses) WHERE \(whereClause)"
+                "UPDATE \(qualifiedTableName) SET \(setClauses) WHERE \(whereClause)"
 
             return ParameterizedStatement(sql: sql, parameters: parameters)
         }
@@ -444,7 +476,7 @@ struct SQLStatementGenerator {
         }
 
         let whereClause = rowClauses.joined(separator: " OR ")
-        let sql = "DELETE FROM \(quoteIdentifierFn(tableName)) WHERE \(whereClause)"
+        let sql = "DELETE FROM \(qualifiedTableName) WHERE \(whereClause)"
         return ParameterizedStatement(sql: sql, parameters: parameters)
     }
 

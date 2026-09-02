@@ -88,6 +88,16 @@ final class DataTabGridDelegate: DataGridViewDelegate {
         coordinator?.navigateToFKReference(value: value, fkInfo: fkInfo, openInNewTab: openInNewTab)
     }
 
+    /// The panel reads the selection, not a row this is told about.
+    ///
+    /// `KeyHandlingTableView.menu(for:)` retargets the selection to a row clicked outside it, so
+    /// the usual single-row case shows the row the reader asked about. A click inside a multi-row
+    /// selection keeps that selection on purpose, and the panel then shows its first row, which is
+    /// the row the Details tab shows too.
+    func dataGridShowRowAsJSON() {
+        coordinator?.showJSONPanel()
+    }
+
     func dataGridHideColumn(_ columnName: String) {
         coordinator?.hideColumn(columnName)
     }
@@ -102,7 +112,7 @@ final class DataTabGridDelegate: DataGridViewDelegate {
         let target = StructureMenuTarget { onAddRow() }
         let item = NSMenuItem(
             title: String(localized: "Add Row"),
-            action: #selector(StructureMenuTarget.addNewItem),
+            action: #selector(StructureMenuTarget.runAction),
             keyEquivalent: ""
         )
         item.target = target

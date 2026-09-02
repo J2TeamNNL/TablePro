@@ -356,6 +356,7 @@ struct MainMenuValidationTests {
         var context = MenuValidationContext()
         context.isConnected = true
         context.isCurrentTabEditable = true
+        context.isCurrentTabSchemaResolved = true
         context.hasTableSelection = true
         context.isReadOnly = true
         #expect(!enabled(#selector(MainSplitViewController.addRow(_:)), context))
@@ -418,6 +419,7 @@ struct MainMenuValidationTests {
         context.supportsServerDashboard = true
         context.supportsUserManagement = true
         context.isCurrentTabEditable = true
+        context.isCurrentTabSchemaResolved = true
         context.hasTableSelection = true
         context.canShowTableStructure = true
         context.canEditViewDefinition = true
@@ -464,6 +466,20 @@ struct MainMenuValidationTests {
             #selector(MainSplitViewController.editViewDefinition(_:)),
             #selector(MainSplitViewController.runMaintenanceOperation(_:))
         ]
+    }
+
+    /// Both commands pre-fill from the schema's account of which columns the server fills in, so
+    /// they stay disabled until it arrives rather than staging NULL into an identity column.
+    @Test("Add Row and Duplicate Row wait for the schema to resolve")
+    func rowInsertionWaitsForTheSchema() {
+        var context = capableContext()
+        context.isConnected = true
+        context.isCurrentTabSchemaResolved = false
+        #expect(!enabled(#selector(MainSplitViewController.addRow(_:)), context))
+        #expect(!enabled(#selector(MainSplitViewController.duplicateRow(_:)), context))
+        context.isCurrentTabSchemaResolved = true
+        #expect(enabled(#selector(MainSplitViewController.addRow(_:)), context))
+        #expect(enabled(#selector(MainSplitViewController.duplicateRow(_:)), context))
     }
 
     @Test("A stale selection does not keep content commands enabled without a connection")
@@ -575,6 +591,26 @@ struct MainMenuValidationTests {
         #expect(!enabled(#selector(MainSplitViewController.runMaintenanceOperation(_:)), context))
         context.hasMaintenanceOperations = true
         #expect(enabled(#selector(MainSplitViewController.runMaintenanceOperation(_:)), context))
+    }
+
+    /// Both are sidebar commands first. They are mirrored here so the feature is reachable from
+    /// the keyboard, and they validate on the same facts the sidebar's own menu reads.
+    @Test("Copying is offered only on an engine that can copy")
+    func copyObjectsNeedsASQLEngine() {
+        var context = MenuValidationContext()
+        context.isConnected = true
+        #expect(!enabled(#selector(MainSplitViewController.copyObjectsToDatabase(_:)), context))
+        context.canCopyObjects = true
+        #expect(enabled(#selector(MainSplitViewController.copyObjectsToDatabase(_:)), context))
+    }
+
+    @Test("Duplicate Database needs a driver that creates databases")
+    func duplicateDatabaseNeedsContainers() {
+        var context = MenuValidationContext()
+        context.isConnected = true
+        #expect(!enabled(#selector(MainSplitViewController.duplicateCurrentDatabase(_:)), context))
+        context.canDuplicateDatabase = true
+        #expect(enabled(#selector(MainSplitViewController.duplicateCurrentDatabase(_:)), context))
     }
 
     @Test("New Database needs a driver that switches containers")

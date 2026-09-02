@@ -100,6 +100,7 @@ public protocol PluginDatabaseDriver: AnyObject, Sendable {
     func fetchTriggers(table: String, schema: String?) async throws -> [PluginTriggerInfo]
     func fetchCheckConstraints(table: String, schema: String?) async throws -> [PluginCheckConstraintInfo]
     func fetchAllTriggers(schema: String?) async throws -> [PluginTriggerInfo]
+    var providesBulkTriggerFetch: Bool { get }
     func fetchTriggerDDL(_ trigger: PluginTriggerInfo) async throws -> String
     func fetchRoutines(schema: String?) async throws -> [PluginRoutineInfo]
     func fetchRoutineDDL(_ routine: PluginRoutineInfo) async throws -> String
@@ -134,9 +135,15 @@ public protocol PluginDatabaseDriver: AnyObject, Sendable {
 
     func fetchApproximateRowCount(table: String, schema: String?) async throws -> Int?
     func fetchAllColumns(schema: String?) async throws -> [String: [PluginColumnInfo]]
+    var providesBulkColumnFetch: Bool { get }
     func sampleFieldPaths(table: String, schema: String?, limit: Int) async throws -> [PluginFieldPath]
     func fetchAllForeignKeys(schema: String?) async throws -> [String: [PluginForeignKeyInfo]]
     var providesBulkForeignKeyFetch: Bool { get }
+    var tableDDLIncludesForeignKeys: Bool { get }
+    func fetchAllIndexes(schema: String?) async throws -> [String: [PluginIndexInfo]]
+    var providesBulkIndexFetch: Bool { get }
+    func fetchAllTableMetadata(schema: String?) async throws -> [String: PluginTableMetadata]
+    var providesBulkTableMetadataFetch: Bool { get }
     func fetchAllDatabaseMetadata() async throws -> [PluginDatabaseMetadata]
     func fetchDependentTypes(table: String, schema: String?) async throws -> [(name: String, labels: [String])]
     func fetchDependentSequences(table: String, schema: String?) async throws -> [(name: String, ddl: String)]
@@ -207,6 +214,34 @@ public protocol PluginDatabaseDriver: AnyObject, Sendable {
     func generateRenameCheckConstraintSQL(table: String, from oldName: String, to newName: String) -> String?
     func generateModifyPrimaryKeySQL(table: String, oldColumns: [String], newColumns: [String], constraintName: String?) -> [String]?
     func generateMoveColumnSQL(table: String, column: PluginColumnDefinition, afterColumn: String?) -> String?
+
+    /// The statements that put `table`'s columns into `desiredOrder`, or nil where the engine
+    /// cannot reorder them.
+    ///
+    /// Supersedes `generateMoveColumnSQL`, which can only say "one `ALTER`, one column" and so
+    /// cannot express Oracle's invisible/visible cycle or the create-copy-swap a rebuild engine
+    /// needs. The old requirement stays published and defaulted: removing one breaks every plugin
+    /// whose witness table hard-references its default.
+    ///
+    /// `columns` is the table's current definitions in current order, so a driver that has to
+    /// restate a column keeps the charset and collation the app already resolved. Anything else a
+    /// rebuild needs, the driver queries for itself.
+    func generateColumnReorderPlan(
+        table: String,
+        schema: String?,
+        columns: [PluginColumnDefinition],
+        desiredOrder: [String]
+    ) async throws -> PluginColumnReorderPlan?
+
+    /// A fingerprint of everything a reorder plan reproduces, cheap enough to take twice.
+    ///
+    /// A rebuild plan is built before its review sheet opens and run after it closes, and it ends
+    /// in a `DROP`. Anything another connection added in between is inside the table the plan is
+    /// about to drop and outside the plan that is about to replace it. Comparing this before and
+    /// after is what turns that into a refusal instead of silent loss. Nil where the driver cannot
+    /// answer, which stands the check down for an engine TablePro never runs a rebuild on anyway.
+    func columnReorderSchemaFingerprint(table: String, schema: String?) async throws -> String?
+
     func generateCreateTableSQL(definition: PluginCreateTableDefinition) -> String?
 
     // Definition SQL for clipboard copy (optional — return nil if not supported)
@@ -219,6 +254,15 @@ public protocol PluginDatabaseDriver: AnyObject, Sendable {
     func dropObjectStatement(name: String, objectType: String, schema: String?, cascade: Bool) -> String?
     func foreignKeyDisableStatements() -> [String]?
     func foreignKeyEnableStatements() -> [String]?
+
+    /// Creates a schema, for a copy that has just created the database it goes in.
+    ///
+    /// A new database carries only whatever schema its engine gives it, so duplicating one that
+    /// groups its objects into several means creating the rest before any of their tables. Return
+    /// nil where the engine has no schemas, or where a schema is not something a statement can
+    /// make: on Oracle it is a user, and on SQL Server it needs its own batch. Callers leave those
+    /// namespaces out and say so rather than emitting DDL the server will reject.
+    func createSchemaStatement(name: String) -> String?
 
     // Maintenance operations (optional — return nil if not supported)
     func supportedMaintenanceOperations() -> [String]?
@@ -241,6 +285,7 @@ public protocol PluginDatabaseDriver: AnyObject, Sendable {
     func createTriggerTemplate(table: String, schema: String?) -> String?
     func fetchTriggerDefinition(name: String, table: String, schema: String?) async throws -> String?
     func generateDropTriggerSQL(name: String, table: String, schema: String?) -> String?
+    func generateDropRoutineSQL(name: String, signature: String?, schema: String?, isFunction: Bool) -> String?
     var triggerEditUsesReplace: Bool { get }
     var supportsTransactionalDDL: Bool { get }
 
@@ -269,6 +314,12 @@ public extension PluginDatabaseDriver {
     func fetchCheckConstraints(table: String, schema: String?) async throws -> [PluginCheckConstraintInfo] { [] }
 
     func fetchAllTriggers(schema: String?) async throws -> [PluginTriggerInfo] { [] }
+
+    /// Answers whether `fetchAllTriggers` lists a whole schema's triggers. The default above
+    /// returns nothing rather than looping, so a caller that wants triggers has to know whether
+    /// this driver answers at all before it decides to ask per table. False is the safe answer: it
+    /// costs a round trip per table and reports every trigger, where a wrong true reports none.
+    var providesBulkTriggerFetch: Bool { false }
 
     func fetchTriggerDDL(_ trigger: PluginTriggerInfo) async throws -> String {
         if let definition = trigger.definition, !definition.isEmpty { return definition }
@@ -315,6 +366,18 @@ public extension PluginDatabaseDriver {
     func createTriggerTemplate(table: String, schema: String?) -> String? { nil }
     func fetchTriggerDefinition(name: String, table: String, schema: String?) async throws -> String? { nil }
     func generateDropTriggerSQL(name: String, table: String, schema: String?) -> String? { nil }
+
+    /// How this engine drops a routine, given that only some of them accept an argument list.
+    ///
+    /// PostgreSQL requires one to tell `f(integer)` from `f(text)`, and MySQL rejects one outright,
+    /// so a caller cannot spell this itself. Returning nil means the caller's own qualified
+    /// `DROP FUNCTION schema.name` is right for this engine.
+    func generateDropRoutineSQL(
+        name: String,
+        signature: String?,
+        schema: String?,
+        isFunction: Bool
+    ) -> String? { nil }
     var triggerEditUsesReplace: Bool { false }
     var supportsTransactionalDDL: Bool { false }
 
@@ -372,6 +435,13 @@ public extension PluginDatabaseDriver {
 
     func fetchApproximateRowCount(table: String, schema: String?) async throws -> Int? { nil }
 
+    /// Answers whether `fetchAllColumns` is a single query rather than the N+1 default below, and
+    /// whether it reports every column `fetchColumns` reports. Both halves matter: a bulk query
+    /// that omits generated columns or their expressions is not a substitute for the per-table
+    /// read, and a caller that compares two schemas would report the missing detail as no
+    /// difference at all.
+    var providesBulkColumnFetch: Bool { false }
+
     /// Default: fetches columns per-table sequentially (N+1 round-trips).
     /// SQL drivers should override with a single bulk query (e.g. INFORMATION_SCHEMA.COLUMNS).
     func fetchAllColumns(schema: String?) async throws -> [String: [PluginColumnInfo]] {
@@ -389,6 +459,16 @@ public extension PluginDatabaseDriver {
         []
     }
 
+    /// Answers whether `fetchTableDDL` already carries the table's FOREIGN KEY constraints, which
+    /// every driver returning the server's own CREATE statement does. A SQL export defers foreign
+    /// keys to `ALTER TABLE ... ADD CONSTRAINT` after the data, so it must skip that for a driver
+    /// answering `true` or the dump declares each constraint twice, and SQLite has no such
+    /// statement to declare it with at all.
+    ///
+    /// Defaults to `false`, which is the behaviour every driver shipped before this existed: the
+    /// export adds the foreign keys itself. A driver whose DDL carries them overrides it.
+    var tableDDLIncludesForeignKeys: Bool { false }
+
     /// Answers whether `fetchAllForeignKeys` is a single query rather than the N+1 default below.
     /// The app reads this before fetching a whole schema's foreign keys up front, so a driver that
     /// has not overridden the default is never asked to make one round trip per table. It belongs
@@ -404,6 +484,39 @@ public extension PluginDatabaseDriver {
         for table in tables {
             let fks = try await fetchForeignKeys(table: table.name, schema: schema)
             if !fks.isEmpty { result[table.name] = fks }
+        }
+        return result
+    }
+
+    /// Answers whether `fetchAllIndexes` is a single query rather than the N+1 default below.
+    var providesBulkIndexFetch: Bool { false }
+
+    /// Default: fetches indexes per-table sequentially (N+1 round-trips).
+    /// SQL drivers should override with a single bulk query (e.g. INFORMATION_SCHEMA.STATISTICS).
+    func fetchAllIndexes(schema: String?) async throws -> [String: [PluginIndexInfo]] {
+        let tables = try await fetchTables(schema: schema)
+        var result: [String: [PluginIndexInfo]] = [:]
+        for table in tables {
+            let indexes = try await fetchIndexes(table: table.name, schema: schema)
+            if !indexes.isEmpty { result[table.name] = indexes }
+        }
+        return result
+    }
+
+    /// Answers whether `fetchAllTableMetadata` is a single query rather than the N+1 default below.
+    var providesBulkTableMetadataFetch: Bool { false }
+
+    /// Default: fetches metadata per-table sequentially (N+1 round-trips).
+    /// SQL drivers should override with a single bulk query (e.g. SHOW TABLE STATUS with no filter).
+    ///
+    /// A table whose metadata cannot be read is left out rather than throwing. The caller wants
+    /// the descriptive fields, and one unreadable table is not a reason to lose the other 199.
+    func fetchAllTableMetadata(schema: String?) async throws -> [String: PluginTableMetadata] {
+        let tables = try await fetchTables(schema: schema)
+        var result: [String: PluginTableMetadata] = [:]
+        for table in tables {
+            guard let metadata = try? await fetchTableMetadata(table: table.name, schema: schema) else { continue }
+            result[table.name] = metadata
         }
         return result
     }
@@ -511,6 +624,16 @@ public extension PluginDatabaseDriver {
     func generateRenameCheckConstraintSQL(table: String, from oldName: String, to newName: String) -> String? { nil }
     func generateModifyPrimaryKeySQL(table: String, oldColumns: [String], newColumns: [String], constraintName: String?) -> [String]? { nil }
     func generateMoveColumnSQL(table: String, column: PluginColumnDefinition, afterColumn: String?) -> String? { nil }
+
+    func generateColumnReorderPlan(
+        table: String,
+        schema: String?,
+        columns: [PluginColumnDefinition],
+        desiredOrder: [String]
+    ) async throws -> PluginColumnReorderPlan? { nil }
+
+    func columnReorderSchemaFingerprint(table: String, schema: String?) async throws -> String? { nil }
+
     func generateCreateTableSQL(definition: PluginCreateTableDefinition) -> String? { nil }
 
     func generateColumnDefinitionSQL(column: PluginColumnDefinition) -> String? { nil }
@@ -521,6 +644,7 @@ public extension PluginDatabaseDriver {
     func dropObjectStatement(name: String, objectType: String, schema: String?, cascade: Bool) -> String? { nil }
     func foreignKeyDisableStatements() -> [String]? { nil }
     func foreignKeyEnableStatements() -> [String]? { nil }
+    func createSchemaStatement(name: String) -> String? { nil }
 
     func supportedMaintenanceOperations() -> [String]? { nil }
     func maintenanceStatements(operation: String, table: String?, schema: String?, options: [String: String]) -> [String]? { nil }

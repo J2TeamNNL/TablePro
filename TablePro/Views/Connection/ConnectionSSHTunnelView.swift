@@ -90,7 +90,12 @@ struct ConnectionSSHTunnelView: View {
                     LabeledContent(String(localized: "Username"), value: profile.username)
                     LabeledContent(String(localized: "Authentication Method"), value: profile.authMethod.rawValue)
                     if !profile.privateKeyPath.isEmpty {
-                        LabeledContent(String(localized: "Key File"), value: profile.privateKeyPath)
+                        LabeledContent(
+                            profile.authMethod == .sshAgent
+                                ? String(localized: "Identity File")
+                                : String(localized: "Key File"),
+                            value: profile.privateKeyPath
+                        )
                     }
                     if !profile.jumpHosts.isEmpty {
                         LabeledContent(String(localized: "Jump Hosts"), value: "\(profile.jumpHosts.count)")
@@ -194,7 +199,28 @@ struct ConnectionSSHTunnelView: View {
                             prompt: Text("/path/to/agent.sock")
                         )
                     }
-                    Text("Keys are provided by the SSH agent (e.g. 1Password, ssh-agent).")
+                    Text(sshState.agentSocketOption.explanation)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    LabeledContent(String(localized: "Identity File")) {
+                        HStack {
+                            TextField(
+                                "",
+                                text: $sshState.privateKeyPath,
+                                prompt: Text("~/.ssh/id_ed25519.pub")
+                            )
+                            Button(String(localized: "Browse")) {
+                                browseForKeyFile(
+                                    message: String(localized: "Choose a public key file")
+                                ) { sshState.privateKeyPath = $0 }
+                            }
+                            .controlSize(.small)
+                        }
+                    }
+                    Text(String(localized: """
+                    Offers the agent key matching this public key file first. With IdentitiesOnly yes \
+                    in ~/.ssh/config, only that key is offered.
+                    """))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else if sshState.authMethod == .keyboardInteractive {
@@ -345,13 +371,16 @@ struct ConnectionSSHTunnelView: View {
 
     // MARK: - Helper Methods
 
-    private func browseForKeyFile(onSelect: @escaping (String) -> Void) {
+    private func browseForKeyFile(
+        message: String = String(localized: "Choose a private key file"),
+        onSelect: @escaping (String) -> Void
+    ) {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ssh")
         panel.showsHiddenFiles = true
-        panel.message = String(localized: "Choose a private key file")
+        panel.message = message
         panel.begin { response in
             if response == .OK, let url = panel.url {
                 onSelect(url.path(percentEncoded: false))

@@ -76,6 +76,7 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
     var displayCache: RowDisplayCache { displayState.cache }
     private var pendingScrollAnchorRow: Int?
     weak var delegate: (any DataGridViewDelegate)?
+    var rowReorder: DataGridRowReorder = .disabled
     weak var activeFKPreviewPopover: NSPopover?
     weak var activeCellEditorPopover: NSPopover?
     weak var activePoppedOutEditor: JSONViewerWindowController?
@@ -1126,7 +1127,10 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
             isColumnSearchable: { column in
                 guard visible?.contains(column) ?? true else { return false }
                 guard column < columnTypes.count else { return true }
-                return FindMatcher.isSearchable(columnTypes[column])
+                return FindMatcher.isSearchable(
+                    columnTypes[column],
+                    displayFormat: column < columnDisplayFormats.count ? columnDisplayFormats[column] : nil
+                )
             },
             cellText: { [weak self] displayIndex, column in
                 guard let self,
@@ -1134,15 +1138,32 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
                       column < row.values.count
                 else { return nil }
                 let rawValue = row.values[column]
-                guard rawValue.asText != nil else { return nil }
+                let columnType = column < columnTypes.count ? columnTypes[column] : nil
+                guard findSearches(rawValue, column: column, columnType: columnType) else { return nil }
                 return displayValue(
                     forID: row.id,
                     column: column,
                     rawValue: rawValue,
-                    columnType: column < columnTypes.count ? columnTypes[column] : nil
+                    columnType: columnType
                 )
             }
         )
+    }
+
+    /// A binary cell is searched only where its column's format actually turned those bytes into
+    /// characters. The format is chosen per column and the fallback to hex happens per value, so a
+    /// column of readable text can still hold one cell whose hex Find must not match.
+    private func findSearches(_ value: PluginCellValue, column: Int, columnType: ColumnType?) -> Bool {
+        switch value {
+        case .null:
+            return false
+        case .text:
+            return true
+        case .bytes(let data):
+            guard let format = column < columnDisplayFormats.count ? columnDisplayFormats[column] : nil,
+                  format.isApplicable(to: columnType, databaseType: databaseType) else { return false }
+            return ValueDisplayFormatService.applyFormat(data, format: format, columnType: columnType) != nil
+        }
     }
 
     func applyFindMatch(_ match: FindMatch?) {
@@ -1173,6 +1194,17 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
         tableView.selectRowIndexes(IndexSet(integer: displayRow), byExtendingSelection: false)
         scrollColumnToVisible(tableColumnIndex: displayCol)
         beginCellEdit(row: displayRow, tableColumnIndex: displayCol)
+    }
+
+    /// Where the caret goes on a row the user just made. Column 0 is where the row starts, not
+    /// necessarily where it can be typed into: a table whose first column the server owns, such as
+    /// an identity or a stored generated column, refuses the edit and opens nothing at all, which
+    /// reads as Add Row having done nothing. Falls back to column 0 so a row with no editable
+    /// column at all is still selected and scrolled to.
+    func beginEditingFirstEditableColumn(displayRow: Int) {
+        let columnCount = tableRowsProvider().columns.count
+        let column = (0..<columnCount).first { canStartInlineEdit(row: displayRow, columnIndex: $0) } ?? 0
+        beginEditing(displayRow: displayRow, column: column)
     }
 
     func refreshCellPresentations() {

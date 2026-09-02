@@ -28,7 +28,7 @@ struct PluginMetadataSnapshot: Sendable {
     let editorLanguage: EditorLanguage
     let connectionMode: ConnectionMode
     let supportsDatabaseSwitching: Bool
-    let supportsColumnReorder: Bool
+    var columnReorder: ColumnReorderSupport = .unsupported
 
     let capabilities: CapabilityFlags
     let schema: SchemaInfo
@@ -124,6 +124,9 @@ struct PluginMetadataSnapshot: Sendable {
         let systemDatabaseNames: [String]
         let systemSchemaNames: [String]
         let fileExtensions: [String]
+        /// Curated in the app rather than declared by the plugin: claiming a format from the
+        /// system also needs a `CFBundleDocumentTypes` entry only the app bundle can make.
+        let fileSignatures: [DatabaseFileSignature]
         let databaseGroupingStrategy: GroupingStrategy
         let structureColumnFields: [StructureColumnField]
 
@@ -138,6 +141,7 @@ struct PluginMetadataSnapshot: Sendable {
             systemDatabaseNames: [String],
             systemSchemaNames: [String],
             fileExtensions: [String],
+            fileSignatures: [DatabaseFileSignature] = [],
             databaseGroupingStrategy: GroupingStrategy,
             structureColumnFields: [StructureColumnField]
         ) {
@@ -151,6 +155,7 @@ struct PluginMetadataSnapshot: Sendable {
             self.systemDatabaseNames = systemDatabaseNames
             self.systemSchemaNames = systemSchemaNames
             self.fileExtensions = fileExtensions
+            self.fileSignatures = fileSignatures
             self.databaseGroupingStrategy = databaseGroupingStrategy
             self.structureColumnFields = structureColumnFields
         }
@@ -236,7 +241,7 @@ struct PluginMetadataSnapshot: Sendable {
             brandColorHex: brandColorHex, queryLanguageName: queryLanguageName,
             editorLanguage: editorLanguage, connectionMode: connectionMode,
             supportsDatabaseSwitching: supportsDatabaseSwitching,
-            supportsColumnReorder: supportsColumnReorder,
+            columnReorder: columnReorder,
             capabilities: capabilities, schema: schema, editor: editor, connection: connection
         )
     }
@@ -253,7 +258,7 @@ struct PluginMetadataSnapshot: Sendable {
             brandColorHex: brandColorHex, queryLanguageName: queryLanguageName,
             editorLanguage: editorLanguage, connectionMode: connectionMode,
             supportsDatabaseSwitching: supportsDatabaseSwitching,
-            supportsColumnReorder: supportsColumnReorder,
+            columnReorder: columnReorder,
             capabilities: capabilities, schema: schema, editor: editor, connection: connection
         )
     }
@@ -270,7 +275,7 @@ struct PluginMetadataSnapshot: Sendable {
             brandColorHex: source.brandColorHex, queryLanguageName: queryLanguageName,
             editorLanguage: editorLanguage, connectionMode: connectionMode,
             supportsDatabaseSwitching: supportsDatabaseSwitching,
-            supportsColumnReorder: supportsColumnReorder,
+            columnReorder: columnReorder,
             capabilities: capabilities, schema: schema, editor: editor, connection: connection
         )
     }
@@ -287,7 +292,7 @@ struct PluginMetadataSnapshot: Sendable {
             brandColorHex: brandColorHex, queryLanguageName: queryLanguageName,
             editorLanguage: editorLanguage, connectionMode: connectionMode,
             supportsDatabaseSwitching: supportsDatabaseSwitching,
-            supportsColumnReorder: supportsColumnReorder,
+            columnReorder: columnReorder,
             capabilities: capabilities, schema: schema, editor: editor, connection: connection
         )
     }
@@ -304,7 +309,7 @@ struct PluginMetadataSnapshot: Sendable {
             brandColorHex: brandColorHex, queryLanguageName: queryLanguageName,
             editorLanguage: editorLanguage, connectionMode: connectionMode,
             supportsDatabaseSwitching: source.supportsDatabaseSwitching,
-            supportsColumnReorder: supportsColumnReorder,
+            columnReorder: columnReorder,
             capabilities: capabilities,
             schema: SchemaInfo(
                 defaultSchemaName: source.schema.defaultSchemaName,
@@ -317,6 +322,7 @@ struct PluginMetadataSnapshot: Sendable {
                 systemDatabaseNames: schema.systemDatabaseNames,
                 systemSchemaNames: schema.systemSchemaNames,
                 fileExtensions: schema.fileExtensions,
+                fileSignatures: schema.fileSignatures,
                 databaseGroupingStrategy: source.schema.databaseGroupingStrategy,
                 structureColumnFields: schema.structureColumnFields
             ),
@@ -556,7 +562,7 @@ final class PluginMetadataRegistry: @unchecked Sendable {
             editorLanguage: driverType.editorLanguage,
             connectionMode: driverType.connectionMode,
             supportsDatabaseSwitching: driverType.supportsDatabaseSwitching,
-            supportsColumnReorder: existingSnapshot?.supportsColumnReorder ?? false,
+            columnReorder: existingSnapshot?.columnReorder ?? .unsupported,
             capabilities: PluginMetadataSnapshot.CapabilityFlags(
                 supportsSchemaSwitching: driverType.supportsSchemaSwitching,
                 supportsImport: driverType.supportsImport,
@@ -610,6 +616,7 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                 systemDatabaseNames: driverType.systemDatabaseNames,
                 systemSchemaNames: driverType.systemSchemaNames,
                 fileExtensions: driverType.fileExtensions,
+                fileSignatures: existingSnapshot?.schema.fileSignatures ?? [],
                 databaseGroupingStrategy: driverType.databaseGroupingStrategy,
                 structureColumnFields: driverType.structureColumnFields
             ),
@@ -697,6 +704,16 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                     result[key] = typeId
                 }
             }
+        }
+        return result
+    }
+
+    func allFileSignatures() -> [String: [DatabaseFileSignature]] {
+        lock.lock()
+        defer { lock.unlock() }
+        var result: [String: [DatabaseFileSignature]] = [:]
+        for (typeId, snapshot) in snapshots where !snapshot.schema.fileSignatures.isEmpty {
+            result[typeId] = snapshot.schema.fileSignatures
         }
         return result
     }

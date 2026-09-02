@@ -52,7 +52,7 @@ A preview tab turns permanent as soon as you sort it, filter it, or edit data, a
 
 | Action | How |
 |--------|-----|
-| Close one tab | `Cmd+W`, the tab's close button, or **Close Tab** on its contextual menu |
+| Close one tab | `Cmd+W`, the tab's close button, a middle-click anywhere on the tab, or **Close Tab** on its contextual menu |
 | Close the rest | **File > Close Other Tabs**, also on the tab's contextual menu |
 | Close every tab for this connection | **File > Close All Tabs**, also on the tab's contextual menu |
 | Close tabs bound to another database | **File > Close Tabs for Other Databases** |
@@ -77,11 +77,27 @@ Pending cell edits are the one thing that does not come back: they are never wri
 
 Drag a tab along the strip to move it; the others slide out of the way as it passes their middle. Press `Esc` before letting go to put it back where it started. The new order is saved when you release, so a drag you abandon leaves nothing behind.
 
+Hold the drag near either end of the strip and the track scrolls under it, so a tab reaches a place that is not currently on screen.
+
 Right-click a tab for **Move Tab Left** and **Move Tab Right**, which move it one place at a time, dim at the ends of the strip, and are offered to VoiceOver as actions on the tab.
 
 <Note>
 Tabs cannot be pinned. Pinning exists for result tabs inside a query tab (`Cmd+Option+P`).
 </Note>
+
+## Moving a tab to its own window
+
+Drag a tab down out of the strip, or right-click it and choose **Move Tab to New Window**, to open it in a window of its own. Both windows work on the same connection and the same session, so closing one leaves the other connected.
+
+The command dims for a window's only tab, for a tab with a query or a table load still running, and while the connection is down. **Move Connection to New Window**, on the connections strip, moves a whole connection instead.
+
+Tabs with unsaved work stay put. A move carries the tab, not the edits pending in the grid or the ALTERs staged in the structure editor, so save those first and the command comes back.
+
+## Tabs that stop fitting
+
+The strip keeps one row and scrolls it, the way every macOS tab bar does. Scroll over it with two fingers to reach the rest.
+
+**Settings > General > Tabs > When tabs stop fitting** switches to **Wrap onto more rows**, which lays the tabs out over as many rows as they need and grows the strip to match. Nothing is off screen, and the window has that much less room for the table below.
 
 ## Switching tabs
 

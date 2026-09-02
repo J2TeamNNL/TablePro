@@ -109,6 +109,7 @@ extension MSSQLPluginDriver {
                 isPrimaryKey: isPk,
                 defaultValue: defaultValue,
                 extra: isIdentity ? "IDENTITY" : nil,
+                identityKind: isIdentity ? .always : nil,
                 isGenerated: isComputed
             )
         }
@@ -312,6 +313,7 @@ extension MSSQLPluginDriver {
                 isPrimaryKey: isPk,
                 defaultValue: defaultValue,
                 extra: isIdentity ? "IDENTITY" : nil,
+                identityKind: isIdentity ? .always : nil,
                 isGenerated: isComputed
             )
             columnsByTable[tableName, default: []].append(col)
@@ -328,6 +330,8 @@ extension MSSQLPluginDriver {
     }
 
     var providesBulkForeignKeyFetch: Bool { true }
+
+    var tableDDLIncludesForeignKeys: Bool { true }
 
     func fetchAllForeignKeys(schema: String?) async throws -> [String: [PluginForeignKeyInfo]] {
         let esc = effectiveSchemaEscaped(schema)

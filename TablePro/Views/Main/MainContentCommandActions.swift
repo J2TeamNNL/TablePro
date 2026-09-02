@@ -403,6 +403,11 @@ final class MainContentCommandActions {
         return coordinator.canEditActiveResult
     }
 
+    var isCurrentTabSchemaResolved: Bool {
+        guard let coordinator, let tabId = coordinator.tabManager.selectedTabId else { return false }
+        return coordinator.tabSessionRegistry.tableRows(for: tabId).hasAuthoritativeSchema
+    }
+
     var canRestorePreviousValues: Bool {
         coordinator?.canRewindSelectedTab ?? false
     }
@@ -1012,13 +1017,6 @@ final class MainContentCommandActions {
         }
     }
 
-    func openSQLFile() {
-        Task {
-            guard let urls = await SQLFileService.showOpenPanel() else { return }
-            AppCommands.shared.openSQLFiles.send(urls)
-        }
-    }
-
     func explainQuery() {
         coordinator?.runExplain()
     }
@@ -1037,6 +1035,14 @@ final class MainContentCommandActions {
 
     func previewFKReference() {
         coordinator?.toggleFKPreviewForFocusedCell()
+    }
+
+    func showRowAsJSON() {
+        coordinator?.showJSONPanel()
+    }
+
+    func openForeignKeyTable(reference: JSONForeignKeyRef, value: String) {
+        coordinator?.navigateToFKReference(reference: reference, value: value)
     }
 
     func exportTables() {

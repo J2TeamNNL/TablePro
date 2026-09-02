@@ -27,7 +27,6 @@ extension PluginMetadataRegistry {
                 brandColorHex: "#00ED63",
                 queryLanguageName: "MQL", editorLanguage: .javascript,
                 connectionMode: .network, supportsDatabaseSwitching: true,
-                supportsColumnReorder: false,
                 capabilities: PluginMetadataSnapshot.CapabilityFlags(
                     supportsSchemaSwitching: false,
                     supportsImport: true,
@@ -122,7 +121,6 @@ extension PluginMetadataRegistry {
                 brandColorHex: "#DC382D",
                 queryLanguageName: "Redis CLI", editorLanguage: .bash,
                 connectionMode: .network, supportsDatabaseSwitching: false,
-                supportsColumnReorder: false,
                 capabilities: PluginMetadataSnapshot.CapabilityFlags(
                     supportsSchemaSwitching: false,
                     supportsImport: false,
@@ -242,7 +240,6 @@ extension PluginMetadataRegistry {
                 brandColorHex: "#E34517",
                 queryLanguageName: "SQL", editorLanguage: .sql,
                 connectionMode: .network, supportsDatabaseSwitching: true,
-                supportsColumnReorder: false,
                 capabilities: PluginMetadataSnapshot.CapabilityFlags(
                     supportsSchemaSwitching: true,
                     supportsImport: true,
@@ -323,7 +320,6 @@ extension PluginMetadataRegistry {
                 brandColorHex: "#F37440",
                 queryLanguageName: "SQL", editorLanguage: .sql,
                 connectionMode: .network, supportsDatabaseSwitching: true,
-                supportsColumnReorder: false,
                 capabilities: PluginMetadataSnapshot.CapabilityFlags(
                     supportsSchemaSwitching: false,
                     supportsImport: true,
@@ -413,7 +409,6 @@ extension PluginMetadataRegistry {
                 brandColorHex: "#DD5F3B",
                 queryLanguageName: "SQL", editorLanguage: .sql,
                 connectionMode: .network, supportsDatabaseSwitching: true,
-                supportsColumnReorder: false,
                 capabilities: PluginMetadataSnapshot.CapabilityFlags(
                     supportsSchemaSwitching: true,
                     supportsImport: false,
@@ -532,7 +527,7 @@ extension PluginMetadataRegistry {
                 brandColorHex: "#C3160B",
                 queryLanguageName: "SQL", editorLanguage: .sql,
                 connectionMode: .network, supportsDatabaseSwitching: false,
-                supportsColumnReorder: false,
+                columnReorder: .alter,
                 capabilities: PluginMetadataSnapshot.CapabilityFlags(
                     supportsSchemaSwitching: true,
                     supportsImport: true,
@@ -591,7 +586,6 @@ extension PluginMetadataRegistry {
                 brandColorHex: "#C60018",
                 queryLanguageName: "SQL", editorLanguage: .sql,
                 connectionMode: .network, supportsDatabaseSwitching: false,
-                supportsColumnReorder: false,
                 capabilities: PluginMetadataSnapshot.CapabilityFlags(
                     supportsSchemaSwitching: true,
                     supportsImport: true,
@@ -654,7 +648,7 @@ extension PluginMetadataRegistry {
                 brandColorHex: "#FFD100",
                 queryLanguageName: "SQL", editorLanguage: .sql,
                 connectionMode: .network, supportsDatabaseSwitching: true,
-                supportsColumnReorder: false,
+                columnReorder: .alter,
                 capabilities: PluginMetadataSnapshot.CapabilityFlags(
                     supportsSchemaSwitching: false,
                     supportsImport: true,
@@ -693,63 +687,6 @@ extension PluginMetadataRegistry {
                     tagline: String(localized: "Column-oriented OLAP for big data")
                 )
             )),
-            ("DuckDB", PluginMetadataSnapshot(
-                displayName: "DuckDB", iconName: "duckdb-icon", defaultPort: 9_494,
-                requiresAuthentication: false, supportsForeignKeys: true, supportsSchemaEditing: true,
-                isDownloadable: true, primaryUrlScheme: "duckdb", parameterStyle: .dollar,
-                navigationModel: .standard,
-                explainVariants: [
-                    ExplainVariant(id: "explain", label: "EXPLAIN", sqlPrefix: "EXPLAIN", format: .indentedText),
-                ],
-                pathFieldRole: .database,
-                supportsHealthMonitor: false, urlSchemes: ["duckdb", "quack"],
-                postConnectActions: [.selectSchemaFromLastSession],
-                brandColorHex: "#FFD900",
-                queryLanguageName: "SQL", editorLanguage: .sql,
-                connectionMode: .apiOnly, supportsDatabaseSwitching: true,
-                supportsColumnReorder: false,
-                capabilities: PluginMetadataSnapshot.CapabilityFlags(
-                    supportsSchemaSwitching: true,
-                    supportsImport: true,
-                    supportsExport: true,
-                    supportsSSH: false,
-                    supportsSSL: false,
-                    supportsCascadeDrop: false,
-                    supportsForeignKeyDisable: true,
-                    supportsReadOnlyMode: true,
-                    supportsQueryProgress: false,
-                    requiresReconnectForDatabaseSwitch: false,
-                    supportsDropDatabase: false,
-                    supportsRenameColumn: true,
-                    supportsConnectionPooling: false,
-                    localFilePathField: .additionalField("duckdbFilePath")
-                ),
-                schema: PluginMetadataSnapshot.SchemaInfo(
-                    defaultSchemaName: "main",
-                    defaultGroupName: "main",
-                    tableEntityName: "Tables",
-                    containerEntityName: "Database",
-                    defaultPrimaryKeyColumn: nil,
-                    immutableColumns: [],
-                    systemDatabaseNames: ["system", "temp"],
-                    systemSchemaNames: [],
-                    fileExtensions: ["duckdb", "ddb", "parquet", "csv", "tsv", "json", "ndjson"],
-                    databaseGroupingStrategy: .bySchema,
-                    structureColumnFields: [.name, .type, .nullable, .defaultValue, .autoIncrement, .comment]
-                ),
-                editor: PluginMetadataSnapshot.EditorConfig(
-                    sqlDialect: duckdbDialect,
-                    statementCompletions: [],
-                    columnTypesByCategory: duckdbColumnTypes
-                ),
-                connection: PluginMetadataSnapshot.ConnectionConfig(
-                    additionalConnectionFields: Self.duckdbConnectionFields,
-                    category: .analytical,
-                    tagline: String(localized: "Embedded and remote analytical SQL"),
-                    hidesBuiltInPassword: true,
-                    hidesBuiltInDatabase: true
-                )
-            )),
             ("Beancount", PluginMetadataSnapshot(
                 displayName: "Beancount", iconName: "beancount-icon", defaultPort: 0,
                 requiresAuthentication: false, supportsForeignKeys: false, supportsSchemaEditing: false,
@@ -759,7 +696,6 @@ extension PluginMetadataRegistry {
                 brandColorHex: "#3F7D20",
                 queryLanguageName: "SQL", editorLanguage: .sql,
                 connectionMode: .fileBased, supportsDatabaseSwitching: false,
-                supportsColumnReorder: false,
                 capabilities: PluginMetadataSnapshot.CapabilityFlags(
                     supportsSchemaSwitching: false,
                     supportsImport: false,
@@ -849,7 +785,6 @@ extension PluginMetadataRegistry {
                 brandColorHex: "#26A0D8",
                 queryLanguageName: "CQL", editorLanguage: .sql,
                 connectionMode: .network, supportsDatabaseSwitching: true,
-                supportsColumnReorder: false,
                 capabilities: PluginMetadataSnapshot.CapabilityFlags(
                     supportsSchemaSwitching: false,
                     supportsImport: false,
@@ -913,7 +848,6 @@ extension PluginMetadataRegistry {
                 brandColorHex: "#6B2EE3",
                 queryLanguageName: "CQL", editorLanguage: .sql,
                 connectionMode: .network, supportsDatabaseSwitching: true,
-                supportsColumnReorder: false,
                 capabilities: PluginMetadataSnapshot.CapabilityFlags(
                     supportsSchemaSwitching: false,
                     supportsImport: false,
@@ -976,7 +910,6 @@ extension PluginMetadataRegistry {
                 brandColorHex: "#419EDA",
                 queryLanguageName: "etcdctl", editorLanguage: .bash,
                 connectionMode: .network, supportsDatabaseSwitching: false,
-                supportsColumnReorder: false,
                 capabilities: PluginMetadataSnapshot.CapabilityFlags(
                     supportsSchemaSwitching: false,
                     supportsImport: false,
@@ -1066,7 +999,7 @@ extension PluginMetadataRegistry {
                 brandColorHex: "#F6821F",
                 queryLanguageName: "SQL", editorLanguage: .sql,
                 connectionMode: .apiOnly, supportsDatabaseSwitching: true,
-                supportsColumnReorder: false,
+                columnReorder: .rebuild,
                 capabilities: PluginMetadataSnapshot.CapabilityFlags(
                     supportsSchemaSwitching: false,
                     supportsImport: false,
@@ -1126,7 +1059,7 @@ extension PluginMetadataRegistry {
                 brandColorHex: "#4FF8D2",
                 queryLanguageName: "SQL", editorLanguage: .sql,
                 connectionMode: .apiOnly, supportsDatabaseSwitching: false,
-                supportsColumnReorder: false,
+                columnReorder: .rebuild,
                 capabilities: PluginMetadataSnapshot.CapabilityFlags(
                     supportsSchemaSwitching: false,
                     supportsImport: false,
@@ -1202,6 +1135,7 @@ extension PluginMetadataRegistry {
                 )
             )),
         ] + tursoPluginDefaults(dialect: d1Dialect, columnTypes: d1ColumnTypes)
+            + duckdbPluginDefaults(dialect: duckdbDialect, columnTypes: duckdbColumnTypes)
             + cloudPluginDefaults() + elasticsearchPluginDefaults() + surrealDBPluginDefaults()
             + kafkaPluginDefaults()
     }

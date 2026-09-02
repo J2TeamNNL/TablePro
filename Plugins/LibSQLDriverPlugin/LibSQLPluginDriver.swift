@@ -389,6 +389,8 @@ final class LibSQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
     var providesBulkForeignKeyFetch: Bool { true }
 
+    var tableDDLIncludesForeignKeys: Bool { true }
+
     func fetchAllForeignKeys(schema: String?) async throws -> [String: [PluginForeignKeyInfo]] {
         let query = """
             SELECT m.name AS table_name, p.id, p."table" AS referenced_table,
@@ -728,6 +730,33 @@ final class LibSQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
     func generateDropColumnSQL(table: String, columnName: String) -> String? {
         "ALTER TABLE \(quoteIdentifier(table)) DROP COLUMN \(quoteIdentifier(columnName))"
+    }
+
+    /// SQLite has no positional `ALTER`, so the order changes by rebuilding the table, using the
+    /// shared recipe every SQLite-derived driver follows.
+    ///
+    /// Runnable only in local mode. A local database is a real SQLite handle that holds a
+    /// transaction across statements, which is what makes the rebuild atomic; over HTTP each
+    /// statement is its own request and the script has to be handed to the user instead.
+    func generateColumnReorderPlan(
+        table: String,
+        schema: String?,
+        columns: [PluginColumnDefinition],
+        desiredOrder: [String]
+    ) async throws -> PluginColumnReorderPlan? {
+        try await SQLiteColumnReorderPlanner.plan(
+            tableName: table,
+            desiredOrder: desiredOrder,
+            isRunnable: isLocalMode,
+            execute: { try await self.execute(query: $0) }
+        )
+    }
+
+    func columnReorderSchemaFingerprint(table: String, schema: String?) async throws -> String? {
+        try await SQLiteColumnReorderPlanner.schemaFingerprint(
+            tableName: table,
+            execute: { try await self.execute(query: $0) }
+        )
     }
 
     func generateAddIndexSQL(table: String, index: PluginIndexDefinition) -> String? {

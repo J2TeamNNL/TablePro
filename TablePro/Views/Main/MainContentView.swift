@@ -167,6 +167,12 @@ struct MainContentView: View {
                 if !$0 {
                     coordinator.activeSheet = nil
                     coordinator.exportPreselection = nil
+                    /// Cleared on every dismissal, Cancel included. The request holds the closure
+                    /// that runs the rebuild, and that closure holds the structure view, which
+                    /// holds this coordinator; leaving it set after a cancel keeps the cycle alive
+                    /// for the window's life and offers a stale plan to whatever opens the sheet
+                    /// next.
+                    coordinator.columnReorderRequest = nil
                 }
             }
         )
@@ -185,6 +191,8 @@ struct MainContentView: View {
                     Task { await coordinator.switchContainer(to: newDatabaseName) }
                 }
             )
+        case .copyObjects(let launch):
+            CopyObjectsSheet(launch: launch, connection: connection)
         case .exportDialog:
             let exportConnection = exportConnection
             ExportDialog(
@@ -292,6 +300,29 @@ struct MainContentView: View {
                 RewindReviewSheet(plan: plan) {
                     await coordinator.applyRewind()
                 }
+            }
+        case .columnReorderReview:
+            if let request = coordinator.columnReorderRequest {
+                SQLReviewSheet(
+                    isPresented: dismissBinding,
+                    statements: request.scriptStatements,
+                    databaseType: connection.type,
+                    warning: request.warning,
+                    primaryAction: request.isRunnable
+                        ? SQLReviewSheet.PrimaryAction(
+                            title: String(localized: "Rebuild Table"),
+                            isDestructive: true,
+                            perform: {
+                                await request.perform()
+                                coordinator.columnReorderRequest = nil
+                                coordinator.activeSheet = nil
+                            }
+                        )
+                        : nil,
+                    onOpenInEditor: {
+                        coordinator.openColumnReorderScriptInEditor(request)
+                    }
+                )
             }
         }
     }

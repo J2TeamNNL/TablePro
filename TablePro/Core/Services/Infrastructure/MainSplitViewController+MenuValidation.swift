@@ -24,6 +24,10 @@ struct MenuValidationContext: Equatable {
     /// Export Results exports the selected tab's rows, so an empty grid has nothing to offer.
     var hasResultRows = false
     var isCurrentTabEditable = false
+    /// Add Row and Duplicate Row stage `DEFAULT` for every column the server fills in, which only
+    /// the table's own schema names. Until it lands, the result set's own metadata reports far less,
+    /// and an identity column would be staged as NULL that the server refuses.
+    var isCurrentTabSchemaResolved = false
     var canRestorePreviousValues = false
     var isQueryExecuting = false
     var hasQueryText = false
@@ -52,6 +56,8 @@ struct MenuValidationContext: Equatable {
     var canShowTableStructure = false
     var canEditViewDefinition = false
     var canCreateDatabase = false
+    var canCopyObjects = false
+    var canDuplicateDatabase = false
     var hasMaintenanceOperations = false
     var canUndo = false
     var canRedo = false
@@ -83,8 +89,7 @@ extension MainSplitViewController: NSMenuItemValidation {
     /// itself, so `hasEditorForFind` only ever decides the unfocused fallback.
     static func isEnabled(_ selector: Selector, context: MenuValidationContext) -> Bool {
         switch selector {
-        case #selector(openSQLFile(_:)),
-             #selector(exportTables(_:)),
+        case #selector(exportTables(_:)),
              #selector(refreshDatabase(_:)),
              #selector(openQuickSwitcher(_:)),
              #selector(toggleQueryHistory(_:)),
@@ -162,6 +167,7 @@ extension MainSplitViewController: NSMenuItemValidation {
 
         case #selector(addRow(_:)), #selector(duplicateRow(_:)):
             return context.isConnected && context.isCurrentTabEditable && !context.isReadOnly
+                && context.isCurrentTabSchemaResolved
         case #selector(restorePreviousValues(_:)):
             return context.isConnected && context.canRestorePreviousValues && !context.isReadOnly
         case #selector(truncateTable(_:)):
@@ -190,6 +196,10 @@ extension MainSplitViewController: NSMenuItemValidation {
             return context.isConnected && !context.isReadOnly
         case #selector(createNewDatabase(_:)):
             return context.canCreateDatabase
+        case #selector(copyObjectsToDatabase(_:)):
+            return context.canCopyObjects
+        case #selector(duplicateCurrentDatabase(_:)):
+            return context.canDuplicateDatabase
         case #selector(showTableStructure(_:)):
             return context.isConnected && context.canShowTableStructure
         case #selector(editViewDefinition(_:)):
@@ -252,6 +262,7 @@ extension MainSplitViewController: NSMenuItemValidation {
             isQueryTab: actions.isQueryTab,
             hasResultRows: actions.hasResultRows,
             isCurrentTabEditable: actions.isCurrentTabEditable,
+            isCurrentTabSchemaResolved: actions.isCurrentTabSchemaResolved,
             canRestorePreviousValues: actions.canRestorePreviousValues,
             isQueryExecuting: actions.isQueryExecuting,
             hasQueryText: actions.hasQueryText,
@@ -273,6 +284,8 @@ extension MainSplitViewController: NSMenuItemValidation {
             canShowTableStructure: actions.canShowTableStructure,
             canEditViewDefinition: actions.canEditViewDefinition,
             canCreateDatabase: actions.canCreateDatabase,
+            canCopyObjects: actions.canCopyObjects,
+            canDuplicateDatabase: actions.canDuplicateDatabase,
             hasMaintenanceOperations: !actions.maintenanceOperations.isEmpty,
             canUndo: actions.canUndo,
             canRedo: actions.canRedo,

@@ -113,6 +113,12 @@ class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
         ["SET session_replication_role = DEFAULT"]
     }
 
+    /// A duplicated database arrives with `public` alone, so every other schema its tables are
+    /// qualified with has to be made before the first `CREATE TABLE` names one.
+    func createSchemaStatement(name: String) -> String? {
+        "CREATE SCHEMA IF NOT EXISTS \(quoteIdentifier(name))"
+    }
+
     // MARK: - Maintenance
 
     func supportedMaintenanceOperations() -> [String]? {
@@ -219,7 +225,11 @@ class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
         }
     }
 
+    /// The namespace predicate is not optional. Without it the read matched `relname` alone, so two
+    /// schemas holding a table of the same name returned each other's indexes merged into one list,
+    /// which a comparison between those two schemas reports as neither side differing.
     func fetchIndexes(table: String, schema: String?) async throws -> [PluginIndexInfo] {
+        let schemaLiteral = escapeLiteral(schema ?? core.currentSchema)
         let columnOrdering = versionedCapabilities.hasArrayPosition
             ? "ORDER BY array_position(ix.indkey, a.attnum)"
             : "ORDER BY a.attnum"
@@ -234,28 +244,15 @@ class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
             FROM pg_index ix
             JOIN pg_class i ON i.oid = ix.indexrelid
             JOIN pg_class t ON t.oid = ix.indrelid
+            JOIN pg_namespace n ON n.oid = t.relnamespace
             JOIN pg_am am ON am.oid = i.relam
             JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
-            WHERE t.relname = '\(escapeLiteral(table))'
+            WHERE t.relname = '\(escapeLiteral(table))' AND n.nspname = '\(schemaLiteral)'
             GROUP BY i.relname, ix.indisunique, ix.indisprimary, am.amname, ix.indpred, ix.indrelid
             ORDER BY ix.indisprimary DESC, i.relname
             """
         let result = try await execute(query: query)
-        return result.rows.compactMap { row -> PluginIndexInfo? in
-            guard row.count >= 5, let name = row[0].asText, let columnsStr = row[1].asText else { return nil }
-            let columns = columnsStr
-                .trimmingCharacters(in: CharacterSet(charactersIn: "{}"))
-                .components(separatedBy: ",")
-            let whereClause = row.count > 5 ? row[5].asText : nil
-            return PluginIndexInfo(
-                name: name,
-                columns: columns,
-                isUnique: row[2].asText == "t",
-                isPrimary: row[3].asText == "t",
-                type: row[4].asText?.uppercased() ?? "BTREE",
-                whereClause: whereClause
-            )
-        }
+        return result.rows.compactMap { PostgreSQLIndexRow.index(from: $0, offset: 0) }
     }
 
     func fetchForeignKeys(table: String, schema: String?) async throws -> [PluginForeignKeyInfo] {
@@ -394,6 +391,19 @@ class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
 
     func generateDropTriggerSQL(name: String, table: String, schema: String?) -> String? {
         "DROP TRIGGER IF EXISTS \(quoteIdentifier(name)) ON \(qualifiedTable(table, schema: schema))"
+    }
+
+    /// PostgreSQL allows `f(integer)` and `f(text)` in one schema, so a drop that names only `f`
+    /// is ambiguous and the server refuses it.
+    func generateDropRoutineSQL(
+        name: String,
+        signature: String?,
+        schema: String?,
+        isFunction: Bool
+    ) -> String? {
+        let keyword = isFunction ? "FUNCTION" : "PROCEDURE"
+        let arguments = (signature ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return "DROP \(keyword) IF EXISTS \(qualifiedTable(name, schema: schema))\(arguments)"
     }
 
     var providesBulkForeignKeyFetch: Bool { true }
@@ -757,13 +767,17 @@ class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
             let cycle = row[5].asText == "t" ? " CYCLE" : ""
             let lastValue = row.count > 6 ? row[6].asText : nil
             let quotedSeqName = quoteIdentifier(seqName)
-            let escapedSchemaForLiteral = escapeStringLiteral(schemaName)
             let escapedSeqForLiteral = escapeStringLiteral(seqName)
             var ddl = "CREATE SEQUENCE \(quotedSeqName) INCREMENT BY \(incrementBy)"
                 + " MINVALUE \(minVal) MAXVALUE \(maxVal)"
                 + " START WITH \(startVal)\(cycle);"
+            /// Unqualified, so it names the sequence the line above created rather than the one it
+            /// was read from. `setval` takes a `regclass`, which resolves through `search_path`, and
+            /// the `CREATE SEQUENCE` beside it is already schema-relative. Spelling the source's own
+            /// schema here made the pair disagree: run against another schema it repositioned the
+            /// original sequence, and against another database it named one that was not there.
             if let last = lastValue, !last.isEmpty, Int64(last) != nil {
-                ddl += "\nSELECT pg_catalog.setval('\"\(escapedSchemaForLiteral)\".\"\(escapedSeqForLiteral)\"', \(last), true);"
+                ddl += "\nSELECT pg_catalog.setval('\"\(escapedSeqForLiteral)\"', \(last), true);"
             }
             return (name: seqName, ddl: ddl)
         }

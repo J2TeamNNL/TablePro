@@ -129,7 +129,10 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
             columnTypeNames: result.columnTypeNames,
             rows: result.rows,
             rowsAffected: Int(result.affectedRows),
-            executionTime: Date().timeIntervalSince(startTime),
+            timing: PluginQueryTiming(
+                total: Date().timeIntervalSince(startTime),
+                firstRow: result.firstRowTime
+            ),
             isTruncated: result.isTruncated,
             columnMeta: result.columnMeta
         )
@@ -154,7 +157,10 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
             columnTypeNames: result.columnTypeNames,
             rows: result.rows,
             rowsAffected: Int(result.affectedRows),
-            executionTime: Date().timeIntervalSince(startTime),
+            timing: PluginQueryTiming(
+                total: Date().timeIntervalSince(startTime),
+                firstRow: result.firstRowTime
+            ),
             isTruncated: result.isTruncated,
             columnMeta: result.columnMeta
         )
@@ -184,7 +190,10 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
                         columnTypeNames: Array(repeating: "TEXT", count: columns.count),
                         rows: [],
                         rowsAffected: Int(result.affectedRows),
-                        executionTime: Date().timeIntervalSince(startTime),
+                        timing: PluginQueryTiming(
+                            total: Date().timeIntervalSince(startTime),
+                            firstRow: result.firstRowTime
+                        ),
                         isTruncated: result.isTruncated
                     )
                 }
@@ -195,7 +204,10 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
                 columnTypeNames: result.columnTypeNames,
                 rows: result.rows,
                 rowsAffected: Int(result.affectedRows),
-                executionTime: Date().timeIntervalSince(startTime),
+                timing: PluginQueryTiming(
+                    total: Date().timeIntervalSince(startTime),
+                    firstRow: result.firstRowTime
+                ),
                 isTruncated: result.isTruncated,
                 columnMeta: result.columnMeta
             )
@@ -273,6 +285,7 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
                 charset: charset,
                 collation: collation == "NULL" ? nil : collation,
                 comment: comment?.isEmpty == false ? comment : nil,
+                identityKind: mysqlIdentityKind(extra: extra),
                 isGenerated: mysqlColumnIsGenerated(extra: extra),
                 allowedValues: allowedValues,
                 generationExpression: generationExpressions[name],
@@ -339,13 +352,24 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         }
     }
 
+    var providesBulkColumnFetch: Bool { true }
+
+    /// `GENERATION_EXPRESSION` is projected here rather than looked up per table, because a caller
+    /// that takes the bulk list has to receive what `fetchColumns` would have given it. Without the
+    /// column the two reads disagree on generated columns alone, and a schema comparison built on
+    /// the bulk read reports a changed generation expression as no difference at all.
     func fetchAllColumns(schema: String?) async throws -> [String: [PluginColumnInfo]] {
         let dbName = _activeDatabase
         let escapedDb = dbName.replacingOccurrences(of: "'", with: "''")
+        let hasGenerationExpression = MySQLServerVersion.hasGenerationExpression(
+            banner: _serverVersion, isMariaDB: isMariaDB
+        )
+        let generationProjection = hasGenerationExpression ? "GENERATION_EXPRESSION" : "NULL"
         let query = """
             SELECT
                 TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, COLLATION_NAME,
-                IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT, EXTRA, COLUMN_COMMENT
+                IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT, EXTRA, COLUMN_COMMENT,
+                \(generationProjection)
             FROM INFORMATION_SCHEMA.COLUMNS
             WHERE TABLE_SCHEMA = '\(escapedDb)'
             ORDER BY TABLE_NAME, ORDINAL_POSITION
@@ -387,8 +411,11 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
                 charset: charset,
                 collation: collation == "NULL" ? nil : collation,
                 comment: comment?.isEmpty == false ? comment : nil,
+                identityKind: mysqlIdentityKind(extra: extra),
                 isGenerated: mysqlColumnIsGenerated(extra: extra),
-                allowedValues: allowedValues
+                allowedValues: allowedValues,
+                generationExpression: row[safe: 9]?.asText?.nilIfEmpty,
+                generationKind: mysqlGenerationKind(extra: extra)
             )
 
             allColumns[tableName, default: []].append(column)
@@ -401,41 +428,20 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         let safeTable = table.replacingOccurrences(of: "`", with: "``")
         let result = try await execute(query: "SHOW INDEX FROM `\(safeTable)`")
 
-        var indexMap: [String: (columns: [String], isUnique: Bool, type: String, prefixes: [String: Int])] = [:]
-
-        for row in result.rows {
+        let rows = result.rows.compactMap { row -> MySQLIndexRow? in
             guard let indexName = row[safe: 2]?.asText,
                   let columnName = row[safe: 4]?.asText
-            else { continue }
-
-            let nonUnique = (row[safe: 1]?.asText) == "1"
-            let indexType = (row[safe: 10]?.asText) ?? "BTREE"
-            let subPart = (row[safe: 7]?.asText).flatMap { Int($0) }
-
-            if var existing = indexMap[indexName] {
-                existing.columns.append(columnName)
-                if let subPart {
-                    existing.prefixes[columnName] = subPart
-                }
-                indexMap[indexName] = existing
-            } else {
-                var prefixes: [String: Int] = [:]
-                if let subPart {
-                    prefixes[columnName] = subPart
-                }
-                indexMap[indexName] = (columns: [columnName], isUnique: !nonUnique, type: indexType, prefixes: prefixes)
-            }
+            else { return nil }
+            return MySQLIndexRow(
+                table: table,
+                index: indexName,
+                column: columnName,
+                isNonUnique: (row[safe: 1]?.asText) == "1",
+                type: (row[safe: 10]?.asText) ?? "BTREE",
+                prefixLength: (row[safe: 7]?.asText).flatMap { Int($0) }
+            )
         }
-
-        return indexMap
-            .map { name, info in
-                PluginIndexInfo(
-                    name: name, columns: info.columns, isUnique: info.isUnique,
-                    isPrimary: name == "PRIMARY", type: info.type,
-                    columnPrefixes: info.prefixes.isEmpty ? nil : info.prefixes
-                )
-            }
-            .sorted { $0.isPrimary && !$1.isPrimary }
+        return MySQLIndexGrouping.group(rows)[table] ?? []
     }
 
     func fetchForeignKeys(table: String, schema: String?) async throws -> [PluginForeignKeyInfo] {
@@ -506,6 +512,8 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     }
 
     var providesBulkForeignKeyFetch: Bool { true }
+
+    var tableDDLIncludesForeignKeys: Bool { true }
 
     func fetchAllForeignKeys(schema: String?) async throws -> [String: [PluginForeignKeyInfo]] {
         let dbName = _activeDatabase
@@ -606,27 +614,7 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         guard let row = result.rows.first else {
             return PluginTableMetadata(tableName: table)
         }
-
-        let engine = row[safe: 1]?.asText
-        let rowCount = (row[safe: 4]?.asText).flatMap { Int64($0) }
-        let dataSize = (row[safe: 6]?.asText).flatMap { Int64($0) }
-        let indexSize = (row[safe: 8]?.asText).flatMap { Int64($0) }
-        let comment = row[safe: 17]?.asText
-
-        let totalSize: Int64? = {
-            guard let data = dataSize, let index = indexSize else { return nil }
-            return data + index
-        }()
-
-        return PluginTableMetadata(
-            tableName: table,
-            dataSize: dataSize,
-            indexSize: indexSize,
-            totalSize: totalSize,
-            rowCount: rowCount,
-            comment: comment?.isEmpty == true ? nil : comment,
-            engine: engine
-        )
+        return MySQLTableStatusRow.metadata(from: row, tableName: table)
     }
 
     // MARK: - Streaming
@@ -944,18 +932,31 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
     func generateMoveColumnSQL(table: String, column: PluginColumnDefinition, afterColumn: String?) -> String? {
         let tableName = quoteIdentifier(table)
-        let colName = quoteIdentifier(column.name)
+        let position = afterColumn.map { "AFTER \(quoteIdentifier($0))" } ?? "FIRST"
+        /// The same builder `ADD COLUMN` uses, rather than the attribute list alone. `MODIFY`
+        /// replaces the whole definition, and the attribute list does not carry
+        /// `GENERATED ALWAYS AS`, so moving a generated column with it dropped the expression and
+        /// left a plain column of stored defaults behind.
+        return "ALTER TABLE \(tableName) MODIFY COLUMN \(buildColumnDefinitionSQL(column)) \(position)"
+    }
 
-        let def = "\(column.dataType)" + mysqlColumnAttributesSQL(column)
-
-        let position: String
-        if let afterCol = afterColumn {
-            position = "AFTER \(quoteIdentifier(afterCol))"
-        } else {
-            position = "FIRST"
-        }
-
-        return "ALTER TABLE \(tableName) MODIFY COLUMN \(colName) \(def) \(position)"
+    /// `MODIFY COLUMN` replaces the whole definition, so every move restates the column in full.
+    /// Restating only the type is what drops charset, collation and `ON UPDATE`.
+    func generateColumnReorderPlan(
+        table: String,
+        schema: String?,
+        columns: [PluginColumnDefinition],
+        desiredOrder: [String]
+    ) async throws -> PluginColumnReorderPlan? {
+        let byName = Dictionary(columns.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
+        let statements = PluginColumnReorderPlanner
+            .moves(from: columns.map(\.name), to: desiredOrder)
+            .compactMap { move -> String? in
+                guard let column = byName[move.column] else { return nil }
+                return generateMoveColumnSQL(table: table, column: column, afterColumn: move.afterColumn)
+            }
+        guard !statements.isEmpty else { return nil }
+        return PluginColumnReorderPlan(statements: statements, cost: .metadataOnly)
     }
 
     // MARK: - View Templates

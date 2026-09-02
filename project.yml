@@ -404,6 +404,14 @@ targets:
       - Plugins/MongoDBDriverPlugin/MongoDBSSLMapping.swift
       - Plugins/MongoDBDriverPlugin/MongoDBStatementGenerator.swift
       - Plugins/MongoDBDriverPlugin/MongoDBTimeoutPolicy.swift
+      - Plugins/MongoDBDriverPlugin/MongoScriptCommandBuilder.swift
+      - Plugins/MongoDBDriverPlugin/MongoShellCommandLine.swift
+      - Plugins/MongoDBDriverPlugin/MongoScriptCursorOptions.swift
+      - Plugins/MongoDBDriverPlugin/MongoScriptError.swift
+      - Plugins/MongoDBDriverPlugin/MongoScriptJson.swift
+      - Plugins/MongoDBDriverPlugin/MongoScriptObjectId.swift
+      - Plugins/MongoDBDriverPlugin/MongoScriptPrelude.swift
+      - Plugins/MongoDBDriverPlugin/MongoScriptText.swift
       - Plugins/MongoDBDriverPlugin/MongoStreamProjection.swift
       - Plugins/OracleDriverPlugin/OracleObjectQueries.swift
       - Plugins/MySQLDriverPlugin/MySQLColumnDefinitionSQL.swift
@@ -476,6 +484,10 @@ targets:
       - Plugins/RedisDriverPlugin/RedisSentinelResolver.swift
       - Plugins/RedisDriverPlugin/RedisStatementGenerator.swift
       - Plugins/RedisDriverPlugin/RedisTopologyDiagnostics.swift
+      - Plugins/SQLExportPlugin/SQLExportDDLRewriter.swift
+      - Plugins/SQLExportPlugin/SQLExportModels.swift
+      - Plugins/SQLExportPlugin/SQLExportOptionsView.swift
+      - Plugins/SQLExportPlugin/SQLExportPlugin.swift
       - Plugins/SQLImportPlugin/SQLImportFailure.swift
       - Plugins/SQLImportPlugin/SQLImportOptions.swift
       - Plugins/SQLImportPlugin/SQLImportOptionsView.swift

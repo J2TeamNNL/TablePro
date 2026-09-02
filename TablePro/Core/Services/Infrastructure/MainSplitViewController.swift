@@ -101,6 +101,13 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     /// leaves one live arm per call behind until the next change wakes them all. These two say
     /// whether the live arm still watches the right tab manager, so a repeated call is free and
     /// only a workspace switch or a fired arm registers again.
+    /// Set on the window built to hold a tab moved out of another one, and never on the window it
+    /// came from. With exactly two tabs open, tearing one off leaves both windows holding one
+    /// workspace and one tab with the connection hosted twice, so a test on that state alone is
+    /// true of the source as well and Cmd+W there closed the window instead of leaving the
+    /// connection's own window standing.
+    var hostsDetachedTab = false
+
     var tabStripObservationIsArmed = false
     var tabStripObservedManager: ObjectIdentifier?
 
@@ -169,6 +176,12 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
             /// even though nothing about the connection has changed.
             workspace.panes.invalidate()
             workspaces.insert(workspace)
+            /// The pending grace belongs to the controller it is leaving for the same reason the
+            /// panes do: its reveal calls back into that one. Dropping it and arming again is what
+            /// re-points it here, and re-arming alone would not, because a wait already running is
+            /// deliberately left alone.
+            workspace.cancelConnectingProgressGrace()
+            syncConnectingProgressGrace(of: workspace)
         } else {
             adoptWorkspace(payload: payload, autoConnect: autoConnect)
         }
@@ -239,6 +252,11 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
             phase: phase
         )
         let adopted = workspaces.insert(workspace)
+        /// Armed at creation and not only at the first phase change, because a workspace waiting to
+        /// dial is already resolving to `.preparing` and nothing else would ever time it out. That
+        /// is the exit `startActivationConnectIfNeeded` cannot promise: it returns without dialling
+        /// when the phase disallows it or the connection record has gone.
+        syncConnectingProgressGrace(of: adopted)
 
         /// A workspace adopted into a window that is already on screen has to dial for itself.
         /// `viewWillAppear` is what starts the connect for the window's first workspace, and it
@@ -647,6 +665,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         guard let workspace = workspaces.workspace(for: connectionId) else { return }
         let phaseChanged = workspace.phase != next
         workspace.phase = next
+        syncConnectingProgressGrace(of: workspace)
         syncPanes(of: workspace)
         guard phaseChanged else { return }
         if workspaces.selectedConnectionId == connectionId {
@@ -718,6 +737,29 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     private func syncPanes(of workspace: ConnectionWorkspace) {
         guard workspace.paneRenderKey != workspace.panes.renderedKey else { return }
         refreshPanes(of: workspace)
+    }
+
+    /// Runs the wait that decides whether a connect ever announces itself, for the workspace it
+    /// names, selected or not. A background connection dials on its own clock.
+    ///
+    /// The reveal repaints through `syncPanes` rather than `refreshPanes`, so it costs nothing on
+    /// the ordinary path where the connect landed first and the flag never flipped: the render key
+    /// carries the flag, so a repaint is only ever done when the pane it names actually moved.
+    private func syncConnectingProgressGrace(of workspace: ConnectionWorkspace) {
+        guard ConnectionWindowPaneResolver.awaitsProgressGrace(
+            phase: workspace.phase,
+            awaitsAutoConnect: workspace.autoConnect
+        ) else {
+            workspace.cancelConnectingProgressGrace()
+            return
+        }
+        workspace.armConnectingProgressGrace { [weak self, weak workspace] in
+            guard let self, let workspace, self.isViewLoaded else { return }
+            self.syncPanes(of: workspace)
+            guard self.isShowing(workspace) else { return }
+            self.applyPaneChrome()
+            self.applyWindowTitle()
+        }
     }
 
     private func syncSelectedPanes() {

@@ -47,17 +47,10 @@ final class RowOperationsManager {
         self.changeManager = changeManager
     }
 
-    func addNewRow(
-        columns: [String],
-        columnDefaults: [String: String?],
-        tableRows: inout TableRows
-    ) -> AddNewRowResult? {
-        let generated = changeManager.generatedColumns
+    func addNewRow(tableRows: inout TableRows) -> AddNewRowResult? {
         var newRowValues: [PluginCellValue] = []
-        for column in columns {
-            if generated.contains(column) {
-                newRowValues.append(.text("__DEFAULT__"))
-            } else if let defaultValue = columnDefaults[column], defaultValue != nil {
+        for column in tableRows.columns {
+            if tableRows.generatedColumns.contains(column) || tableRows.serverAssignsValue(forColumn: column) {
                 newRowValues.append(.text("__DEFAULT__"))
             } else {
                 newRowValues.append(.null)
@@ -74,15 +67,19 @@ final class RowOperationsManager {
 
     func duplicateRow(
         sourceRowIndex: Int,
-        columns: [String],
         tableRows: inout TableRows
     ) -> AddNewRowResult? {
         guard sourceRowIndex >= 0, sourceRowIndex < tableRows.count else { return nil }
 
         var newValues = Array(tableRows.rows[sourceRowIndex].values)
 
-        for resetColumn in changeManager.primaryKeyColumns + Array(changeManager.generatedColumns) {
-            if let index = columns.firstIndex(of: resetColumn), index < newValues.count {
+        /// An identity column is not always the primary key, and copying its value verbatim is
+        /// what the server rejects.
+        let resetColumns = changeManager.primaryKeyColumns
+            + Array(tableRows.generatedColumns)
+            + Array(tableRows.columnIdentity.keys)
+        for resetColumn in resetColumns {
+            if let index = tableRows.columns.firstIndex(of: resetColumn), index < newValues.count {
                 newValues[index] = .text("__DEFAULT__")
             }
         }
@@ -428,8 +425,18 @@ final class RowOperationsManager {
         var pastedRowInfo: [PastedRowInfo] = []
         var insertedIndices = IndexSet()
 
+        /// A pasted row arrives whole, so it carries values for columns the server owns too. They
+        /// never reach the cell-edit boundary that refuses them, and the statement generator drops
+        /// them silently, so the grid showed a pasted identity value the row was never saved with.
+        let serverOwned = tableRows.columns.enumerated().filter { _, name in
+            tableRows.generatedColumns.contains(name) || tableRows.columnIdentity[name] != nil
+        }.map(\.offset)
+
         for parsedRow in parsedRows {
-            let rowValues = parsedRow.values
+            var rowValues = parsedRow.values
+            for index in serverOwned where index < rowValues.count {
+                rowValues[index] = .text("__DEFAULT__")
+            }
             let newRowIndex = tableRows.count
             _ = tableRows.appendInsertedRow(values: rowValues)
             insertedIndices.insert(newRowIndex)

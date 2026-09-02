@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Value picker on a foreign key cell, listing rows from the referenced table with a label beside the key. (#2511)
+- Breakdown of a query's time into server, first row and transfer, behind the toolbar's duration readout. (#2503)
+- Exclude the AUTO_INCREMENT counter and Exclude DEFINER clauses in the SQL export, both on by default. (#2516)
 - Assistant mode for the connection window, with the conversation at full width.
 - Confirm Writes floor while Assistant mode is active.
 - Several AI sessions at once, each with its own approvals, transcript and status.
@@ -18,8 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Start an AI session from the welcome window, with running and stopped sessions listed there.
 - Outside MCP servers as tool sources for AI sessions, allowlisted per connection.
 
+### Changed
+
+- PluginKit ABI 21. Every registry plugin needs rebuilding before or with this release.
+- Query Insights ranks on the time the database spent rather than on elapsed time. (#2503)
+- Export summary reports the warnings an export produced, instead of a bare "Export completed". (#2517)
+
 ### Fixed
 
+- Silent fallback order when foreign keys between the exported tables form a cycle. (#2517)
+- Foreign keys declared twice in a SQL export on MySQL, SQL Server, DuckDB, Snowflake, CockroachDB and Redshift, and as an unsupported `ALTER TABLE` on SQLite, libSQL and Cloudflare D1. (#2517)
+- Foreign keys missing from Redshift's reconstructed `CREATE TABLE`.
 - Tool approvals resolved by a decision made in another chat session.
 - AI tool calls evaluated against the chat's own connection instead of the one the statement targets.
 - AI tool calls reaching a connection the chat session is not attached to.
@@ -45,6 +57,120 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Outside MCP tools always require approval and are audited per call, with the payload's size and hash but not its contents.
+
+## [0.71.0] - 2026-09-02
+
+### Added
+
+- Comparisons button in the Compare & Sync toolbar, listing every saved comparison.
+- Save Comparison… in the Compare & Sync toolbar and under Database > Compare.
+- Select > All and Select > None in the structure results pane.
+- Whole-schema index and table metadata reads on the driver protocol.
+- Script that checks the SQLite whole-schema reads against the per-table ones.
+- Middle-click on a tab to close it. (#2595)
+- Text in Display As for binary columns. (#2599)
+- Smart value detection for binary columns holding UTF-8 text. (#2599)
+- Find covering binary columns that a display format renders as text. (#2599)
+- Launch trace in Instruments' Points of Interest, and `TABLEPRO_LAUNCH_TRACE=1` for the same table on standard error.
+- Identity File on SSH Agent connections, and `IdentitiesOnly` from `~/.ssh/config`. (#2601)
+
+### Changed
+
+- Compare & Sync reads a whole schema in a few queries, and reads both sides at once.
+- Data mode lists the tables both sides share as soon as a pair is chosen.
+- Apply… builds the script when there is not one.
+- Saved comparisons set both endpoints, and list whatever pair is on screen.
+- Compare & Sync reopens on the source, target, mode and options it last held.
+- Table collation on MySQL, previously never read.
+- PluginKit ABI 20. Every registry plugin needs rebuilding before or with this release.
+- Cold launch to a usable window, 470ms down to 260ms.
+- Half-second grace before a connect, schema or query progress indicator appears, and a minimum time on screen.
+- Window chrome stays put through a connect that finishes inside that grace, instead of collapsing and reopening.
+- Plugin signature checks run after the first window rather than on the launch thread, at 13ms each.
+- One gate in front of every path that loads a plugin's executable, enabling one included.
+- Stale `cloudflared` and `cloud-sql-proxy` cleanup waits for the process to exit before a connection reuses its port.
+
+### Fixed
+
+- Generated column expressions missing from MySQL's whole-schema column read.
+- Generated columns missing entirely from SQLite's whole-schema column read.
+- PostgreSQL index reads matching a table name in every schema rather than the one asked for.
+- Unreachable hazard allowances in the Apply sheet.
+- Compare & Sync toolbar naming the old pair after a saved comparison was loaded from Options.
+- A failed whole-schema trigger read counting as a schema with no triggers.
+- Compare & Sync publishing one pair's results after the pickers moved to another.
+- Clicks and hovers in the scrolled tab strip's edge padding landing on a tab clipped off the edge.
+- SSH Agent auth offering every key the agent holds, exhausting the server's `MaxAuthTries`. (#2601)
+- Crash when opening CSV and TSV files on macOS 27. (#2600)
+
+## [0.70.0] - 2026-09-01
+
+### Added
+
+- JSON tab in the inspector, showing the selected row as JSON, with Show Row as JSON on a row's right-click menu.
+- Foreign key expansion in the JSON tab, fetching the referenced row on click, five levels deep.
+- Filter field in the JSON tab, taking text or a regular expression in slashes.
+- Always Expand Foreign Keys in the JSON tab, off until turned on.
+- JavaScript shell for MongoDB queries, with mongosh's `db` API, cursors, variables, functions and `print`.
+- Per-connection MongoDB shell state, carried from one statement to the next.
+- Cursor method autocomplete after `find()` and `aggregate()`.
+- Copy To and Duplicate Database, carrying structure, data or both to any connection. (#2487)
+- Search in the connection, database and schema picker that Copy To and Compare & Sync share. (#2487)
+- Move Column Up and Move Column Down on a column's right-click menu, with the reason where the engine cannot. (#2479)
+- Copy on a column's right-click menu in Structure, for the cell under the pointer.
+- `Up` and `Down` while editing a cell, moving the editor to the same column of the row above or below. (#2569)
+- Tab rows in Settings > General > Tabs, wrapping the strip instead of scrolling it. (#2438)
+- Autoscrolling while dragging a tab past the end of the strip. (#2438)
+- Move Tab to New Window on a tab's right-click menu, and by dragging a tab out of the strip. (#2438)
+- Column reorder by dragging on ClickHouse and Oracle. (#2479)
+- Column reorder on PostgreSQL, SQLite, libSQL, Turso and Cloudflare D1, through a previewed table rebuild. (#2479)
+- Recognition of SQLite and DuckDB databases by their contents, whatever they are named. (#2476)
+- `.parquet` files in Finder's Open With, read through DuckDB. (#2476)
+- Prompt to install the driver a file needs, before the file opens. (#2476)
+- Korean, Turkish, Vietnamese and Chinese for the 742 untranslated strings, and for the document kinds Finder shows.
+
+### Changed
+
+- MongoDB statements split as JavaScript rather than at every semicolon.
+- MongoDB editor diagnostics report JavaScript syntax errors rather than unsupported method names.
+- Editor tab presses handled by AppKit rather than SwiftUI gestures. (#2438)
+- Connection-first labels with the database or schema on a second line in the connections strip. (#2550)
+- Column reorder withheld, with the reason on the row number, where the engine cannot change column order. (#2479)
+- File > Open File… as an app command over every file TablePro reads. (#2476)
+
+### Fixed
+
+- Row inspector lag on hover, on a tab switch and on every keystroke, from re-parsing each field's value.
+- The data grid's row commands on a column's right-click menu in Structure, when the column was already selected.
+- Wrong keyboard shortcuts shown beside Copy Name and Duplicate in the Structure right-click menu.
+- Plugin download reporting no progress at all when a connection or a file needs a driver installed.
+- Parse error on any MongoDB filter written in shell syntax, such as `db.orders.find({status: 1})`.
+- MongoDB `.sort()` and `.projection()` silently ignored when written with unquoted keys.
+- Tab drag doing nothing, about one drag in seven. (#2438)
+- Tab drag released on a neighbour's exact centre leaving the order unchanged. (#2438)
+- Compare & Sync unable to drop an overloaded PostgreSQL routine, or any trigger.
+- PostgreSQL sequence DDL naming the schema it was read from, in SQL export and the structure editor.
+- Half-composed input method text saved and left behind when `Tab` moved the cell editor.
+- Cell editor opening off screen when `Tab` wrapped onto a row below the visible ones.
+- Cell cursor left on the old column after `Tab` carried the editor to the next one.
+- Every data grid switching to its accessibility layout after one `Tab` press, with no assistive app attached.
+- Crash loop on every launch after resizing a column on a database with a long file path, with iCloud sync on. (#2575)
+- SSH Agent auth prompting for a private key passphrase instead of reporting that the agent was never reached. (#2583)
+- "SSH password rejected" on an SSH connection that has no password, when the server offers no keyboard-interactive.
+- NULL pre-filled into an identity column on Add Row, failing the insert on PostgreSQL. (#2588)
+- No "Default" in a cell's Set Value menu for an identity column. (#2588)
+- Duplicate Row copying an identity column that is not the primary key. (#2588)
+- Editing a `GENERATED ALWAYS AS IDENTITY` cell, which the server rejects on save. (#2588)
+- Generated and identity columns editable again after a tab switch or a refresh that reused cached metadata.
+- A new row of nothing but server-assigned columns silently dropped from the save.
+- `OVERRIDING SYSTEM VALUE` and `setval` in a SQL export of a SQL Server database.
+- PGlite `$$` bodies split at their inner semicolons, from treating PGlite as a generic SQL dialect.
+- Paste, Fill Column and the row inspector staging an edit to a column the server owns. (#2588)
+- A rerun answered from cache adopting another pinned result's column metadata. (#2588)
+- Add Row and Duplicate Row offered before a table's schema has loaded. (#2588)
+- Missing `SET IDENTITY_INSERT` around a SQL Server table's rows in a SQL export. (#2588)
+- Row inspector editing a column the driver marks immutable, such as MongoDB's `_id`.
+- Add Row and Duplicate Row inert for good on a result the user switched away from while its schema was loading. (#2588)
 
 ## [0.69.0] - 2026-08-27
 
@@ -3565,7 +3691,9 @@ TablePro is a native macOS database client built with SwiftUI and AppKit, design
     - Custom SQL query templates
     - Performance optimized for large datasets
 
-[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.69.0...HEAD
+[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.71.0...HEAD
+[0.71.0]: https://github.com/TableProApp/TablePro/compare/v0.70.0...v0.71.0
+[0.70.0]: https://github.com/TableProApp/TablePro/compare/v0.69.0...v0.70.0
 [0.69.0]: https://github.com/TableProApp/TablePro/compare/v0.68.1...v0.69.0
 [0.68.1]: https://github.com/TableProApp/TablePro/compare/v0.68.0...v0.68.1
 [0.68.0]: https://github.com/TableProApp/TablePro/compare/v0.67.1...v0.68.0

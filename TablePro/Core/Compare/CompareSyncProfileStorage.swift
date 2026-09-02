@@ -46,18 +46,6 @@ internal struct CompareSyncProfile: Codable, Hashable, Identifiable {
         self.dataOptions = dataOptions
         self.selectedObjects = selectedObjects
     }
-
-    internal static func storageKey(source: DatabaseScope, target: DatabaseScope, mode: CompareSyncMode) -> String {
-        "\(key(for: source))|\(key(for: target))|\(mode.rawValue)"
-    }
-
-    internal var storageKey: String {
-        Self.storageKey(source: source, target: target, mode: mode)
-    }
-
-    private static func key(for scope: DatabaseScope) -> String {
-        "\(scope.connectionId.uuidString)/\(scope.database)/\(scope.schema ?? "")"
-    }
 }
 
 extension DatabaseScope: Codable {
@@ -90,12 +78,39 @@ internal final class CompareSyncProfileStorage {
 
     private static let logger = Logger(subsystem: "com.TablePro", category: "CompareSyncProfileStorage")
     private static let defaultsKey = "compareSyncProfiles"
+    private static let lastSetupKey = "compareSyncLastSetup"
 
     private let defaults: UserDefaults
 
     internal init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
     }
+
+    // MARK: - Last setup
+
+    /// The pair, the mode and the options the window last held, so reopening it lands on the same
+    /// comparison rather than on two empty pickers. It carries no included objects: what to change
+    /// is a decision about one comparison's results, and re-arming it against a report that has not
+    /// run yet would put a stale choice behind an Apply button.
+    internal func lastSetup() -> CompareSyncProfile? {
+        guard let data = defaults.data(forKey: Self.lastSetupKey) else { return nil }
+        do {
+            return try JSONDecoder().decode(CompareSyncProfile.self, from: data)
+        } catch {
+            Self.logger.error("Failed to decode last setup: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    internal func rememberSetup(_ profile: CompareSyncProfile) {
+        do {
+            defaults.set(try JSONEncoder().encode(profile), forKey: Self.lastSetupKey)
+        } catch {
+            Self.logger.error("Failed to persist last setup: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    // MARK: - Saved comparisons
 
     internal func allProfiles() -> [CompareSyncProfile] {
         guard let data = defaults.data(forKey: Self.defaultsKey) else { return [] }
@@ -105,11 +120,6 @@ internal final class CompareSyncProfileStorage {
             Self.logger.error("Failed to decode profiles: \(error.localizedDescription, privacy: .public)")
             return migrateLegacyProfiles(from: data)
         }
-    }
-
-    internal func profiles(source: DatabaseScope, target: DatabaseScope, mode: CompareSyncMode) -> [CompareSyncProfile] {
-        let key = CompareSyncProfile.storageKey(source: source, target: target, mode: mode)
-        return allProfiles().filter { $0.storageKey == key }
     }
 
     internal func save(_ profile: CompareSyncProfile) {

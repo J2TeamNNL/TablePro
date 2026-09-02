@@ -6,6 +6,11 @@
 import Foundation
 
 internal enum ConnectionWindowPane: Equatable {
+    /// A connect too young to be worth saying anything about. It draws nothing and, unlike every
+    /// other contentless pane, it leaves the window's chrome alone: a local file opens in about
+    /// 40ms, and collapsing the sidebar and inspector for that long only to put them back is a
+    /// layout cycle nobody asked for and a flash the HIG names outright.
+    case preparing
     case connecting
     case unavailable(ConnectionUnavailableReason)
     case content
@@ -23,10 +28,22 @@ internal enum SidebarChromeMode: Equatable {
 }
 
 internal enum ConnectionWindowPaneResolver {
+    /// `hasOutlastedGrace` is false for the first `LoadingRevealPolicy.grace` of a connect and of
+    /// the moment before one starts. Neither is a state worth reporting: the first has not lasted
+    /// long enough to be worth a word, and the second is not "not connected", it is "about to
+    /// dial", a distinction `.idle` alone cannot draw because it answers for both. Measured on the
+    /// SQLite sample, reporting them built three pane hierarchies and ran a whole chrome collapse
+    /// and reveal inside the first 103ms of a window's life, for a 39ms connect.
+    ///
+    /// The grace expiring is the exit from `.preparing` in both directions, which is why `.idle`
+    /// reads it too. A connect that never starts, because the phase disallowed it or the record
+    /// went missing, would otherwise leave the window silently empty for good.
     internal static func pane(
         phase: ConnectionWindowPhase,
         hasConnection: Bool,
-        hasRenderableSession: Bool
+        hasRenderableSession: Bool,
+        awaitsAutoConnect: Bool = false,
+        hasOutlastedGrace: Bool = true
     ) -> ConnectionWindowPane {
         switch phase {
         case .closing:
@@ -35,18 +52,44 @@ internal enum ConnectionWindowPaneResolver {
             return hasRenderableSession ? .content : .empty
         case .idle:
             if hasRenderableSession { return .content }
-            return hasConnection ? .unavailable(.notConnected) : .empty
+            guard hasConnection else { return .empty }
+            guard awaitsAutoConnect, !hasOutlastedGrace else { return .unavailable(.notConnected) }
+            return .preparing
         case .connecting:
-            return hasConnection ? .connecting : .empty
+            guard hasConnection else { return .empty }
+            return hasOutlastedGrace ? .connecting : .preparing
         case .unavailable(let reason):
             return hasConnection ? .unavailable(reason) : .empty
+        }
+    }
+
+    /// Whether this phase is one the grace timer runs over, so a caller knows when to arm it and
+    /// when to let it go. It is the exact set of phases `pane` answers differently for depending
+    /// on `showsProgress`, plus the pre-dial `.idle` that resolves to `.preparing` on its own.
+    internal static func awaitsProgressGrace(
+        phase: ConnectionWindowPhase,
+        awaitsAutoConnect: Bool
+    ) -> Bool {
+        switch phase {
+        case .connecting:
+            return true
+        case .idle:
+            return awaitsAutoConnect
+        case .connected, .closing, .unavailable:
+            return false
         }
     }
 
     /// An object browser and an inspector with nothing to put in them are not chrome, they are two
     /// empty columns that promise a session the window does not have yet.
     ///
-    /// Assistant mode is the exception while a connection is being established or has failed. A
+    /// That argument holds for a wait the user can see and not for one they cannot. `.preparing`
+    /// is the sub-grace case and keeps the chrome, so the window that opens is the window that
+    /// stays: on the happy path nothing collapses, nothing is put back, and the panes are built
+    /// once. Collapsing for 40ms costs `splitView.autosaveName`, both split items and a
+    /// `recalculateKeyViewLoop()` in each direction, all of it to show an empty column briefly.
+    ///
+    /// Assistant mode is the other exception, and it holds for a wait the user can see too. A
     /// prompt typed at Welcome lives on the session, not on the window, so there is content to show
     /// before any database answers: the transcript, the session rail and the result pane.
     internal static func hidesChrome(
@@ -54,7 +97,7 @@ internal enum ConnectionWindowPaneResolver {
         mode: ConnectionWorkspaceContentMode = .browse
     ) -> Bool {
         switch pane {
-        case .content:
+        case .content, .preparing:
             return false
         case .connecting, .unavailable:
             return mode != .assistant
@@ -66,13 +109,18 @@ internal enum ConnectionWindowPaneResolver {
     /// Whether the detail pane carries the pre-connect assistant surface rather than the connecting
     /// or failure view. Read by the pane builder, so the two decisions cannot drift: a mode that
     /// keeps its chrome hidden and mounts no content would leave the window blank.
+    ///
+    /// `.preparing` takes it too. The grace exists to keep a progress indicator off screen for a
+    /// wait too short to report, and the assistant surface is not one: it carries the prompt the
+    /// user typed at Welcome, which is theirs to see whether or not a database has answered.
+    /// Withholding it would draw nothing for the grace and then flash the conversation in.
     internal static func showsPreConnectAssistant(
         for pane: ConnectionWindowPane,
         mode: ConnectionWorkspaceContentMode
     ) -> Bool {
         guard mode == .assistant else { return false }
         switch pane {
-        case .connecting, .unavailable:
+        case .preparing, .connecting, .unavailable:
             return true
         case .content, .empty:
             return false

@@ -22,7 +22,7 @@ internal extension MainSplitViewController {
     /// The strip is built per connection like the other three panes, so a connection the user is
     /// not looking at keeps its own strip rather than rebuilding it on every switch.
     func refreshTabStripPane(of workspace: ConnectionWorkspace) {
-        workspace.panes.tabStrip.rootView = AnyView(buildTabStripView(for: workspace))
+        workspace.panes.tabStrip.rootView = buildTabStripView(for: workspace)
     }
 
     func showSelectedTabStrip() {
@@ -84,29 +84,90 @@ internal extension MainSplitViewController {
     /// `commandActions` is read at click time rather than captured, because it only exists once
     /// the detail pane has appeared and this strip is built alongside that pane, not after it.
     /// The workspace is held weakly: it owns the hosting controller these closures live in.
-    @ViewBuilder
-    private func buildTabStripView(for workspace: ConnectionWorkspace) -> some View {
-        if let sessionState = workspace.sessionState {
+    ///
+    /// The command set is handed to the pane's interaction object rather than to the SwiftUI view,
+    /// because the view is no longer what receives a press. AppKit owns the pointer over the
+    /// strip and reaches the app through exactly these closures.
+    private func buildTabStripView(for workspace: ConnectionWorkspace) -> AnyView {
+        guard let sessionState = workspace.sessionState else { return AnyView(Color.clear) }
+        let interaction = workspace.panes.tabStrip.interaction
+        configure(interaction, for: workspace, sessionState: sessionState)
+        return AnyView(
             EditorTabStrip(
                 tabManager: sessionState.tabManager,
+                interaction: interaction,
                 containerTarget: workspace.connection.flatMap {
                     PluginManager.shared.containerSwitchTarget(for: $0.type)
-                },
-                onClose: { [weak workspace] id in
-                    workspace?.sessionState?.coordinator.commandActions?.closeTab(id: id)
-                },
-                onCloseOthers: { [weak workspace] id in
-                    workspace?.sessionState?.coordinator.commandActions?.closeOtherTabs(anchoredOn: id)
-                },
-                onCloseAll: { [weak workspace] in
-                    workspace?.sessionState?.coordinator.commandActions?.closeAllTabs()
                 },
                 onNewTab: { [weak workspace] in
                     workspace?.sessionState?.coordinator.commandActions?.newTab()
                 }
             )
-        } else {
-            Color.clear
-        }
+        )
+    }
+
+    private func configure(
+        _ interaction: EditorTabStripInteraction,
+        for workspace: ConnectionWorkspace,
+        sessionState: SessionStateFactory.SessionState
+    ) {
+        let manager = sessionState.tabManager
+        let target = workspace.connection.flatMap { PluginManager.shared.containerSwitchTarget(for: $0.type) }
+        interaction.commands = EditorTabCommands(
+            activate: { [weak manager] id in manager?.selectedTabId = id },
+            keepOpen: { [weak manager] id in manager?.promotePreviewTab(id: id) },
+            canKeepOpen: { [weak manager] id in manager?.canPromotePreviewTab(id: id) ?? false },
+            close: { [weak workspace] id in
+                workspace?.sessionState?.coordinator.commandActions?.closeTab(id: id)
+            },
+            closeOthers: { [weak workspace] id in
+                workspace?.sessionState?.coordinator.commandActions?.closeOtherTabs(anchoredOn: id)
+            },
+            closeAll: { [weak workspace] in
+                workspace?.sessionState?.coordinator.commandActions?.closeAllTabs()
+            },
+            moveTab: { [weak manager] id, destination in manager?.moveTab(id: id, to: destination) },
+            canMove: { [weak manager] id, offset in manager?.canMoveTab(id: id, by: offset) ?? false },
+            moveBy: { [weak manager] id, offset in manager?.moveTab(id: id, by: offset) },
+            tearOff: { [weak workspace] id in
+                guard let connectionId = workspace?.connectionId else { return }
+                WindowManager.shared.openTabInNewWindow(connectionId: connectionId, tabId: id)
+            },
+            canTearOff: { [weak workspace] id in
+                guard let workspace,
+                      let sessionState = workspace.sessionState
+                else { return false }
+                return EditorTabDetachPolicy.canDetach(
+                    tabCount: sessionState.tabManager.tabs.count,
+                    hasUnsavedWork: sessionState.coordinator.hasUnsavedWork(forTab: id),
+                    /// `isBusy`, never `isExecuting`. Work that cannot claim the tab still runs on
+                    /// it: Fetch All registers unclaimed work, and an exact row count lives in the
+                    /// tab's own pagination state. Moving a tab in either of those leaves the
+                    /// copied `isLoadingMore` or `isCountingExact` raised in the new window with
+                    /// the completion still owned by the old one, so it never comes down.
+                    isBusy: sessionState.coordinator.tabExecution.isBusy(id)
+                        || sessionState.tabManager.tabs.first { $0.id == id }?.pagination.isBusy == true,
+                    /// `reportedStatus`, never the driver handle. An installed driver is a handle,
+                    /// not a live connection: it stays put through a reconnect and after the health
+                    /// monitor gives up, so reading it moved tabs into windows that could not use
+                    /// them.
+                    isConnected: DatabaseManager.shared.activeSessions[workspace.connectionId]?
+                        .reportedStatus.isConnected == true
+                )
+            },
+            /// The resolver's description, not the drawn title: a table tab carries its database
+            /// and schema there even when the short title is unique, and the tooltip is where a
+            /// truncated or duplicated name is told apart.
+            tooltip: { [weak manager] id in
+                guard let manager, let tab = manager.tabs.first(where: { $0.id == id }) else { return "" }
+                let description = EditorTabLabelResolver.resolve(tabs: manager.tabs, target: target)[id]?
+                    .description ?? tab.title
+                guard tab.isPreview else { return description }
+                return String(
+                    format: String(localized: "%@\nPreview tab. Double-click to keep it open."),
+                    description
+                )
+            }
+        )
     }
 }

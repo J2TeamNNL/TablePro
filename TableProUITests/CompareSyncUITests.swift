@@ -8,7 +8,7 @@ import XCTest
 /// "Choose a connection" and on a Compare button, none of which exist: the window never opens
 /// without a license, and the rebuilt toolbar spells its placeholder "Choose Source". It could not
 /// pass on any machine. The window's own contract now lives in `CompareSyncSessionTests` and
-/// `CompareEndpointSideTests`, which reach it without a license.
+/// `DatabaseEndpointTests`, which reach it without a license.
 final class CompareSyncUITests: UITestCase {
     private let licenseAlertMessage = "Compare & Sync requires a license"
 
@@ -56,5 +56,22 @@ final class CompareSyncUITests: UITestCase {
         let dialog = app.dialogs.firstMatch
         guard dialog.exists, dialog.buttons["Cancel"].exists else { return }
         dialog.buttons["Cancel"].click()
+    }
+
+    /// The HIG's rule that every toolbar item is also a menu-bar command, checked where it can be
+    /// checked without a license: the item has to be in the menu even though it validates to
+    /// disabled with no window behind it.
+    func testSavingAComparisonIsAMenuBarCommand() throws {
+        let app = try launchApp()
+
+        let menuBar = app.menuBars.firstMatch
+        XCTAssertTrue(menuBar.waitToExist(timeout: 10))
+        menuBar.menuBarItems["Database"].click()
+        menuBar.menuItems["Compare"].click()
+
+        XCTAssertTrue(
+            menuBar.menuItems["Save Comparison…"].waitToExist(timeout: 10),
+            "Save Comparison must be reachable from Database > Compare"
+        )
     }
 }
