@@ -141,7 +141,10 @@ internal actor MCPRemoteServerTransport {
             throw MCPClientError.sessionExpired
         }
         guard (200..<300).contains(head.statusCode) else {
-            let detail = try await Self.collect(bytes)
+            /// A body that will not read is not the error worth reporting. The status already says
+            /// what happened, and letting a read failure propagate would turn "the server rejected
+            /// TablePro's credential" into a transport message about the sentence explaining it.
+            let detail = (try? await Self.collect(bytes)) ?? Data()
             throw Self.httpFailure(status: head.statusCode, body: detail)
         }
         guard expectsResponse else { return (head, nil) }
@@ -197,6 +200,9 @@ internal actor MCPRemoteServerTransport {
         do {
             for try await byte in bytes {
                 chunk.append(byte)
+                /// A stream that never sends a newline would otherwise grow this without bound for
+                /// as long as the request timeout allows. One line of an event is not megabytes.
+                if chunk.count > maximumBodyBytes { throw MCPClientError.malformedResponse }
                 guard byte == 0x0A else { continue }
                 let frames = await decoder.feed(chunk)
                 chunk.removeAll(keepingCapacity: true)
