@@ -47,21 +47,23 @@ enum AIProviderFactory {
         cacheLock.withLock { $0.removeValue(forKey: configID) }
     }
 
-    /// Resets the Copilot conversation held by one provider configuration.
+    /// Resets one session's Copilot conversation on one provider configuration.
     ///
-    /// The unscoped form walked the whole cache, so one session starting a new conversation threw
-    /// away the server-side conversation id of every other session on every other provider.
-    static func resetCopilotConversation(configId: UUID) {
+    /// Both scopes are needed. The unscoped form walked the whole cache, so one session starting a
+    /// new conversation threw away the server-side conversation id of every other session on every
+    /// other provider; naming the configuration alone still reset whichever session's conversation
+    /// the shared provider happened to be holding, because there was only one.
+    static func resetCopilotConversation(configId: UUID, sessionId: UUID?) {
         cacheLock.withLock { cache in
             guard let copilot = cache[configId]?.provider as? CopilotChatProvider else { return }
-            copilot.resetConversation()
+            copilot.resetConversation(sessionId: sessionId)
         }
     }
 
-    static func copilotDeleteLastTurn(configId: UUID) {
+    static func copilotDeleteLastTurn(configId: UUID, sessionId: UUID?) {
         cacheLock.withLock { cache in
             guard let copilot = cache[configId]?.provider as? CopilotChatProvider else { return }
-            copilot.deleteLastTurn()
+            copilot.deleteLastTurn(sessionId: sessionId)
         }
     }
 

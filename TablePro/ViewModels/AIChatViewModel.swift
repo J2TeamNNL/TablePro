@@ -422,7 +422,7 @@ final class AIChatViewModel {
         let session = sessionId
         Task { @MainActor in
             await ProviderStreamLease.shared.withLease(configId: configId, sessionId: session) {
-                AIProviderFactory.resetCopilotConversation(configId: configId)
+                AIProviderFactory.resetCopilotConversation(configId: configId, sessionId: session)
             }
         }
     }
@@ -432,7 +432,7 @@ final class AIChatViewModel {
         let session = sessionId
         Task { @MainActor in
             await ProviderStreamLease.shared.withLease(configId: configId, sessionId: session) {
-                AIProviderFactory.copilotDeleteLastTurn(configId: configId)
+                AIProviderFactory.copilotDeleteLastTurn(configId: configId, sessionId: session)
             }
         }
     }

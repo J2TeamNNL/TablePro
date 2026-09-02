@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Approving any tool call but the first in a turn doing nothing, leaving the reply parked.
 - Every proposed tool call taking `Return`, so the key acted on whichever button AppKit reached first.
 - VoiceOver reading the Browse and Assistant control as its SF Symbol names.
+- Two GitHub Copilot chats on one provider sharing a single server-side conversation, so each was answered with the other's context.
 
 ### Security
 

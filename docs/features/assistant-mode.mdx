@@ -81,8 +81,6 @@ Provider tool calls that run outside the app are not covered by the floor. **Cla
 
 Two sessions cannot send to one provider at the same time. The second waits for the first to finish its reply, and its composer names the provider it is waiting on. Point the second session at another provider in **Settings > AI** to run both at once.
 
-Two sessions on one **GitHub Copilot** provider also share a single conversation on Copilot's side. Whatever the first session sent, including schema and query results, stays in context for the second, and the second session's messages join the first session's conversation. Give each session its own provider in **Settings > AI**, or start a new conversation before switching connection.
-
 Sessions stay on this Mac. Conversations sync with [iCloud Sync](/features/icloud-sync) as they always have, but which sessions are open and what they are waiting on does not.
 
 ## Related
