@@ -9,11 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Breakdown of a query's time into server, first row and transfer, behind the toolbar's duration readout. (#2503)
 - Exclude the AUTO_INCREMENT counter and Exclude DEFINER clauses in the SQL export, both on by default. (#2516)
 
 ### Changed
 
 - PluginKit ABI 21. Every registry plugin needs rebuilding before or with this release.
+- Query Insights ranks on the time the database spent rather than on elapsed time. (#2503)
 - Export summary reports the warnings an export produced, instead of a bare "Export completed". (#2517)
 
 ### Fixed
