@@ -110,19 +110,28 @@ internal struct AgentArtifactPaneView: View {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if let connectionId {
-                VStack(spacing: 0) {
-                    Divider()
-                    HStack(spacing: 0) {
-                        AssistantFloorNoticeView(connectionId: connectionId)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
+        .safeAreaInset(edge: .bottom, spacing: 0) { floorBar }
+    }
+
+    /// The bar exists only when there is a notice to put in it.
+    ///
+    /// `AssistantFloorNoticeView` draws nothing when the floor is off, so framing it unconditionally
+    /// would leave a divider and an empty padded strip along the bottom of the pane. That the two
+    /// conditions happen to agree today, because the pane is only shown in assistant mode and the
+    /// floor is on in assistant mode, is a coincidence between two types rather than a guarantee.
+    @ViewBuilder
+    private var floorBar: some View {
+        if let connectionId, AssistantSafeModeFloor.isActive(for: connectionId) {
+            VStack(spacing: 0) {
+                Divider()
+                HStack(spacing: 0) {
+                    AssistantFloorNoticeView(connectionId: connectionId)
+                    Spacer(minLength: 0)
                 }
-                .background(.bar)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
             }
+            .background(.bar)
         }
     }
 
