@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.71.0] - 2026-09-02
+
 ### Added
 
 - Comparisons button in the Compare & Sync toolbar, listing every saved comparison.
@@ -31,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Table collation on MySQL, previously never read.
 - PluginKit ABI 20. Every registry plugin needs rebuilding before or with this release.
 - Cold launch to a usable window, 470ms down to 260ms.
-- Half-second grace before any connecting, schema or query progress indicator appears, and a minimum time on screen once one does.
+- Half-second grace before a connect, schema or query progress indicator appears, and a minimum time on screen.
 - Window chrome stays put through a connect that finishes inside that grace, instead of collapsing and reopening.
 - Plugin signature checks run after the first window rather than on the launch thread, at 13ms each.
 - One gate in front of every path that loads a plugin's executable, enabling one included.
@@ -3637,7 +3639,8 @@ TablePro is a native macOS database client built with SwiftUI and AppKit, design
     - Custom SQL query templates
     - Performance optimized for large datasets
 
-[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.70.0...HEAD
+[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.71.0...HEAD
+[0.71.0]: https://github.com/TableProApp/TablePro/compare/v0.70.0...v0.71.0
 [0.70.0]: https://github.com/TableProApp/TablePro/compare/v0.69.0...v0.70.0
 [0.69.0]: https://github.com/TableProApp/TablePro/compare/v0.68.1...v0.69.0
 [0.68.1]: https://github.com/TableProApp/TablePro/compare/v0.68.0...v0.68.1
