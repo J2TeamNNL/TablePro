@@ -43,11 +43,12 @@ private struct AgentArtifactRunRow: View {
 
             if let summary {
                 metrics(summary)
-                if !summary.columns.isEmpty, !summary.rows.isEmpty {
-                    resultTable(summary)
+                let shown = Array(summary.rows.prefix(Self.previewRowLimit))
+                if !summary.columns.isEmpty, !shown.isEmpty {
+                    resultTable(columns: summary.columns, rows: shown)
                 }
-                if summary.rowCount > summary.rows.count {
-                    truncationNotice(summary)
+                if summary.rowCount > shown.count {
+                    truncationNotice(summary, shown: shown.count)
                 }
                 if let statusMessage = summary.statusMessage {
                     Text(statusMessage)
@@ -103,11 +104,19 @@ private struct AgentArtifactRunRow: View {
     /// `Table` would be better still, for the selection and the resizable headers it brings, but
     /// its columns have to be known at compile time and these are the result's own.
     /// `TableColumnForEach` lifts that and needs macOS 14.4; the app supports 14.0.
-    private func resultTable(_ summary: QueryRunSummary) -> some View {
-        ScrollView([.horizontal, .vertical]) {
+    /// A preview is a handful of rows, so the table renders a handful and says how many there are.
+    ///
+    /// It scrolls sideways only. A vertically scrolling view inside a `List` row fights the list for
+    /// the same gesture, so a scroll begun over a result would be swallowed by the result instead of
+    /// moving the pane; capping the rows removes the need for one. Every row is still on the
+    /// clipboard and in a query tab through **Open as Query**.
+    private static let previewRowLimit = 10
+
+    private func resultTable(columns: [String], rows: [[String]]) -> some View {
+        ScrollView(.horizontal) {
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 3) {
                 GridRow {
-                    ForEach(Array(summary.columns.enumerated()), id: \.offset) { column in
+                    ForEach(Array(columns.enumerated()), id: \.offset) { column in
                         Text(column.element)
                             .font(.caption)
                             .bold()
@@ -115,7 +124,7 @@ private struct AgentArtifactRunRow: View {
                     }
                 }
                 Divider().gridCellUnsizedAxes(.horizontal)
-                ForEach(Array(summary.rows.enumerated()), id: \.offset) { row in
+                ForEach(Array(rows.enumerated()), id: \.offset) { row in
                     GridRow {
                         ForEach(Array(row.element.enumerated()), id: \.offset) { cell in
                             Text(cell.element)
@@ -125,12 +134,11 @@ private struct AgentArtifactRunRow: View {
                         }
                     }
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel(Self.rowLabel(columns: summary.columns, cells: row.element))
+                    .accessibilityLabel(Self.rowLabel(columns: columns, cells: row.element))
                 }
             }
             .padding(8)
         }
-        .frame(maxHeight: 240)
         .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
         .overlay(
             RoundedRectangle(cornerRadius: 6).stroke(Color(nsColor: .separatorColor), lineWidth: 1)
@@ -148,12 +156,12 @@ private struct AgentArtifactRunRow: View {
     /// The pane shows a window onto a large result and says so, with the way to the whole thing
     /// alongside. Rendering every row here would put the result's layout cost in the same pass as the
     /// conversation's.
-    private func truncationNotice(_ summary: QueryRunSummary) -> some View {
+    private func truncationNotice(_ summary: QueryRunSummary, shown: Int) -> some View {
         HStack(spacing: 8) {
             Text(
                 String(
                     format: String(localized: "Showing %1$d of %2$d rows."),
-                    summary.rows.count,
+                    shown,
                     summary.rowCount
                 )
             )
