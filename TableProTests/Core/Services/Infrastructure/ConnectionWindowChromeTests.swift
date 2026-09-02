@@ -53,12 +53,11 @@ struct ConnectionWindowChromeTests {
     /// report itself as showing: the segment would light up and its own action would collapse the
     /// rail away.
     @Test("Switching a connection cannot collapse a sidebar narrowed to the rail")
-    func settingASidebarTabIsRefusedWhileNarrowed() throws {
+    func settingASidebarTabIsRefusedWhileNarrowed() async throws {
         let harness = try Harness()
         defer { harness.tearDown() }
 
-        harness.setHostedWorkspaceCount(2)
-        harness.controller.transition(to: .connecting, for: harness.selected.connectionId)
+        await harness.beginRevealedConnect(hostedWorkspaceCount: 2)
         #expect(harness.controller.sidebarChromeMode == .railOnly)
 
         harness.controller.setSidebarTab(.tables)
@@ -145,12 +144,11 @@ struct ConnectionWindowChromeTests {
     }
 
     @Test("Switching a connection off and back on restores the sidebar the user had")
-    func revealRestoresTheSidebarAcrossBothHiddenModes() throws {
+    func revealRestoresTheSidebarAcrossBothHiddenModes() async throws {
         let harness = try Harness()
         defer { harness.tearDown() }
 
-        harness.setHostedWorkspaceCount(2)
-        harness.controller.transition(to: .connecting, for: harness.selected.connectionId)
+        await harness.beginRevealedConnect(hostedWorkspaceCount: 2)
         #expect(harness.controller.sidebarChromeMode == .railOnly)
 
         harness.setHostedWorkspaceCount(1)
@@ -179,25 +177,38 @@ struct ConnectionWindowChromeTests {
         #expect(context.canToggleWorkspaceRail == harness.controller.canToggleWorkspaceRail)
     }
 
-    @Test("A sidebar narrowed to the rail cannot be collapsed by dragging its divider")
-    func narrowedSidebarRefusesUserCollapse() throws {
+    /// The other side of every narrowing rule above. A connect that finishes inside the grace
+    /// never announces itself, so the chrome it found is the chrome it leaves: narrowing the
+    /// sidebar to the rail and putting it back is exactly the flash the grace exists to avoid.
+    @Test("A connect still inside its grace leaves the window's chrome alone")
+    func connectInsideTheGraceLeavesTheChromeAlone() throws {
         let harness = try Harness()
         defer { harness.tearDown() }
 
         harness.setHostedWorkspaceCount(2)
         harness.controller.transition(to: .connecting, for: harness.selected.connectionId)
+
+        #expect(harness.controller.currentPane == .preparing)
+        #expect(harness.controller.sidebarChromeMode == .revealed)
+    }
+
+    @Test("A sidebar narrowed to the rail cannot be collapsed by dragging its divider")
+    func narrowedSidebarRefusesUserCollapse() async throws {
+        let harness = try Harness()
+        defer { harness.tearDown() }
+
+        await harness.beginRevealedConnect(hostedWorkspaceCount: 2)
 
         #expect(harness.controller.sidebarChromeMode == .railOnly)
         #expect(!harness.controller.isSidebarUserCollapsible)
     }
 
     @Test("The rail growing under a narrowed sidebar moves both thicknesses with it")
-    func narrowedSidebarTracksTheRailAllowance() throws {
+    func narrowedSidebarTracksTheRailAllowance() async throws {
         let harness = try Harness()
         defer { harness.tearDown() }
 
-        harness.setHostedWorkspaceCount(2)
-        harness.controller.transition(to: .connecting, for: harness.selected.connectionId)
+        await harness.beginRevealedConnect(hostedWorkspaceCount: 2)
         #expect(harness.controller.sidebarChromeMode == .railOnly)
 
         harness.controller.reapplySidebarClampIfNarrowed()
@@ -243,6 +254,34 @@ struct ConnectionWindowChromeTests {
         /// The Show Connections preference, which the rule reads globally.
         func setRailPreference(_ enabled: Bool) {
             AppSettingsManager.shared.general.showWorkspaceRail = enabled
+        }
+
+        /// Starts a connect and waits for it to earn the right to say so.
+        ///
+        /// A connect younger than `LoadingRevealPolicy.grace` resolves to `.preparing`, which
+        /// deliberately leaves the window's chrome where it found it. Every rule that narrows the
+        /// sidebar to the rail is about the connect that outlasts the grace, so reading the chrome
+        /// mid-grace would be asking a question none of them are about.
+        ///
+        /// The wait suspends rather than spinning a run loop, because the reveal runs on the main
+        /// actor and a synchronous test holds that actor for its whole body: no amount of run loop
+        /// would let the timer's continuation in.
+        /// The count is re-injected after the wait, not only before it. Suspending lets the
+        /// rail's own `onEntryCountChange` reach the controller, and it answers with the app-wide
+        /// registry this unregistered window is absent from, so the count handed in above is gone
+        /// by the time the grace lands.
+        func beginRevealedConnect(hostedWorkspaceCount count: Int) async {
+            setHostedWorkspaceCount(count)
+            controller.transition(to: .connecting, for: selected.connectionId)
+            await settle { selected.hasOutlastedConnectGrace }
+            setHostedWorkspaceCount(count)
+        }
+
+        func settle(until isSatisfied: () -> Bool) async {
+            let deadline = Date(timeIntervalSinceNow: 5)
+            while !isSatisfied(), Date() < deadline {
+                try? await Task.sleep(for: .milliseconds(20))
+            }
         }
 
         func attachRenderableSession() {
