@@ -286,6 +286,12 @@ struct AgentArtifactProjectionTests {
         #expect(artifact.statements.map(\.id) == ["first", "second"])
         #expect(artifact.schemaChanges.map(\.id) == ["first", "second"])
         #expect(artifact.statements.map(\.state) == [.ran, .waiting])
+        /// Down to the lines. They are named after the change they belong to, so a memo that
+        /// renamed only the preview would give both calls the same line ids.
+        let lineIds = artifact.schemaChanges.flatMap { $0.lines.map(\.id) }
+        #expect(!lineIds.isEmpty)
+        #expect(Set(lineIds).count == lineIds.count)
+        #expect(lineIds.allSatisfy { $0.hasPrefix("first.") || $0.hasPrefix("second.") })
     }
 
     @Test("The same statement on two engines is classified for each of them")

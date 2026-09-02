@@ -153,8 +153,20 @@ internal struct SchemaChangePreview: Identifiable, Equatable, Sendable {
     /// The same preview under the id of the call that proposed it. What a statement would change is
     /// a property of the statement, so it is read once and named per call; the id is what the pane
     /// lists it by and the only part that belongs to the call.
+    ///
+    /// The lines are renamed with it. `DDLChangeReader` builds each line's id as `"\(id).\(n)"`, so
+    /// leaving them alone would give every preview of a given statement the same line ids as every
+    /// other, which is the kind of collision `ForEach` resolves by keeping the wrong row.
     internal func identified(as id: String) -> SchemaChangePreview {
-        SchemaChangePreview(id: id, sql: sql, target: target, lines: lines, isDestructive: isDestructive)
+        SchemaChangePreview(
+            id: id,
+            sql: sql,
+            target: target,
+            lines: lines.enumerated().map { index, line in
+                SchemaChangeLine(id: "\(id).\(index)", kind: line.kind, text: line.text)
+            },
+            isDestructive: isDestructive
+        )
     }
 }
 
