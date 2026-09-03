@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Backup and restore for SQL Server through SqlPackage. (#2618)
 - MySQL events and PostgreSQL sequences in the export tree. (#2618)
 - Connection groups in Switch Connection, with `Cmd`-click to open a saved connection in a new window. (#1311)
+- AppleScript dictionary for connections, tabs, results and the grid selection. (#2512)
+- AppleScript source in the history drawer's filter and its own notification toggle. (#2512)
 
 ### Changed
 
