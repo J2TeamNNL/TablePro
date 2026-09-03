@@ -718,14 +718,26 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     /// reverse) has to reconcile now: `layoutUnparented()` forces that pass. Do not call it on a
     /// pane that is on screen; `teardown()` still needs the same force because those panes are
     /// never parented again.
+    ///
+    /// It is forced for a mode change and for nothing else. Forcing it on every background refresh
+    /// mounts the pane, and mounting `MainContentView` runs its `onAppear`: `markActivated()` and
+    /// `setupCommandActions()`. A background connection merely finishing its connect would then
+    /// retain a schema provider, start periodic saves, arm a post-connect schema load and report
+    /// itself to `SessionRecoveryTracker` as activated, all for a window the user has never looked
+    /// at. Lazy activation is the whole reason a background workspace builds its panes detached.
     internal func refreshPanes(of workspace: ConnectionWorkspace) {
+        let previousMode = workspace.panes.renderedKey?.contentMode
         workspace.panes.sidebar.rootView = AnyView(buildSidebarView(for: workspace))
         workspace.panes.detail.rootView = AnyView(buildDetailView(for: workspace))
         workspace.panes.inspector.rootView = AnyView(buildInspectorView(for: workspace))
         refreshTabStripPane(of: workspace)
         workspace.panes.markRendered(workspace.paneRenderKey)
         guard isShowing(workspace) else {
-            workspace.panes.layoutUnparented()
+            /// Only a mode the panes have already rendered once and then left. A first render has
+            /// no previous mode, and mounting there is the activation this exists to avoid.
+            if let previousMode, previousMode != workspace.contentMode {
+                workspace.panes.layoutUnparented()
+            }
             return
         }
         bindSidebarChrome(to: workspace)
