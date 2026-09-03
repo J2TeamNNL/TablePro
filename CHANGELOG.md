@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Last line of a helper process's output lost when it exits right after writing it.
+- Structure and trigger edits committing or rolling back a transaction left open in a query tab on the same connection.
 - Composite, range and extension-typed PostgreSQL columns labelled `ENUM(…)` in the structure editor.
 - Sidebar routines, triggers and types from the previous database after switching while it was still loading.
 - Silent fallback order when foreign keys between the exported tables form a cycle. (#2517)
