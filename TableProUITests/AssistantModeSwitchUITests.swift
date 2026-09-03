@@ -57,35 +57,30 @@ final class AssistantModeSwitchUITests: UITestCase {
         )
     }
 
+    /// Both directions in one launch.
+    ///
     /// The object browser is what Browse mode puts in the sidebar and Assistant mode replaces with
-    /// the session rail, so the outline going is the switch actually having happened rather than a
-    /// menu item merely being clickable.
-    func testChoosingAssistantReplacesTheObjectBrowser() throws {
+    /// the session rail, so the outline going and coming back is the switch actually happening
+    /// rather than a menu item merely being clickable. A window that cannot get back to its tables
+    /// has stranded the user, so the return leg matters as much as the outbound one.
+    ///
+    /// One launch, not two. Opening the sample database is the most expensive and least reliable
+    /// thing this suite does: it is the "sample database never finished opening" failure the
+    /// repository already knows drifts from run to run, and splitting the round trip across two
+    /// cases paid for it twice for one flow.
+    func testSwitchingModeReplacesTheObjectBrowserAndBringsItBack() throws {
         let app = try launchWithSampleDatabase()
         let window = try mainWindow(of: app)
 
         XCTAssertTrue(window.outlines.firstMatch.waitToExist(timeout: 20), "Browse mode shows the object browser")
 
         chooseMode("Assistant", in: app)
-
         XCTAssertTrue(
             UITestPoll.until(timeout: 20) { !window.outlines.firstMatch.exists },
             "Assistant mode must take the object browser out of the sidebar"
         )
-    }
-
-    /// The round trip. A window that cannot get back to its tables has stranded the user.
-    func testBrowseComesBackWithItsTables() throws {
-        let app = try launchWithSampleDatabase()
-        let window = try mainWindow(of: app)
-
-        XCTAssertTrue(window.outlines.firstMatch.waitToExist(timeout: 20))
-
-        chooseMode("Assistant", in: app)
-        XCTAssertTrue(UITestPoll.until(timeout: 20) { !window.outlines.firstMatch.exists })
 
         chooseMode("Browse", in: app)
-
         XCTAssertTrue(
             window.outlines.firstMatch.waitToExist(timeout: 20),
             "Returning to Browse must bring the object browser back"
