@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Types section in the sidebar for PostgreSQL enums, composites, domains and ranges, with a definition tab and enum label editing. (#2484)
+- User-defined types in the structure editor's type picker. (#2484)
+- `list_types` MCP tool.
 - Value picker on a foreign key cell, listing rows from the referenced table with a label beside the key. (#2511)
 - Breakdown of a query's time into server, first row and transfer, behind the toolbar's duration readout. (#2503)
 - Exclude the AUTO_INCREMENT counter and Exclude DEFINER clauses in the SQL export, both on by default. (#2516)
@@ -21,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Start an AI session from the welcome window, with running and stopped sessions listed there.
 - Outside MCP servers as tool sources for AI sessions, allowlisted per connection.
 - Mode submenu in the View menu, switching a window between Browse and Assistant.
+- Jump to Column in the grid, a fuzzy search over the result's columns with their type and position. (#2495)
 
 ### Changed
 
