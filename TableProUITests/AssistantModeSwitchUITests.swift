@@ -76,26 +76,31 @@ final class AssistantModeSwitchUITests: UITestCase {
         let app = try launchWithSampleDatabase()
         let window = try mainWindow(of: app)
 
-        /// A table from the sample database, not "is there an outline".
+        /// The session rail's own section heading, not the object browser's contents.
         ///
-        /// Assistant mode puts `AgentSessionRailView` in the sidebar, and that is a `List` of
+        /// Two earlier shapes of this assertion were wrong for reasons worth keeping. Asking
+        /// whether an outline exists is true in both modes: `AgentSessionRailView` is a `List` of
         /// `Section`s at `.listStyle(.sidebar)`, which XCUITest publishes as an outline exactly as
-        /// the object browser is. Asking whether an outline exists is therefore true in both modes
-        /// and proves nothing; asking for a table the object browser lists is true in one.
-        let table = window.outlines.staticTexts["Album"]
+        /// the object browser is. Asking for a named table ties the test to whatever the sample
+        /// database happens to contain and to how its sidebar is laid out on a fresh container.
+        ///
+        /// Switching to Assistant creates a session for the connection, so the rail always has a
+        /// "This Connection" section and Browse mode never does. That is this branch's own string,
+        /// independent of the data and of how either sidebar publishes its rows.
+        let railHeading = window.staticTexts["This Connection"]
 
-        XCTAssertTrue(table.waitToExist(timeout: 20), "Browse mode must list the sample database's tables")
+        XCTAssertFalse(railHeading.exists, "Browse mode must not show the session rail")
 
         chooseMode("Assistant", in: app)
         XCTAssertTrue(
-            UITestPoll.until(timeout: 20) { !table.exists },
+            railHeading.waitToExist(timeout: 20),
             "Assistant mode must put the session rail where the object browser was"
         )
 
         chooseMode("Browse", in: app)
         XCTAssertTrue(
-            table.waitToExist(timeout: 20),
-            "Returning to Browse must bring the object browser back"
+            UITestPoll.until(timeout: 20) { !railHeading.exists },
+            "Returning to Browse must take the session rail away again"
         )
     }
 }
