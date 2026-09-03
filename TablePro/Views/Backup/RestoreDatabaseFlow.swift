@@ -9,12 +9,13 @@ struct RestoreDatabaseFlow: View {
 
     @State private var service = NativeDumpService(kind: .restore)
     @State private var phase: Phase = .pickDatabase
+    @State private var hostWindow: NSWindow?
 
     private enum Phase: Equatable {
         case pickDatabase
         case running(database: String)
         case finished(database: String)
-        case failed(message: String)
+        case failed(message: String, targetMayBeModified: Bool)
         case cancelled
     }
 
@@ -39,10 +40,11 @@ struct RestoreDatabaseFlow: View {
                     onClose: { isPresented = false },
                     onShowInFinder: nil
                 )
-            case .failed(let message):
+            case .failed(let message, let targetMayBeModified):
                 BackupResultSheet(
                     kind: .restore,
-                    outcome: .failure(message: message),
+                    outcome: .failure(
+                        message: message, targetMayBeModified: targetMayBeModified),
                     onClose: { isPresented = false },
                     onShowInFinder: nil
                 )
@@ -54,6 +56,9 @@ struct RestoreDatabaseFlow: View {
                     onShowInFinder: nil
                 )
             }
+        }
+        .background {
+            WindowAccessor { window in hostWindow = window }
         }
         .onChange(of: serviceState) { _, newState in
             handleServiceStateChange(newState)
@@ -105,8 +110,8 @@ struct RestoreDatabaseFlow: View {
             phase = .running(database: database)
         case .finished(let database, _, _):
             phase = .finished(database: database)
-        case .failed(let message):
-            phase = .failed(message: message)
+        case .failed(let message, let targetMayBeModified):
+            phase = .failed(message: message, targetMayBeModified: targetMayBeModified)
         case .cancelled:
             phase = .cancelled
         case .idle, .cancelling:
@@ -114,12 +119,28 @@ struct RestoreDatabaseFlow: View {
         }
     }
 
+    /// A restore replays a dump into a database that already has contents, and the tools it drives
+    /// do not ask. Picking a database in the list used to be the last step before the first write.
     private func startRestore(database: String) async {
+        guard await AlertHelper.confirmDestructive(
+            title: String(
+                format: String(localized: "Restore into \u{201C}%@\u{201D}?"), database),
+            message: String(
+                localized: """
+                    The dump is replayed into this database. Objects it names are overwritten and \
+                    the change cannot be undone.
+                    """),
+            confirmButton: String(localized: "Restore"),
+            window: hostWindow
+        ) else {
+            phase = .pickDatabase
+            return
+        }
         phase = .running(database: database)
         do {
             try await service.start(connection: connection, database: database, fileURL: sourceURL)
         } catch {
-            phase = .failed(message: error.localizedDescription)
+            phase = .failed(message: error.localizedDescription, targetMayBeModified: false)
         }
     }
 }

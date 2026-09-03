@@ -34,7 +34,10 @@ internal enum TransferResultAlert {
         alert.alertStyle = warnings.isEmpty ? .informational : .warning
         alert.informativeText = warnings.joined(separator: "\n\n")
         alert.addButton(withTitle: String(localized: "Open in Finder"))
-        alert.addButton(withTitle: String(localized: "Done"))
+        /// `NSAlert` binds Escape by matching a button's title against "Cancel", which stops
+        /// matching in every localized build and never matched "Done" at all. Without this the
+        /// alert answers no key but Return, which opens Finder.
+        AlertHelper.addCancelButton(to: alert, title: String(localized: "Done"))
         alert.showsSuppressionButton = warnings.isEmpty
         alert.suppressionButton?.title = String(localized: "Do not show this again")
 
@@ -46,6 +49,58 @@ internal enum TransferResultAlert {
         }
 
         AlertHelper.present(alert, in: window, completion: deliver)
+    }
+
+    /// A transfer writes into another connection and leaves nothing on disk, so there is no folder
+    /// to open and no file to name. It still has to say how much moved and where, which it did not:
+    /// the sheet used to close on success and report nothing at all.
+    internal static func presentTransferSuccess(
+        tableCount: Int,
+        rowCount: Int,
+        destinationName: String,
+        warnings: [String],
+        window: NSWindow?,
+        completion: @escaping @MainActor () -> Void
+    ) {
+        let alert = NSAlert()
+        alert.messageText = warnings.isEmpty
+            ? String(localized: "Transfer completed")
+            : String(localized: "Transfer completed with warnings")
+        alert.alertStyle = warnings.isEmpty ? .informational : .warning
+        alert.informativeText = ([transferSummary(
+            tableCount: tableCount, rowCount: rowCount, destinationName: destinationName
+        )] + warnings).joined(separator: "\n\n")
+        AlertHelper.addCancelButton(to: alert, title: String(localized: "Done"))
+        AlertHelper.present(alert, in: window) { _ in completion() }
+    }
+
+    private static func transferSummary(
+        tableCount: Int,
+        rowCount: Int,
+        destinationName: String
+    ) -> String {
+        let template = tableCount == 1
+            ? String(localized: "%1$lld rows from 1 table written to %2$@.")
+            : String(localized: "%1$lld rows from %3$lld tables written to %2$@.")
+        return String(format: template, Int64(rowCount), destinationName, Int64(tableCount))
+    }
+
+    /// A stopped import leaves whatever it already ran committed, and used to close its progress
+    /// sheet without saying so. Stopping looked the same as importing nothing.
+    internal static func presentImportCancelled(
+        executedStatements: Int,
+        window: NSWindow?,
+        completion: @escaping @MainActor () -> Void
+    ) {
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Import stopped")
+        alert.alertStyle = .warning
+        let template = executedStatements == 1
+            ? String(localized: "%lld statement had already run and stays committed.")
+            : String(localized: "%lld statements had already run and stay committed.")
+        alert.informativeText = String(format: template, Int64(executedStatements))
+        AlertHelper.addCancelButton(to: alert, title: String(localized: "Done"))
+        AlertHelper.present(alert, in: window) { _ in completion() }
     }
 
     internal static func presentImportSuccess(
@@ -62,7 +117,7 @@ internal enum TransferResultAlert {
             : String(localized: "Import completed")
         alert.alertStyle = skipped > 0 ? .warning : .informational
         alert.informativeText = importSummary(result)
-        alert.addButton(withTitle: String(localized: "Done"))
+        AlertHelper.addCancelButton(to: alert, title: String(localized: "Done"))
 
         let errors = result?.errors ?? []
         if !errors.isEmpty {
