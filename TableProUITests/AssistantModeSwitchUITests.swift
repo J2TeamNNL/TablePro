@@ -38,9 +38,13 @@ final class AssistantModeSwitchUITests: UITestCase {
         item.click()
     }
 
+    /// No sample database. `MainMenuBuilder.install` runs in `applicationWillFinishLaunching`, so
+    /// the menu exists before any connection does, and this case only asks whether the commands are
+    /// there rather than what they do. Opening a database to read a menu is the expensive and
+    /// flake-prone half of a UI test bought for nothing.
     func testTheModeCommandsAreInTheViewMenu() throws {
-        let app = try launchWithSampleDatabase()
-        _ = try mainWindow(of: app)
+        let app = try launchApp()
+        XCTAssertTrue(app.windows.firstMatch.waitToExist(timeout: 10), "The app produced no window")
 
         app.menuBars.menuBarItems["View"].click()
         let modeItem = app.menuBars.menuItems["Mode"]
@@ -72,17 +76,25 @@ final class AssistantModeSwitchUITests: UITestCase {
         let app = try launchWithSampleDatabase()
         let window = try mainWindow(of: app)
 
-        XCTAssertTrue(window.outlines.firstMatch.waitToExist(timeout: 20), "Browse mode shows the object browser")
+        /// A table from the sample database, not "is there an outline".
+        ///
+        /// Assistant mode puts `AgentSessionRailView` in the sidebar, and that is a `List` of
+        /// `Section`s at `.listStyle(.sidebar)`, which XCUITest publishes as an outline exactly as
+        /// the object browser is. Asking whether an outline exists is therefore true in both modes
+        /// and proves nothing; asking for a table the object browser lists is true in one.
+        let table = window.outlines.staticTexts["Album"]
+
+        XCTAssertTrue(table.waitToExist(timeout: 20), "Browse mode must list the sample database's tables")
 
         chooseMode("Assistant", in: app)
         XCTAssertTrue(
-            UITestPoll.until(timeout: 20) { !window.outlines.firstMatch.exists },
-            "Assistant mode must take the object browser out of the sidebar"
+            UITestPoll.until(timeout: 20) { !table.exists },
+            "Assistant mode must put the session rail where the object browser was"
         )
 
         chooseMode("Browse", in: app)
         XCTAssertTrue(
-            window.outlines.firstMatch.waitToExist(timeout: 20),
+            table.waitToExist(timeout: 20),
             "Returning to Browse must bring the object browser back"
         )
     }
