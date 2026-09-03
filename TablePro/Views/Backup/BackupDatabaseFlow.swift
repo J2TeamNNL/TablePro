@@ -5,7 +5,7 @@
 //  Top-level sheet for the Backup Dump menu item. Reuses
 //  `DatabaseSwitcherSheet` in `.backup` mode to pick the database,
 //  then drives an NSSavePanel sub-sheet and the consolidated
-//  `PostgresDumpService` progress flow.
+//  `NativeDumpService` progress flow.
 //
 
 import AppKit
@@ -20,7 +20,7 @@ struct BackupDatabaseFlow: View {
     @State private var backupDatabase: String?
     let initialDatabase: String
 
-    @State private var service = PostgresDumpService(kind: .backup)
+    @State private var service = NativeDumpService(kind: .backup)
     @State private var phase: Phase = .pickDatabase
 
     private enum Phase: Equatable {
@@ -92,9 +92,9 @@ struct BackupDatabaseFlow: View {
     }
 
     /// Hashable snapshot of `service.state` so SwiftUI's `onChange` fires on every transition.
-    private var serviceState: PostgresDumpState { service.state }
+    private var serviceState: NativeDumpState { service.state }
 
-    private func handleServiceStateChange(_ state: PostgresDumpState) {
+    private func handleServiceStateChange(_ state: NativeDumpState) {
         switch state {
         case .running(let database, _, _, let totalBytes):
             phase = .running(database: database, totalBytes: totalBytes)
@@ -142,8 +142,10 @@ struct BackupDatabaseFlow: View {
         let savePanel = NSSavePanel()
         savePanel.canCreateDirectories = true
         savePanel.showsTagField = false
-        savePanel.allowedContentTypes = [UTType(filenameExtension: "dump") ?? .data]
-        savePanel.nameFieldStringValue = Self.defaultFilename(database: database)
+        let archiveExtension = NativeDumpRegistry.descriptor(for: connection.type)?
+            .archiveFormat.fileExtension ?? "dump"
+        savePanel.allowedContentTypes = [UTType(filenameExtension: archiveExtension) ?? .data]
+        savePanel.nameFieldStringValue = Self.defaultFilename(database: database, type: connection.type)
         savePanel.title = String(localized: "Save Dump")
         savePanel.message = String(format: String(localized: "Choose where to save the dump of \u{201C}%@\u{201D}."), database)
 
@@ -160,11 +162,14 @@ struct BackupDatabaseFlow: View {
             return
         }
 
-        // Show progress immediately so the user gets feedback while we fetch
-        // the database size estimate and locate pg_dump.
+        guard await confirmPasswordExposureIfNeeded() else {
+            phase = .pickDatabase
+            return
+        }
+
         phase = .running(database: database, totalBytes: nil)
 
-        let totalBytes = await PostgresDumpService.estimatedDatabaseSize(
+        let totalBytes = await NativeDumpService.estimatedDatabaseSize(
             connection: connection,
             database: database
         )
@@ -181,10 +186,36 @@ struct BackupDatabaseFlow: View {
         }
     }
 
-    private static func defaultFilename(database: String) -> String {
+    /// One tool, `sqlpackage`, takes a password only in its argument list, where `ps` can read
+    /// it. The user is told before it runs rather than after, because the exposure lasts as long
+    /// as the dump and there is no other channel to move it to.
+    @MainActor
+    private func confirmPasswordExposureIfNeeded() async -> Bool {
+        guard let descriptor = NativeDumpRegistry.descriptor(for: connection.type),
+              descriptor.exposesPasswordInArguments,
+              !connection.username.isEmpty,
+              ConnectionStorage.shared.loadPassword(for: connection.id) != nil else {
+            return true
+        }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = String(localized: "This tool takes your password on its command line.")
+        alert.informativeText = String(localized: "SqlPackage has no other way to receive one, so while the dump runs the password is readable by other processes on this Mac. Windows or Entra authentication avoids it.")
+        alert.addButton(withTitle: String(localized: "Continue"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        guard let window = NSApp.keyWindow else {
+            return alert.runModal() == .alertFirstButtonReturn
+        }
+        return await alert.beginSheetModal(for: window) == .alertFirstButtonReturn
+    }
+
+    /// The extension follows the engine's own archive format, so a MySQL dump is offered as `.sql`
+    /// and a MongoDB one as `.archive` rather than all of them claiming PostgreSQL's `.dump`.
+    private static func defaultFilename(database: String, type: DatabaseType) -> String {
         let timestamp = Self.timestampFormatter.string(from: Date())
         let safeDB = database.isEmpty ? "database" : database
-        return "\(safeDB)-\(timestamp).dump"
+        let fileExtension = NativeDumpRegistry.descriptor(for: type)?.archiveFormat.fileExtension ?? "dump"
+        return "\(safeDB)-\(timestamp).\(fileExtension)"
     }
 
     private static let timestampFormatter: DateFormatter = {

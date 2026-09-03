@@ -51,8 +51,14 @@ enum ActiveSheet: Identifiable {
     case importDialog(formatId: String)
     case rowImport(formatId: String)
     case exportQueryResults
+    /// The tables the user right-clicked travel with the request, because the object browser may be
+    /// pointed somewhere else by the time the sheet appears.
+    case transferTables(tables: Set<String>)
     case backupDatabase
     case restoreDatabase(fileURL: URL)
+    /// Oracle, Snowflake and BigQuery unload to a server directory or a bucket, so this is a
+    /// separate command from Backup Dump rather than a mode of it.
+    case serverSideExport(table: String?)
     /// The object's own database and schema travel with the request. A maintenance statement names
     /// its table and nothing else, so acting on wherever the object browser happens to point
     /// maintains the same-named table in another database whenever the two have drifted apart.
@@ -73,8 +79,10 @@ enum ActiveSheet: Identifiable {
         case .importDialog(let formatId): "importDialog-\(formatId)"
         case .rowImport(let formatId): "rowImport-\(formatId)"
         case .exportQueryResults: "exportQueryResults"
+        case .transferTables(let tables): "transferTables-\(tables.sorted().joined(separator: ","))"
         case .backupDatabase: "backupDatabase"
         case .restoreDatabase(let fileURL): "restoreDatabase-\(fileURL.path)"
+        case .serverSideExport(let table): "serverSideExport-\(table ?? "")"
         case .maintenance(let operation, let tableName, let database, let schema):
             "maintenance-\(operation)-\(database ?? "")-\(schema ?? "")-\(tableName)"
         case .createDatabase: "createDatabase"
