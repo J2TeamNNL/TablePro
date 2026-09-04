@@ -88,17 +88,25 @@ internal enum OperationCompletionCopy {
         case .dataImport: return String(localized: "Import finished")
         case .dataExport: return String(localized: "Export finished")
         case .objectCopy: return String(localized: "Copy finished")
-        case .query, .queryBatch, .fetchAll, .mcpQuery: return String(localized: "Finished")
+        case .query, .queryBatch, .fetchAll, .mcpQuery, .scriptQuery: return String(localized: "Finished")
         }
     }
 
     /// A notification body is not an error dialog. The HIG is explicit that an alert, not a
     /// notification, carries an error message, so this announces the outcome and leaves the full
     /// text to the inline error the tab already shows.
+    /// Flattened before it is cut. A dump tool writes its diagnosis over several lines, and a
+    /// head-truncated block of those reaches the notification as the first line and a half of raw
+    /// stderr, with the sentence that names the cause below the cut.
     private static func truncated(_ reason: String) -> String {
+        let flattened = reason
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
         let limit = 120
-        let bridged = reason as NSString
-        guard bridged.length > limit else { return reason }
+        let bridged = flattened as NSString
+        guard bridged.length > limit else { return flattened }
         return bridged.substring(to: limit).trimmingCharacters(in: .whitespaces) + "…"
     }
 }

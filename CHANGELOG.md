@@ -9,12 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Types section in the sidebar for PostgreSQL enums, composites, domains and ranges, with a definition tab and enum label editing. (#2484)
-- User-defined types in the structure editor's type picker. (#2484)
-- `list_types` MCP tool.
-- Value picker on a foreign key cell, listing rows from the referenced table with a label beside the key. (#2511)
-- Breakdown of a query's time into server, first row and transfer, behind the toolbar's duration readout. (#2503)
-- Exclude the AUTO_INCREMENT counter and Exclude DEFINER clauses in the SQL export, both on by default. (#2516)
 - Assistant mode for the connection window, with the conversation at full width.
 - Confirm Writes floor while Assistant mode is active.
 - Several AI sessions at once, each with its own approvals, transcript and status.
@@ -24,37 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Start an AI session from the welcome window, with running and stopped sessions listed there.
 - Outside MCP servers as tool sources for AI sessions, allowlisted per connection.
 - Mode submenu in the View menu, switching a window between Browse and Assistant.
-- Jump to Column in the grid, a fuzzy search over the result's columns with their type and position. (#2495)
-- Connection groups in Switch Connection, with `Cmd`-click to open a saved connection in a new window. (#1311)
-
-### Changed
-
-- PluginKit ABI 21. Every registry plugin needs rebuilding before or with this release.
-- Query Insights ranks on the time the database spent rather than on elapsed time. (#2503)
-- Export summary reports the warnings an export produced, instead of a bare "Export completed". (#2517)
 
 ### Fixed
 
-- Last line of a helper process's output lost when it exits right after writing it.
-- Structure and trigger edits committing or rolling back a transaction left open in a query tab on the same connection.
-- Composite, range and extension-typed PostgreSQL columns labelled `ENUM(…)` in the structure editor.
-- Columns of a PostgreSQL enum created during the session shown as text until the next reconnect.
-- Sidebar routines, triggers and types from the previous database after switching while it was still loading.
-- Silent fallback order when foreign keys between the exported tables form a cycle. (#2517)
-- Foreign keys declared twice in a SQL export on MySQL, SQL Server, DuckDB, Snowflake, CockroachDB and Redshift, and as an unsupported `ALTER TABLE` on SQLite, libSQL and Cloudflare D1. (#2517)
-- Foreign keys missing from Redshift's reconstructed `CREATE TABLE`.
-- New group discarded without a word when the connection form's picker could not save it. (#1311)
-- Group created in one window missing from another until relaunch. (#1311)
-- Wrong connection moved when dragging a list that holds a favorite or an active tag filter. (#1311)
-- Crash opening the connection list after two Macs moved two groups inside each other. (#1311)
-- Every saved group lost when one unreadable entry stopped the whole list decoding. (#1311)
-- New tag discarded without a word when the name was already taken.
-- Every saved tag replaced by the preset list when one unreadable entry stopped the library decoding.
-- Tag created in one window missing from another until relaunch.
-- Two Macs re-uploading the whole tag library to each other after a single tag changed.
-- Connections, groups and tags from another device silently dropped when the store could not be written, and never sent again.
-- Two Macs re-uploading the whole group list to each other after a single group changed. (#1311)
-- Deleting a group that a broken sync left in a loop also deleting the group it pointed at. (#1311)
 - Tool approvals resolved by a decision made in another chat session.
 - AI tool calls evaluated against the chat's own connection instead of the one the statement targets.
 - AI tool calls reaching a connection the chat session is not attached to.
@@ -83,6 +49,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Outside MCP tools always require approval and are audited per call, with the payload's size and hash but not its contents.
+
+## [0.72.0] - 2026-09-04
+
+### Added
+
+- Types section in the sidebar for PostgreSQL enums, composites, domains and ranges, with enum label editing. (#2484)
+- User-defined types in the structure editor's type picker. (#2484)
+- `list_types` MCP tool.
+- Value picker on a foreign key cell, listing rows from the referenced table with a label beside the key. (#2511)
+- Breakdown of a query's time into server, first row and transfer, behind the toolbar's duration readout. (#2503)
+- Exclude the AUTO_INCREMENT counter and Exclude DEFINER clauses in the SQL export, both on by default. (#2516)
+- Jump to Column in the grid, a fuzzy search over the result's columns with their type and position. (#2495)
+- Views, routines, triggers, user-defined types and privileges in the export tree, grouped by kind. (#2618)
+- Per-table `WHERE`, row limit and column subset in the export tree. (#2618)
+- Insert mode for SQL exports: skip, replace or update rows that already exist. (#2618)
+- Split a SQL export into numbered parts at a chosen size. (#2618)
+- Read every table at one snapshot during a SQL export. (#2618)
+- Backup Dump and Restore Dump, driving `pg_dump`, `mysqldump`, `mongodump` and `sqlite3`. (#2618)
+- Backup and restore for SQL Server through SqlPackage. (#2618)
+- Transfer To, copying table rows straight into another open connection with no file in between. (#2618)
+- NDJSON layout for JSON exports, one row per line. (#2618)
+- Saved export selections, reapplied from the export tree's bookmark menu. (#2618)
+- Save Report on an import that skipped rows, listing each one's line and error as CSV. (#2618)
+- Markdown, HTML and XML export. (#2618)
+- Parquet export, through a plugin installed from Settings > Plugins. (#2618)
+- XLSX import, reading the first worksheet of a workbook. (#2618)
+- Server-Side Export for Oracle, Snowflake and BigQuery, unloading to a server directory, stage or bucket. (#2618)
+- MySQL events and PostgreSQL sequences in the export tree. (#2618)
+- Connection groups in Switch Connection, with `Cmd`-click to open a saved connection in a new window. (#1311)
+- AppleScript dictionary for connections, tabs, results and the grid selection. (#2512)
+- AppleScript source in the history drawer's filter and its own notification toggle. (#2512)
+
+### Changed
+
+- Export, Transfer and Server-Side Export sheets resize, and the export object tree takes the extra room. (#2618)
+- Cancel sits beside the action button in the export, transfer and server-side export footers.
+- PluginKit ABI 21, additive: existing plugins keep loading.
+- Query Insights ranks on the time the database spent rather than on elapsed time. (#2503)
+- Export summary reports the warnings an export produced, instead of a bare "Export completed". (#2517)
+
+### Fixed
+
+- PostgreSQL identifier quoting in a SQL export of query results from any other engine. (#2630)
+- Backslashes left unescaped in a SQL export of query results, silently altering the values.
+- `DROP ... CASCADE` written for engines that reject it, SQLite and SQL Server among them.
+- `DROP TABLE` naming the source table in a query-results export that writes no `CREATE TABLE`.
+- Snowflake string literals escaped without their backslashes, in the editor and in exports.
+- Restore Dump overwriting a database with no confirmation.
+- Stopping an import applying at once, while stopping an export or a backup asks first.
+- Progress bar stuck at zero and an "N/0 rows" label for the whole of a streaming query export.
+- Checkboxes, pickers and text fields across the import and export sheets unnamed to VoiceOver.
+- Import plugin options kept after cancelling the row importer, `Delete existing rows` among them.
+- Escape not dismissing the export and import result alerts.
+- A stopped import closing its progress sheet without saying what had already run.
+- A failed restore leaving a partly-restored database without saying so.
+- Oracle server-side export reported as written when the Data Pump job had only been started.
+- Import stuck on a file that will not parse, with the parser's message as placeholder text.
+- Backup save panel and password warning landing on whatever window was frontmost.
+- DuckDB aggregate, JSON and Parquet functions failing on a Mac that cannot reach `extensions.duckdb.org`. (#2626)
+- Last line of a helper process's output lost when it exits right after writing it.
+- Structure and trigger edits committing or rolling back a transaction left open in a query tab on the same connection.
+- Composite, range and extension-typed PostgreSQL columns labelled `ENUM(…)` in the structure editor.
+- Columns of a PostgreSQL enum created during the session shown as text until the next reconnect.
+- Sidebar routines, triggers and types from the previous database after switching while it was still loading.
+- Silent fallback order when foreign keys between the exported tables form a cycle. (#2517)
+- Foreign keys declared twice in a SQL export, or written as an `ALTER TABLE` the engine rejects. (#2517)
+- Foreign keys missing from Redshift's reconstructed `CREATE TABLE`.
+- New group discarded without a word when the connection form's picker could not save it. (#1311)
+- Group created in one window missing from another until relaunch. (#1311)
+- Wrong connection moved when dragging a list that holds a favorite or an active tag filter. (#1311)
+- Crash opening the connection list after two Macs moved two groups inside each other. (#1311)
+- Every saved group lost when one unreadable entry stopped the whole list decoding. (#1311)
+- New tag discarded without a word when the name was already taken.
+- Every saved tag replaced by the preset list when one unreadable entry stopped the library decoding.
+- Tag created in one window missing from another until relaunch.
+- Two Macs re-uploading the whole tag library to each other after a single tag changed.
+- Connections, groups and tags from another device dropped for good when the store could not be written.
+- Two Macs re-uploading the whole group list to each other after a single group changed. (#1311)
+- Deleting a group that a broken sync left in a loop also deleting the group it pointed at. (#1311)
+- "Operator does not exist" from a text filter on a PostgreSQL uuid, enum, number, date or json column.
+- "Function lower does not exist" from an ignore-case filter on a PostgreSQL column that is not text.
+- Is empty filter on a PostgreSQL array column.
+- MongoDB collection named like a `db` method, such as `stats` or `version`, failing to open, save or export.
+- Row count missing after a MongoDB raw filter written in shell syntax.
 
 ## [0.71.0] - 2026-09-02
 
@@ -3717,7 +3767,8 @@ TablePro is a native macOS database client built with SwiftUI and AppKit, design
     - Custom SQL query templates
     - Performance optimized for large datasets
 
-[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.71.0...HEAD
+[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.72.0...HEAD
+[0.72.0]: https://github.com/TableProApp/TablePro/compare/v0.71.0...v0.72.0
 [0.71.0]: https://github.com/TableProApp/TablePro/compare/v0.70.0...v0.71.0
 [0.70.0]: https://github.com/TableProApp/TablePro/compare/v0.69.0...v0.70.0
 [0.69.0]: https://github.com/TableProApp/TablePro/compare/v0.68.1...v0.69.0
