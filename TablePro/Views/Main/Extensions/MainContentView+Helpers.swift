@@ -65,17 +65,40 @@ extension MainContentView {
     }
 
     func updateInspectorContext() {
-        rightPanelState.inspectorContext = InspectorContext(
-            tableName: currentTab?.tableContext.tableName,
-            tableMetadata: coordinator.tableMetadata,
-            selectedRowData: selectedRowDataForSidebar,
+        trailingPaneState.inspector.context = RowInspectorContext(
+            subject: inspectorSubject,
+            hasRow: hasInspectableRow,
             isEditable: isSidebarEditable,
             isRowDeleted: isSelectedRowDeleted,
-            currentQuery: coordinator.tabManager.selectedTab?.content.query,
-            queryResults: cachedQueryResultsSummary(),
+            tableMetadata: tableMetadataForCurrentTab,
             jsonRow: jsonRowSnapshotForSidebar,
             userDefinedTypeScope: structureTypeScope
         )
+        updateAssistantContext()
+    }
+
+    /// Kept current even before the trailing assistant is revealed, because Assistant mode reads
+    /// this context from the conversation pane and that pane does not wait on `isActivated`.
+    func updateAssistantContext() {
+        trailingPaneState.assistant.context = AssistantContext(
+            currentQuery: coordinator.tabManager.selectedTab?.content.query,
+            queryResults: cachedQueryResultsSummary()
+        )
+    }
+
+    /// Nil on a tab that has no table of its own.
+    ///
+    /// `coordinator.tableMetadata` is a single latest-wins slot, written by `loadTableMetadata` and
+    /// cleared only by `teardown()`. Handing it over unconditionally meant a query tab, a
+    /// dashboard, an ER diagram or a Users & Roles tab showed the size, row count and engine of
+    /// whichever table had been opened last, labelled as if they described what was on screen, and
+    /// closing that table's tab did not clear it.
+    private var tableMetadataForCurrentTab: TableMetadata? {
+        guard let tableName = currentTab?.tableContext.tableName,
+              let metadata = coordinator.tableMetadata,
+              metadata.tableName == tableName
+        else { return nil }
+        return metadata
     }
 
     /// The scope a structure row's type picker looks types up in: the tab's own database and

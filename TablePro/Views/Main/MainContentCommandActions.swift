@@ -39,7 +39,7 @@ final class MainContentCommandActions {
     @ObservationIgnored private let pendingTruncates: Binding<Set<DatabaseTreeTableRef>>
     @ObservationIgnored private let pendingDeletes: Binding<Set<DatabaseTreeTableRef>>
     @ObservationIgnored private let tableOperationOptions: Binding<[DatabaseTreeTableRef: TableOperationOptions]>
-    @ObservationIgnored private let rightPanelState: RightPanelState
+    @ObservationIgnored private let trailingPaneState: TrailingPaneState
 
     /// The window this instance belongs to — used for key-window guards.
     @ObservationIgnored weak var window: NSWindow? {
@@ -76,7 +76,7 @@ final class MainContentCommandActions {
         pendingTruncates: Binding<Set<DatabaseTreeTableRef>>,
         pendingDeletes: Binding<Set<DatabaseTreeTableRef>>,
         tableOperationOptions: Binding<[DatabaseTreeTableRef: TableOperationOptions]>,
-        rightPanelState: RightPanelState
+        trailingPaneState: TrailingPaneState
     ) {
         self.coordinator = coordinator
         self.connection = connection
@@ -85,9 +85,8 @@ final class MainContentCommandActions {
         self.pendingTruncates = pendingTruncates
         self.pendingDeletes = pendingDeletes
         self.tableOperationOptions = tableOperationOptions
-        self.rightPanelState = rightPanelState
+        self.trailingPaneState = trailingPaneState
 
-        setupSaveAction()
         setupObservers()
     }
 
@@ -153,21 +152,23 @@ final class MainContentCommandActions {
 
     // MARK: - Save Action
 
-    private func setupSaveAction() {
-        rightPanelState.onSave = { [weak self] in
+    /// Writes the inspector's pending edits.
+    ///
+    /// This used to be stored back on the panel's state as an `onSave` closure that only this type
+    /// ever set and only this type ever called; no view read it, despite a comment saying the panel
+    /// did. Calling the coordinator directly is the same work with one fewer hop.
+    private func saveInspectorEdits() {
+        let editState = trailingPaneState.inspector.editState
+        Task { [weak self] in
             guard let self else { return }
-            Task {
-                do {
-                    try await self.coordinator?.saveSidebarEdits(
-                        editState: self.rightPanelState.editState
-                    )
-                } catch {
-                    AlertHelper.showErrorSheet(
-                        title: String(localized: "Failed to Save Changes"),
-                        message: error.localizedDescription,
-                        window: self.window
-                    )
-                }
+            do {
+                try await self.coordinator?.saveSidebarEdits(editState: editState)
+            } catch {
+                AlertHelper.showErrorSheet(
+                    title: String(localized: "Failed to Save Changes"),
+                    message: error.localizedDescription,
+                    window: self.window
+                )
             }
         }
     }
@@ -234,22 +235,10 @@ final class MainContentCommandActions {
         if !indices.isEmpty {
             coordinator?.deleteSelectedRows(indices: indices)
         } else if !fromDataGrid, !selectedTables.wrappedValue.isEmpty {
-            // Only toggle table deletion when the call did NOT originate from
-            // the data grid (e.g., from the app menu Cmd+Delete with no rows selected)
-            var updatedDeletes = pendingDeletes.wrappedValue
-            var updatedTruncates = pendingTruncates.wrappedValue
-
-            for ref in selectedTables.wrappedValue {
-                updatedTruncates.remove(ref)
-                if updatedDeletes.contains(ref) {
-                    updatedDeletes.remove(ref)
-                } else {
-                    updatedDeletes.insert(ref)
-                }
-            }
-
-            pendingTruncates.wrappedValue = updatedTruncates
-            pendingDeletes.wrappedValue = updatedDeletes
+            /// Through the sidebar's own path rather than a second copy of it. Staging the queue
+            /// here directly skipped the confirmation `batchToggleDelete` raises, so Delete from
+            /// the menu bar queued a drop with no dialog while the sidebar's Delete asked first.
+            coordinator?.sidebarViewModel?.batchToggleDelete(refs: Array(selectedTables.wrappedValue))
         }
     }
 
@@ -493,6 +482,12 @@ final class MainContentCommandActions {
 
     var hasTableSelection: Bool {
         !selectedTables.wrappedValue.isEmpty
+    }
+
+    /// A selection can be perfectly valid and still hold nothing truncatable, so the menu bar asks
+    /// this rather than `hasTableSelection`, which is what let it stage a `TRUNCATE` on a view.
+    var canTruncateSelectedTables: Bool {
+        TableOperationEligibility.canTruncate(selectedTables.wrappedValue)
     }
 
     /// The one selected object, or nil when the selection is empty or spans several.
@@ -802,8 +797,8 @@ final class MainContentCommandActions {
         }
 
         // Sidebar-only edits (made directly in the inspector panel)
-        if rightPanelState.editState.hasEdits {
-            rightPanelState.onSave?()
+        if trailingPaneState.inspector.editState.hasEdits {
+            saveInspectorEdits()
             return true
         }
 
@@ -862,7 +857,7 @@ final class MainContentCommandActions {
         coordinator?.changeManager.clearChangesAndUndoHistory()
         pendingTruncates.wrappedValue.removeAll()
         pendingDeletes.wrappedValue.removeAll()
-        rightPanelState.editState.clearEdits()
+        trailingPaneState.inspector.editState.clearEdits()
         finish(asBatchSurvivor: asBatchSurvivor)
     }
 
@@ -871,7 +866,7 @@ final class MainContentCommandActions {
     }
 
     func truncateTables() {
-        guard !(selectedTables.wrappedValue.isEmpty) else { return }
+        guard canTruncateSelectedTables else { return }
         coordinator?.sidebarViewModel?.batchToggleTruncate()
     }
 
@@ -990,9 +985,9 @@ final class MainContentCommandActions {
             pendingTruncates.wrappedValue = truncates
             pendingDeletes.wrappedValue = deletes
             tableOperationOptions.wrappedValue = options
-        } else if rightPanelState.editState.hasEdits {
+        } else if trailingPaneState.inspector.editState.hasEdits {
             // Save sidebar-only edits (edits made directly in the right panel)
-            rightPanelState.onSave?()
+            saveInspectorEdits()
         }
         // File save: write query back to source file
         else if let tab = coordinator?.tabManager.selectedTab,
@@ -1035,13 +1030,13 @@ final class MainContentCommandActions {
 
     func aiExplainQuery() {
         guard let query = coordinator?.tabManager.selectedTab?.content.query, !query.isEmpty else { return }
-        coordinator?.showAIChatPanel()
+        coordinator?.showAssistant()
         coordinator?.aiViewModel?.handleExplainSelection(query)
     }
 
     func aiOptimizeQuery() {
         guard let query = coordinator?.tabManager.selectedTab?.content.query, !query.isEmpty else { return }
-        coordinator?.showAIChatPanel()
+        coordinator?.showAssistant()
         coordinator?.aiViewModel?.handleOptimizeSelection(query)
     }
 
@@ -1050,7 +1045,7 @@ final class MainContentCommandActions {
     }
 
     func showRowAsJSON() {
-        coordinator?.showJSONPanel()
+        coordinator?.showRowAsJSON()
     }
 
     func openForeignKeyTable(reference: JSONForeignKeyRef, value: String) {
@@ -1074,11 +1069,17 @@ final class MainContentCommandActions {
     }
 
     func backupDatabase() {
-        coordinator?.activeSheet = .backupDatabase
+        coordinator?.activeSheet = .backupDatabase(databases: [])
     }
 
+    /// Asked of the connection, not only its type. libSQL reaches either a local file or a Turso
+    /// URL and only the file can be handed to `sqlite3`, so a remote one offered a Backup Dump that
+    /// wrote a 52-byte file and reported success.
     var supportsBackup: Bool {
-        NativeDumpRegistry.supports(connection.type)
+        NativeDumpRegistry.supports(
+            connection,
+            localFilePath: NativeDumpService.localFilePath(for: connection)
+        )
     }
 
     var supportsRestore: Bool { supportsBackup }
@@ -1104,10 +1105,12 @@ final class MainContentCommandActions {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = Self.restoreSourceContentTypes
+        panel.allowedContentTypes = restoreSourceContentTypes
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = restoreAcceptsDirectory
         panel.title = String(localized: "Choose Dump File")
         panel.prompt = String(localized: "Choose")
-        panel.message = String(localized: "Select a dump file produced by pg_dump in custom archive format.")
+        panel.message = restoreSourceMessage
 
         let response: NSApplication.ModalResponse
         if let window = NSApp.keyWindow {
@@ -1119,11 +1122,31 @@ final class MainContentCommandActions {
         coordinator?.activeSheet = .restoreDatabase(fileURL: url)
     }
 
-    private static var restoreSourceContentTypes: [UTType] {
-        if let dumpType = UTType(filenameExtension: "dump") {
-            return [dumpType, .data]
+    /// The engine's own archive, not PostgreSQL's. Every engine the registry supports is offered
+    /// Restore Dump, and the panel used to tell all of them to pick a `pg_dump` custom archive.
+    private var restoreSourceContentTypes: [UTType] {
+        let extensions = NativeDumpRegistry.formats(for: connection.type)
+            .map(\.fileExtension)
+            .filter { !$0.isEmpty }
+        let types = extensions.compactMap { UTType(filenameExtension: $0) }
+        guard restoreAcceptsDirectory else { return types + [.data] }
+        return types + [.folder, .data]
+    }
+
+    /// DuckDB restores either one `.duckdb` file or a folder of Parquet, so the panel has to accept
+    /// a folder as well.
+    private var restoreAcceptsDirectory: Bool {
+        NativeDumpRegistry.formats(for: connection.type).contains { $0.producesDirectory }
+    }
+
+    private var restoreSourceMessage: String {
+        let descriptions = NativeDumpRegistry.formats(for: connection.type)
+            .map(\.contentDescription)
+            .filter { !$0.isEmpty }
+        guard let joined = descriptions.formatted(.list(type: .or)).nilIfEmpty else {
+            return String(localized: "Select a dump file this engine's own tool wrote.")
         }
-        return [.data]
+        return String(format: String(localized: "Select a dump this connection's engine wrote: %@."), joined)
     }
 
     func saveAsFavorite() {
@@ -1203,7 +1226,7 @@ final class MainContentCommandActions {
     }
 
     func toggleRightSidebar() {
-        coordinator?.inspectorProxy?.toggleInspector()
+        coordinator?.trailingPaneProxy?.toggleInspector()
     }
 
     func goToPreviousPage() {

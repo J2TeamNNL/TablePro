@@ -36,6 +36,7 @@ extension DatabaseType {
     static let redis = DatabaseType(rawValue: "Redis")
     static let mssql = DatabaseType(rawValue: "SQL Server")
     static let oracle = DatabaseType(rawValue: "Oracle")
+    static let snowflake = DatabaseType(rawValue: "Snowflake")
     static let dameng = DatabaseType(rawValue: "Dameng")
     static let clickhouse = DatabaseType(rawValue: "ClickHouse")
     static let duckdb = DatabaseType(rawValue: "DuckDB")
@@ -50,6 +51,7 @@ extension DatabaseType {
     static let beancount = DatabaseType(rawValue: "Beancount")
     static let elasticsearch = DatabaseType(rawValue: "Elasticsearch")
     static let surrealdb = DatabaseType(rawValue: "SurrealDB")
+    static let typesense = DatabaseType(rawValue: "Typesense")
 }
 
 extension DatabaseType: Codable {
@@ -413,6 +415,7 @@ struct DatabaseConnection: Identifiable, Hashable {
     var cloudflareTunnelMode: CloudflareTunnelMode = .disabled
     var cloudSQLProxyMode: CloudSQLProxyMode = .disabled
     var socksProxyMode: SOCKSProxyMode = .disabled
+    var tunnelCommandMode: TunnelCommandMode = .disabled
     var safeModeLevel: SafeModeLevel
     var aiPolicy: AIConnectionPolicy?
     var aiRules: String?
@@ -518,6 +521,7 @@ struct DatabaseConnection: Identifiable, Hashable {
         cloudflareTunnelMode: CloudflareTunnelMode = .disabled,
         cloudSQLProxyMode: CloudSQLProxyMode = .disabled,
         socksProxyMode: SOCKSProxyMode = .disabled,
+        tunnelCommandMode: TunnelCommandMode = .disabled,
         safeModeLevel: SafeModeLevel = .silent,
         aiPolicy: AIConnectionPolicy? = nil,
         aiRules: String? = nil,
@@ -572,6 +576,7 @@ struct DatabaseConnection: Identifiable, Hashable {
         self.cloudflareTunnelMode = cloudflareTunnelMode
         self.cloudSQLProxyMode = cloudSQLProxyMode
         self.socksProxyMode = socksProxyMode
+        self.tunnelCommandMode = tunnelCommandMode
         self.aiPolicy = aiPolicy
         self.aiRules = aiRules
         self.aiAlwaysAllowedTools = aiAlwaysAllowedTools
@@ -641,7 +646,8 @@ extension DatabaseConnection: Codable {
     private enum CodingKeys: String, CodingKey {
         case id, name, host, port, database, username, type
         case sshConfig, sslConfig, color, tagId, tagIds, groupId, sshProfileId
-        case sshTunnelMode, cloudflareTunnelMode, cloudSQLProxyMode, socksProxyMode, safeModeLevel, aiPolicy, aiRules, aiAlwaysAllowedTools, externalAccess, additionalFields
+        case sshTunnelMode, cloudflareTunnelMode, cloudSQLProxyMode, socksProxyMode, tunnelCommandMode
+        case safeModeLevel, aiPolicy, aiRules, aiAlwaysAllowedTools, externalAccess, additionalFields
         case redisDatabase, startupCommands, sortOrder, localOnly, isSample, isFavorite
         case passwordSource
     }
@@ -682,6 +688,7 @@ extension DatabaseConnection: Codable {
         cloudflareTunnelMode = try container.decodeIfPresent(CloudflareTunnelMode.self, forKey: .cloudflareTunnelMode) ?? .disabled
         cloudSQLProxyMode = try container.decodeIfPresent(CloudSQLProxyMode.self, forKey: .cloudSQLProxyMode) ?? .disabled
         socksProxyMode = try container.decodeIfPresent(SOCKSProxyMode.self, forKey: .socksProxyMode) ?? .disabled
+        tunnelCommandMode = try container.decodeIfPresent(TunnelCommandMode.self, forKey: .tunnelCommandMode) ?? .disabled
 
         // Migrate from legacy fields if sshTunnelMode is not present
         if let tunnelMode = try container.decodeIfPresent(SSHTunnelMode.self, forKey: .sshTunnelMode) {
@@ -726,6 +733,9 @@ extension DatabaseConnection: Codable {
         }
         if case .inline = socksProxyMode {
             try container.encode(socksProxyMode, forKey: .socksProxyMode)
+        }
+        if case .inline = tunnelCommandMode {
+            try container.encode(tunnelCommandMode, forKey: .tunnelCommandMode)
         }
         try container.encode(safeModeLevel, forKey: .safeModeLevel)
         try container.encodeIfPresent(aiPolicy, forKey: .aiPolicy)

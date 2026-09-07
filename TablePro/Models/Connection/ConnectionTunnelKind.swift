@@ -10,6 +10,7 @@ enum ConnectionTunnelKind: String, CaseIterable, Sendable {
     case cloudflare
     case cloudSQLProxy
     case socksProxy
+    case tunnelCommand
 
     /// A database file fetched from an SSH server over SFTP rather than a port forwarded from it.
     ///
@@ -25,7 +26,7 @@ enum ConnectionTunnelKind: String, CaseIterable, Sendable {
     /// `.ssh` and can never be turned on without it. Anything reasoning about which controls
     /// conflict wants this list; anything reasoning about which transport will run wants
     /// `allCases`.
-    static let formToggleable: [ConnectionTunnelKind] = [.ssh, .cloudflare, .cloudSQLProxy, .socksProxy]
+    static let formToggleable: [ConnectionTunnelKind] = [.ssh, .cloudflare, .cloudSQLProxy, .socksProxy, .tunnelCommand]
 
     var displayName: String {
         switch self {
@@ -33,8 +34,44 @@ enum ConnectionTunnelKind: String, CaseIterable, Sendable {
         case .cloudflare: return String(localized: "Cloudflare Tunnel")
         case .cloudSQLProxy: return String(localized: "Cloud SQL Auth Proxy")
         case .socksProxy: return String(localized: "SOCKS Proxy")
+        case .tunnelCommand: return String(localized: "Tunnel Command")
         case .remoteFile: return String(localized: "Remote Database File")
         }
+    }
+
+    /// One line saying what this transport does, shown under the connection form's picker so the
+    /// choice can be made without opening the documentation.
+    ///
+    /// Plain prose, no backticks: the picker's footer renders these through `Text(String)`, which
+    /// takes the verbatim initializer and would print the backticks as characters.
+    var summary: String {
+        switch self {
+        case .ssh:
+            return String(localized: "Forwards a local port to the database through an SSH server.")
+        case .cloudflare:
+            return String(localized: "Runs cloudflared against a Cloudflare Access application.")
+        case .cloudSQLProxy:
+            return String(localized: "Runs the Google Cloud SQL Auth Proxy against an instance connection name.")
+        case .socksProxy:
+            return String(localized: "Routes through a SOCKS5 proxy, which also resolves the database hostname.")
+        case .tunnelCommand:
+            return String(localized: "Holds a command that forwards a local port, such as kubectl port-forward.")
+        case .remoteFile:
+            return String(localized: "Copies a database file from an SSH server and opens the copy read-only.")
+        }
+    }
+
+    /// The connection form's label for reaching the database with no transport in between.
+    static var directDisplayName: String {
+        String(localized: "Direct")
+    }
+
+    /// A file-based driver reaches its database through a path, not a host and a port, and it is
+    /// exactly the driver that shows this picker in order to offer Remote Database File.
+    static func directSummary(isFileBased: Bool) -> String {
+        isFileBased
+            ? String(localized: "Opens the database file on this Mac.")
+            : String(localized: "Connects straight to the host and port on the General tab.")
     }
 }
 
@@ -67,6 +104,7 @@ extension DatabaseConnection {
         if isCloudflareEnabled { kinds.append(.cloudflare) }
         if isCloudSQLProxyEnabled { kinds.append(.cloudSQLProxy) }
         if isSOCKSProxyEnabled { kinds.append(.socksProxy) }
+        if isTunnelCommandEnabled { kinds.append(.tunnelCommand) }
         return kinds
     }
 

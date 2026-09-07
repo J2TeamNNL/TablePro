@@ -47,11 +47,18 @@ extension DatabaseTreeOutlineCoordinator {
             ClipboardService.shared.writeText(names.joined(separator: ","))
         case .exportTables(let names, let ref):
             activateThen(ref) { [weak self] in
-                self?.mainCoordinator?.openExportDialog(preselectedTableNames: names)
+                guard let self else { return }
+                self.mainCoordinator?.openExportDialog(
+                    preselectedTableNames: names,
+                    scope: self.exportScope(for: ref)
+                )
             }
         case .transferTables(let names, let ref):
             activateThen(ref) { [weak self] in
-                self?.mainCoordinator?.openTableTransferSheet(preselectedTableNames: names)
+                self?.mainCoordinator?.openTableTransferSheet(
+                    preselectedTableNames: names,
+                    schema: ref.qualifyingSchema
+                )
             }
         case .importTables(let formatId, let ref):
             activateThen(ref) { [weak self] in
@@ -106,6 +113,8 @@ extension DatabaseTreeOutlineCoordinator {
             ClipboardService.shared.writeText(targets.map(\.name).joined(separator: ","))
         case .exportContainers(let targets):
             mainCoordinator?.openExportDialog(containers: targets)
+        case .backUpContainers(let databases):
+            mainCoordinator?.activeSheet = .backupDatabase(databases: Set(databases))
         case .dropContainers(let targets):
             mainCoordinator?.requestContainerDrop(targets)
         case .copyObjectsTo(let objects, let ref):
@@ -147,15 +156,16 @@ extension DatabaseTreeOutlineCoordinator {
             ClipboardService.shared.writeText(key)
         case .openRedisKey(let key, let keyType):
             mainCoordinator?.openRedisKey(key, keyType: keyType)
-        case .toggleObjectIcons:
-            AppSettingsManager.shared.general.showObjectIcons.toggle()
-            refreshVisibleRows()
-        case .toggleObjectComments:
-            AppSettingsManager.shared.general.showObjectComments.toggle()
-            refreshVisibleRows()
-        case .setRowSize(let size):
-            AppSettingsManager.shared.general.sidebarRowSize = size
+        case .toggleObjectIcons, .toggleObjectComments, .setRowSize:
+            _ = SidebarViewOptionsMenu.apply(command)
         }
+    }
+
+    private func exportScope(for ref: DatabaseTreeTableRef) -> DatabaseContainerRef? {
+        ExportPreselection.scope(
+            for: ref,
+            grouping: PluginManager.shared.databaseGroupingStrategy(for: databaseType)
+        )
     }
 
     /// A command that opens or edits an object has to reach the database that object lives in

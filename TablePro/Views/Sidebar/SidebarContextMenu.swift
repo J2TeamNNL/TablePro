@@ -7,29 +7,12 @@ import SwiftUI
 import TableProPluginKit
 
 enum SidebarContextMenuLogic {
-    static func hasSelection(selectedTables: Set<TableInfo>, clickedTable: TableInfo?) -> Bool {
-        !selectedTables.isEmpty || clickedTable != nil
-    }
-
     static func isView(clickedTable: TableInfo?) -> Bool {
         clickedTable?.type == .view
     }
 
-    /// AppKit's rule for a contextual menu over a list: a click inside the selection acts on the
-    /// whole selection, a click outside it acts on the row under the pointer and nothing else.
-    static func contextTargets(clickedTable: TableInfo?, selectedTables: Set<TableInfo>) -> [String] {
-        guard let clickedTable else { return selectedTables.map(\.name).sorted() }
-        guard selectedTables.contains(clickedTable) else { return [clickedTable.name] }
-        return selectedTables.map(\.name).sorted()
-    }
-
     static func isReadOnlyKind(_ type: TableInfo.TableType?) -> Bool {
-        switch type {
-        case .view, .materializedView, .foreignTable, .systemTable, .externalTable:
-            return true
-        case .table, .partitionedTable, .none:
-            return false
-        }
+        TableOperationEligibility.isReadOnlyKind(type)
     }
 
     static func importVisible(clickedTable: TableInfo?, supportsImport: Bool) -> Bool {
@@ -37,8 +20,11 @@ enum SidebarContextMenuLogic {
         return !isReadOnlyKind(clickedTable?.type)
     }
 
-    static func truncateVisible(clickedTable: TableInfo?) -> Bool {
-        !isReadOnlyKind(clickedTable?.type)
+    /// Asked of every row the command would act on, not just the one under the pointer. Right
+    /// clicking a table inside a selection that also held a view offered Truncate and staged it
+    /// for the view as well.
+    static func truncateVisible(targets: some Collection<DatabaseTreeTableRef>) -> Bool {
+        TableOperationEligibility.canTruncate(targets)
     }
 
     static func deleteLabel(for type: TableInfo.TableType?) -> String {

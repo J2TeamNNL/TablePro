@@ -53,8 +53,10 @@ enum ActiveSheet: Identifiable {
     case exportQueryResults
     /// The tables the user right-clicked travel with the request, because the object browser may be
     /// pointed somewhere else by the time the sheet appears.
-    case transferTables(tables: Set<String>)
-    case backupDatabase
+    case transferTables(tables: Set<String>, schema: String?)
+    /// The databases the user right-clicked travel with the request, so the sheet opens on them
+    /// rather than on wherever the object browser happens to point. Empty means the browse database.
+    case backupDatabase(databases: Set<String>)
     case restoreDatabase(fileURL: URL)
     /// Oracle, Snowflake and BigQuery unload to a server directory or a bucket, so this is a
     /// separate command from Backup Dump rather than a mode of it.
@@ -79,7 +81,8 @@ enum ActiveSheet: Identifiable {
         case .importDialog(let formatId): "importDialog-\(formatId)"
         case .rowImport(let formatId): "rowImport-\(formatId)"
         case .exportQueryResults: "exportQueryResults"
-        case .transferTables(let tables): "transferTables-\(tables.sorted().joined(separator: ","))"
+        case .transferTables(let tables, let schema):
+            "transferTables-\(schema ?? "")-\(tables.sorted().joined(separator: ","))"
         case .backupDatabase: "backupDatabase"
         case .restoreDatabase(let fileURL): "restoreDatabase-\(fileURL.path)"
         case .serverSideExport(let table): "serverSideExport-\(table ?? "")"
@@ -195,16 +198,20 @@ final class MainContentCoordinator {
     /// Bumped whenever a published schema row changes, so the inspector re-reads it.
     var inspectorRowSourceRevision: Int = 0
 
-    weak var rightPanelState: RightPanelState?
+    weak var trailingPaneState: TrailingPaneState?
 
-    /// The session engine the editor's AI actions talk to, resolved on demand and started if the
-    /// connection has none.
+    /// The session engine the editor's AI actions talk to. A live registry session wins, so Explain
+    /// and Fix Error talk to the same conversation the rail already lists. Otherwise the trailing
+    /// pane's view model, and only if something has already brought one into existence.
     ///
-    /// This used to be a weak reference assigned once in `MainContentView.onAppear`. Now that a
-    /// session is created rather than conjured by the first read, that snapshot would be nil for the
-    /// whole life of a window whose user had not opened the chat yet, so Explain and Fix Error would
-    /// do nothing. Every caller is a menu item or a button, never a view body.
-    var aiViewModel: AIChatViewModel? { rightPanelState?.startSession()?.viewModel }
+    /// Reading this never builds one: an editor command that wants to talk to the assistant reveals
+    /// it first, and revealing is what activates it.
+    var aiViewModel: AIChatViewModel? {
+        if let session = AgentSessionRegistry.shared.existingDefaultSession(for: connectionId) {
+            return session.viewModel
+        }
+        return trailingPaneState?.assistant.viewModelIfActivated
+    }
 
     /// Direct reference to the data tab grid delegate — enables row mutation operations to
     /// Observable mirror of the grid's display revision, so views outside the grid re-render when
@@ -225,7 +232,7 @@ final class MainContentCoordinator {
     @ObservationIgnored var pendingGridFocusOnOpen = false
 
     /// Proxy for toggling the inspector NSSplitViewItem from coordinator code
-    @ObservationIgnored weak var inspectorProxy: InspectorVisibilityProxy?
+    @ObservationIgnored weak var trailingPaneProxy: TrailingPaneProxy?
 
     /// Direct reference to split view controller for sidebar toggle
     @ObservationIgnored weak var splitViewController: MainSplitViewController?
@@ -773,14 +780,22 @@ final class MainContentCoordinator {
         fileWatcher = watcher
     }
 
-    func showAIChatPanel() {
-        inspectorProxy?.showInspector()
-        rightPanelState?.activeTab = .aiChat
+    /// Reveals the assistant, building its view model if this is the first time anything asked for
+    /// one. Activation happens here rather than at window open, which is what keeps a window that
+    /// never opens the assistant from reading the whole conversation history off disk.
+    func showAssistant() {
+        /// The gate comes first. Activating builds the view model, whose init reads the stored
+        /// conversations, and the pane would then refuse to open it anyway.
+        guard AppSettingsManager.shared.ai.enabled else { return }
+        trailingPaneState?.assistant.activate(connection: connection)
+        trailingPaneProxy?.showAssistant()
     }
 
-    func showJSONPanel() {
-        inspectorProxy?.showInspector()
-        rightPanelState?.activeTab = .json
+    /// Reveals the inspector on its JSON rendering. The view mode is part of the inspector's own
+    /// state, so "show the row as JSON" is two facts: which surface, and which rendering.
+    func showRowAsJSON() {
+        trailingPaneState?.inspector.viewMode = .json
+        trailingPaneProxy?.showInspector()
     }
 
     /// Set up the plugin driver for query building dispatch on the query builder and change manager.

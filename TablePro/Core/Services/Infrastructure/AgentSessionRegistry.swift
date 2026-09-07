@@ -13,10 +13,9 @@ import os
 /// Holding them here is what makes several sessions possible and what lets a closed window's
 /// session still be listed.
 ///
-/// Read and create are separate calls on purpose. `RightPanelState.aiViewModel` used to be a
-/// creating getter read from inside SwiftUI bodies, and a creating read here would mint a phantom
-/// session into the rail the moment any connection window rendered, while mutating an observed
-/// array during a view update.
+/// Read and create are separate calls on purpose. A creating getter read from inside SwiftUI
+/// bodies would mint a phantom session into the rail the moment any connection window rendered,
+/// while mutating an observed array during a view update.
 @MainActor @Observable
 internal final class AgentSessionRegistry {
     internal static let shared = AgentSessionRegistry()

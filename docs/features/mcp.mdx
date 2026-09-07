@@ -40,11 +40,38 @@ Click **Connect a Client…** and pick **Claude Code**, **Claude Desktop**, **Cu
 
 For VS Code, Cline, Continue, Windsurf, Antigravity, Goose, the HTTP transport, and a client that connects but lists no tools, see [MCP Clients](/external-api/mcp-clients).
 
+## Connection access
+
+The first time a client reaches one of your connections, TablePro asks. **Approval** under
+**Connection Access** decides how often it asks after that.
+
+| Approval | What happens |
+|---|---|
+| **Ask Every Time** | Every call that names a connection asks first |
+| **Ask Once for Each Connection** | The first call asks, and the answer is kept until you revoke it. The default |
+| **Never Ask** | Connections are reached without asking |
+
+Leave it at **Ask Once for Each Connection** unless a client runs unattended, in which case **Never
+Ask** stops the prompt from waiting for someone who is not there. Approvals already given are listed
+underneath, each with **Forget**.
+
+Approval decides only whether you are asked. It grants nothing: a connection **Blocked** for
+external clients stays blocked, a **Read Only** one stays read only, a connection whose AI policy is
+**Never** is refused, and [Safe Mode](/features/safe-mode#external-clients) still confirms
+destructive statements. **Never Ask** is not a way to skip any of those.
+
+The question always arrives as a dialog on your Mac, never through the client. A client that could
+answer it in its own interface could also answer it without asking you, and this is the gate that
+decides whether it reaches the connection at all.
+
+Nothing here times out. Whoever sent the request decides how long to wait for you, and an answer
+counts whenever you give it.
+
 ## Calling an outside server
 
 Add a server under **Settings > Integrations**: a name, its URL, and its bearer token, which goes to the Keychain. **Test** lists the tools it offers. A URL that is not on this Mac has to be `https`.
 
-A server reaches nothing until a connection allowlists it. Open the connection's edit form, pick **Advanced**, and tick the servers this connection's sessions may use. A connection with none ticked has no outside tools.
+A server reaches nothing until a connection allowlists it. Open the connection's edit form, pick **Options**, and tick the servers this connection's sessions may use. A connection with none ticked has no outside tools.
 
 Every outside tool waits for a click, in every [chat mode](/features/ai-assistant#chat-modes). **Always for this connection** does not apply to one, and neither does a read-only claim: read-only is what the server says about itself, so it is not a reason to skip the approval.
 

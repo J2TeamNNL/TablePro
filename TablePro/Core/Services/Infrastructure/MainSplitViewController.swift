@@ -14,7 +14,7 @@ import os
 import SwiftUI
 
 @MainActor
-internal final class MainSplitViewController: NSSplitViewController, InspectorVisibilityProxy {
+internal final class MainSplitViewController: NSSplitViewController, TrailingPaneProxy {
     nonisolated private static let lifecycleLogger = Logger(subsystem: "com.TablePro", category: "NativeTabLifecycle")
 
     // MARK: - Payload & Session
@@ -42,9 +42,9 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         set { workspaces.selected?.sessionState = newValue }
     }
 
-    private var rightPanelState: RightPanelState? {
-        get { workspaces.selected?.rightPanelState }
-        set { workspaces.selected?.rightPanelState = newValue }
+    private var trailingPaneState: TrailingPaneState? {
+        get { workspaces.selected?.trailingPaneState }
+        set { workspaces.selected?.trailingPaneState = newValue }
     }
 
     var autoConnect: Bool { workspaces.selected?.autoConnect ?? false }
@@ -156,6 +156,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     private var connectionStatusCancellable: AnyCancellable?
     private var railVisibilityCancellable: AnyCancellable?
     private var connectionUpdatedCancellable: AnyCancellable?
+    private var aiAvailabilityCancellable: AnyCancellable?
 
     // MARK: - Init
 
@@ -213,9 +214,9 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
             ?? ConnectionStorage.shared.loadConnections().first { $0.id == connectionId }
 
         var state: SessionStateFactory.SessionState?
-        var panelState: RightPanelState?
+        var panelState: TrailingPaneState?
         if let session = resolvedSession {
-            panelState = RightPanelState(connectionId: session.connection.id, connection: session.connection)
+            panelState = TrailingPaneState(connectionId: session.connection.id)
             if let payloadId = payload?.id,
                let pending = SessionStateFactory.consumePending(for: payloadId) {
                 state = pending
@@ -248,7 +249,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
             payloadConnection: resolvedConnection,
             session: resolvedSession,
             sessionState: state,
-            rightPanelState: panelState,
+            trailingPaneState: panelState,
             phase: phase
         )
         let adopted = workspaces.insert(workspace)
@@ -361,7 +362,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         window.subtitle = windowSubtitle
 
         if let sessionState {
-            sessionState.coordinator.inspectorProxy = self
+            sessionState.coordinator.trailingPaneProxy = self
             sessionState.coordinator.splitViewController = self
             installToolbar(coordinator: sessionState.coordinator)
         }
@@ -402,6 +403,16 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
             .sink { [weak self] changedId in
                 self?.handleConnectionRecordChange(changedId)
             }
+        /// Turning the assistant off has to reach the pane that is showing it. Every visibility
+        /// question re-resolves the stored surface against this setting on each read, so without
+        /// this the hosted child and the commands disagree: an assistant stays on screen while the
+        /// menu offers Hide Inspector, and Inspector then collapses the pane instead of replacing
+        /// what is in it. The panel this replaced normalized its own tab on the same event.
+        aiAvailabilityCancellable = AppEvents.shared.aiSettingsChanged
+            .receive(on: RunLoop.main)
+            .sink { [weak self] in
+                self?.reconcileTrailingSurfaceAvailability()
+            }
         handleConnectionStatusChange()
         applyRailVisibility(workspaceCount: WorkspaceRailStore.entries.count)
     }
@@ -431,7 +442,10 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
             /// path reads when the session is not live. The copy is taken once, when the session is
             /// created, so without this a user who sets AI policy to Never or raises Safe Mode
             /// while the panel is open would see the form save and nothing change.
-            workspace.rightPanelState?.refreshConnectionRecord(record)
+            for owned in AgentSessionRegistry.shared.sessions(for: connectionId) {
+                owned.connectionName = record.name
+                owned.viewModel.connection = record
+            }
             workspace.sessionState?.toolbarState.update(from: record)
             /// The one repaint the render key cannot decide, so the only one that skips it. Deleting
             /// a connection whose session is still open purges the per-connection registries the
@@ -525,16 +539,13 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
     private func adoptSession(_ session: ConnectionSession, into workspace: ConnectionWorkspace) {
         workspace.session = session
 
-        if workspace.rightPanelState == nil {
-            workspace.rightPanelState = RightPanelState(
-                connectionId: session.connection.id,
-                connection: session.connection
-            )
+        if workspace.trailingPaneState == nil {
+            workspace.trailingPaneState = TrailingPaneState(connectionId: session.connection.id)
         }
         if workspace.sessionState == nil {
             let state = SessionStateFactory.create(connection: session.connection, payload: workspace.payload)
             workspace.sessionState = state
-            state.coordinator.inspectorProxy = self
+            state.coordinator.trailingPaneProxy = self
             state.coordinator.splitViewController = self
             if workspaces.selectedConnectionId == workspace.connectionId {
                 installToolbar(coordinator: state.coordinator)
@@ -557,8 +568,8 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         Self.lifecycleLogger.info(
             "[close] MainSplitVC session removed connId=\(workspace.connectionId, privacy: .public)"
         )
-        workspace.rightPanelState?.teardown()
-        workspace.rightPanelState = nil
+        workspace.trailingPaneState?.teardown()
+        workspace.trailingPaneState = nil
         /// The toolbar goes with the coordinator it was built for. `MainWindowToolbar.coordinator`
         /// is weak, so tearing the coordinator down while the toolbar stayed installed left the
         /// delegate answering nil for every identifier it advertises. `autosavesConfiguration` is
@@ -603,7 +614,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         /// up yet showed the previous connection's engine icon and schema over a pane that said
         /// the new one was not connected. A plain titlebar is what a sessionless window shows.
         if let coordinator = workspaces.selected?.sessionState?.coordinator {
-            coordinator.inspectorProxy = self
+            coordinator.trailingPaneProxy = self
             coordinator.splitViewController = self
             installToolbar(coordinator: coordinator)
         } else {
@@ -667,6 +678,14 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         workspace.phase = next
         syncConnectingProgressGrace(of: workspace)
         syncPanes(of: workspace)
+        /// `syncPanes` rebuilds both trailing roots but parents neither: which one is hosted is
+        /// decided by `showSelectedTrailingPane`, and none of its other callers is on the adoption
+        /// path. A connection whose state is built here, restoring a persisted assistant, would
+        /// otherwise keep the inspector `viewDidLoad` mounted before that state existed, while
+        /// every command reported the assistant as the visible surface.
+        if workspaces.selectedConnectionId == connectionId {
+            showSelectedTrailingPane()
+        }
         guard phaseChanged else { return }
         if workspaces.selectedConnectionId == connectionId {
             applyPaneChrome()
@@ -707,7 +726,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
 
     /// Rebuilds one connection's panes into its own hosting controllers, whether or not it is the
     /// one on screen, and records what they were built from. This is the only place all four panes
-    /// are produced, and the only writer of the record; `rebuildInspectorPane()` refines the
+    /// are produced, and the only writer of the record; `rebuildTrailingPanes()` refines the
     /// inspector alone once `commandActions` exists, which is a redraw of the same key rather than
     /// a different one.
     ///
@@ -730,6 +749,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         workspace.panes.sidebar.rootView = AnyView(buildSidebarView(for: workspace))
         workspace.panes.detail.rootView = AnyView(buildDetailView(for: workspace))
         workspace.panes.inspector.rootView = AnyView(buildInspectorView(for: workspace))
+        workspace.panes.assistant.rootView = AnyView(buildAssistantView(for: workspace))
         refreshTabStripPane(of: workspace)
         workspace.panes.markRendered(workspace.paneRenderKey)
         guard isShowing(workspace) else {
@@ -785,7 +805,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         let selected = workspaces.selected
         navigationSidebar.objectBrowser.show(selected?.panes.sidebar)
         detailPaneHost.show(selected?.panes.detail)
-        inspectorPaneHost.show(selected?.panes.inspector)
+        showSelectedTrailingPane()
         showSelectedTabStrip()
         if let selected { bindSidebarChrome(to: selected) }
     }
@@ -902,7 +922,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
             )
         } else if pane == .content,
                   let session = workspace.session,
-                  let rightPanelState = workspace.rightPanelState,
+                  let trailingPaneState = workspace.trailingPaneState,
                   let sessionState = workspace.sessionState {
             MainContentView(
                 connection: session.connection,
@@ -913,7 +933,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
                 pendingTruncates: sessionBinding(for: workspace, get: { $0.pendingTruncates }, set: { $0.pendingTruncates = $1 }, defaultValue: []),
                 pendingDeletes: sessionBinding(for: workspace, get: { $0.pendingDeletes }, set: { $0.pendingDeletes = $1 }, defaultValue: []),
                 tableOperationOptions: sessionBinding(for: workspace, get: { $0.tableOperationOptions }, set: { $0.tableOperationOptions = $1 }, defaultValue: [:]),
-                rightPanelState: rightPanelState,
+                trailingPaneState: trailingPaneState,
                 tabManager: sessionState.tabManager,
                 changeManager: sessionState.changeManager,
                 toolbarState: sessionState.toolbarState,
@@ -932,9 +952,9 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
                 connectionId: workspace.connection?.id,
                 session: selectedSession(of: workspace)
             )
-        } else if let session = workspace.session, let rightPanelState = workspace.rightPanelState {
-            UnifiedRightPanelView(
-                state: rightPanelState,
+        } else if let session = workspace.session, let paneState = workspace.trailingPaneState {
+            RowInspectorView(
+                state: paneState.inspector,
                 connection: session.connection
             )
             .environment(\.commandActions, workspace.sessionState?.coordinator.commandActions)
@@ -943,13 +963,49 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         }
     }
 
-    /// Rebuilds the inspector alone. `commandActions` is read eagerly here, and it only exists
-    /// once the detail pane has appeared, which is after `rebuildPanes()` has already built the
-    /// inspector against a nil value. Rebuilding the detail pane too would remount the very view
-    /// that publishes those actions.
-    func rebuildInspectorPane() {
+    @ViewBuilder
+    private func buildAssistantView(for workspace: ConnectionWorkspace) -> some View {
+        if let session = workspace.session, let paneState = workspace.trailingPaneState {
+            AssistantPaneView(
+                connection: session.connection,
+                state: paneState.assistant
+            )
+            .environment(\.commandActions, workspace.sessionState?.coordinator.commandActions)
+        } else {
+            Color.clear
+        }
+    }
+
+    /// Rebuilds the trailing surfaces alone. `commandActions` is read eagerly by both, and it only
+    /// exists once the detail pane has appeared, which is after `rebuildPanes()` has already built
+    /// them against a nil value. Rebuilding the detail pane too would remount the very view that
+    /// publishes those actions.
+    func rebuildTrailingPanes() {
         guard let selected = workspaces.selected else { return }
         selected.panes.inspector.rootView = AnyView(buildInspectorView(for: selected))
+        selected.panes.assistant.rootView = AnyView(buildAssistantView(for: selected))
+    }
+
+    /// Parents whichever surface the selected workspace is showing.
+    ///
+    /// Measured: swapping the hosted child of an inspector split item leaves its width exactly as
+    /// the user dragged it, so a surface change costs a view swap and nothing else. Assigning
+    /// `viewController` on the item itself instead would throw, which is why the pane is a
+    /// container in the first place.
+    private func showSelectedTrailingPane() {
+        guard let selected = workspaces.selected else {
+            inspectorPaneHost.show(nil)
+            return
+        }
+        if selected.contentMode == .assistant {
+            inspectorPaneHost.show(selected.panes.inspector)
+            return
+        }
+        let surface = TrailingPaneSurface.resolved(
+            selected.trailingPaneState?.surface ?? .inspector,
+            isAIEnabled: AppSettingsManager.shared.ai.enabled
+        )
+        inspectorPaneHost.show(selected.panes.trailingPane(for: surface))
     }
 
     // MARK: - Session Bindings
@@ -1008,26 +1064,78 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         workspaces.selectedConnectionId == workspace.connectionId
     }
 
-    // MARK: - InspectorVisibilityProxy
+    // MARK: - TrailingPaneProxy
 
-    var isInspectorVisible: Bool {
+    /// Which surface the selected workspace shows, with the assistant resolved away when the
+    /// setting has taken it: a connection last left on the assistant must not come back to a
+    /// surface the settings no longer offer, and no notification reaches that restore.
+    private var resolvedTrailingSurface: TrailingPaneSurface {
+        TrailingPaneSurface.resolved(
+            trailingPaneState?.surface ?? .inspector,
+            isAIEnabled: AppSettingsManager.shared.ai.enabled
+        )
+    }
+
+    private var isTrailingPaneOpen: Bool {
         guard let inspectorSplitItem else { return false }
         return !inspectorSplitItem.isCollapsed
     }
 
+    var isInspectorVisible: Bool {
+        isTrailingPaneOpen && resolvedTrailingSurface == .inspector
+    }
+
+    var isAssistantVisible: Bool {
+        isTrailingPaneOpen && resolvedTrailingSurface == .assistant
+    }
+
     func showInspector() {
-        rebuildInspectorPane()
-        inspectorSplitItem?.animator().isCollapsed = false
+        reveal(.inspector)
+    }
+
+    func showAssistant() {
+        guard AppSettingsManager.shared.ai.enabled else { return }
+        reveal(.assistant)
+    }
+
+    /// Auto-show follows a grid click, which is not a request for a different surface. Revealing
+    /// the inspector unconditionally swapped the assistant out from under a half-typed question and
+    /// persisted the inspector as that connection's surface, on every row the user clicked.
+    func revealInspectorForSelection() {
+        guard !isAssistantVisible else { return }
+        showInspector()
+    }
+
+    func hideTrailingPane() {
+        inspectorSplitItem?.animator().isCollapsed = true
         recomputeWindowMinSize()
     }
 
-    func hideInspector() {
-        inspectorSplitItem?.animator().isCollapsed = true
+    /// Puts the hosted child back in step with what the settings now allow.
+    ///
+    /// The stored surface is left alone: a user who turns the assistant off and on again gets it
+    /// back, because `TrailingPaneSurface.resolved` is what hides it in the meantime rather than
+    /// anything overwriting their choice.
+    private func reconcileTrailingSurfaceAvailability() {
+        guard isViewLoaded else { return }
+        showSelectedTrailingPane()
+        toolbarOwner?.managedToolbar.validateVisibleItems()
+    }
+
+    private func reveal(_ surface: TrailingPaneSurface) {
+        trailingPaneState?.surface = surface
+        rebuildTrailingPanes()
+        showSelectedTrailingPane()
+        inspectorSplitItem?.animator().isCollapsed = false
         recomputeWindowMinSize()
     }
 
     @objc override func toggleInspector(_ sender: Any?) {
         toggleInspector()
+    }
+
+    @objc func toggleAssistant(_ sender: Any?) {
+        toggleAssistant()
     }
 
     // MARK: - Workspace Rail
@@ -1408,7 +1516,7 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
             splitView.autosaveName = nil
             userPaneLayout = ChromePaneLayout(
                 isSidebarCollapsed: sidebarSplitItem.isCollapsed,
-                isInspectorCollapsed: inspectorSplitItem.isCollapsed
+                isTrailingPaneCollapsed: inspectorSplitItem.isCollapsed
             )
         }
 
@@ -1465,7 +1573,11 @@ internal final class MainSplitViewController: NSSplitViewController, InspectorVi
         if let restored = userPaneLayout {
             userPaneLayout = nil
             sidebarSplitItem.isCollapsed = restored.isSidebarCollapsed
-            inspectorSplitItem.isCollapsed = restored.isInspectorCollapsed
+            /// The surface comes from the workspace that owns it, never from this record. Writing a
+            /// captured one here reached whichever connection was selected by the time the reveal
+            /// ran, which is not the one it was captured from.
+            showSelectedTrailingPane()
+            inspectorSplitItem.isCollapsed = restored.isTrailingPaneCollapsed
         }
         restoreUserPaneLayout()
         view.window?.recalculateKeyViewLoop()

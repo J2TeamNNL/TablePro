@@ -255,7 +255,7 @@ struct MainSplitViewControllerPaneSynchronizationTests {
                 payloadConnection: connection,
                 session: nil,
                 sessionState: nil,
-                rightPanelState: nil,
+                trailingPaneState: nil,
                 phase: phase
             )
         }

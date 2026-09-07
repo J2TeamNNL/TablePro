@@ -35,7 +35,7 @@ internal final class ConnectionWorkspace {
     internal private(set) var sessionRevision = 0
 
     internal var sessionState: SessionStateFactory.SessionState?
-    internal var rightPanelState: RightPanelState?
+    internal var trailingPaneState: TrailingPaneState?
     internal var attemptToken: UUID?
     internal var phase: ConnectionWindowPhase
 
@@ -102,7 +102,7 @@ internal final class ConnectionWorkspace {
         payloadConnection: DatabaseConnection?,
         session: ConnectionSession?,
         sessionState: SessionStateFactory.SessionState?,
-        rightPanelState: RightPanelState?,
+        trailingPaneState: TrailingPaneState?,
         phase: ConnectionWindowPhase
     ) {
         self.connectionId = connectionId
@@ -111,7 +111,7 @@ internal final class ConnectionWorkspace {
         self.payloadConnection = payloadConnection
         self.session = session
         self.sessionState = sessionState
-        self.rightPanelState = rightPanelState
+        self.trailingPaneState = trailingPaneState
         self.phase = phase
         self.contentMode = WorkspaceContentModeStore.shared.mode(connectionId: connectionId)
         self.undoManager = UndoManager()
@@ -221,7 +221,7 @@ internal final class ConnectionWorkspace {
         ConnectionWindowPaneResolver.pane(
             phase: phase,
             hasConnection: connection != nil,
-            hasRenderableSession: session != nil && rightPanelState != nil && sessionState != nil,
+            hasRenderableSession: session != nil && trailingPaneState != nil && sessionState != nil,
             awaitsAutoConnect: autoConnect,
             hasOutlastedGrace: hasOutlastedConnectGrace
         )
@@ -311,8 +311,8 @@ internal final class ConnectionWorkspace {
         tabsCancellable = nil
         openedContainers = []
         panes.teardown()
-        rightPanelState?.teardown()
-        rightPanelState = nil
+        trailingPaneState?.teardown()
+        trailingPaneState = nil
         sessionState?.coordinator.teardown()
         sessionState = nil
         session = nil

@@ -7,9 +7,9 @@ import SwiftUI
 
 /// The detail pane's content in assistant mode: the conversation at the window's full width.
 ///
-/// It hosts the same `AIChatPanelView` the inspector does, against the same session, so the two
-/// surfaces are one conversation rather than two. The inspector's tab picker, history menu and
-/// new-conversation button belong to `UnifiedRightPanelView` and stay there; the session rail owns
+/// It hosts the same `AIChatPanelView` the trailing assistant does, against the same session, so
+/// the two surfaces are one conversation rather than two. The trailing pane's history menu and
+/// new-conversation button belong to `AssistantPaneView` and stay there; the session rail owns
 /// those actions on this surface.
 ///
 /// Nothing here is released in `onDisappear`. Switching connection unparents this pane and SwiftUI

@@ -35,11 +35,14 @@ SQL exports more than tables. A database holding more than one kind of object gr
 | Group | Written as | Engines |
 |---|---|---|
 | Types | `CREATE TYPE` | PostgreSQL and its forks |
-| Tables | `CREATE TABLE` plus `INSERT` | every SQL engine |
+| Sequences | `CREATE SEQUENCE` | PostgreSQL and its forks |
+| Tables | `CREATE TABLE` plus `INSERT` and `CREATE INDEX` | every SQL engine |
+| Foreign Tables | `CREATE FOREIGN TABLE` | PostgreSQL |
 | Views | `CREATE VIEW` from the server's own definition | every SQL engine |
 | Materialized Views | `CREATE MATERIALIZED VIEW` | PostgreSQL, Oracle |
 | Routines | `CREATE FUNCTION` or `CREATE PROCEDURE` | engines with stored routines |
 | Triggers | `CREATE TRIGGER` | engines with triggers |
+| Events | `CREATE EVENT` | MySQL, MariaDB |
 | Privileges | `GRANT`, one principal per row | engines with user management |
 
 A database with only tables lists them flat, with no group to open first.
@@ -82,8 +85,14 @@ As SQL, a results export writes `INSERT` statements only. A result set is the ou
     | Line ending (LF, CRLF, CR) | LF |
     | Decimal separator (period, comma) | Period |
     | Sanitize formula-like values | Yes |
+    | Encoding (UTF-8, ISO Latin 1, Windows-1252) | UTF-8 |
+    | Include byte order mark | No |
 
     Sanitizing prefixes a value starting with `=`, `+`, `-`, or `@` with a single quote, so a spreadsheet treats it as text.
+
+    Excel on Windows needs the byte order mark to read a UTF-8 file. Readers that do not expect one read it as part of the first column name. Only UTF-8 carries a mark, so the checkbox dims for the other two encodings.
+
+    ISO Latin 1 and Windows-1252 cover fewer characters than the data might hold. A character neither can represent is written as `?`, and the export finishes with a warning listing the characters that were dropped.
   </Tab>
   <Tab title="JSON">
     One object per table, each holding an array of rows.
@@ -109,6 +118,8 @@ As SQL, a results export writes `INSERT` statements only. A result set is the ou
     | Exclude DEFINER clauses | Yes |
 
     Structure (CREATE TABLE), Drop (DROP TABLE IF EXISTS), and Data (INSERT statements) are per-table checkboxes, and a multi-table export can mix them.
+
+    Structure carries the table's indexes. They are written after the rows, next to the deferred foreign keys, which is where `pg_dump` and `sqlite3 .dump` put them: a bulk load into an indexed table pays to maintain an index the restore is about to build anyway. On MySQL, MariaDB, ClickHouse, Trino and CockroachDB the server writes them inside `CREATE TABLE`, so they arrive with the table instead. A materialized view's indexes follow the view.
 
     <Warning>
     All three are on by default, so an SQL export carries `DROP TABLE IF EXISTS` unless you untick **Drop**. Run that file against the wrong database and it drops the tables first.
@@ -279,13 +290,16 @@ A server that rejects the statement stops the import with that error, so clear t
 The sheet accepts an array of objects `[{…}, {…}]`, newline-delimited JSON streamed a line at a time, and TablePro's own export shape `{ "table": [ {…} ] }`, so an export round-trips. Then choose a destination:
 
 - **Existing table**: map each JSON field to a column. Fields auto-match by name; switch one off to skip it. A column with no matching field keeps its default or NULL.
-- **New table**: name it and review the columns TablePro infers. Name, type, primary key, nullable flag, and default are all editable before the table is created.
+- **New table**: the name field opens on a name derived from the file, already selected, so one keystroke replaces it. Review the inferred columns underneath. Name, type, primary key, nullable flag, and default are all editable before the table is created.
+
+The proposed name drops the extension, turns spaces and punctuation into underscores, and lowercases the result. Letters from any script are kept as they are. On Oracle the name comes through in upper case instead, and is cut to 30 bytes rather than 63. A name an existing table or view already holds gains a numeric suffix, so re-importing `users.csv` next to a `users` table proposes `users_2`. Whatever you type over it is held to the same rules: a name already taken, one longer than the engine allows, or one starting with a prefix the engine keeps for itself is reported in the sheet, with **Import** off until it changes.
 
 Rows insert through parameterized statements, so a JSON value is never concatenated into SQL. Nested objects and arrays are stored as JSON text.
 
 ### Import XLSX
 
-Reads the first worksheet of an `.xlsx` workbook.
+Reads the first worksheet of an `.xlsx` workbook. The destinations and the proposed new-table name
+behave as they do for JSON.
 
 | Option | Default |
 |--------|---------|

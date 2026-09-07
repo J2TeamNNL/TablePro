@@ -18,6 +18,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Start an AI session from the welcome window, with running and stopped sessions listed there.
 - Outside MCP servers as tool sources for AI sessions, allowlisted per connection.
 - Mode submenu in the View menu, switching a window between Browse and Assistant.
+- Table name proposed from the file name when an import creates the table, with a warning when the name is taken.
+- Copy To across database engines, with every type approximation listed before the copy runs. (#1491)
+- Per-table `WHERE` and row limit in Copy To. (#1491)
+- Server-side `INSERT … SELECT` when a copy's two sides are one connection. (#1491)
+- Tunnel Command transport, with presets for `kubectl port-forward` and `aws ssm start-session` and a custom command line. (#2520)
+- Bar chart column in the EXPLAIN tree, with a Metric menu for self cost, self time and row counts. (#2633)
+- Database type change from inside the connection editor.
+- The reason Save is unavailable, next to the Save button in the connection editor.
+- Approval setting for MCP connection access, with the list of approved connections and a Forget action. (#2640)
+- Typesense driver plugin, with collection browsing, document editing and a REST request console. (#2629)
+- Export, Delete and Empty for a Typesense collection. (#2629)
+- Typesense API keys in Users & Roles, with the collections and actions each key holds. (#2629)
+- Server Dashboard metrics for Typesense, from `/metrics.json` and `/stats.json`. (#2629)
+- Encoding and byte order mark options for CSV export, with a warning naming what the encoding dropped. (#2534)
+- Indexes in an SQL export, written after the data. (#2492)
+- Image preview beside the source for a cell holding SVG or a raster image. (#2535)
+- DuckDB backup and restore, as one `.duckdb` file or a folder of Parquet. (#2485)
+- Table picker in Backup Dump, everything selected by default. (#2485)
+- Backup of several databases into one folder, one file each. (#2485)
+- Back Up… on a database selection in the connection tree. (#2485)
+- Assistant as its own pane, with View > Show Assistant and `Cmd+Option+A`.
+- Compact one-line rows in the inspector for short values, with long text, JSON and images still full width.
+- Always-visible value menu on every inspector field, with `Ctrl+Option+N` for NULL and `Ctrl+Option+D` for DEFAULT.
+- Tab and Shift+Tab between inspector fields.
+- Field search and an edited-fields-only filter in the inspector.
+- Table and row position at the top of the inspector.
+
+### Changed
+
+- Connection editor rebuilt around a sidebar of four sections, General, Network, Options and Appearance, in place of up to eleven panes.
+- One Connect via picker for SSH, Cloudflare, Cloud SQL Auth Proxy, SOCKS and Tunnel Command, in place of five Enable switches.
+- Save, Cancel and Test Connection on a bottom action bar instead of the titlebar.
+- `Use ~/.pgpass` below Username rather than above it.
+- Tab moves focus out of Startup Commands and Pre-Connect Script instead of inserting a tab.
+- SQL export writes a materialized view's indexes once the view exists. (#2492)
+- Backup Dump as one sheet with scope, format and destination, in place of a picker with a save panel over it. (#2485)
+- Inspector shows the selected row as Fields or JSON, with AI Chat moved out of its tab strip.
+- Structured inspector values expand in place instead of replacing the whole pane.
+- Object tree context menu regrouped into four groups by intent, with the connection-wide commands off object rows.
+- View Options as a control in the sidebar's filter row, in place of an entry on every context menu.
+- View ER Diagram and New View on the object tree's empty-area menu only.
+- Keyboard shortcuts shown on sidebar context menu items that have a menu bar equivalent.
 
 ### Fixed
 
@@ -45,10 +87,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two GitHub Copilot chats on one provider sharing a single server-side conversation, so each was answered with the other's context.
 - VoiceOver reading the sidebar toggle as its SF Symbol names, "List" and "favorite".
 - Tables and Favorites doing nothing when chosen from the toolbar's overflow menu.
+- Export and Transfer To preselecting a same-named table from another schema, or nothing at all.
+- Delete queuing a table drop from the menu bar with none of the confirmation the sidebar asks for.
+- Truncate Table offered from the menu bar for a view, which the server then refuses.
+- Truncate offered on a sidebar selection that mixes a table with a view.
+- Import sheet clearing a table without confirmation on a connection set to confirm destructive statements.
+- Empty destination table picker in the import sheet, with no message and no retry, when the table list could not be read.
+- Connection with two transports enabled reaching the database directly, with neither transport applied.
+- Object list unchanged after toggling Show object icons or Show object comments in Settings.
+- Delete Connection missing from the connection editor since 0.39.0.
+- Continue dimmed after filtering the database chooser down to one driver.
+- Down arrow not reaching the list from the database chooser's search field.
+- VoiceOver reading a database chooser row's icon before the driver's name.
+- Animations that played through the Reduce Motion setting when removing a jump host or copying DDL or a query plan.
+- Icon-only controls with no VoiceOver name or tooltip in the date picker, row inspector and slash command settings.
+- Inspector picker reading NULL after setting a value on a NULL column, including on every new row.
+- Edits typed into a hidden inspector field while the JSON view is showing, committed by a later save.
+- Set NULL, Set DEFAULT, Set EMPTY and SQL functions offered on a PHP-serialized field they cannot round-trip.
+- Reconnecting or switching connection replacing a connection's remembered Inspector or Assistant choice.
+- Assistant staying on screen and usable after AI features are turned off.
+- Inspector opening in place of a remembered Assistant when a connection restores its session.
+- Auto-show inspector on row select closing the Assistant on every grid click.
+- Explain with AI and Optimize with AI enabled, and doing nothing, with AI features off.
+- Tab trapped inside the inspector's field list with no way back to the search field.
+- Column type missing from inline inspector rows on a read-only result.
+- Inspector picker reading NULL for a multi-row selection whose values differ.
+- Structure inspector drawing the Name and Type fields in two different fonts.
+- Primary key, foreign key and edited markers silent to VoiceOver in the inspector.
+- Inspector showing the last table's statistics on a tab with no table.
+- Auto-show inspector on row select doing nothing on a query tab.
+- Inspector ignoring a column's display format, showing raw where the grid showed JSON or PHP.
+- AI conversation history read from disk on every connection window, with the assistant never opened.
+- `is_connected` reported as true over MCP for a connection that had stopped answering.
+- Cost badge on every plan node of a query ending in `LIMIT`, where the share it reads could exceed 100%. (#2633)
+- Green "low cost" badge on plans that report no cost at all, such as SQLite and ClickHouse. (#2633)
+- Empty Cost, Rows and Actual Time columns in the EXPLAIN tree for engines that report none of them. (#2633)
+- `Workers Launched: 0` missing from a plan node's details while `Workers Planned` was shown. (#2633)
+- MySQL plans pricing the wrapper query block above every table it contains. (#2633)
+- SQL `IN`, `AND`, `OR`, `NOT`, `BY` and `ON` in the editor's plain text colour. (#2634)
+- SQL built-in type names, `ASC`, `DESC` and function calls unhighlighted in the editor.
+- SQL numbers, `TRUE`, `FALSE` and `NULL` in the string colour.
+- No syntax highlighting at all in the MongoDB and Elasticsearch query editors.
+- JavaScript `locals` and `tags` queries that no longer compiled against the bundled parser.
+- JSON `true`, `false` and `null` unhighlighted in the row inspector and the JSON viewer.
+- Operator and Function theme colours with no effect on the editor.
+- MCP access prompt with no setting to turn it off, reachable only from the AI tab and hidden entirely with AI features off. (#2640)
+- MCP access prompt discarding an answer given more than 30 seconds after it appeared. (#2640)
+- MCP access prompt returning every 30 minutes, and after each rotation of the bundled bridge's credential. (#2640)
+- Repeated MCP access prompts when a client retried a call the user had just denied. (#2640)
+- Destructive-operation consent reaching an elicitation-capable MCP client as an internal error instead of a prompt.
+- `ai_policy` in `list_connections` reporting `askEachTime` whatever the app-wide default was.
+- Quote menu in the CSV export options untranslated in every localized build. (#2534)
+- Line feed instead of the chosen line ending on the table comment of a multi-table CSV export. (#2534)
+- Indexes missing from an SQL export on SQLite, LibSQL, Cloudflare D1, SQL Server, Oracle, Dameng and Cassandra. (#2492)
+- DuckDB expression index exported as invalid SQL. (#2492)
+- DuckDB index whose name contains "primary" reported as the table's primary key and left out of its DDL. (#2492)
+- PostgreSQL index left out of an export when a check constraint on the same table shared its name. (#2492)
+- PostgreSQL materialized view exported as a `CREATE TABLE`. (#2492)
+- `DROP TYPE` and `DROP SEQUENCE` in an SQL export with Drop unticked. (#2492)
+- Oracle and ClickHouse views exported as a bare `SELECT` with no `CREATE VIEW`. (#2492)
+- Bare `;` written for an object whose definition the server would not return. (#2492)
+- SQL Server reporting every index as clustered. (#2492)
+- Unique constraints lost from an SQL export on SQL Server, Oracle and Dameng, whose `CREATE TABLE` never declared them. (#2492)
+- ClickHouse materialized view exported as an ordinary view. (#2492)
+- Backup Dump and Restore Dump unusable on SQLite, with an empty database list and a dimmed confirm button. (#2485)
+- libSQL backup writing an empty 52-byte file and reporting success. (#2485)
+- Restore Dump asking every engine for a file `pg_dump` wrote. (#2485)
+- Cancel doing nothing while a backup's size estimate ran. (#2485)
+- Backup size estimate queueing behind a query tab's own work and joining its open transaction. (#2485)
+- A narrowed PostgreSQL dump matching nothing when a table name held a capital, a dot or a wildcard. (#2485)
+- Redis and Valkey ACL users without permission to run `PING` refused at connect and dropped by the health check.
+- Redis database index ignoring the `dbN` spelling the driver itself publishes.
+- A Sentinel that rejected the credentials reported as unreachable.
+- A Redis reconnect that failed leaving the connection marked live, so every later command reported it as not connected.
 
 ### Security
 
 - Outside MCP tools always require approval and are audited per call, with the payload's size and hash but not its contents.
+- Redis and Valkey connections signing in as the default user when a username was typed with an empty password.
+- Redis connections on iOS reported as successful without a single command reaching the server.
 
 ## [0.72.0] - 2026-09-04
 

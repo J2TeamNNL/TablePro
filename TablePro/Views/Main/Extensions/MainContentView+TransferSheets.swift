@@ -19,7 +19,10 @@ extension MainContentView {
                 mode: .tables(
                     connection: exportConnection,
                     preselection: coordinator.exportPreselection
-                        ?? .tables(Set(coordinator.windowSidebarState.selectedTables.map(\.table.name)))
+                        ?? .tables(
+                            fromSidebarSelection: coordinator.windowSidebarState.selectedTables,
+                            grouping: PluginManager.shared.databaseGroupingStrategy(for: connection.type)
+                        )
                 ),
                 sidebarTables: tables
             )
@@ -78,14 +81,15 @@ extension MainContentView {
                     formatId: formatId
                 )
             }
-        case .transferTables(let tables):
-            transferSheet(tables: tables, dismiss: dismissBinding)
-        case .backupDatabase:
+        case .transferTables(let tables, let schema):
+            transferSheet(tables: tables, schema: schema, dismiss: dismissBinding)
+        case .backupDatabase(let databases):
             BackupDatabaseFlow(
                 isPresented: dismissBinding,
                 connection: connectionWithCurrentDatabase,
                 initialDatabase: DatabaseManager.shared.session(for: connection.id)?.browseDatabase
-                    ?? connection.database
+                    ?? connection.database,
+                preselectedDatabases: databases
             )
         case .restoreDatabase(let fileURL):
             RestoreDatabaseFlow(

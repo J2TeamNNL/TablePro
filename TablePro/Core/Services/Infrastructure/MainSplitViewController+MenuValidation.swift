@@ -40,6 +40,9 @@ struct MenuValidationContext: Equatable {
     /// grid's selection specifically, not the structure grid's.
     var hasDataGridRowSelection = false
     var hasTableSelection = false
+    /// Whether every selected object is one the engine can truncate. Separate from
+    /// `hasTableSelection` because a view is a perfectly good selection and a hopeless truncate.
+    var canTruncateSelectedTables = false
     /// Whether the window-level `paste:` fallback would actually paste. AppKit hands a disabled
     /// item its key equivalent regardless, so an item enabled over a handler that returns at its
     /// first guard swallows Command+V with no feedback.
@@ -155,10 +158,14 @@ extension MainSplitViewController: NSMenuItemValidation {
              #selector(executeAllStatements(_:)),
              #selector(executeQueryWithoutLimit(_:)),
              #selector(explainQuery(_:)),
-             #selector(formatQuery(_:)),
-             #selector(explainQueryWithAI(_:)),
-             #selector(optimizeQueryWithAI(_:)):
+             #selector(formatQuery(_:)):
             return context.isConnected && context.hasQueryText
+        /// Both hand their statement to the assistant, which will not open with the feature off.
+        /// They validated on the query alone, so with AI off the item stayed enabled, the shortcut
+        /// fired and nothing happened at all: no pane, no alert, nothing.
+        case #selector(explainQueryWithAI(_:)),
+             #selector(optimizeQueryWithAI(_:)):
+            return context.isConnected && context.hasQueryText && AppSettingsManager.shared.ai.enabled
         case #selector(toggleFold(_:)), #selector(foldAll(_:)), #selector(unfoldAll(_:)):
             return context.hasEditorForFind
         case #selector(goToPreviousStatement(_:)), #selector(goToNextStatement(_:)):
@@ -178,7 +185,7 @@ extension MainSplitViewController: NSMenuItemValidation {
         case #selector(restorePreviousValues(_:)):
             return context.isConnected && context.canRestorePreviousValues && !context.isReadOnly
         case #selector(truncateTable(_:)):
-            return context.isConnected && context.hasTableSelection && !context.isReadOnly
+            return context.isConnected && context.canTruncateSelectedTables && !context.isReadOnly
         case #selector(performFind(_:)):
             return context.hasEditorForFind || (context.isConnected && context.canUseGridFindCommands)
         case #selector(findNext(_:)), #selector(findPrevious(_:)):
@@ -287,6 +294,7 @@ extension MainSplitViewController: NSMenuItemValidation {
             hasRowSelection: actions.hasRowSelection,
             hasDataGridRowSelection: actions.hasDataGridRowSelection,
             hasTableSelection: actions.hasTableSelection,
+            canTruncateSelectedTables: actions.canTruncateSelectedTables,
             canPasteRows: actions.canPasteRows,
             canCloseOtherTabs: actions.canCloseOtherTabs,
             canCloseTabsForOtherDatabases: actions.canCloseTabsForOtherDatabases,
@@ -327,6 +335,11 @@ extension MainSplitViewController: NSMenuItemValidation {
         if action == #selector(toggleSidebar(_:)) || action == #selector(toggleInspector(_:)) {
             return currentPane == .content
         }
+        /// The assistant is the one surface a setting can take away, so its command goes with it
+        /// rather than staying enabled over a pane that would refuse to open.
+        if action == #selector(toggleAssistant(_:)) {
+            return currentPane == .content && AppSettingsManager.shared.ai.enabled
+        }
         if action == #selector(setResultView(_:)) { return canShowResultView(menuItem) }
         if action == #selector(requestDisconnect) { return canDisconnect }
         if action == #selector(retryConnection) { return canReconnect }
@@ -344,6 +357,8 @@ extension MainSplitViewController: NSMenuItemValidation {
             setTitle(isSidebarCollapsed ? "Show Sidebar" : "Hide Sidebar", on: menuItem)
         case #selector(toggleInspector(_:)):
             setTitle(isInspectorVisible ? "Hide Inspector" : "Show Inspector", on: menuItem)
+        case #selector(toggleAssistant(_:)):
+            setTitle(isAssistantVisible ? "Hide Assistant" : "Show Assistant", on: menuItem)
         case #selector(toggleWorkspaceRail(_:)):
             setTitle(isWorkspaceRailEnabled ? "Hide Connections" : "Show Connections", on: menuItem)
         case #selector(undo(_:)):

@@ -131,6 +131,7 @@
               "connections/cloudflare-tunnel",
               "connections/cloud-sql-proxy",
               "connections/socks-proxy",
+              "connections/tunnel-command",
               "connections/aws-iam",
               "connections/ssl",
               "features/connection-sharing",
@@ -169,7 +170,8 @@
               "databases/sqlite",
               "databases/surrealdb",
               "databases/teradata",
-              "databases/trino"
+              "databases/trino",
+              "databases/typesense"
             ]
           },
           {

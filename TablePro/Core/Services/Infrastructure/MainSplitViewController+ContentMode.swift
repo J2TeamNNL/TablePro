@@ -208,9 +208,8 @@ internal extension MainSplitViewController {
     @ViewBuilder
     func buildAgentConversationView(for workspace: ConnectionWorkspace) -> some View {
         if let connectionSession = workspace.session,
-           let rightPanelState = workspace.rightPanelState,
            let agentSession = selectedSession(of: workspace) {
-            let context = rightPanelState.inspectorContext
+            let context = workspace.trailingPaneState?.assistant.context ?? .empty
             AgentConversationView(
                 connection: connectionSession.connection,
                 currentQuery: context.currentQuery,
