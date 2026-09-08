@@ -38,6 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tab and Shift+Tab between inspector fields.
 - Field search and an edited-fields-only filter in the inspector.
 - Table and row position at the top of the inspector.
+- Safe Mode, Session Context and Schema submenus in the Database menu.
+- Show Tables and Show Favorites in the View menu.
+- Running indicator on the editor tab whose query is executing.
 - Sort direction setting for the data grid, applied to the default row sort and to the first click on a column header. (#2665)
 
 ### Changed
@@ -55,9 +58,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - View Options as a control in the sidebar's filter row, in place of an entry on every context menu.
 - View ER Diagram and New View on the object tree's empty-area menu only.
 - Keyboard shortcuts shown on sidebar context menu items that have a menu bar equivalent.
+- Toolbar rebuilt around five icon-only groups, with the connection and container as a centred control that switches either.
+- Query duration and Stop in the results status bar, in place of the centred toolbar readout.
+- Safe Mode as a toolbar menu whose icon follows the level.
+- Window subtitle dropped, now that the toolbar names the container.
+- Toolbar arrangements reset once, to the new default set.
 
 ### Fixed
 
+- Toolbar commands pushed into the overflow menu at 1200pt by a centred item that could not shrink.
+- Container chooser opening over a session the health monitor had given up on.
+- No way to change a Snowflake warehouse or role once the window narrowed enough to clip the connection group.
+- Blank Connection and Status tiles in Customize Toolbar.
+- Stop advertising the old key after Cancel Query was rebound.
 - Row count and row inspector reporting one row while Delete and Copy act on every row a cell drag covers.
 - Cell selection collapsing to the first column or the first row when a drag left the grid past the last one.
 - Cell selection, copy and paste using columns the pointer never crossed once a column had been reordered or hidden.

@@ -20,10 +20,10 @@ extension MainSplitViewController {
     /// telling the user to reconnect or pick another connection.
     func openConnectionSwitcher() {
         view.window?.makeFirstResponder(nil)
-        commandActions?.dismissScopeSwitcher()
         switcherPresenter.present(
             from: view.window,
             anchoredTo: MainWindowToolbar.connectionGroup,
+            subject: .connection,
             contentSize: ConnectionSwitcherPopover.contentSize
         ) { dismiss in
             ConnectionSwitcherPopover(dismiss: dismiss)
@@ -32,6 +32,24 @@ extension MainSplitViewController {
 
     @objc func openContainerSwitcher(_ sender: Any?) {
         commandActions?.openDatabaseSwitcher()
+    }
+
+    /// The full chooser for the inner scope, which the checked Schema submenu beside it cannot
+    /// replace: only the popover searches, favourites, drops and exports.
+    @objc func openSchemaSwitcher(_ sender: Any?) {
+        commandActions?.openScopeSwitcher(.schema)
+    }
+
+    @objc func setSafeModeLevel(_ sender: Any?) {
+        guard let raw = (sender as? NSMenuItem)?.representedObject as? String,
+              let level = SafeModeLevel(rawValue: raw) else { return }
+        commandActions?.coordinator?.setSafeModeLevel(level)
+    }
+
+    @objc func switchSessionContext(_ sender: Any?) {
+        guard let selection = (sender as? NSMenuItem)?.representedObject as? SessionContextSelection,
+              let coordinator = commandActions?.coordinator else { return }
+        Task { await coordinator.switchSessionContext(id: selection.contextId, to: selection.value) }
     }
 
     @objc func openQuickSwitcher(_ sender: Any?) {

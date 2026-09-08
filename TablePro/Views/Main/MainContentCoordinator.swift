@@ -251,10 +251,6 @@ final class MainContentCoordinator {
     var cursorPositions: [CursorPosition] = []
     var tableMetadata: TableMetadata?
     var activeSheet: ActiveSheet?
-    /// Which scope the toolbar chip is showing a chooser for, so the popover opens against the
-    /// component the user clicked. Separate from the switchers the presenter owns, and cleared
-    /// alongside them so a window never holds two of them.
-    var presentedScopeSwitcher: ContainerSwitchTarget?
     /// Owns the connection and database switcher surfaces. The commands present through this
     /// rather than flipping a flag a toolbar-hosted view has to observe, because that view is
     /// absent whenever its item is clipped into the overflow menu or removed by the user. It
@@ -1019,11 +1015,9 @@ final class MainContentCoordinator {
         if let session = services.databaseManager.session(for: connectionId) {
             toolbarState.updateConnectionState(from: session.reportedStatus)
             if let driver = session.driver {
-                toolbarState.databaseVersion = driver.serverVersion
             }
         } else if let driver = services.databaseManager.driver(for: connectionId) {
             toolbarState.connectionState = .connected
-            toolbarState.databaseVersion = driver.serverVersion
         }
     }
 
@@ -1403,7 +1397,7 @@ final class MainContentCoordinator {
                         traceStaleResultDropped(traceToken)
                         return
                     }
-                    toolbarState.lastQueryTiming = fetchResult.resolvedTiming
+                    toolbarState.recordQueryTiming(fetchResult.resolvedTiming, for: tabId)
 
                     traceApplyingResult(traceToken, tabId: tabId)
 
@@ -1535,7 +1529,7 @@ final class MainContentCoordinator {
         ])
         guard currentQueryTaskOwner == claim else { return }
         retireQueryTask(for: claim)
-        toolbarState.lastQueryTiming = PluginQueryTiming(total: executionTime)
+        toolbarState.recordQueryTiming(PluginQueryTiming(total: executionTime), for: claim.tabId)
     }
 
     internal func resolveTableEditability(tab: QueryTab, sql: String) -> (tableName: String?, isEditable: Bool) {
