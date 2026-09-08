@@ -71,6 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Unsaved cell edits following the row that took their place after a per-column value filter changed. (#2667)
 - Undone cell edits coming back after switching tabs. (#2667)
 - Find bar showing another tab's search term, over this tab's match count. (#2667)
 - Cell selection cleared by Select All. (#2667)
