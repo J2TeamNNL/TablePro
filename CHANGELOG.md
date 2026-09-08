@@ -56,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Row count and row inspector reporting one row while Delete and Copy act on every row a cell drag covers.
 - Default row sort drawn on a column header as though it had been clicked.
 - First click on an already default-sorted column skipping straight to descending.
 - Don't Sort undone by the default row sort on the next load of the table.
