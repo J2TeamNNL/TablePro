@@ -15,8 +15,9 @@ internal final class MainWindowToolbar: NSObject, NSToolbarDelegate {
     /// The autosave name. Bumping it discards every saved arrangement, so it moves only when the
     /// default set changes enough that replaying a stored one would be worse than resetting it. The
     /// v3 move drops the hosted status item and four commands from the default, and a v2 list still
-    /// names identifiers the delegate no longer vends.
-    internal static let toolbarIdentifier = NSToolbar.Identifier("com.TablePro.main.toolbar.v3")
+    /// names identifiers the delegate no longer vends. v4 adds the throughput readout: a stored v3
+    /// arrangement does not name it, so a reader who had customized the toolbar would never see it.
+    internal static let toolbarIdentifier = NSToolbar.Identifier("com.TablePro.main.toolbar.v4")
 
     /// Which connection the toolbar is about. Every item reads this rather than capturing a
     /// coordinator, so a switch repoints one reference instead of rebuilding the window's whole
@@ -53,6 +54,28 @@ internal final class MainWindowToolbar: NSObject, NSToolbarDelegate {
     private var menuFormIdentifiers: [Selector: NSToolbarItem.Identifier] = [:]
 
     private(set) var sidebarGroup: NSToolbarItemGroup?
+
+    /// The throughput readout. One item per toolbar rather than one per vend: the ticker writes
+    /// into it directly, so it has to be the instance the toolbar is actually showing.
+    internal let transportRateItem = TransportRateToolbarItem()
+
+    /// A group holding nothing but the readout, and the reason it exists is that emptying it is how
+    /// the readout leaves the toolbar. Measured: an item whose view is hidden keeps its 75pt, and a
+    /// view constrained to zero width still leaves a 24pt gap, so neither hides it cleanly.
+    /// `NSToolbarItem.isHidden` does, but it is macOS 15 and the app targets 14. An empty group
+    /// reclaims the space exactly, on every version, with no availability gate.
+    internal private(set) lazy var transportRateGroup: NSToolbarItemGroup = {
+        let group = NSToolbarItemGroup(itemIdentifier: TransportRateToolbarItem.identifier)
+        let label = String(localized: "Throughput")
+        group.label = label
+        group.paletteLabel = label
+        group.subitems = []
+        return group
+    }()
+    private var transportSampler = TransportRateSampler()
+    private var transportTicker: Task<Void, Never>?
+
+    private static let transportSampleInterval = Duration.seconds(1)
 
     /// `NSMenu.delegate` is weak, and the safe-mode control's menu is built here rather than by the
     /// menu bar, so this toolbar is what keeps its delegate alive.
@@ -142,6 +165,7 @@ internal final class MainWindowToolbar: NSObject, NSToolbarDelegate {
         itemStateObservationGeneration += 1
         self.coordinator = coordinator
         observeItemState()
+        restartTransportTicker()
         refreshConnectionScopedItems()
         syncSidebarSelection()
         managedToolbar.validateVisibleItems()
@@ -154,8 +178,48 @@ internal final class MainWindowToolbar: NSObject, NSToolbarDelegate {
         /// connection was released has no coordinator to reach it through.
         windowController?.switcherPresenter.dismiss()
         itemStateObservationGeneration += 1
+        transportTicker?.cancel()
+        transportTicker = nil
+        transportRateItem.apply(rate: nil)
         sidebarGroup = nil
         coordinator = nil
+    }
+
+    /// Runs only for a connection whose transport the app carries the bytes for, so an ordinary
+    /// direct connection costs nothing at all. It writes into the readout's own field rather than
+    /// asking the toolbar to revalidate: the field is a fixed width, so a new figure is a redraw
+    /// inside one view and never a layout pass.
+    private func restartTransportTicker() {
+        transportTicker?.cancel()
+        transportSampler = TransportRateSampler()
+        transportRateItem.apply(rate: nil)
+        guard carriesMeasuredTransport else {
+            transportTicker = nil
+            return
+        }
+
+        transportTicker = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.transportSampleInterval)
+                guard !Task.isCancelled, let self else { return }
+                self.sampleTransportRate()
+            }
+        }
+    }
+
+    private func sampleTransportRate() {
+        guard let connection = coordinator?.connection else { return }
+        let totals = TransportActivityRegistry.shared.totals(for: connection.id)
+        transportRateItem.apply(rate: totals.flatMap { transportSampler.sample($0, at: .now) })
+    }
+
+    /// Emptying and refilling the readout's own group is the one structural change AppKit
+    /// re-measures. It happens when a connection is adopted, never under a running tunnel, so
+    /// nothing moves while a figure is ticking.
+    private func syncTransportRateVisibility() {
+        let carries = !transportRateGroup.subitems.isEmpty
+        guard carries != carriesMeasuredTransport else { return }
+        transportRateGroup.subitems = carriesMeasuredTransport ? [transportRateItem] : []
     }
 
     /// What a validation pass depends on beyond the responder chain. `validateVisibleItems()` is
@@ -185,6 +249,7 @@ internal final class MainWindowToolbar: NSObject, NSToolbarDelegate {
     /// a menu built at construction keeps whatever it was built with, and a label is not part of
     /// what `validate()` reconsiders. They are pushed here instead.
     private func refreshConnectionScopedItems() {
+        syncTransportRateVisibility()
         for item in allItems() {
             switch item.itemIdentifier {
             case Self.connection:
@@ -286,6 +351,7 @@ internal final class MainWindowToolbar: NSObject, NSToolbarDelegate {
         backForwardGroup,
         .flexibleSpace,
         connectionGroup,
+        TransportRateToolbarItem.identifier,
         .flexibleSpace,
         refreshSaveGroup,
         editorGroup,

@@ -31,11 +31,162 @@ struct MainWindowToolbarNativeContractTests {
     /// item, such as label or view, apply to the entire item"). AppKit can only drop it whole, and
     /// it did: at 1200pt the hosted status item held its width while seven commands went to the
     /// overflow menu.
-    @Test("No toolbar item is backed by a view")
-    func noItemIsViewBacked() {
+    @Test("No command is backed by a view")
+    func noCommandIsViewBacked() {
         for item in vendedItems() {
             #expect(item.view == nil, "\(item.itemIdentifier.rawValue) must not be view-backed")
         }
+    }
+
+    /// The one exception, and the reason it is safe. A view-less item would carry the figure in
+    /// `title`, and a title re-measures: written into one with `validateVisibleItems()` called, the
+    /// group went 219pt, 233pt, 232pt, 251pt across `0 kB/s`, `145 kB/s`, `1.2 MB/s` and
+    /// `888.8 MB/s`, walking its own midpoint 16pt and sliding the connection name beside it once a
+    /// second. A view pinned to a width holds still: the group and field frames were byte-identical
+    /// across the same four figures.
+    ///
+    /// What made the old hosted status item undroppable was that it had no width of its own to give
+    /// back. This one is pinned to a width measured from the widest figure it can ever draw, so it
+    /// never needs compressing, and it is only in the group at all for a connection whose bytes the
+    /// app carries.
+    @Test("The throughput readout is view-backed, and pinned to a width it cannot outgrow")
+    func throughputReadoutIsPinned() throws {
+        let owner = MainWindowToolbar()
+        let field = try #require(owner.transportRateItem.view as? NSTextField)
+        let pinned = field.constraints.filter { $0.firstAttribute == .width && $0.relation == .equal }
+        let constant = try #require(pinned.first?.constant)
+
+        #expect(pinned.count == 1, "The readout must carry exactly one width constraint")
+
+        let font = try #require(field.font)
+        for candidate in TransportRateLabel.widestCandidates {
+            let width = (candidate as NSString).size(withAttributes: [.font: font]).width
+            #expect(width <= constant, "\"\(candidate)\" needs \(width)pt but the field is \(constant)pt")
+        }
+    }
+
+    /// Bare text, no capsule, which is what Xcode does with the one comparable thing it ships: its
+    /// Window Title/Activity readout draws as plain text beside the Back/Forward capsule, measured
+    /// on a running Xcode. `isBordered` here would give the readout a platter of its own and make
+    /// the centre three capsules for two controls and one number.
+    @Test("The throughput readout wears no capsule")
+    func throughputReadoutIsUnbordered() {
+        #expect(!MainWindowToolbar().transportRateItem.isBordered)
+    }
+
+    /// Beside the centred pair, never inside it. A group is laid out around its own midpoint, so a
+    /// readout among the subitems pushes the connection and database capsules off centre by half its
+    /// width. Measured at 1400pt: as its own adjacent item the group sits at x=647.0 midX=772.8,
+    /// byte-identical to carrying no readout at all.
+    @Test("The readout sits beside the centred group, not inside it and not centred itself")
+    func readoutIsAdjacentToTheCentre() throws {
+        let owner = MainWindowToolbar()
+        let group = try #require(
+            owner.toolbar(
+                owner.managedToolbar,
+                itemForItemIdentifier: MainWindowToolbar.connectionGroup,
+                willBeInsertedIntoToolbar: true
+            ) as? NSToolbarItemGroup
+        )
+
+        #expect(!group.subitems.contains { $0 === owner.transportRateItem })
+        #expect(!owner.managedToolbar.centeredItemIdentifiers.contains(TransportRateToolbarItem.identifier))
+
+        let identifiers = MainWindowToolbar.defaultItemIdentifiers
+        let centre = try #require(identifiers.firstIndex(of: MainWindowToolbar.connectionGroup))
+        let readout = try #require(identifiers.firstIndex(of: TransportRateToolbarItem.identifier))
+        #expect(readout == centre + 1, "The readout must follow the centred group immediately")
+    }
+
+    /// Emptying the readout's own group is how it leaves the toolbar. Measured, nothing else hides
+    /// it cleanly: a hidden view keeps its 75pt and a zero-width constraint still leaves 24pt, and
+    /// `NSToolbarItem.isHidden` is macOS 15 against a macOS 14 floor.
+    @Test("A connection with no measurable transport shows no readout")
+    func unmeasuredConnectionsCarryNoReadout() {
+        #expect(MainWindowToolbar().transportRateGroup.subitems.isEmpty)
+    }
+
+    /// Availability is `isEnabled`, never presence. Measured on three running Apple apps, Xcode,
+    /// Finder in column view and System Settings all keep the 75pt Back/Forward capsule and dim the
+    /// direction that has nowhere to go; the HIG says the same for the menu bar, "disable the action
+    /// instead of hiding it".
+    ///
+    /// This asserts on the VENDED item and on a toolbar with no coordinator, which is the state a
+    /// hidden pair would report. Testing the pure `isEnabled(itemIdentifier:context:)` predicate
+    /// cannot catch the regression this replaces: four such cases in
+    /// `MainWindowToolbarValidationTests` stayed green for the whole life of the hiding commit,
+    /// because they never look at composition.
+    @Test("Back and forward are present and dimmed, never absent")
+    func navigationIsPresentAndDimmed() throws {
+        let owner = MainWindowToolbar()
+        let group = try #require(
+            owner.toolbar(
+                owner.managedToolbar,
+                itemForItemIdentifier: MainWindowToolbar.backForwardGroup,
+                willBeInsertedIntoToolbar: true
+            ) as? NSToolbarItemGroup
+        )
+
+        #expect(group.subitems.count == 2, "The pair is installed unconditionally")
+        #expect(group.subitems.map(\.itemIdentifier) == [MainWindowToolbar.navigateBack, MainWindowToolbar.navigateForward])
+        /// What puts the pair on the leading edge, where the HIG keeps items that return to the
+        /// previous document and where they are not customizable away.
+        #expect(group.isNavigational)
+
+        for subitem in group.subitems {
+            #expect(!owner.validateToolbarItem(subitem), "With no connection each direction dims")
+        }
+    }
+
+    /// A `title` on either subitem would split the shared platter into two capsules. Measured: two
+    /// titled subitems draw two platters, untitled ones share a single platter spanning the group,
+    /// which is the one capsule Finder, Xcode and System Settings all draw.
+    @Test("Neither navigation arrow carries a title")
+    func navigationArrowsShareOneCapsule() throws {
+        let owner = MainWindowToolbar()
+        let group = try #require(
+            owner.toolbar(
+                owner.managedToolbar,
+                itemForItemIdentifier: MainWindowToolbar.backForwardGroup,
+                willBeInsertedIntoToolbar: true
+            ) as? NSToolbarItemGroup
+        )
+
+        for subitem in group.subitems {
+            #expect(subitem.title.isEmpty, "\(subitem.itemIdentifier.rawValue) must not set a title")
+        }
+    }
+
+    /// The readout is a readout: it publishes no action, so AppKit never validates it and it has no
+    /// menu-bar command of its own. That is the trade the placement makes, and it is pinned here so
+    /// a later change that gives it an action has to say so.
+    ///
+    /// It still gets an overflow entry, because the centred group is the first region AppKit sheds
+    /// when the window narrows and the figure should not vanish with the controls beside it. The
+    /// entry is disabled: there is nothing to click.
+    @Test("The throughput readout claims no action but still reports in the overflow menu")
+    func throughputReadoutIsInertButVisible() throws {
+        let owner = MainWindowToolbar()
+        let item = owner.transportRateItem
+
+        #expect(item.action == nil)
+
+        let entry = try #require(item.menuFormRepresentation)
+        #expect(entry.action == nil)
+        #expect(!entry.isEnabled)
+        #expect(!entry.title.isEmpty)
+    }
+
+    /// An arrow glyph is what the field draws; it is not what the overflow entry or VoiceOver
+    /// should be handed, because neither reads it as a direction.
+    @Test("The overflow entry names the direction rather than drawing an arrow")
+    func overflowEntryNamesTheDirection() throws {
+        let owner = MainWindowToolbar()
+        owner.transportRateItem.apply(rate: TransportRate(receivedPerSecond: 145_408, sentPerSecond: 0))
+        let entry = try #require(owner.transportRateItem.menuFormRepresentation)
+
+        #expect(!entry.title.contains("\u{2193}"))
+        #expect(!entry.title.contains("\u{2191}"))
     }
 
     /// Finder ships 8 controls and Xcode 13. The default set was 17 plus a hosted status blob, and

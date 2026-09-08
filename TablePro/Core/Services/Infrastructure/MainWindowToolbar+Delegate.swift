@@ -31,6 +31,13 @@ extension MainWindowToolbar {
             /// `isNavigational` is what puts back and forward on the leading edge of the content
             /// title area, where Finder and Safari keep them, instead of in the slot the identifier
             /// list nominally gives them.
+            ///
+            /// Both subitems are installed unconditionally and stay installed. Availability is
+            /// `isEnabled`, written by `validateToolbarItem(_:)`, never presence: measured on three
+            /// running Apple apps, Xcode, Finder in column view and System Settings all keep the
+            /// 75pt capsule and dim the direction that has nowhere to go. Emptying the group
+            /// instead put the pair behind state that is `@ObservationIgnored`, so once hidden it
+            /// did not come back until the user switched tabs.
             let group = makeNativeGroup(
                 id: itemIdentifier,
                 label: String(localized: "Navigation"),
@@ -52,6 +59,12 @@ extension MainWindowToolbar {
                 label: String(localized: "Connection"),
                 subitems: [subitemConnection(), subitemDatabase()]
             )
+        case TransportRateToolbarItem.identifier:
+            /// Beside the centred pair, never inside it. A group is laid out around its own
+            /// midpoint, so a readout inside this one pushed the two capsules off centre by half
+            /// the readout's width; measured as its own adjacent item, the group sits where it
+            /// sits with no readout at all and the figure lands 6.0pt past its trailing edge.
+            return transportRateGroup
         case Self.safeMode:
             return subitemSafeMode()
         case Self.editorGroup:

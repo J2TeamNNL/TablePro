@@ -42,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Show Tables and Show Favorites in the View menu.
 - Running indicator on the editor tab whose query is executing.
 - Sort direction setting for the data grid, applied to the default row sort and to the first click on a column header. (#2665)
-- Transport activity under the connection switcher: bytes carried, and live throughput on an SSH tunnel or SOCKS proxy.
+- Transport activity for an SSH tunnel or SOCKS proxy: live throughput in the toolbar, bytes carried in the connection switcher.
 
 ### Changed
 
@@ -56,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Inspector shows the selected row as Fields or JSON, with AI Chat moved out of its tab strip.
 - Structured inspector values expand in place instead of replacing the whole pane.
 - Object tree context menu regrouped into four groups by intent, with the connection-wide commands off object rows.
+- Back available with unsaved edits, asking to discard them, in place of standing down until they were saved.
 - View Options as a control in the sidebar's filter row, in place of an entry on every context menu.
 - View ER Diagram and New View on the object tree's empty-area menu only.
 - Keyboard shortcuts shown on sidebar context menu items that have a menu bar equivalent.
