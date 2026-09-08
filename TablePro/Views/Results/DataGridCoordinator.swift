@@ -113,6 +113,12 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
     }
 
     private var columnIndexByDataIndex: [Int: Int] = [:]
+    /// Display position to data index, rebuilt lazily. `presentedDataColumns` reads it; a drag and
+    /// the cell-range fill both ask per event and per row, and deriving it walks every attached
+    /// column, so it is not a lookup to repeat. See `DataGridView+ColumnDisplayOrder`.
+    var cachedPresentedDataColumns: [Int]?
+    /// The reverse of `cachedPresentedDataColumns`, invalidated with it.
+    var cachedDisplayPositionByDataColumn: [Int: Int]?
     private static let selectionCacheLogger = Logger(subsystem: "com.TablePro", category: "DataGrid.ColumnIndexCache")
 
     func tableColumnIndex(for dataIndex: Int) -> Int? {
@@ -178,6 +184,7 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
     }
 
     func invalidateColumnIndexCache() {
+        invalidatePresentedColumnCache()
         guard !columnIndexByDataIndex.isEmpty else { return }
         Self.selectionCacheLogger.debug("invalidate column index cache (had \(self.columnIndexByDataIndex.count))")
         columnIndexByDataIndex.removeAll()

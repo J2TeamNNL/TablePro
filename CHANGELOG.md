@@ -59,6 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Row count and row inspector reporting one row while Delete and Copy act on every row a cell drag covers.
+- Cell selection collapsing to the first column or the first row when a drag left the grid past the last one.
+- Cell selection, copy and paste using columns the pointer never crossed once a column had been reordered or hidden.
 - Default row sort drawn on a column header as though it had been clicked.
 - First click on an already default-sorted column skipping straight to descending.
 - Don't Sort undone by the default row sort on the next load of the table.
