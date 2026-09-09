@@ -23,6 +23,8 @@ final class StructureGridDelegate: DataGridViewDelegate {
             && connection.type.supportsSchemaEditing
     }
     let tableName: String
+    /// The lists behind the Foreign Keys grid's reference cells, shared with the Create Table tab.
+    let referenceMenus: ForeignKeyReferenceMenus
     weak var coordinator: MainContentCoordinator?
     var onSelectedRowsChanged: ((Set<Int>) -> Void)?
 
@@ -62,6 +64,7 @@ final class StructureGridDelegate: DataGridViewDelegate {
         self.connection = connection
         self.tableName = tableName
         self.coordinator = coordinator
+        self.referenceMenus = ForeignKeyReferenceMenus(connectionId: connection.id)
     }
 
     // MARK: - Index Translation
@@ -76,6 +79,26 @@ final class StructureGridDelegate: DataGridViewDelegate {
 
     private func sourceRows(for displayRows: Set<Int>) -> Set<Int> {
         Set(displayRows.map { sourceRow(for: $0) })
+    }
+
+    /// The Foreign Keys grid's Columns, Ref Table and Ref Columns cells offer the database's own
+    /// names, exactly as the Create Table tab does.
+    ///
+    /// `StructureRowProvider` marks those three columns as carrying a chevron for every grid it
+    /// serves, so without this the chevron here would reach the data grid's boolean fallback and
+    /// offer to write `1` into Ref Table. The row is translated first: this grid filters and sorts,
+    /// so a display position is not an index into `workingForeignKeys`.
+    func dataGridMenuOptions(forRow row: Int, columnIndex: Int) -> [GridMenuOption]? {
+        guard selectedTab == .foreignKeys, canEditForeignKeys else { return nil }
+        let sourceRowIndex = sourceRow(for: row)
+        guard sourceRowIndex >= 0, sourceRowIndex < structureChangeManager.workingForeignKeys.count else {
+            return nil
+        }
+        return referenceMenus.options(
+            columnIndex: columnIndex,
+            foreignKey: structureChangeManager.workingForeignKeys[sourceRowIndex],
+            tableColumns: structureChangeManager.workingColumns.map(\.name)
+        )
     }
 
     // MARK: - DataGridViewDelegate
@@ -106,6 +129,11 @@ final class StructureGridDelegate: DataGridViewDelegate {
             var fk = structureChangeManager.workingForeignKeys[sourceRowIndex]
             StructureEditingSupport.updateForeignKey(&fk, at: column, with: newValue ?? "")
             structureChangeManager.updateForeignKey(id: fk.id, with: fk)
+            if column == 2 {
+                referenceMenus.prefetchReferencedColumns(
+                    of: fk.referencedTable, schema: fk.referencedSchema
+                )
+            }
 
         case .checkConstraints:
             guard connection.type.supportsCheckConstraintEditing,

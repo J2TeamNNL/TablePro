@@ -439,7 +439,7 @@ final class StructureChangeManager: ChangeManaging {
 
         for fk in workingForeignKeys where isStaged(.foreignKey(fk.id)) && !fk.isValid {
             validationErrors[.foreignKey(fk.id)] = String(
-                localized: "Foreign key must have a name, at least one column, and a referenced table"
+                localized: "Foreign key must have at least one column, a referenced table, and a referenced column"
             )
         }
 

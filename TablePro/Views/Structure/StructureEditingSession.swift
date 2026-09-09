@@ -118,6 +118,7 @@ internal final class StructureEditingSession {
             tableName: tableName,
             coordinator: nil
         )
+        gridDelegate.referenceMenus.schemaName = schemaName
         wrappedChangeManager = AnyChangeManager(changeManager)
     }
 
