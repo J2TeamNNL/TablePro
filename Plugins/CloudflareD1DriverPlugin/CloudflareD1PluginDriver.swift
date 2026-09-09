@@ -264,7 +264,7 @@ final class CloudflareD1PluginDriver: PluginDatabaseDriver, @unchecked Sendable 
 
             let isNullable = row[3].asText == "0"
             let isPrimaryKey = row[5].asText != nil && row[5].asText != "0"
-            let defaultValue = row[4].asText
+            let defaultValue = cloudflareD1DefaultValueFromCatalog(row[4].asText)
 
             return PluginColumnInfo(
                 name: name,
@@ -296,7 +296,7 @@ final class CloudflareD1PluginDriver: PluginDatabaseDriver, @unchecked Sendable 
             }
 
             let isNullable = row[4].asText == "0"
-            let defaultValue = row[5].asText
+            let defaultValue = cloudflareD1DefaultValueFromCatalog(row[5].asText)
             let isPrimaryKey = row[6].asText != nil && row[6].asText != "0"
 
             let column = PluginColumnInfo(
@@ -723,7 +723,7 @@ final class CloudflareD1PluginDriver: PluginDatabaseDriver, @unchecked Sendable 
         var def = "\(quoteIdentifier(column.name)) \(column.dataType)"
         if !column.isNullable { def += " NOT NULL" }
         if let defaultValue = column.defaultValue, !defaultValue.isEmpty {
-            def += " DEFAULT \(d1DefaultValue(defaultValue))"
+            def += " DEFAULT \(defaultValue)"
         }
         return "ALTER TABLE \(quoteIdentifier(table)) ADD COLUMN \(def)"
     }
@@ -748,6 +748,29 @@ final class CloudflareD1PluginDriver: PluginDatabaseDriver, @unchecked Sendable 
             desiredOrder: desiredOrder,
             isRunnable: false,
             execute: { try await self.execute(query: $0) }
+        )
+    }
+
+    /// Also never run by TablePro, for the same reason: no SQLite `ALTER TABLE` can add or drop a
+    /// foreign key, so the table has to be recreated, and D1 cannot hold that rebuild's transaction
+    /// open across its per-statement HTTP requests. The script is handed to the user instead.
+    func generateTableRebuildPlan(
+        table: String,
+        schema: String?,
+        respecification: PluginTableRespecification
+    ) async throws -> PluginColumnReorderPlan? {
+        guard !respecification.isEmpty,
+              let context = try await SQLiteTableRebuildPlanner.context(
+                  tableName: table,
+                  execute: { try await self.execute(query: $0) }
+              ) else { return nil }
+
+        return SQLiteTableRebuildPlanner.plan(
+            tableName: table,
+            context: context,
+            respecification: respecification,
+            renderColumn: { self.d1ColumnDefinition($0, inlinePK: false) },
+            isRunnable: false
         )
     }
 
@@ -797,18 +820,9 @@ final class CloudflareD1PluginDriver: PluginDatabaseDriver, @unchecked Sendable 
             def += " NOT NULL"
         }
         if let defaultValue = col.defaultValue {
-            def += " DEFAULT \(d1DefaultValue(defaultValue))"
+            def += " DEFAULT \(defaultValue)"
         }
         return def
-    }
-
-    private func d1DefaultValue(_ value: String) -> String {
-        let upper = value.uppercased()
-        if upper == "NULL" || upper == "CURRENT_TIMESTAMP" || upper == "CURRENT_DATE" || upper == "CURRENT_TIME"
-            || value.hasPrefix("'") || Int64(value) != nil || Double(value) != nil {
-            return value
-        }
-        return "'\(escapeStringLiteral(value))'"
     }
 
     private func d1ForeignKeyDefinition(_ fk: PluginForeignKeyDefinition) -> String {

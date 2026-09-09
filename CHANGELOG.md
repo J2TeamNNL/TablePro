@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Start an AI session from the welcome window, with running and stopped sessions listed there.
 - Outside MCP servers as tool sources for AI sessions, allowlisted per connection.
 - Mode submenu in the View menu, switching a window between Browse and Assistant.
+- Foreign key add, remove and edit for SQLite, libSQL and Cloudflare D1, applied as a reviewed table rebuild.
+- Real constraint names for SQLite foreign keys, in place of a positional placeholder.
+- Menu of the engine's own default values on the Structure tab's Default cell, with No default, NULL, Empty string and a Custom editor. (#2688)
 - Row-number gutter held at the left edge of the data grid, so whole rows stay selectable when the table is scrolled sideways. (#2664)
 - `Shift+Space` to widen the grid selection to every row it touches. (#2664)
 - Table name proposed from the file name when an import creates the table, with a warning when the name is taken.
@@ -104,6 +107,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two GitHub Copilot chats on one provider sharing a single server-side conversation, so each was answered with the other's context.
 - VoiceOver reading the sidebar toggle as its SF Symbol names, "List" and "favorite".
 - Tables and Favorites doing nothing when chosen from the toolbar's overflow menu.
+- "Unsupported schema operation" when adding a foreign key to a SQLite, libSQL or Cloudflare D1 table.
+- Add and Remove offered on the Foreign Keys tab for engines that cannot edit foreign keys.
+- Incomplete foreign keys, indexes and columns reaching the database on Save.
+- Rows silently renumbered by a SQLite column reorder on a table with no integer primary key.
+- A modified index or foreign key re-created before the columns it covers are added.
+- Column defaults quoted into string literals, from `gen_random_uuid()` to `NOW()` to `nextval(...)`. (#2688)
+- A MySQL expression default rewritten as a string on any edit to the same column. (#2688)
+- A ClickHouse MATERIALIZED or ALIAS column turned into a plain DEFAULT column by an edit to its comment. (#2688)
+- Default and Auto Inc cells on Cassandra and ScyllaDB, which CQL has no way to express. (#2688)
+- Default cell on Trino, whose generated DDL never carried one. (#2688)
+- Column defaults exported from an ER diagram as quoted strings, including `SYSDATE` and `X'0102'`. (#2688)
+- MySQL numeric, `BIT` and binary defaults shown and written back quoted, which rejected `b'1'` and turned `0x61` into text. (#2688)
+- `DEFAULT CURRENT_TIMESTAMP` read back from MySQL 8 as `(CURRENT_TIMESTAMP)`. (#2688)
+- An expression default written without the parentheses MySQL requires, on a copy from MariaDB. (#2688)
+- A bare keyword default such as `session_user` carried unquoted into a copy to another engine. (#2688)
+- Missing default badge in the enum cell menu on MySQL. (#2688)
+- SQL Server dropping a column's `DEFAULT` constraint on a type or nullability change and never re-adding it. (#2688)
+- A ClickHouse MATERIALIZED, EPHEMERAL or ALIAS column converted by setting a default on it. (#2688)
+- `%h` and the other `~/.ssh/config` tokens reaching the connection as literal text. (#2687)
+- Trailing comments on a `~/.ssh/config` line kept as part of the value. (#2687)
+- `Host` blocks matched against a substituted `HostName` rather than the host as typed. (#2687)
+- `%p` and `%r` left unexpanded in a `Match exec` command. (#2687)
+- `Match !host` and the other negated `Match` criteria matching every host. (#2687)
+- `Include` lines naming more than one file reading none of them. (#2687)
+- `Include` inside a `Host` block applying to every connection. (#2687)
+- The same file included from a second `Host` block contributing nothing. (#2687)
+- `Match final` overriding values earlier blocks had already set. (#2687)
+- `IdentityFile` entries from earlier blocks dropped by a later `Match` block. (#2687)
+- Comma-separated `Host` patterns treated as a list, which `Match host` alone accepts. (#2687)
+- A `Match exec` command that ignores `SIGTERM` hanging the connection. (#2687)
+- Whole-result copy after Select All ignoring the 50,000-row clipboard limit. (#2667)
+- Row-gutter geometry observer left registered every time a data grid was rebuilt. (#2667)
+- A jump host's own `ProxyJump` not being followed, so a chained bastion was never reached. (#2687)
+- The SSH server and jump hosts missing from the confirmation for a database link. (#2687)
+- The SSH username and jump hosts missing from the connection import sheet. (#2687)
 - Unsaved cell edits discarded without asking when a column was hidden, shown or reset. (#2667)
 - Edited values left on screen with nothing tracking them after discarding to change a value filter. (#2667)
 - Discard prompt on applying a value filter that changes nothing. (#2667)

@@ -55,21 +55,12 @@ extension MSSQLPluginDriver {
             def += " NOT NULL"
         }
         if let defaultValue = col.defaultValue {
-            def += " DEFAULT \(mssqlDefaultValue(defaultValue))"
+            def += " DEFAULT \(defaultValue)"
         }
         if inlinePK && col.isPrimaryKey {
             def += " PRIMARY KEY"
         }
         return def
-    }
-
-    private func mssqlDefaultValue(_ value: String) -> String {
-        let upper = value.uppercased()
-        if upper == "NULL" || upper == "GETDATE()" || upper == "NEWID()" || upper == "GETUTCDATE()"
-            || value.hasPrefix("'") || value.hasPrefix("(") || Int64(value) != nil || Double(value) != nil {
-            return value
-        }
-        return "'\(escapeStringLiteral(value))'"
     }
 
     private func mssqlIndexDefinition(_ index: PluginIndexDefinition, qualifiedTable: String) -> String {
@@ -139,8 +130,11 @@ extension MSSQLPluginDriver {
             stmts.append("ALTER TABLE \(qt) ALTER COLUMN \(colName) \(newColumn.dataType) \(nullable)")
         }
 
-        if defaultChanged, let defaultValue = newColumn.defaultValue {
-            stmts.append("ALTER TABLE \(qt) ADD DEFAULT \(mssqlDefaultValue(defaultValue)) FOR \(colName)")
+        // The re-add mirrors the drop above. A type or nullability change drops the constraint too,
+        // so re-adding only on a default change left a column the user never touched with no
+        // default at all, and every later INSERT that omitted it failed.
+        if defaultChanged || needsTypeChange, let defaultValue = newColumn.defaultValue {
+            stmts.append("ALTER TABLE \(qt) ADD DEFAULT \(defaultValue) FOR \(colName)")
         }
 
         return stmts.isEmpty ? nil : stmts.joined(separator: ";\n")

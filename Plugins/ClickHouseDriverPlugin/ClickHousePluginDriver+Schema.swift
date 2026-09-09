@@ -45,6 +45,11 @@ extension ClickHousePluginDriver {
             ORDER BY position
             """
         let result = try await execute(query: sql)
+        nonDefaultColumnKinds = Set(result.rows.compactMap { row -> String? in
+            guard let name = row[safe: 0]?.asText else { return nil }
+            guard let kind = row[safe: 2]?.asText, !kind.isEmpty, kind != "DEFAULT" else { return nil }
+            return name
+        })
         return result.rows.compactMap { row -> PluginColumnInfo? in
             guard let name = row[safe: 0]?.asText else { return nil }
             let dataType = (row[safe: 1]?.asText) ?? "String"
@@ -54,10 +59,7 @@ extension ClickHousePluginDriver {
 
             let isNullable = dataType.hasPrefix("Nullable(")
 
-            var defaultValue: String?
-            if let kind = defaultKind, !kind.isEmpty, let expr = defaultExpr, !expr.isEmpty {
-                defaultValue = expr
-            }
+            let defaultValue = clickhouseDefaultValue(kind: defaultKind, expression: defaultExpr)
 
             var extra: String?
             if let kind = defaultKind, !kind.isEmpty, kind != "DEFAULT" {
@@ -116,10 +118,7 @@ extension ClickHousePluginDriver {
 
             let isNullable = dataType.hasPrefix("Nullable(")
 
-            var defaultValue: String?
-            if let kind = defaultKind, !kind.isEmpty, let expr = defaultExpr, !expr.isEmpty {
-                defaultValue = expr
-            }
+            let defaultValue = clickhouseDefaultValue(kind: defaultKind, expression: defaultExpr)
 
             var extra: String?
             if let kind = defaultKind, !kind.isEmpty, kind != "DEFAULT" {
@@ -380,4 +379,13 @@ extension ClickHousePluginDriver {
         """
     }
 
+}
+
+/// MATERIALIZED, ALIAS and EPHEMERAL are column kinds that store their expression in the same
+/// catalog field a DEFAULT uses, and only a DEFAULT is a default. Reporting one of the others as
+/// one let an edit to an unrelated field restate it as `DEFAULT '<expression>'`, which stores the
+/// text of the expression in every row inserted afterwards.
+internal func clickhouseDefaultValue(kind: String?, expression: String?) -> String? {
+    guard kind == "DEFAULT", let expression, !expression.isEmpty else { return nil }
+    return expression
 }
