@@ -54,10 +54,12 @@ public extension SQLiteTableDDL {
         let existingNames = parsed.columnNames
 
         guard respecification.droppedColumns.allSatisfy({ contains(existingNames, $0) }),
-              respecification.renamedColumns.keys.allSatisfy({ contains(existingNames, $0) }) else {
+              respecification.renamedColumns.keys.allSatisfy({ contains(existingNames, $0) }),
+              respecification.alteredColumns.allSatisfy({ contains(existingNames, $0.column) }) else {
             return nil
         }
 
+        let rowidAlias = rowidAliasColumn(parsed)
         let located = SQLiteForeignKeyParser.foreignKeys(in: parsed)
         guard let removals = foreignKeyRemovals(
             located: located,
@@ -95,7 +97,27 @@ public extension SQLiteTableDDL {
 
             var text = entry.text
             if let span = removals.spans[index] {
-                text = cutting(span, from: text)
+                text = cuttingSpan(span, from: text)
+            }
+            /// The one place a column's own declaration is rewritten. Its type, nullability and
+            /// default are the only things no `ALTER TABLE` can change, so they travel here; a
+            /// rename and a drop are `ALTER`s of their own, run after the rebuild, and are absent
+            /// from this text on purpose.
+            if let alteration = respecification.alteredColumns.first(
+                where: { $0.column.compare(columnName, options: .caseInsensitive) == .orderedSame }
+            ) {
+                guard let rewritten = SQLiteColumnDeclaration.rewritten(
+                    text,
+                    applying: SQLiteColumnDeclaration.Edit(
+                        type: alteration.type,
+                        isNullable: alteration.isNullable,
+                        defaultValue: alteration.defaultValue
+                    ),
+                    isRowidAlias: rowidAlias.map {
+                        $0.compare(columnName, options: .caseInsensitive) == .orderedSame
+                    } ?? false
+                ) else { return nil }
+                text = rewritten
             }
             let finalName = matchedRename(of: columnName, in: respecification.renamedColumns) ?? columnName
             if finalName != columnName {
@@ -136,6 +158,55 @@ public extension SQLiteTableDDL {
             carriedColumns: orderedCarried,
             caveats: caveats
         )
+    }
+
+    /// The column that *is* the rowid, where the table declares one.
+    ///
+    /// SQLite's rule is a single-column primary key whose declared type is exactly `INTEGER`, and
+    /// the key may be written on the column or at table level. Reading only the column's own
+    /// constraints misses `CREATE TABLE t(id INTEGER, PRIMARY KEY(id))`, where retyping `id` is
+    /// just as destructive.
+    static func rowidAliasColumn(_ parsed: Parsed) -> String? {
+        guard isRowidTable(parsed) else { return nil }
+
+        var keyColumns: [String] = []
+        for entry in parsed.entries {
+            guard let declaration = SQLiteColumnDeclaration.parse(entry.text) else {
+                guard let tableLevel = tableLevelPrimaryKeyColumns(entry.text) else { continue }
+                keyColumns = tableLevel
+                continue
+            }
+            if declaration.first(.primaryKey) != nil { keyColumns = [declaration.name] }
+        }
+
+        guard keyColumns.count == 1, let name = keyColumns.first else { return nil }
+        guard let declaration = parsed.entries.lazy
+            .compactMap({ SQLiteColumnDeclaration.parse($0.text) })
+            .first(where: { $0.name.compare(name, options: .caseInsensitive) == .orderedSame }) else {
+            return nil
+        }
+        let type = declaration.declaredType?.trimmingCharacters(in: .whitespaces) ?? ""
+        return type.caseInsensitiveCompare("INTEGER") == .orderedSame ? declaration.name : nil
+    }
+
+    /// The columns a table-level `[CONSTRAINT n] PRIMARY KEY (…)` entry names, or nil for any other
+    /// table constraint.
+    private static func tableLevelPrimaryKeyColumns(_ text: String) -> [String]? {
+        let tokens = SQLiteTokenizer.tokenize(text)
+        var cursor = 0
+        if tokens.first?.keyword == "CONSTRAINT" { cursor = 2 }
+        guard cursor + 2 < tokens.count,
+              tokens[cursor].keyword == "PRIMARY", tokens[cursor + 1].keyword == "KEY" else { return nil }
+
+        var names: [String] = []
+        var index = cursor + 3
+        while index < tokens.count, tokens[index].text != ")" {
+            if !tokens[index].isPunctuation, !["ASC", "DESC", "COLLATE"].contains(tokens[index].keyword) {
+                if index == cursor + 3 || tokens[index - 1].text == "," { names.append(tokens[index].text) }
+            }
+            index += 1
+        }
+        return names.isEmpty ? nil : names
     }
 
     /// Whether the statement declares a rowid, which decides whether a rebuild can carry rowids
@@ -305,21 +376,6 @@ private extension SQLiteTableDDL {
 
     static func matchedRename(of column: String, in renames: [String: String]) -> String? {
         renames.first { $0.key.compare(column, options: .caseInsensitive) == .orderedSame }?.value
-    }
-
-    /// The declaration with `span` removed and the gap it left closed.
-    ///
-    /// Only the whitespace either side of the cut is touched. Collapsing runs across the whole
-    /// declaration would rewrite text the user typed: a `DEFAULT 'a  b'` elsewhere in the same
-    /// column would come back with one space instead of two.
-    static func cutting(_ span: Range<String.Index>, from text: String) -> String {
-        var head = String(text[text.startIndex..<span.lowerBound])
-        let tail = String(text[span.upperBound...])
-        let headHadSpace = head.last?.isWhitespace ?? false
-        let tailHasSpace = tail.first?.isWhitespace ?? false
-        while head.last?.isWhitespace == true { head.removeLast() }
-        let separator = head.isEmpty || tail.isEmpty || !(headHadSpace || tailHasSpace) ? "" : " "
-        return head + separator + tail.drop(while: { $0.isWhitespace })
     }
 
     /// The same column definition under a new name, with everything after the name untouched.
