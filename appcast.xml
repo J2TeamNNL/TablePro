@@ -3,6 +3,511 @@
     <channel>
         <title>TablePro</title>
         <item>
+            <title>0.73.0</title>
+            <pubDate>Wed, 09 Sep 2026 16:14:50 +0000</pubDate>
+            <sparkle:version>129</sparkle:version>
+            <sparkle:shortVersionString>0.73.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description><![CDATA[<h3>Added</h3>
+<ul>
+<li>VoiceOver navigation of the ER diagram, table by table and column by column, with each table's joins. (#2692)</li>
+<li>Column type, nullability and default changes for SQLite, libSQL and Cloudflare D1, checked against dependent objects.</li>
+<li>Column rename and drop alongside a foreign key change in one save.</li>
+<li>Foreign key add, remove and edit for SQLite, libSQL and Cloudflare D1, applied as a reviewed table rebuild.</li>
+<li>Real constraint names for SQLite foreign keys, in place of a positional placeholder.</li>
+<li>Menus of the connection's own tables and columns for a foreign key's Columns, Ref Table and Ref Columns.</li>
+<li>The reason Create Table is unavailable, next to the button.</li>
+<li>Menu of the engine's own default values on the Structure tab's Default cell, including a Custom editor. (#2688)</li>
+<li>Row-number gutter held at the left edge of the data grid when the table is scrolled sideways. (#2664)</li>
+<li>`Shift+Space` to widen the grid selection to every row it touches. (#2664)</li>
+<li>Table name proposed from the file name when an import creates the table, with a warning when the name is taken.</li>
+<li>Copy To across database engines, with every type approximation listed before the copy runs. (#1491)</li>
+<li>Per-table `WHERE` and row limit in Copy To. (#1491)</li>
+<li>Server-side `INSERT … SELECT` when a copy's two sides are one connection. (#1491)</li>
+<li>Tunnel Command transport, with `kubectl port-forward` and `aws ssm start-session` presets. (#2520)</li>
+<li>Bar chart column in the EXPLAIN tree, with a Metric menu for self cost, self time and row counts. (#2633)</li>
+<li>Database type change from inside the connection editor.</li>
+<li>The reason Save is unavailable, next to the Save button in the connection editor.</li>
+<li>Approval setting for MCP connection access, with the list of approved connections and a Forget action. (#2640)</li>
+<li>Typesense driver plugin, with collection browsing, document editing and a REST request console. (#2629)</li>
+<li>Export, Delete and Empty for a Typesense collection. (#2629)</li>
+<li>Typesense API keys in Users & Roles, with the collections and actions each key holds. (#2629)</li>
+<li>Server Dashboard metrics for Typesense, from `/metrics.json` and `/stats.json`. (#2629)</li>
+<li>Encoding and byte order mark options for CSV export, with a warning naming what the encoding dropped. (#2534)</li>
+<li>Indexes in an SQL export, written after the data. (#2492)</li>
+<li>Image preview beside the source for a cell holding SVG or a raster image. (#2535)</li>
+<li>DuckDB backup and restore, as one `.duckdb` file or a folder of Parquet. (#2485)</li>
+<li>Table picker in Backup Dump, everything selected by default. (#2485)</li>
+<li>Backup of several databases into one folder, one file each. (#2485)</li>
+<li>Back Up… on a database selection in the connection tree. (#2485)</li>
+<li>Assistant as its own pane, with View > Show Assistant and `Cmd+Option+A`.</li>
+<li>Inspector fields with the column name and type on one line and the value at full width below.</li>
+<li>A BLOB too large to edit whole marked read-only in the inspector, in place of an editable first 10 KB.</li>
+<li>Always-visible value menu on every inspector field, with `Ctrl+Option+N` for NULL and `Ctrl+Option+D` for DEFAULT.</li>
+<li>Tab and Shift+Tab between inspector fields.</li>
+<li>Field search and an edited-fields-only filter in the inspector.</li>
+<li>Table and row position at the top of the inspector.</li>
+<li>Safe Mode, Session Context and Schema submenus in the Database menu.</li>
+<li>Show Tables and Show Favorites in the View menu.</li>
+<li>Running indicator on the editor tab whose query is executing.</li>
+<li>Sort direction setting for the data grid, applied to the default row sort and the first header click. (#2665)</li>
+<li>Transport activity for an SSH tunnel or SOCKS proxy: throughput in the toolbar, bytes in the connection switcher.</li>
+<li>Release File Lock on the Database menu and the connections strip, for a DuckDB connection. (#2518)</li>
+<li>Per-connection idle release for DuckDB and MySQL, after a set number of idle minutes. (#2518)</li>
+<li>Open the File Read-Only option for DuckDB, letting several processes share one file. (#2518)</li>
+</ul>
+<h3>Changed</h3>
+<ul>
+<li>Zoom ladder for both diagrams, stepping 5, 10, 25, 33, 50, 67, 75, 100, 150, 200 and 300 per cent. (#2692)</li>
+<li>Fit to Window at whatever scale the diagram needs, instead of stopping at 25%. (#2692)</li>
+<li>Connection editor rebuilt around a four-section sidebar, in place of up to eleven panes.</li>
+<li>One Connect via picker for the five transports, in place of five Enable switches.</li>
+<li>Save, Cancel and Test Connection on a bottom action bar instead of the titlebar.</li>
+<li>`Use ~/.pgpass` below Username rather than above it.</li>
+<li>Tab moves focus out of Startup Commands and Pre-Connect Script instead of inserting a tab.</li>
+<li>SQL export writes a materialized view's indexes once the view exists. (#2492)</li>
+<li>Backup Dump as one sheet with scope, format and destination, in place of a picker with a save panel over it. (#2485)</li>
+<li>Inspector shows the selected row as Fields or JSON, with AI Chat moved out of its tab strip.</li>
+<li>Structured inspector values expand in place instead of replacing the whole pane.</li>
+<li>Object tree context menu regrouped into four groups by intent, with the connection-wide commands off object rows.</li>
+<li>Back available with unsaved edits, asking to discard them, in place of standing down until they were saved.</li>
+<li>View Options as a control in the sidebar's filter row, in place of an entry on every context menu.</li>
+<li>View ER Diagram and New View on the object tree's empty-area menu only.</li>
+<li>Keyboard shortcuts shown on sidebar context menu items that have a menu bar equivalent.</li>
+<li>Toolbar rebuilt around five icon-only groups, with a centred connection and container control.</li>
+<li>Query duration and Stop in the results status bar, in place of the centred toolbar readout.</li>
+<li>Safe Mode as a toolbar menu whose icon follows the level.</li>
+<li>Window subtitle dropped, with the container named in the toolbar instead.</li>
+<li>Toolbar arrangements reset once, to the new default set.</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>Half the ER diagram left unpainted at its fit-to-window zoom, and the query plan's arrows gone below 50%. (#2692)</li>
+<li>A table's relationship with itself drawn underneath the table, hiding a `manager_id` style foreign key. (#2692)</li>
+<li>Table dragged past the ER diagram's top-left corner disappearing, with the position saved. (#2692)</li>
+<li>ER diagram back at 100% in the top-left corner after leaving its editor tab and returning. (#2692)</li>
+<li>"Unsupported schema operation" when adding a foreign key to a SQLite, libSQL or Cloudflare D1 table.</li>
+<li>Add and Remove offered on the Foreign Keys tab for engines that cannot edit foreign keys.</li>
+<li>Incomplete foreign keys, indexes and columns reaching the database on Save.</li>
+<li>Rows silently renumbered by a SQLite column reorder on a table with no integer primary key.</li>
+<li>A modified index or foreign key re-created before the columns it covers are added.</li>
+<li>Condition dropped from an index added on SQLite, libSQL and Cloudflare D1, turning a partial index into a full one.</li>
+<li>Foreign keys and indexes dropped from a new table when their name was left blank.</li>
+<li>Foreign keys never created with a new table on Snowflake and Teradata.</li>
+<li>Indexes never created with a new table on SQLite, libSQL, Cloudflare D1, ClickHouse, Snowflake, Trino and Teradata.</li>
+<li>Constraint name discarded from a foreign key on SQLite, libSQL and Cloudflare D1.</li>
+<li>Invalid `REFERENCES table ()` from a foreign key that named no referenced columns.</li>
+<li>Referential actions the engine rejects offered on the Foreign Keys tab.</li>
+<li>Foreign key resolved against the wrong schema on SQL Server.</li>
+<li>Auto-increment column not made the primary key on SQLite.</li>
+<li>Create Table tab closed without a prompt when it held only indexes or foreign keys.</li>
+<li>`Cmd+Z` doing nothing in the Create Table tab.</li>
+<li>Column defaults quoted into string literals, from `gen_random_uuid()` to `NOW()` to `nextval(...)`. (#2688)</li>
+<li>A MySQL expression default rewritten as a string on any edit to the same column. (#2688)</li>
+<li>A ClickHouse MATERIALIZED or ALIAS column turned into a plain DEFAULT column by an edit to its comment. (#2688)</li>
+<li>Default and Auto Inc cells on Cassandra and ScyllaDB, which CQL has no way to express. (#2688)</li>
+<li>Default cell on Trino, whose generated DDL never carried one. (#2688)</li>
+<li>Column defaults exported from an ER diagram as quoted strings, including `SYSDATE` and `X'0102'`. (#2688)</li>
+<li>MySQL numeric, `BIT` and binary defaults quoted, which rejected `b'1'` and turned `0x61` into text. (#2688)</li>
+<li>`DEFAULT CURRENT_TIMESTAMP` read back from MySQL 8 as `(CURRENT_TIMESTAMP)`. (#2688)</li>
+<li>An expression default written without the parentheses MySQL requires, on a copy from MariaDB. (#2688)</li>
+<li>A bare keyword default such as `session_user` carried unquoted into a copy to another engine. (#2688)</li>
+<li>Missing default badge in the enum cell menu on MySQL. (#2688)</li>
+<li>SQL Server dropping a column's `DEFAULT` constraint on a type or nullability change and never re-adding it. (#2688)</li>
+<li>A ClickHouse MATERIALIZED, EPHEMERAL or ALIAS column converted by setting a default on it. (#2688)</li>
+<li>`%h` and the other `~/.ssh/config` tokens reaching the connection as literal text. (#2687)</li>
+<li>Trailing comments on a `~/.ssh/config` line kept as part of the value. (#2687)</li>
+<li>`Host` blocks matched against a substituted `HostName` rather than the host as typed. (#2687)</li>
+<li>`%p` and `%r` left unexpanded in a `Match exec` command. (#2687)</li>
+<li>`Match !host` and the other negated `Match` criteria matching every host. (#2687)</li>
+<li>`Include` lines naming more than one file reading none of them. (#2687)</li>
+<li>`Include` inside a `Host` block applying to every connection. (#2687)</li>
+<li>The same file included from a second `Host` block contributing nothing. (#2687)</li>
+<li>`Match final` overriding values earlier blocks had already set. (#2687)</li>
+<li>`IdentityFile` entries from earlier blocks dropped by a later `Match` block. (#2687)</li>
+<li>Comma-separated `Host` patterns treated as a list, which `Match host` alone accepts. (#2687)</li>
+<li>A `Match exec` command that ignores `SIGTERM` hanging the connection. (#2687)</li>
+<li>Whole-result copy after Select All ignoring the 50,000-row clipboard limit. (#2667)</li>
+<li>Row-gutter geometry observer left registered every time a data grid was rebuilt. (#2667)</li>
+<li>A jump host's own `ProxyJump` not being followed, leaving a chained bastion unreachable. (#2687)</li>
+<li>The SSH server and jump hosts missing from the confirmation for a database link. (#2687)</li>
+<li>The SSH username and jump hosts missing from the connection import sheet. (#2687)</li>
+<li>Unsaved cell edits discarded without asking when a column was hidden, shown or reset. (#2667)</li>
+<li>Edited values left on screen with nothing tracking them after discarding to change a value filter. (#2667)</li>
+<li>Discard prompt on applying a value filter that changes nothing. (#2667)</li>
+<li>Unsaved cell edits following the row that took their place after a per-column value filter changed. (#2667)</li>
+<li>Undone cell edits coming back after switching tabs. (#2667)</li>
+<li>Find bar showing another tab's search term, over this tab's match count. (#2667)</li>
+<li>Cell selection cleared by Select All. (#2667)</li>
+<li>Scroll and accessibility observers left registered every time a data grid was rebuilt. (#2667)</li>
+<li>Grid row and cell selection lost on switching editor tabs, result view modes, or moving a tab to a new window. (#2667)</li>
+<li>Connection and database choosers opening between the two toolbar capsules instead of under the one that was pressed.</li>
+<li>Raw DuckDB driver text in place of the name of the app holding a locked database file. (#2518)</li>
+<li>DuckDB instance and its worker threads leaked by every failed remote connection attempt.</li>
+<li>MySQL statement replayed outside the transaction it was run in after the server dropped the connection.</li>
+<li>Query timeout lost after a MySQL reconnect.</li>
+<li>Toolbar commands pushed into the overflow menu at 1200pt by a centred item that could not shrink.</li>
+<li>Container chooser opening over a session the health monitor had given up on.</li>
+<li>No way to change a Snowflake warehouse or role once the window narrowed enough to clip the connection group.</li>
+<li>Blank Connection and Status tiles in Customize Toolbar.</li>
+<li>Stop advertising the old key after Cancel Query was rebound.</li>
+<li>Row count and row inspector reporting one row while Delete and Copy act on every row a cell drag covers.</li>
+<li>Cell selection collapsing to the first column or the first row when a drag left the grid past the last one.</li>
+<li>Cell selection, copy and paste using columns the pointer never crossed once a column had been reordered or hidden.</li>
+<li>Default row sort drawn on a column header as though it had been clicked.</li>
+<li>First click on an already default-sorted column skipping straight to descending.</li>
+<li>Don't Sort undone by the default row sort on the next load of the table.</li>
+<li>Sort fired by a column-header drag the user dropped back where it started.</li>
+<li>Shift-clicked second sort column lost when the tab was reused for another table.</li>
+<li>Saved sort dropped on relaunch when its column was hidden.</li>
+<li>Sort marker moved onto another column after a query returned different columns.</li>
+<li>Sorted column silent to VoiceOver.</li>
+<li>Sort chevron left on a column after Cancel on Discard Unsaved Changes.</li>
+<li>Move Column Up and Down dimmed on the Structure tab after Don't Sort.</li>
+<li>Order lost by an MCP `browse_table` sorting on a column outside its `columns` list.</li>
+<li>Query Live Activity still counting up on the iOS Lock Screen and Dynamic Island after the app was quit mid-query.</li>
+<li>Stop leaving an iOS MySQL or Redis query running, with the spinner and the Live Activity stuck behind it.</li>
+<li>A stopped iOS query recorded in Query History as successful, including a write that streamed no rows.</li>
+<li>Query Live Activity marked interrupted while an iOS query longer than five minutes was still running.</li>
+<li>Connection screen stuck on Connecting for good after a cancelled connect on iPhone and iPad.</li>
+<li>Edited connection host, port or credentials ignored until relaunch on iPhone and iPad.</li>
+<li>SSH tunnel handshake with no timeout on iPhone and iPad, against a server that accepts TCP and then stalls.</li>
+<li>Export and Transfer To preselecting a same-named table from another schema, or nothing at all.</li>
+<li>Delete queuing a table drop from the menu bar with none of the confirmation the sidebar asks for.</li>
+<li>Truncate Table offered from the menu bar for a view, which the server then refuses.</li>
+<li>Truncate offered on a sidebar selection that mixes a table with a view.</li>
+<li>Import sheet clearing a table without confirmation on a connection set to confirm destructive statements.</li>
+<li>Empty destination table picker in the import sheet, with no message and no retry, when the table list failed.</li>
+<li>Connection with two transports enabled reaching the database directly, with neither transport applied.</li>
+<li>Object list unchanged after toggling Show object icons or Show object comments in Settings.</li>
+<li>Delete Connection missing from the connection editor since 0.39.0.</li>
+<li>Continue dimmed after filtering the database chooser down to one driver.</li>
+<li>Down arrow not reaching the list from the database chooser's search field.</li>
+<li>VoiceOver reading a database chooser row's icon before the driver's name.</li>
+<li>Animations that played through the Reduce Motion setting when removing a jump host or copying DDL or a query plan.</li>
+<li>Icon-only controls with no VoiceOver name or tooltip in the date picker, row inspector and slash command settings.</li>
+<li>Inspector picker reading NULL after setting a value on a NULL column, including on every new row.</li>
+<li>Edits typed into a hidden inspector field while the JSON view is showing, committed by a later save.</li>
+<li>Set NULL, Set DEFAULT, Set EMPTY and SQL functions offered on a PHP-serialized field they cannot round-trip.</li>
+<li>Reconnecting or switching connection replacing a connection's remembered Inspector or Assistant choice.</li>
+<li>Assistant staying on screen and usable after AI features are turned off.</li>
+<li>Inspector opening in place of a remembered Assistant when a connection restores its session.</li>
+<li>Auto-show inspector on row select closing the Assistant on every grid click.</li>
+<li>Explain with AI and Optimize with AI enabled, and doing nothing, with AI features off.</li>
+<li>Tab trapped inside the inspector's field list with no way back to the search field.</li>
+<li>Column type missing from inline inspector rows on a read-only result.</li>
+<li>Inspector picker reading NULL for a multi-row selection whose values differ.</li>
+<li>Structure inspector drawing the Name and Type fields in two different fonts.</li>
+<li>Primary key, foreign key and edited markers silent to VoiceOver in the inspector.</li>
+<li>Inspector showing the last table's statistics on a tab with no table.</li>
+<li>Auto-show inspector on row select doing nothing on a query tab.</li>
+<li>Inspector ignoring a column's display format, showing raw where the grid showed JSON or PHP.</li>
+<li>AI conversation history read from disk on every connection window, with the assistant never opened.</li>
+<li>`is_connected` reported as true over MCP for a connection that had stopped answering.</li>
+<li>Cost badge on every plan node of a query ending in `LIMIT`, where the share it reads could exceed 100%. (#2633)</li>
+<li>Green "low cost" badge on plans that report no cost at all, such as SQLite and ClickHouse. (#2633)</li>
+<li>Empty Cost, Rows and Actual Time columns in the EXPLAIN tree for engines that report none of them. (#2633)</li>
+<li>`Workers Launched: 0` missing from a plan node's details while `Workers Planned` was shown. (#2633)</li>
+<li>MySQL plans pricing the wrapper query block above every table it contains. (#2633)</li>
+<li>SQL `IN`, `AND`, `OR`, `NOT`, `BY` and `ON` in the editor's plain text colour. (#2634)</li>
+<li>SQL built-in type names, `ASC`, `DESC` and function calls unhighlighted in the editor.</li>
+<li>SQL numbers, `TRUE`, `FALSE` and `NULL` in the string colour.</li>
+<li>No syntax highlighting at all in the MongoDB and Elasticsearch query editors.</li>
+<li>JavaScript `locals` and `tags` queries that failed to compile against the bundled parser.</li>
+<li>JSON `true`, `false` and `null` unhighlighted in the row inspector and the JSON viewer.</li>
+<li>Operator and Function theme colours with no effect on the editor.</li>
+<li>MCP access prompt with no setting to turn it off, and hidden entirely with AI features off. (#2640)</li>
+<li>MCP access prompt discarding an answer given more than 30 seconds after it appeared. (#2640)</li>
+<li>MCP access prompt returning every 30 minutes, and after each rotation of the bundled bridge's credential. (#2640)</li>
+<li>Repeated MCP access prompts when a client retried a call the user had just denied. (#2640)</li>
+<li>Destructive-operation consent reaching an elicitation-capable MCP client as an internal error instead of a prompt.</li>
+<li>`ai_policy` in `list_connections` reporting `askEachTime` whatever the app-wide default was.</li>
+<li>Quote menu in the CSV export options untranslated in every localized build. (#2534)</li>
+<li>Line feed instead of the chosen line ending on the table comment of a multi-table CSV export. (#2534)</li>
+<li>Indexes missing from an SQL export on SQLite, LibSQL, Cloudflare D1, SQL Server, Oracle, Dameng and Cassandra. (#2492)</li>
+<li>DuckDB expression index exported as invalid SQL. (#2492)</li>
+<li>DuckDB index whose name contains "primary" reported as the table's primary key and left out of its DDL. (#2492)</li>
+<li>PostgreSQL index left out of an export when a check constraint on the same table shared its name. (#2492)</li>
+<li>PostgreSQL materialized view exported as a `CREATE TABLE`. (#2492)</li>
+<li>`DROP TYPE` and `DROP SEQUENCE` in an SQL export with Drop unticked. (#2492)</li>
+<li>Oracle and ClickHouse views exported as a bare `SELECT` with no `CREATE VIEW`. (#2492)</li>
+<li>Bare `;` written for an object whose definition the server would not return. (#2492)</li>
+<li>SQL Server reporting every index as clustered. (#2492)</li>
+<li>Unique constraints missing from a SQL Server, Oracle and Dameng `CREATE TABLE` in an SQL export. (#2492)</li>
+<li>ClickHouse materialized view exported as an ordinary view. (#2492)</li>
+<li>Backup Dump and Restore Dump unusable on SQLite, with an empty database list and a dimmed confirm button. (#2485)</li>
+<li>libSQL backup writing an empty 52-byte file and reporting success. (#2485)</li>
+<li>Restore Dump asking every engine for a file `pg_dump` wrote. (#2485)</li>
+<li>Cancel doing nothing while a backup's size estimate ran. (#2485)</li>
+<li>Backup size estimate queueing behind a query tab's own work and joining its open transaction. (#2485)</li>
+<li>A narrowed PostgreSQL dump matching nothing when a table name held a capital, a dot or a wildcard. (#2485)</li>
+<li>Redis and Valkey ACL users without permission to run `PING` refused at connect and dropped by the health check.</li>
+<li>Redis database index ignoring the `dbN` spelling the driver itself publishes.</li>
+<li>A Sentinel that rejected the credentials reported as unreachable.</li>
+<li>A failed Redis reconnect leaving the connection marked live, with every later command reporting it as not connected.</li>
+</ul>
+<h3>Security</h3>
+<ul>
+<li>Redis and Valkey connections signing in as the default user when a username was typed with an empty password.</li>
+<li>Redis connections on iOS reported as successful without a single command reaching the server.</li>
+</ul>
+]]></description>
+            <enclosure url="https://github.com/TableProApp/TablePro/releases/download/v0.73.0/TablePro-0.73.0-arm64.zip" length="28150827" type="application/octet-stream" sparkle:edSignature="zDyBMzNTnhrN3ULFT1ZO1cKZ0x4Bo9q5n/ANjt4Q7QiNuaR9J0aU5J6qvgQzzzt5T6wX9NyM9UwZuTZE659BCA=="/>
+        </item>
+        <item>
+            <title>0.73.0</title>
+            <pubDate>Wed, 09 Sep 2026 16:14:51 +0000</pubDate>
+            <sparkle:version>129</sparkle:version>
+            <sparkle:shortVersionString>0.73.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<h3>Added</h3>
+<ul>
+<li>VoiceOver navigation of the ER diagram, table by table and column by column, with each table's joins. (#2692)</li>
+<li>Column type, nullability and default changes for SQLite, libSQL and Cloudflare D1, checked against dependent objects.</li>
+<li>Column rename and drop alongside a foreign key change in one save.</li>
+<li>Foreign key add, remove and edit for SQLite, libSQL and Cloudflare D1, applied as a reviewed table rebuild.</li>
+<li>Real constraint names for SQLite foreign keys, in place of a positional placeholder.</li>
+<li>Menus of the connection's own tables and columns for a foreign key's Columns, Ref Table and Ref Columns.</li>
+<li>The reason Create Table is unavailable, next to the button.</li>
+<li>Menu of the engine's own default values on the Structure tab's Default cell, including a Custom editor. (#2688)</li>
+<li>Row-number gutter held at the left edge of the data grid when the table is scrolled sideways. (#2664)</li>
+<li>`Shift+Space` to widen the grid selection to every row it touches. (#2664)</li>
+<li>Table name proposed from the file name when an import creates the table, with a warning when the name is taken.</li>
+<li>Copy To across database engines, with every type approximation listed before the copy runs. (#1491)</li>
+<li>Per-table `WHERE` and row limit in Copy To. (#1491)</li>
+<li>Server-side `INSERT … SELECT` when a copy's two sides are one connection. (#1491)</li>
+<li>Tunnel Command transport, with `kubectl port-forward` and `aws ssm start-session` presets. (#2520)</li>
+<li>Bar chart column in the EXPLAIN tree, with a Metric menu for self cost, self time and row counts. (#2633)</li>
+<li>Database type change from inside the connection editor.</li>
+<li>The reason Save is unavailable, next to the Save button in the connection editor.</li>
+<li>Approval setting for MCP connection access, with the list of approved connections and a Forget action. (#2640)</li>
+<li>Typesense driver plugin, with collection browsing, document editing and a REST request console. (#2629)</li>
+<li>Export, Delete and Empty for a Typesense collection. (#2629)</li>
+<li>Typesense API keys in Users & Roles, with the collections and actions each key holds. (#2629)</li>
+<li>Server Dashboard metrics for Typesense, from `/metrics.json` and `/stats.json`. (#2629)</li>
+<li>Encoding and byte order mark options for CSV export, with a warning naming what the encoding dropped. (#2534)</li>
+<li>Indexes in an SQL export, written after the data. (#2492)</li>
+<li>Image preview beside the source for a cell holding SVG or a raster image. (#2535)</li>
+<li>DuckDB backup and restore, as one `.duckdb` file or a folder of Parquet. (#2485)</li>
+<li>Table picker in Backup Dump, everything selected by default. (#2485)</li>
+<li>Backup of several databases into one folder, one file each. (#2485)</li>
+<li>Back Up… on a database selection in the connection tree. (#2485)</li>
+<li>Assistant as its own pane, with View > Show Assistant and `Cmd+Option+A`.</li>
+<li>Inspector fields with the column name and type on one line and the value at full width below.</li>
+<li>A BLOB too large to edit whole marked read-only in the inspector, in place of an editable first 10 KB.</li>
+<li>Always-visible value menu on every inspector field, with `Ctrl+Option+N` for NULL and `Ctrl+Option+D` for DEFAULT.</li>
+<li>Tab and Shift+Tab between inspector fields.</li>
+<li>Field search and an edited-fields-only filter in the inspector.</li>
+<li>Table and row position at the top of the inspector.</li>
+<li>Safe Mode, Session Context and Schema submenus in the Database menu.</li>
+<li>Show Tables and Show Favorites in the View menu.</li>
+<li>Running indicator on the editor tab whose query is executing.</li>
+<li>Sort direction setting for the data grid, applied to the default row sort and the first header click. (#2665)</li>
+<li>Transport activity for an SSH tunnel or SOCKS proxy: throughput in the toolbar, bytes in the connection switcher.</li>
+<li>Release File Lock on the Database menu and the connections strip, for a DuckDB connection. (#2518)</li>
+<li>Per-connection idle release for DuckDB and MySQL, after a set number of idle minutes. (#2518)</li>
+<li>Open the File Read-Only option for DuckDB, letting several processes share one file. (#2518)</li>
+</ul>
+<h3>Changed</h3>
+<ul>
+<li>Zoom ladder for both diagrams, stepping 5, 10, 25, 33, 50, 67, 75, 100, 150, 200 and 300 per cent. (#2692)</li>
+<li>Fit to Window at whatever scale the diagram needs, instead of stopping at 25%. (#2692)</li>
+<li>Connection editor rebuilt around a four-section sidebar, in place of up to eleven panes.</li>
+<li>One Connect via picker for the five transports, in place of five Enable switches.</li>
+<li>Save, Cancel and Test Connection on a bottom action bar instead of the titlebar.</li>
+<li>`Use ~/.pgpass` below Username rather than above it.</li>
+<li>Tab moves focus out of Startup Commands and Pre-Connect Script instead of inserting a tab.</li>
+<li>SQL export writes a materialized view's indexes once the view exists. (#2492)</li>
+<li>Backup Dump as one sheet with scope, format and destination, in place of a picker with a save panel over it. (#2485)</li>
+<li>Inspector shows the selected row as Fields or JSON, with AI Chat moved out of its tab strip.</li>
+<li>Structured inspector values expand in place instead of replacing the whole pane.</li>
+<li>Object tree context menu regrouped into four groups by intent, with the connection-wide commands off object rows.</li>
+<li>Back available with unsaved edits, asking to discard them, in place of standing down until they were saved.</li>
+<li>View Options as a control in the sidebar's filter row, in place of an entry on every context menu.</li>
+<li>View ER Diagram and New View on the object tree's empty-area menu only.</li>
+<li>Keyboard shortcuts shown on sidebar context menu items that have a menu bar equivalent.</li>
+<li>Toolbar rebuilt around five icon-only groups, with a centred connection and container control.</li>
+<li>Query duration and Stop in the results status bar, in place of the centred toolbar readout.</li>
+<li>Safe Mode as a toolbar menu whose icon follows the level.</li>
+<li>Window subtitle dropped, with the container named in the toolbar instead.</li>
+<li>Toolbar arrangements reset once, to the new default set.</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>Half the ER diagram left unpainted at its fit-to-window zoom, and the query plan's arrows gone below 50%. (#2692)</li>
+<li>A table's relationship with itself drawn underneath the table, hiding a `manager_id` style foreign key. (#2692)</li>
+<li>Table dragged past the ER diagram's top-left corner disappearing, with the position saved. (#2692)</li>
+<li>ER diagram back at 100% in the top-left corner after leaving its editor tab and returning. (#2692)</li>
+<li>"Unsupported schema operation" when adding a foreign key to a SQLite, libSQL or Cloudflare D1 table.</li>
+<li>Add and Remove offered on the Foreign Keys tab for engines that cannot edit foreign keys.</li>
+<li>Incomplete foreign keys, indexes and columns reaching the database on Save.</li>
+<li>Rows silently renumbered by a SQLite column reorder on a table with no integer primary key.</li>
+<li>A modified index or foreign key re-created before the columns it covers are added.</li>
+<li>Condition dropped from an index added on SQLite, libSQL and Cloudflare D1, turning a partial index into a full one.</li>
+<li>Foreign keys and indexes dropped from a new table when their name was left blank.</li>
+<li>Foreign keys never created with a new table on Snowflake and Teradata.</li>
+<li>Indexes never created with a new table on SQLite, libSQL, Cloudflare D1, ClickHouse, Snowflake, Trino and Teradata.</li>
+<li>Constraint name discarded from a foreign key on SQLite, libSQL and Cloudflare D1.</li>
+<li>Invalid `REFERENCES table ()` from a foreign key that named no referenced columns.</li>
+<li>Referential actions the engine rejects offered on the Foreign Keys tab.</li>
+<li>Foreign key resolved against the wrong schema on SQL Server.</li>
+<li>Auto-increment column not made the primary key on SQLite.</li>
+<li>Create Table tab closed without a prompt when it held only indexes or foreign keys.</li>
+<li>`Cmd+Z` doing nothing in the Create Table tab.</li>
+<li>Column defaults quoted into string literals, from `gen_random_uuid()` to `NOW()` to `nextval(...)`. (#2688)</li>
+<li>A MySQL expression default rewritten as a string on any edit to the same column. (#2688)</li>
+<li>A ClickHouse MATERIALIZED or ALIAS column turned into a plain DEFAULT column by an edit to its comment. (#2688)</li>
+<li>Default and Auto Inc cells on Cassandra and ScyllaDB, which CQL has no way to express. (#2688)</li>
+<li>Default cell on Trino, whose generated DDL never carried one. (#2688)</li>
+<li>Column defaults exported from an ER diagram as quoted strings, including `SYSDATE` and `X'0102'`. (#2688)</li>
+<li>MySQL numeric, `BIT` and binary defaults quoted, which rejected `b'1'` and turned `0x61` into text. (#2688)</li>
+<li>`DEFAULT CURRENT_TIMESTAMP` read back from MySQL 8 as `(CURRENT_TIMESTAMP)`. (#2688)</li>
+<li>An expression default written without the parentheses MySQL requires, on a copy from MariaDB. (#2688)</li>
+<li>A bare keyword default such as `session_user` carried unquoted into a copy to another engine. (#2688)</li>
+<li>Missing default badge in the enum cell menu on MySQL. (#2688)</li>
+<li>SQL Server dropping a column's `DEFAULT` constraint on a type or nullability change and never re-adding it. (#2688)</li>
+<li>A ClickHouse MATERIALIZED, EPHEMERAL or ALIAS column converted by setting a default on it. (#2688)</li>
+<li>`%h` and the other `~/.ssh/config` tokens reaching the connection as literal text. (#2687)</li>
+<li>Trailing comments on a `~/.ssh/config` line kept as part of the value. (#2687)</li>
+<li>`Host` blocks matched against a substituted `HostName` rather than the host as typed. (#2687)</li>
+<li>`%p` and `%r` left unexpanded in a `Match exec` command. (#2687)</li>
+<li>`Match !host` and the other negated `Match` criteria matching every host. (#2687)</li>
+<li>`Include` lines naming more than one file reading none of them. (#2687)</li>
+<li>`Include` inside a `Host` block applying to every connection. (#2687)</li>
+<li>The same file included from a second `Host` block contributing nothing. (#2687)</li>
+<li>`Match final` overriding values earlier blocks had already set. (#2687)</li>
+<li>`IdentityFile` entries from earlier blocks dropped by a later `Match` block. (#2687)</li>
+<li>Comma-separated `Host` patterns treated as a list, which `Match host` alone accepts. (#2687)</li>
+<li>A `Match exec` command that ignores `SIGTERM` hanging the connection. (#2687)</li>
+<li>Whole-result copy after Select All ignoring the 50,000-row clipboard limit. (#2667)</li>
+<li>Row-gutter geometry observer left registered every time a data grid was rebuilt. (#2667)</li>
+<li>A jump host's own `ProxyJump` not being followed, leaving a chained bastion unreachable. (#2687)</li>
+<li>The SSH server and jump hosts missing from the confirmation for a database link. (#2687)</li>
+<li>The SSH username and jump hosts missing from the connection import sheet. (#2687)</li>
+<li>Unsaved cell edits discarded without asking when a column was hidden, shown or reset. (#2667)</li>
+<li>Edited values left on screen with nothing tracking them after discarding to change a value filter. (#2667)</li>
+<li>Discard prompt on applying a value filter that changes nothing. (#2667)</li>
+<li>Unsaved cell edits following the row that took their place after a per-column value filter changed. (#2667)</li>
+<li>Undone cell edits coming back after switching tabs. (#2667)</li>
+<li>Find bar showing another tab's search term, over this tab's match count. (#2667)</li>
+<li>Cell selection cleared by Select All. (#2667)</li>
+<li>Scroll and accessibility observers left registered every time a data grid was rebuilt. (#2667)</li>
+<li>Grid row and cell selection lost on switching editor tabs, result view modes, or moving a tab to a new window. (#2667)</li>
+<li>Connection and database choosers opening between the two toolbar capsules instead of under the one that was pressed.</li>
+<li>Raw DuckDB driver text in place of the name of the app holding a locked database file. (#2518)</li>
+<li>DuckDB instance and its worker threads leaked by every failed remote connection attempt.</li>
+<li>MySQL statement replayed outside the transaction it was run in after the server dropped the connection.</li>
+<li>Query timeout lost after a MySQL reconnect.</li>
+<li>Toolbar commands pushed into the overflow menu at 1200pt by a centred item that could not shrink.</li>
+<li>Container chooser opening over a session the health monitor had given up on.</li>
+<li>No way to change a Snowflake warehouse or role once the window narrowed enough to clip the connection group.</li>
+<li>Blank Connection and Status tiles in Customize Toolbar.</li>
+<li>Stop advertising the old key after Cancel Query was rebound.</li>
+<li>Row count and row inspector reporting one row while Delete and Copy act on every row a cell drag covers.</li>
+<li>Cell selection collapsing to the first column or the first row when a drag left the grid past the last one.</li>
+<li>Cell selection, copy and paste using columns the pointer never crossed once a column had been reordered or hidden.</li>
+<li>Default row sort drawn on a column header as though it had been clicked.</li>
+<li>First click on an already default-sorted column skipping straight to descending.</li>
+<li>Don't Sort undone by the default row sort on the next load of the table.</li>
+<li>Sort fired by a column-header drag the user dropped back where it started.</li>
+<li>Shift-clicked second sort column lost when the tab was reused for another table.</li>
+<li>Saved sort dropped on relaunch when its column was hidden.</li>
+<li>Sort marker moved onto another column after a query returned different columns.</li>
+<li>Sorted column silent to VoiceOver.</li>
+<li>Sort chevron left on a column after Cancel on Discard Unsaved Changes.</li>
+<li>Move Column Up and Down dimmed on the Structure tab after Don't Sort.</li>
+<li>Order lost by an MCP `browse_table` sorting on a column outside its `columns` list.</li>
+<li>Query Live Activity still counting up on the iOS Lock Screen and Dynamic Island after the app was quit mid-query.</li>
+<li>Stop leaving an iOS MySQL or Redis query running, with the spinner and the Live Activity stuck behind it.</li>
+<li>A stopped iOS query recorded in Query History as successful, including a write that streamed no rows.</li>
+<li>Query Live Activity marked interrupted while an iOS query longer than five minutes was still running.</li>
+<li>Connection screen stuck on Connecting for good after a cancelled connect on iPhone and iPad.</li>
+<li>Edited connection host, port or credentials ignored until relaunch on iPhone and iPad.</li>
+<li>SSH tunnel handshake with no timeout on iPhone and iPad, against a server that accepts TCP and then stalls.</li>
+<li>Export and Transfer To preselecting a same-named table from another schema, or nothing at all.</li>
+<li>Delete queuing a table drop from the menu bar with none of the confirmation the sidebar asks for.</li>
+<li>Truncate Table offered from the menu bar for a view, which the server then refuses.</li>
+<li>Truncate offered on a sidebar selection that mixes a table with a view.</li>
+<li>Import sheet clearing a table without confirmation on a connection set to confirm destructive statements.</li>
+<li>Empty destination table picker in the import sheet, with no message and no retry, when the table list failed.</li>
+<li>Connection with two transports enabled reaching the database directly, with neither transport applied.</li>
+<li>Object list unchanged after toggling Show object icons or Show object comments in Settings.</li>
+<li>Delete Connection missing from the connection editor since 0.39.0.</li>
+<li>Continue dimmed after filtering the database chooser down to one driver.</li>
+<li>Down arrow not reaching the list from the database chooser's search field.</li>
+<li>VoiceOver reading a database chooser row's icon before the driver's name.</li>
+<li>Animations that played through the Reduce Motion setting when removing a jump host or copying DDL or a query plan.</li>
+<li>Icon-only controls with no VoiceOver name or tooltip in the date picker, row inspector and slash command settings.</li>
+<li>Inspector picker reading NULL after setting a value on a NULL column, including on every new row.</li>
+<li>Edits typed into a hidden inspector field while the JSON view is showing, committed by a later save.</li>
+<li>Set NULL, Set DEFAULT, Set EMPTY and SQL functions offered on a PHP-serialized field they cannot round-trip.</li>
+<li>Reconnecting or switching connection replacing a connection's remembered Inspector or Assistant choice.</li>
+<li>Assistant staying on screen and usable after AI features are turned off.</li>
+<li>Inspector opening in place of a remembered Assistant when a connection restores its session.</li>
+<li>Auto-show inspector on row select closing the Assistant on every grid click.</li>
+<li>Explain with AI and Optimize with AI enabled, and doing nothing, with AI features off.</li>
+<li>Tab trapped inside the inspector's field list with no way back to the search field.</li>
+<li>Column type missing from inline inspector rows on a read-only result.</li>
+<li>Inspector picker reading NULL for a multi-row selection whose values differ.</li>
+<li>Structure inspector drawing the Name and Type fields in two different fonts.</li>
+<li>Primary key, foreign key and edited markers silent to VoiceOver in the inspector.</li>
+<li>Inspector showing the last table's statistics on a tab with no table.</li>
+<li>Auto-show inspector on row select doing nothing on a query tab.</li>
+<li>Inspector ignoring a column's display format, showing raw where the grid showed JSON or PHP.</li>
+<li>AI conversation history read from disk on every connection window, with the assistant never opened.</li>
+<li>`is_connected` reported as true over MCP for a connection that had stopped answering.</li>
+<li>Cost badge on every plan node of a query ending in `LIMIT`, where the share it reads could exceed 100%. (#2633)</li>
+<li>Green "low cost" badge on plans that report no cost at all, such as SQLite and ClickHouse. (#2633)</li>
+<li>Empty Cost, Rows and Actual Time columns in the EXPLAIN tree for engines that report none of them. (#2633)</li>
+<li>`Workers Launched: 0` missing from a plan node's details while `Workers Planned` was shown. (#2633)</li>
+<li>MySQL plans pricing the wrapper query block above every table it contains. (#2633)</li>
+<li>SQL `IN`, `AND`, `OR`, `NOT`, `BY` and `ON` in the editor's plain text colour. (#2634)</li>
+<li>SQL built-in type names, `ASC`, `DESC` and function calls unhighlighted in the editor.</li>
+<li>SQL numbers, `TRUE`, `FALSE` and `NULL` in the string colour.</li>
+<li>No syntax highlighting at all in the MongoDB and Elasticsearch query editors.</li>
+<li>JavaScript `locals` and `tags` queries that failed to compile against the bundled parser.</li>
+<li>JSON `true`, `false` and `null` unhighlighted in the row inspector and the JSON viewer.</li>
+<li>Operator and Function theme colours with no effect on the editor.</li>
+<li>MCP access prompt with no setting to turn it off, and hidden entirely with AI features off. (#2640)</li>
+<li>MCP access prompt discarding an answer given more than 30 seconds after it appeared. (#2640)</li>
+<li>MCP access prompt returning every 30 minutes, and after each rotation of the bundled bridge's credential. (#2640)</li>
+<li>Repeated MCP access prompts when a client retried a call the user had just denied. (#2640)</li>
+<li>Destructive-operation consent reaching an elicitation-capable MCP client as an internal error instead of a prompt.</li>
+<li>`ai_policy` in `list_connections` reporting `askEachTime` whatever the app-wide default was.</li>
+<li>Quote menu in the CSV export options untranslated in every localized build. (#2534)</li>
+<li>Line feed instead of the chosen line ending on the table comment of a multi-table CSV export. (#2534)</li>
+<li>Indexes missing from an SQL export on SQLite, LibSQL, Cloudflare D1, SQL Server, Oracle, Dameng and Cassandra. (#2492)</li>
+<li>DuckDB expression index exported as invalid SQL. (#2492)</li>
+<li>DuckDB index whose name contains "primary" reported as the table's primary key and left out of its DDL. (#2492)</li>
+<li>PostgreSQL index left out of an export when a check constraint on the same table shared its name. (#2492)</li>
+<li>PostgreSQL materialized view exported as a `CREATE TABLE`. (#2492)</li>
+<li>`DROP TYPE` and `DROP SEQUENCE` in an SQL export with Drop unticked. (#2492)</li>
+<li>Oracle and ClickHouse views exported as a bare `SELECT` with no `CREATE VIEW`. (#2492)</li>
+<li>Bare `;` written for an object whose definition the server would not return. (#2492)</li>
+<li>SQL Server reporting every index as clustered. (#2492)</li>
+<li>Unique constraints missing from a SQL Server, Oracle and Dameng `CREATE TABLE` in an SQL export. (#2492)</li>
+<li>ClickHouse materialized view exported as an ordinary view. (#2492)</li>
+<li>Backup Dump and Restore Dump unusable on SQLite, with an empty database list and a dimmed confirm button. (#2485)</li>
+<li>libSQL backup writing an empty 52-byte file and reporting success. (#2485)</li>
+<li>Restore Dump asking every engine for a file `pg_dump` wrote. (#2485)</li>
+<li>Cancel doing nothing while a backup's size estimate ran. (#2485)</li>
+<li>Backup size estimate queueing behind a query tab's own work and joining its open transaction. (#2485)</li>
+<li>A narrowed PostgreSQL dump matching nothing when a table name held a capital, a dot or a wildcard. (#2485)</li>
+<li>Redis and Valkey ACL users without permission to run `PING` refused at connect and dropped by the health check.</li>
+<li>Redis database index ignoring the `dbN` spelling the driver itself publishes.</li>
+<li>A Sentinel that rejected the credentials reported as unreachable.</li>
+<li>A failed Redis reconnect leaving the connection marked live, with every later command reporting it as not connected.</li>
+</ul>
+<h3>Security</h3>
+<ul>
+<li>Redis and Valkey connections signing in as the default user when a username was typed with an empty password.</li>
+<li>Redis connections on iOS reported as successful without a single command reaching the server.</li>
+</ul>
+]]></description>
+            <enclosure url="https://github.com/TableProApp/TablePro/releases/download/v0.73.0/TablePro-0.73.0-x86_64.zip" length="30097365" type="application/octet-stream" sparkle:edSignature="IAfrhAhwvBf9IO2XhMimCMZXCSHRQoHJ+YJCjGR7Nh7QGPQ4SEyrlvJrIU9o+RNgQqlE6KKl/KCU554nsvyMDg=="/>
+        </item>
+        <item>
             <title>0.72.0</title>
             <pubDate>Thu, 03 Sep 2026 19:09:49 +0000</pubDate>
             <sparkle:version>128</sparkle:version>
