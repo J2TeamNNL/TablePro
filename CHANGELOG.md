@@ -54,6 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Zoom ladder for both diagrams, stepping 5, 10, 25, 33, 50, 67, 75, 100, 150, 200 and 300 per cent, with the buttons disabled at the ends. (#2692)
+- Fit to Window at whatever scale the diagram needs, instead of stopping at 25%. (#2692)
 - Connection editor rebuilt around a sidebar of four sections, General, Network, Options and Appearance, in place of up to eleven panes.
 - One Connect via picker for SSH, Cloudflare, Cloud SQL Auth Proxy, SOCKS and Tunnel Command, in place of five Enable switches.
 - Save, Cancel and Test Connection on a bottom action bar instead of the titlebar.
@@ -76,6 +78,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Half the ER diagram left unpainted at its fit-to-window zoom, and the query plan's arrows gone below 50%. (#2692)
+- Table dragged past the ER diagram's top-left corner disappearing, with the position saved. (#2692)
+- ER diagram back at 100% in the top-left corner after leaving its editor tab and returning. (#2692)
 - "Unsupported schema operation" when adding a foreign key to a SQLite, libSQL or Cloudflare D1 table.
 - Add and Remove offered on the Foreign Keys tab for engines that cannot edit foreign keys.
 - Incomplete foreign keys, indexes and columns reaching the database on Save.
