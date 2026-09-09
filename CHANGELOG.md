@@ -7,23 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.73.0] - 2026-09-09
+
 ### Added
 
-- VoiceOver navigation of the ER diagram, table by table and column by column, with what each table is joined to. (#2692)
-- Column type, nullability and default changes for SQLite, libSQL and Cloudflare D1, checked against every dependent view and trigger before the change commits.
+- VoiceOver navigation of the ER diagram, table by table and column by column, with each table's joins. (#2692)
+- Column type, nullability and default changes for SQLite, libSQL and Cloudflare D1, checked against dependent objects.
 - Column rename and drop alongside a foreign key change in one save.
 - Foreign key add, remove and edit for SQLite, libSQL and Cloudflare D1, applied as a reviewed table rebuild.
 - Real constraint names for SQLite foreign keys, in place of a positional placeholder.
 - Menus of the connection's own tables and columns for a foreign key's Columns, Ref Table and Ref Columns.
 - The reason Create Table is unavailable, next to the button.
-- Menu of the engine's own default values on the Structure tab's Default cell, with No default, NULL, Empty string and a Custom editor. (#2688)
-- Row-number gutter held at the left edge of the data grid, so whole rows stay selectable when the table is scrolled sideways. (#2664)
+- Menu of the engine's own default values on the Structure tab's Default cell, including a Custom editor. (#2688)
+- Row-number gutter held at the left edge of the data grid when the table is scrolled sideways. (#2664)
 - `Shift+Space` to widen the grid selection to every row it touches. (#2664)
 - Table name proposed from the file name when an import creates the table, with a warning when the name is taken.
 - Copy To across database engines, with every type approximation listed before the copy runs. (#1491)
 - Per-table `WHERE` and row limit in Copy To. (#1491)
 - Server-side `INSERT … SELECT` when a copy's two sides are one connection. (#1491)
-- Tunnel Command transport, with presets for `kubectl port-forward` and `aws ssm start-session` and a custom command line. (#2520)
+- Tunnel Command transport, with `kubectl port-forward` and `aws ssm start-session` presets. (#2520)
 - Bar chart column in the EXPLAIN tree, with a Metric menu for self cost, self time and row counts. (#2633)
 - Database type change from inside the connection editor.
 - The reason Save is unavailable, next to the Save button in the connection editor.
@@ -49,18 +51,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Safe Mode, Session Context and Schema submenus in the Database menu.
 - Show Tables and Show Favorites in the View menu.
 - Running indicator on the editor tab whose query is executing.
-- Sort direction setting for the data grid, applied to the default row sort and to the first click on a column header. (#2665)
-- Transport activity for an SSH tunnel or SOCKS proxy: live throughput in the toolbar, bytes carried in the connection switcher.
-- Release File Lock on the Database menu and the connections strip, for a DuckDB connection holding a database file. (#2518)
-- Per-connection idle release for DuckDB and MySQL, handing the file lock or the server connection back after a set number of minutes. (#2518)
-- Open the File Read-Only for a DuckDB connection, so several processes can read one file at once. (#2518)
+- Sort direction setting for the data grid, applied to the default row sort and the first header click. (#2665)
+- Transport activity for an SSH tunnel or SOCKS proxy: throughput in the toolbar, bytes in the connection switcher.
+- Release File Lock on the Database menu and the connections strip, for a DuckDB connection. (#2518)
+- Per-connection idle release for DuckDB and MySQL, after a set number of idle minutes. (#2518)
+- Open the File Read-Only option for DuckDB, letting several processes share one file. (#2518)
 
 ### Changed
 
-- Zoom ladder for both diagrams, stepping 5, 10, 25, 33, 50, 67, 75, 100, 150, 200 and 300 per cent, with the buttons disabled at the ends. (#2692)
+- Zoom ladder for both diagrams, stepping 5, 10, 25, 33, 50, 67, 75, 100, 150, 200 and 300 per cent. (#2692)
 - Fit to Window at whatever scale the diagram needs, instead of stopping at 25%. (#2692)
-- Connection editor rebuilt around a sidebar of four sections, General, Network, Options and Appearance, in place of up to eleven panes.
-- One Connect via picker for SSH, Cloudflare, Cloud SQL Auth Proxy, SOCKS and Tunnel Command, in place of five Enable switches.
+- Connection editor rebuilt around a four-section sidebar, in place of up to eleven panes.
+- One Connect via picker for the five transports, in place of five Enable switches.
 - Save, Cancel and Test Connection on a bottom action bar instead of the titlebar.
 - `Use ~/.pgpass` below Username rather than above it.
 - Tab moves focus out of Startup Commands and Pre-Connect Script instead of inserting a tab.
@@ -73,16 +75,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - View Options as a control in the sidebar's filter row, in place of an entry on every context menu.
 - View ER Diagram and New View on the object tree's empty-area menu only.
 - Keyboard shortcuts shown on sidebar context menu items that have a menu bar equivalent.
-- Toolbar rebuilt around five icon-only groups, with the connection and container as a centred control that switches either.
+- Toolbar rebuilt around five icon-only groups, with a centred connection and container control.
 - Query duration and Stop in the results status bar, in place of the centred toolbar readout.
 - Safe Mode as a toolbar menu whose icon follows the level.
-- Window subtitle dropped, now that the toolbar names the container.
+- Window subtitle dropped, with the container named in the toolbar instead.
 - Toolbar arrangements reset once, to the new default set.
 
 ### Fixed
 
 - Half the ER diagram left unpainted at its fit-to-window zoom, and the query plan's arrows gone below 50%. (#2692)
-- A table's relationship with itself drawn underneath the table, so a `manager_id` style foreign key was invisible. (#2692)
+- A table's relationship with itself drawn underneath the table, hiding a `manager_id` style foreign key. (#2692)
 - Table dragged past the ER diagram's top-left corner disappearing, with the position saved. (#2692)
 - ER diagram back at 100% in the top-left corner after leaving its editor tab and returning. (#2692)
 - "Unsupported schema operation" when adding a foreign key to a SQLite, libSQL or Cloudflare D1 table.
@@ -107,7 +109,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Default and Auto Inc cells on Cassandra and ScyllaDB, which CQL has no way to express. (#2688)
 - Default cell on Trino, whose generated DDL never carried one. (#2688)
 - Column defaults exported from an ER diagram as quoted strings, including `SYSDATE` and `X'0102'`. (#2688)
-- MySQL numeric, `BIT` and binary defaults shown and written back quoted, which rejected `b'1'` and turned `0x61` into text. (#2688)
+- MySQL numeric, `BIT` and binary defaults quoted, which rejected `b'1'` and turned `0x61` into text. (#2688)
 - `DEFAULT CURRENT_TIMESTAMP` read back from MySQL 8 as `(CURRENT_TIMESTAMP)`. (#2688)
 - An expression default written without the parentheses MySQL requires, on a copy from MariaDB. (#2688)
 - A bare keyword default such as `session_user` carried unquoted into a copy to another engine. (#2688)
@@ -128,7 +130,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A `Match exec` command that ignores `SIGTERM` hanging the connection. (#2687)
 - Whole-result copy after Select All ignoring the 50,000-row clipboard limit. (#2667)
 - Row-gutter geometry observer left registered every time a data grid was rebuilt. (#2667)
-- A jump host's own `ProxyJump` not being followed, so a chained bastion was never reached. (#2687)
+- A jump host's own `ProxyJump` not being followed, leaving a chained bastion unreachable. (#2687)
 - The SSH server and jump hosts missing from the confirmation for a database link. (#2687)
 - The SSH username and jump hosts missing from the connection import sheet. (#2687)
 - Unsaved cell edits discarded without asking when a column was hidden, shown or reset. (#2667)
@@ -166,7 +168,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Order lost by an MCP `browse_table` sorting on a column outside its `columns` list.
 - Query Live Activity still counting up on the iOS Lock Screen and Dynamic Island after the app was quit mid-query.
 - Stop leaving an iOS MySQL or Redis query running, with the spinner and the Live Activity stuck behind it.
-- A stopped or memory-stopped iOS query recorded in Query History as successful, including a write that streamed no rows.
+- A stopped iOS query recorded in Query History as successful, including a write that streamed no rows.
 - Query Live Activity marked interrupted while an iOS query longer than five minutes was still running.
 - Connection screen stuck on Connecting for good after a cancelled connect on iPhone and iPad.
 - Edited connection host, port or credentials ignored until relaunch on iPhone and iPad.
@@ -176,7 +178,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Truncate Table offered from the menu bar for a view, which the server then refuses.
 - Truncate offered on a sidebar selection that mixes a table with a view.
 - Import sheet clearing a table without confirmation on a connection set to confirm destructive statements.
-- Empty destination table picker in the import sheet, with no message and no retry, when the table list could not be read.
+- Empty destination table picker in the import sheet, with no message and no retry, when the table list failed.
 - Connection with two transports enabled reaching the database directly, with neither transport applied.
 - Object list unchanged after toggling Show object icons or Show object comments in Settings.
 - Delete Connection missing from the connection editor since 0.39.0.
@@ -212,10 +214,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQL built-in type names, `ASC`, `DESC` and function calls unhighlighted in the editor.
 - SQL numbers, `TRUE`, `FALSE` and `NULL` in the string colour.
 - No syntax highlighting at all in the MongoDB and Elasticsearch query editors.
-- JavaScript `locals` and `tags` queries that no longer compiled against the bundled parser.
+- JavaScript `locals` and `tags` queries that failed to compile against the bundled parser.
 - JSON `true`, `false` and `null` unhighlighted in the row inspector and the JSON viewer.
 - Operator and Function theme colours with no effect on the editor.
-- MCP access prompt with no setting to turn it off, reachable only from the AI tab and hidden entirely with AI features off. (#2640)
+- MCP access prompt with no setting to turn it off, and hidden entirely with AI features off. (#2640)
 - MCP access prompt discarding an answer given more than 30 seconds after it appeared. (#2640)
 - MCP access prompt returning every 30 minutes, and after each rotation of the bundled bridge's credential. (#2640)
 - Repeated MCP access prompts when a client retried a call the user had just denied. (#2640)
@@ -232,7 +234,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Oracle and ClickHouse views exported as a bare `SELECT` with no `CREATE VIEW`. (#2492)
 - Bare `;` written for an object whose definition the server would not return. (#2492)
 - SQL Server reporting every index as clustered. (#2492)
-- Unique constraints lost from an SQL export on SQL Server, Oracle and Dameng, whose `CREATE TABLE` never declared them. (#2492)
+- Unique constraints missing from a SQL Server, Oracle and Dameng `CREATE TABLE` in an SQL export. (#2492)
 - ClickHouse materialized view exported as an ordinary view. (#2492)
 - Backup Dump and Restore Dump unusable on SQLite, with an empty database list and a dimmed confirm button. (#2485)
 - libSQL backup writing an empty 52-byte file and reporting success. (#2485)
@@ -243,7 +245,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Redis and Valkey ACL users without permission to run `PING` refused at connect and dropped by the health check.
 - Redis database index ignoring the `dbN` spelling the driver itself publishes.
 - A Sentinel that rejected the credentials reported as unreachable.
-- A Redis reconnect that failed leaving the connection marked live, so every later command reported it as not connected.
+- A failed Redis reconnect leaving the connection marked live, with every later command reporting it as not connected.
 
 ### Security
 
@@ -3967,7 +3969,8 @@ TablePro is a native macOS database client built with SwiftUI and AppKit, design
     - Custom SQL query templates
     - Performance optimized for large datasets
 
-[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.72.0...HEAD
+[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.73.0...HEAD
+[0.73.0]: https://github.com/TableProApp/TablePro/compare/v0.72.0...v0.73.0
 [0.72.0]: https://github.com/TableProApp/TablePro/compare/v0.71.0...v0.72.0
 [0.71.0]: https://github.com/TableProApp/TablePro/compare/v0.70.0...v0.71.0
 [0.70.0]: https://github.com/TableProApp/TablePro/compare/v0.69.0...v0.70.0
