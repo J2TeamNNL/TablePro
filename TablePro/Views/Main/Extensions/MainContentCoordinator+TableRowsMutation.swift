@@ -138,12 +138,16 @@ extension MainContentCoordinator {
     private func resetSelectionForNewResult(tabId: UUID) {
         clearValueFilter(forTab: tabId)
         tabManager.mutate(tabId: tabId) { tab in
-            guard !tab.selectedRowIndices.isEmpty else { return }
+            guard !tab.selectedRowIndices.isEmpty || !tab.cellSelection.isEmpty else { return }
             tab.selectedRowIndices = []
+            tab.cellSelection = .empty
         }
         guard let idx = tabManager.selectedTabIndex,
               idx < tabManager.tabs.count,
               tabManager.tabs[idx].id == tabId else { return }
+        /// The cell selection is what the published row selection is derived from, so leaving it
+        /// behind here would let the next publish reinstate rows the new result does not have.
+        dataTabDelegate?.tableViewCoordinator?.selectionController.clear()
         dataTabDelegate?.tableViewCoordinator?.clearRowSelection()
         if !selectionState.indices.isEmpty {
             selectionState.indices = []

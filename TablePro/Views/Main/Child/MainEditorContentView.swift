@@ -760,6 +760,13 @@ struct MainEditorContentView: View {
                                     &+ resolvedRows.rows.count,
                                 onSearchAllRows: { coordinator.findCoordinator.escalateToAllRows() }
                             )
+                            /// Per tab, like the grid below it. The field text lives in the view's
+                            /// own `@State`, seeded once from `onAppear`, and the grid's find tint
+                            /// lives on a coordinator that `.id(tabId)` rebuilds from nothing. With
+                            /// find open on both tabs this view kept its identity across a switch,
+                            /// so neither was re-seeded: the field showed the other tab's term next
+                            /// to this tab's match count, and the grid came back untinted. (#2667)
+                            .id(tab.id)
                             Divider()
                         }
 
@@ -889,6 +896,7 @@ struct MainEditorContentView: View {
                 tabType: tab.tabType,
                 showRowNumbers: AppSettingsManager.shared.dataGrid.showRowNumbers,
                 hiddenColumns: tab.columnLayout.hiddenColumns,
+                appliesRowSortPreferences: true,
                 editRefusalMessage: refusal?.message
             ),
             displayFormats: coordinator.displayFormats(for: tab),
@@ -900,7 +908,12 @@ struct MainEditorContentView: View {
             sortState: sortStateBinding(for: tab),
             columnLayout: columnLayoutBinding(for: tab),
             valueFilter: valueFilterBinding(for: tab),
-            displayState: coordinator.displayState(for: tab)
+            displayState: coordinator.displayState(for: tab),
+            restoredRowSelection: tab.selectedRowIndices,
+            restoredCellSelection: tab.cellSelection,
+            onSelectionTeardown: { [coordinator] rows, cells in
+                coordinator.storeGridSelectionOnTeardown(rows: rows, cells: cells, forTab: tabId)
+            }
         )
         .id(tabId)
         .frame(maxHeight: .infinity, alignment: .top)
@@ -961,11 +974,12 @@ struct MainEditorContentView: View {
     private func statusBar(tab: QueryTab) -> some View {
         let resolvedRows = resolvedTableRows(for: tab)
         let structureFooter = coordinator.structureSessions[tab.id]?.footer ?? StructureFooterCapability()
+        let isExecuting = coordinator.tabExecution.isBusy(tab.id)
         let snapshot = StatusBarSnapshot(
             tab: tab,
             tableRows: resolvedRows,
             displayRowCount: coordinator.displayIDs(forTab: tab.id)?.count,
-            isFetching: coordinator.tabExecution.isExecuting(tab.id),
+            isFetching: isExecuting,
             hasStructureActions: structureFooter.isActive
         )
         return ResultStatusBar(
@@ -999,6 +1013,13 @@ struct MainEditorContentView: View {
                 onRequestExactCount: { coordinator.paginationCoordinator.requestExactRowCount() }
             ),
             structureFooter: structureFooter,
+            execution: ExecutionReadout(
+                tabId: tab.id,
+                execution: coordinator.tabExecution,
+                lastTiming: coordinator.toolbarState.queryTiming(forTab: tab.id),
+                onCancel: { coordinator.cancelCurrentQuery() }
+            ),
+            isRefreshingSchema: SchemaService.shared.isRefreshing(connectionId: connectionId),
             viewMode: resultsViewModeBinding(for: tab),
             onToggleFilters: { coordinator.toggleFilterPanel() },
             onFetchAll: { coordinator.fetchAllRows() },

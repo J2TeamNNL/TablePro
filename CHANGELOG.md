@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Start an AI session from the welcome window, with running and stopped sessions listed there.
 - Outside MCP servers as tool sources for AI sessions, allowlisted per connection.
 - Mode submenu in the View menu, switching a window between Browse and Assistant.
+- Row-number gutter held at the left edge of the data grid, so whole rows stay selectable when the table is scrolled sideways. (#2664)
+- `Shift+Space` to widen the grid selection to every row it touches. (#2664)
 - Table name proposed from the file name when an import creates the table, with a warning when the name is taken.
 - Copy To across database engines, with every type approximation listed before the copy runs. (#1491)
 - Per-table `WHERE` and row limit in Copy To. (#1491)
@@ -39,11 +41,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Backup of several databases into one folder, one file each. (#2485)
 - Back Up… on a database selection in the connection tree. (#2485)
 - Assistant as its own pane, with View > Show Assistant and `Cmd+Option+A`.
-- Compact one-line rows in the inspector for short values, with long text, JSON and images still full width.
+- Inspector fields with the column name and type on one line and the value at full width below.
+- A BLOB too large to edit whole marked read-only in the inspector, in place of an editable first 10 KB.
 - Always-visible value menu on every inspector field, with `Ctrl+Option+N` for NULL and `Ctrl+Option+D` for DEFAULT.
 - Tab and Shift+Tab between inspector fields.
 - Field search and an edited-fields-only filter in the inspector.
 - Table and row position at the top of the inspector.
+- Safe Mode, Session Context and Schema submenus in the Database menu.
+- Show Tables and Show Favorites in the View menu.
+- Running indicator on the editor tab whose query is executing.
+- Sort direction setting for the data grid, applied to the default row sort and to the first click on a column header. (#2665)
+- Transport activity for an SSH tunnel or SOCKS proxy: live throughput in the toolbar, bytes carried in the connection switcher.
+- Release File Lock on the Database menu and the connections strip, for a DuckDB connection holding a database file. (#2518)
+- Per-connection idle release for DuckDB and MySQL, handing the file lock or the server connection back after a set number of minutes. (#2518)
+- Open the File Read-Only for a DuckDB connection, so several processes can read one file at once. (#2518)
 
 ### Changed
 
@@ -57,9 +68,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Inspector shows the selected row as Fields or JSON, with AI Chat moved out of its tab strip.
 - Structured inspector values expand in place instead of replacing the whole pane.
 - Object tree context menu regrouped into four groups by intent, with the connection-wide commands off object rows.
+- Back available with unsaved edits, asking to discard them, in place of standing down until they were saved.
 - View Options as a control in the sidebar's filter row, in place of an entry on every context menu.
 - View ER Diagram and New View on the object tree's empty-area menu only.
 - Keyboard shortcuts shown on sidebar context menu items that have a menu bar equivalent.
+- Toolbar rebuilt around five icon-only groups, with the connection and container as a centred control that switches either.
+- Query duration and Stop in the results status bar, in place of the centred toolbar readout.
+- Safe Mode as a toolbar menu whose icon follows the level.
+- Window subtitle dropped, now that the toolbar names the container.
+- Toolbar arrangements reset once, to the new default set.
 
 ### Fixed
 
@@ -87,6 +104,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two GitHub Copilot chats on one provider sharing a single server-side conversation, so each was answered with the other's context.
 - VoiceOver reading the sidebar toggle as its SF Symbol names, "List" and "favorite".
 - Tables and Favorites doing nothing when chosen from the toolbar's overflow menu.
+- Unsaved cell edits discarded without asking when a column was hidden, shown or reset. (#2667)
+- Edited values left on screen with nothing tracking them after discarding to change a value filter. (#2667)
+- Discard prompt on applying a value filter that changes nothing. (#2667)
+- Unsaved cell edits following the row that took their place after a per-column value filter changed. (#2667)
+- Undone cell edits coming back after switching tabs. (#2667)
+- Find bar showing another tab's search term, over this tab's match count. (#2667)
+- Cell selection cleared by Select All. (#2667)
+- Scroll and accessibility observers left registered every time a data grid was rebuilt. (#2667)
+- Grid row and cell selection lost on switching editor tabs, result view modes, or moving a tab to a new window. (#2667)
+- Connection and database choosers opening between the two toolbar capsules instead of under the one that was pressed.
+- Raw DuckDB driver text in place of the name of the app holding a locked database file. (#2518)
+- DuckDB instance and its worker threads leaked by every failed remote connection attempt.
+- MySQL statement replayed outside the transaction it was run in after the server dropped the connection.
+- Query timeout lost after a MySQL reconnect.
+- Toolbar commands pushed into the overflow menu at 1200pt by a centred item that could not shrink.
+- Container chooser opening over a session the health monitor had given up on.
+- No way to change a Snowflake warehouse or role once the window narrowed enough to clip the connection group.
+- Blank Connection and Status tiles in Customize Toolbar.
+- Stop advertising the old key after Cancel Query was rebound.
+- Row count and row inspector reporting one row while Delete and Copy act on every row a cell drag covers.
+- Cell selection collapsing to the first column or the first row when a drag left the grid past the last one.
+- Cell selection, copy and paste using columns the pointer never crossed once a column had been reordered or hidden.
+- Default row sort drawn on a column header as though it had been clicked.
+- First click on an already default-sorted column skipping straight to descending.
+- Don't Sort undone by the default row sort on the next load of the table.
+- Sort fired by a column-header drag the user dropped back where it started.
+- Shift-clicked second sort column lost when the tab was reused for another table.
+- Saved sort dropped on relaunch when its column was hidden.
+- Sort marker moved onto another column after a query returned different columns.
+- Sorted column silent to VoiceOver.
+- Sort chevron left on a column after Cancel on Discard Unsaved Changes.
+- Move Column Up and Down dimmed on the Structure tab after Don't Sort.
+- Order lost by an MCP `browse_table` sorting on a column outside its `columns` list.
+- Query Live Activity still counting up on the iOS Lock Screen and Dynamic Island after the app was quit mid-query.
+- Stop leaving an iOS MySQL or Redis query running, with the spinner and the Live Activity stuck behind it.
+- A stopped or memory-stopped iOS query recorded in Query History as successful, including a write that streamed no rows.
+- Query Live Activity marked interrupted while an iOS query longer than five minutes was still running.
+- Connection screen stuck on Connecting for good after a cancelled connect on iPhone and iPad.
+- Edited connection host, port or credentials ignored until relaunch on iPhone and iPad.
+- SSH tunnel handshake with no timeout on iPhone and iPad, against a server that accepts TCP and then stalls.
 - Export and Transfer To preselecting a same-named table from another schema, or nothing at all.
 - Delete queuing a table drop from the menu bar with none of the confirmation the sidebar asks for.
 - Truncate Table offered from the menu bar for a view, which the server then refuses.

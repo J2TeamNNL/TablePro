@@ -57,7 +57,15 @@ struct MenuValidationContext: Equatable {
     var canNavigateForward = false
     var canSaveAsFavorite = false
     var canSwitchSidebarLayout = false
+    /// False while the sidebar is collapsed or narrowed to the workspace rail, where there is no
+    /// object browser for either tab to select.
+    var showsObjectBrowser = false
     var canToggleWorkspaceRail = false
+    /// Whether the connection's driver is holding an operating-system resource it can hand back
+    /// without ending the session. Only the embedded engines that lock their database file answer
+    /// yes, so the command is absent for every server-backed connection rather than present and
+    /// disabled: a command that can never apply to a connection is not a command it is missing.
+    var canReleaseFileLock = false
     var canShowTableStructure = false
     var canEditViewDefinition = false
     var canCreateDatabase = false
@@ -76,6 +84,7 @@ struct MenuValidationContext: Equatable {
     var supportsServerDashboard = false
     var supportsUserManagement = false
     var supportsSchemaSwitching = false
+    var hasSessionContexts = false
     var canFilterDatabases = false
     var canFavoriteActiveDatabase = false
     var hasDatabaseFilter = false
@@ -232,6 +241,14 @@ extension MainSplitViewController: NSMenuItemValidation {
             return context.isConnected && context.canFilterDatabases && context.hasDatabaseFilter
         case #selector(openContainerSwitcher(_:)):
             return context.isConnected && context.supportsContainerSwitching
+        case #selector(openSchemaSwitcher(_:)):
+            return context.isConnected && context.supportsSchemaSwitching
+        case #selector(setSafeModeLevel(_:)):
+            return context.isConnected
+        case #selector(releaseFileLock(_:)):
+            return context.isConnected && context.canReleaseFileLock
+        case #selector(switchSessionContext(_:)):
+            return context.isConnected && context.hasSessionContexts
         case #selector(showServerDashboard(_:)):
             return context.isConnected && context.supportsServerDashboard
         case #selector(showUsersAndRoles(_:)):
@@ -255,6 +272,8 @@ extension MainSplitViewController: NSMenuItemValidation {
         /// mode matters most.
         case #selector(useBrowseMode(_:)), #selector(useAssistantMode(_:)):
             return context.hasSelectedWorkspace
+        case #selector(showTablesSidebarTab(_:)), #selector(showFavoritesSidebarTab(_:)):
+            return context.isConnected && context.showsObjectBrowser
         case #selector(toggleWorkspaceRail(_:)),
              #selector(showPreviousWorkspace(_:)),
              #selector(showNextWorkspace(_:)):
@@ -272,6 +291,7 @@ extension MainSplitViewController: NSMenuItemValidation {
         guard let actions = commandActions else {
             return MenuValidationContext(
                 hasSelectedWorkspace: workspaces.selectedConnectionId != nil,
+                showsObjectBrowser: sidebarChromeMode.showsObjectBrowser,
                 canToggleWorkspaceRail: canToggleWorkspaceRail
             )
         }
@@ -304,7 +324,9 @@ extension MainSplitViewController: NSMenuItemValidation {
             canNavigateForward: actions.canNavigateForward,
             canSaveAsFavorite: actions.canSaveAsFavorite,
             canSwitchSidebarLayout: actions.canSwitchSidebarLayout,
+            showsObjectBrowser: sidebarChromeMode.showsObjectBrowser,
             canToggleWorkspaceRail: canToggleWorkspaceRail,
+            canReleaseFileLock: canReleaseFileLock,
             canShowTableStructure: actions.canShowTableStructure,
             canEditViewDefinition: actions.canEditViewDefinition,
             canCreateDatabase: actions.canCreateDatabase,
@@ -323,6 +345,7 @@ extension MainSplitViewController: NSMenuItemValidation {
             supportsServerDashboard: actions.supportsServerDashboard,
             supportsUserManagement: actions.supportsUserManagement,
             supportsSchemaSwitching: actions.supportsSchemaSwitching,
+            hasSessionContexts: actions.hasSessionContexts,
             canFilterDatabases: actions.canFilterDatabases,
             canFavoriteActiveDatabase: actions.canFavoriteActiveDatabase,
             hasDatabaseFilter: actions.hasDatabaseFilter
@@ -387,6 +410,15 @@ extension MainSplitViewController: NSMenuItemValidation {
                 commandActions?.openContainerSwitcherTitle ?? String(localized: "Open Database…"),
                 on: menuItem
             )
+        /// The driver names this one, because what it gives back differs: DuckDB's file lock is
+        /// not a server's connection slot. The fallback is what the disabled item reads as for
+        /// every connection that holds nothing.
+        case #selector(releaseFileLock(_:)):
+            setResolvedTitle(
+                ConnectionFileLockAction.commandTitle(connectionId: workspaces.selectedConnectionId)
+                    ?? String(localized: "Release File Lock"),
+                on: menuItem
+            )
         case #selector(setResultView(_:)):
             setState(isCurrentResultView(menuItem) ? .on : .off, on: menuItem)
         case #selector(useBrowseMode(_:)):
@@ -397,6 +429,10 @@ extension MainSplitViewController: NSMenuItemValidation {
             setState(commandActions?.sidebarLayout == .flat ? .on : .off, on: menuItem)
         case #selector(useTreeSidebarLayout(_:)):
             setState(commandActions?.sidebarLayout == .tree ? .on : .off, on: menuItem)
+        case #selector(showTablesSidebarTab(_:)):
+            setState(selectedSidebarTab == .tables ? .on : .off, on: menuItem)
+        case #selector(showFavoritesSidebarTab(_:)):
+            setState(selectedSidebarTab == .favorites ? .on : .off, on: menuItem)
         default:
             return
         }

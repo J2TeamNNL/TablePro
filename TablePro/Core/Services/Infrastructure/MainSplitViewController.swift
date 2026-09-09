@@ -121,12 +121,11 @@ internal final class MainSplitViewController: NSSplitViewController, TrailingPan
     /// time. Per-connection widths are not reachable through `autosaveName` anyway, since assigning
     /// a name to a split view that has already laid out does not re-apply the saved frames.
     ///
-    /// Never version this key to force a relayout. `NSSplitView` clamps a restored frame against
-    /// the current minimums, so the sidebar simply widens to fit the rail. Bumping it instead
-    /// throws away every saved sidebar width, inspector width and collapse state the user has,
-    /// leaves the old keys orphaned in `UserDefaults`, and reads as a regression nobody asked for.
+    /// Namespaced per sandbox under UI test, because AppKit files this record in the standard
+    /// defaults domain, which the sandbox does not redirect. See `SplitViewAutosaveName` for the
+    /// failure that came of one case inheriting another's pane geometry.
     private var splitAutosaveName: NSSplitView.AutosaveName {
-        "com.TablePro.mainSplit"
+        SplitViewAutosaveName.current(SplitViewAutosaveName.base)
     }
 
     // MARK: - Switcher Surfaces
@@ -469,7 +468,7 @@ internal final class MainSplitViewController: NSSplitViewController, TrailingPan
         guard let window = view.window else { return }
         let owner = toolbarOwner ?? MainWindowToolbar()
         toolbarOwner = owner
-        owner.subject.windowController = self
+        owner.windowController = self
         /// Pointed at the connection before the toolbar reaches the window, so the delegate builds
         /// its items with a subject already in place and nothing has to be rebuilt afterwards.
         owner.repoint(to: coordinator)
@@ -1251,6 +1250,29 @@ internal final class MainSplitViewController: NSSplitViewController, TrailingPan
         let state = SharedSidebarState.forConnection(connectionId)
         guard !state.databaseFilterSelected.isEmpty else { return }
         state.databaseFilterSelected = []
+    }
+
+    /// Which list the sidebar is showing, or nil while it is collapsed or narrowed to the rail.
+    /// The segmented control and the two View-menu items both read it, so neither can report a
+    /// selection the sidebar is not showing.
+    var selectedSidebarTab: SidebarTab? {
+        guard sidebarChromeMode.showsObjectBrowser, sidebarSplitItem?.isCollapsed == false else { return nil }
+        guard let connectionId = currentSession?.connection.id else { return nil }
+        return SharedSidebarState.forConnection(connectionId).selectedSidebarTab
+    }
+
+    /// Selects a list and leaves the sidebar open, which is what a command called "Show Tables"
+    /// has to do. `setSidebarTab` is a toggle, correctly so for the segmented control it serves:
+    /// pressing the segment already selected closes the sidebar. A menu item that did that would
+    /// be a Show command that hides.
+    func revealSidebarTab(_ tab: SidebarTab) {
+        guard sidebarChromeMode.showsObjectBrowser else { return }
+        guard let connectionId = currentSession?.connection.id else { return }
+        SharedSidebarState.forConnection(connectionId).selectedSidebarTab = tab
+        if sidebarSplitItem?.isCollapsed == true {
+            sidebarSplitItem?.animator().isCollapsed = false
+        }
+        toolbarOwner?.syncSidebarSelection()
     }
 
     /// Refused while the sidebar is narrowed to the workspace rail. The item is open, so the

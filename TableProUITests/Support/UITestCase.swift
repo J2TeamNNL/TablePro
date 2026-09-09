@@ -226,6 +226,28 @@ internal class UITestCase: XCTestCase {
             .withOffset(CGVector(dx: max(80, clearOfBrowser), dy: dy))
     }
 
+    /// The preconditions a click taken off the grid actually has, which existence does not give.
+    ///
+    /// The grid enters the tree when its table view is mounted, which is before the query behind it
+    /// has returned. A click posted then lands on empty grid and selects nothing, and nothing fails
+    /// there: the suite goes on to wait out its own timeout for whatever the selection was supposed
+    /// to produce, and reports that as the missing thing. A grid that exists is also not laid out
+    /// yet, and a coordinate taken off an empty frame resolves to `(inf, inf)`, which posts at no
+    /// display at all and takes the runner down instead of failing.
+    ///
+    /// The question has to stop at the first row. `allElementsBoundByIndex` resolves the whole set,
+    /// and asking the grid for its rows is what activates `DataGridCellAccessibilityView`, so the
+    /// table view then prepares every row of the page and mounts a cell view for each: fine on
+    /// Album's 347 rows, and past XCUITest's own query budget on the `Track` table the sample opens
+    /// by default, where it fails the suite with "Timed out while evaluating UI query" rather than
+    /// with an assertion. `firstMatch` is what stops the traversal early.
+    internal func waitForClickableRows(in grid: XCUIElement, timeout: TimeInterval = 30) -> Bool {
+        let firstRow = grid.tableRows.firstMatch
+        return waitForPredicate(timeout: timeout) {
+            grid.frame.width > 0 && grid.frame.height > 0 && firstRow.exists
+        }
+    }
+
     /// The object browser draws its rows as hosted cells, so a row's name arrives as the static
     /// text's `value`, carrying the object kind the row reads out to VoiceOver, rather than as a
     /// label or an identifier. Matching on `value` is what finds them.

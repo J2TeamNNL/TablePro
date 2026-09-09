@@ -258,27 +258,23 @@ extension TableViewCoordinator {
 
     @objc func sortAscending(_ sender: NSMenuItem) {
         guard let columnIndex = sender.representedObject as? Int else { return }
-        var state = SortState()
-        state.columns = [SortColumn(
-            columnIndex: columnIndex,
-            direction: .ascending,
-            columnName: identitySchema.columnName(for: columnIndex)
-        )]
-        currentSortState = state
-        applyCurrentSortStateToHeader()
-        delegate?.dataGridSortStateChanged(state)
+        announceSort(column: columnIndex, direction: .ascending)
     }
 
     @objc func sortDescending(_ sender: NSMenuItem) {
         guard let columnIndex = sender.representedObject as? Int else { return }
-        var state = SortState()
-        state.columns = [SortColumn(
-            columnIndex: columnIndex,
-            direction: .descending,
-            columnName: identitySchema.columnName(for: columnIndex)
-        )]
-        currentSortState = state
-        applyCurrentSortStateToHeader()
+        announceSort(column: columnIndex, direction: .descending)
+    }
+
+    private func announceSort(column columnIndex: Int, direction: SortDirection) {
+        let state = SortState(
+            columns: [SortColumn(
+                columnIndex: columnIndex,
+                direction: direction,
+                columnName: identitySchema.columnName(for: columnIndex)
+            )],
+            source: .user
+        )
         delegate?.dataGridSortStateChanged(state)
     }
 
@@ -286,15 +282,11 @@ extension TableViewCoordinator {
         delegate?.dataGridShowAllColumns()
     }
 
+    /// Sends the user's own empty sort, which is not the same value as a tab that has not decided.
+    /// `wantsDefaultSort` reads the source, so a `.user` empty state is what keeps the app default
+    /// from being written straight back over Don't Sort on the next load.
     @objc func clearSortAction() {
-        currentSortState = SortState()
-        applyCurrentSortStateToHeader()
-        delegate?.dataGridSortStateChanged(SortState())
-    }
-
-    private func applyCurrentSortStateToHeader() {
-        guard let header = tableView?.headerView as? SortableHeaderView else { return }
-        header.applySortState(currentSortState, schema: identitySchema)
+        delegate?.dataGridSortStateChanged(SortState(columns: [], source: .user))
     }
 
     @objc func copyColumnName(_ sender: NSMenuItem) {
@@ -384,9 +376,25 @@ extension TableViewCoordinator {
         scheduleLayoutPersist()
     }
 
+    /// Gated whole, not just at the reload. `applyDisplayFormats` remaps the value filter and
+    /// rewrites the format array before it reports whether anything moved, so gating the reload
+    /// alone left a declined change half-applied: the state moved, the grid did not, and the next
+    /// unrelated update would have shown the reorder anyway.
+    ///
+    /// Only when a filter is active, because that is the only way a format change can renumber the
+    /// display at all. Without one this is a repaint, and repaints do not touch pending edits.
     @objc func setDisplayFormat(_ sender: NSMenuItem) {
         guard let info = sender.representedObject as? DisplayFormatMenuItem else { return }
+        guard valueFilterState.isActive else {
+            applyDisplayFormatSelection(info)
+            return
+        }
+        confirmDisplayOrderChange { [weak self] in
+            self?.applyDisplayFormatSelection(info)
+        }
+    }
 
+    private func applyDisplayFormatSelection(_ info: DisplayFormatMenuItem) {
         if let scope = tableScope {
             ValueDisplayFormatService.shared.setOverride(
                 info.format,
