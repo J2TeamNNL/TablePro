@@ -10,7 +10,7 @@ extension MainContentCoordinator {
     }
 
     var hasSidebarEdits: Bool {
-        rightPanelState?.editState.hasEdits ?? false
+        trailingPaneState?.inspector.editState.hasEdits ?? false
     }
 
     /// Only the selected tab's editors are mounted, so only the selected tab has live state on the
@@ -38,6 +38,17 @@ extension MainContentCoordinator {
     /// change fields, so closing a table tab is the one gesture that destroys them for good.
     func hasUnsavedWork(in tab: QueryTab?) -> Bool {
         guard let tab else { return false }
+        return savability(of: tab) != .nothingAtRisk
+    }
+
+    /// Whether one tab, named by id, is holding work a move would lose.
+    ///
+    /// Detaching a tab into its own window carries the `QueryTab` and nothing the coordinator holds
+    /// beside it, so this is what the command reads before offering itself. An id that names no tab
+    /// answers true: refusing a move is recoverable, performing one on a tab this window cannot see
+    /// is not.
+    func hasUnsavedWork(forTab id: UUID) -> Bool {
+        guard let tab = tabManager.tabs.first(where: { $0.id == id }) else { return true }
         return savability(of: tab) != .nothingAtRisk
     }
 

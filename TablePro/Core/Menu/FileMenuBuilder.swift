@@ -33,7 +33,7 @@ enum FileMenuBuilder {
             MenuItemFactory.separator,
             MenuItemFactory.item(
                 String(localized: "Open File…"),
-                action: #selector(MainSplitViewController.openSQLFile(_:)),
+                action: #selector(AppDelegate.openFile(_:)),
                 shortcut: .openFile,
                 keyboard: keyboard
             ),
@@ -109,6 +109,10 @@ enum FileMenuBuilder {
             MenuItemFactory.item(
                 String(localized: "Restore Dump…"),
                 action: #selector(MainSplitViewController.restoreDatabase(_:))
+            ),
+            MenuItemFactory.item(
+                String(localized: "Server-Side Export…"),
+                action: #selector(MainSplitViewController.serverSideExport(_:))
             )
         ])
         file.submenu?.delegate = closeTitleDelegate

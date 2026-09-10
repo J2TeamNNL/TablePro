@@ -152,6 +152,14 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         try await pluginDriver.applyQueryTimeout(seconds)
     }
 
+    var releasableResourceCommandTitle: String? {
+        pluginDriver.releasableResourceCommandTitle
+    }
+
+    func releaseIdleResource() async throws -> PluginResourceRelease {
+        try await pluginDriver.releaseIdleResource()
+    }
+
     func resolveQueryCompletionProfile(
         databaseTypeId: String,
         base: QueryCompletionProfile
@@ -187,6 +195,13 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
             rowCap: rowCap,
             parameters: cellParams
         )
+        return mapQueryResult(pluginResult)
+    }
+
+    func executeBoundedQuery(query: String, rowCap: Int) async throws -> QueryResult? {
+        guard let pluginResult = try await pluginDriver.executeBoundedQuery(query: query, rowCap: rowCap) else {
+            return nil
+        }
         return mapQueryResult(pluginResult)
     }
 
@@ -260,25 +275,46 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
                 charset: col.charset,
                 collation: col.collation,
                 comment: col.comment,
+                identityKind: col.identityKind,
                 isGenerated: col.isGenerated,
-                allowedValues: col.allowedValues
+                allowedValues: col.allowedValues,
+                generationExpression: col.generationExpression,
+                generationKind: col.generationKind
             )
         }
     }
 
     func fetchIndexes(table: String) async throws -> [IndexInfo] {
         let pluginIndexes = try await pluginDriver.fetchIndexes(table: table, schema: pluginDriver.currentSchema)
-        return pluginIndexes.map { idx in
-            IndexInfo(
-                name: idx.name,
-                columns: idx.columns,
-                isUnique: idx.isUnique,
-                isPrimary: idx.isPrimary,
-                type: idx.type,
-                columnPrefixes: idx.columnPrefixes,
-                whereClause: idx.whereClause
-            )
-        }
+        return pluginIndexes.map(Self.mapPluginIndex)
+    }
+
+    nonisolated private static func mapPluginIndex(_ index: PluginIndexInfo) -> IndexInfo {
+        IndexInfo(
+            name: index.name,
+            columns: index.columns,
+            isUnique: index.isUnique,
+            isPrimary: index.isPrimary,
+            type: index.type,
+            columnPrefixes: index.columnPrefixes,
+            whereClause: index.whereClause
+        )
+    }
+
+    nonisolated private static func mapPluginTableMetadata(_ metadata: PluginTableMetadata) -> TableMetadata {
+        TableMetadata(
+            tableName: metadata.tableName,
+            dataSize: metadata.dataSize,
+            indexSize: metadata.indexSize,
+            totalSize: metadata.totalSize,
+            avgRowLength: metadata.avgRowLength,
+            rowCount: metadata.rowCount,
+            comment: metadata.comment,
+            engine: metadata.engine,
+            collation: metadata.collation,
+            createTime: metadata.createTime,
+            updateTime: metadata.updateTime
+        )
     }
 
     func fetchForeignKeys(table: String) async throws -> [ForeignKeyInfo] {
@@ -292,6 +328,20 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
                 referencedSchema: fk.referencedSchema,
                 onDelete: fk.onDelete,
                 onUpdate: fk.onUpdate
+            )
+        }
+    }
+
+    func fetchCheckConstraints(table: String) async throws -> [CheckConstraintInfo] {
+        let pluginConstraints = try await pluginDriver.fetchCheckConstraints(
+            table: table, schema: pluginDriver.currentSchema
+        )
+        return pluginConstraints.map { constraint in
+            CheckConstraintInfo(
+                name: constraint.name,
+                expression: constraint.expression,
+                columns: constraint.columns,
+                isValidated: constraint.isValidated
             )
         }
     }
@@ -359,6 +409,10 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         try await pluginDriver.fetchTableDDL(table: table, schema: pluginDriver.currentSchema)
     }
 
+    func fetchIndexDDL(table: String) async throws -> [String] {
+        try await pluginDriver.fetchIndexDDL(table: table, schema: pluginDriver.currentSchema)
+    }
+
     func fetchDependentTypes(forTable table: String) async throws -> [(name: String, labels: [String])] {
         try await pluginDriver.fetchDependentTypes(table: table, schema: pluginDriver.currentSchema)
     }
@@ -376,19 +430,7 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
             table: tableName,
             schema: pluginDriver.currentSchema
         )
-        return TableMetadata(
-            tableName: pluginMeta.tableName,
-            dataSize: pluginMeta.dataSize,
-            indexSize: pluginMeta.indexSize,
-            totalSize: pluginMeta.totalSize,
-            avgRowLength: pluginMeta.avgRowLength,
-            rowCount: pluginMeta.rowCount,
-            comment: pluginMeta.comment,
-            engine: pluginMeta.engine,
-            collation: pluginMeta.collation,
-            createTime: pluginMeta.createTime,
-            updateTime: pluginMeta.updateTime
-        )
+        return Self.mapPluginTableMetadata(pluginMeta)
     }
 
     func fetchDatabases() async throws -> [String] {
@@ -417,6 +459,34 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
 
     func fetchRoutineDDL(_ routine: RoutineInfo) async throws -> String {
         try await pluginDriver.fetchRoutineDDL(routine.pluginRoutine)
+    }
+
+    func fetchUserDefinedTypes(schema: String?) async throws -> [UserDefinedTypeInfo] {
+        let resolvedSchema = schema ?? pluginDriver.currentSchema
+        do {
+            return try await pluginDriver.fetchUserDefinedTypes(schema: resolvedSchema)
+                .map(UserDefinedTypeInfo.init)
+                .sorted { $0.name < $1.name }
+        } catch {
+            Self.logger.warning("fetchUserDefinedTypes failed: \(error.localizedDescription, privacy: .public)")
+            throw error
+        }
+    }
+
+    func fetchUserDefinedType(_ type: UserDefinedTypeInfo) async throws -> UserDefinedTypeInfo {
+        UserDefinedTypeInfo(try await pluginDriver.fetchUserDefinedType(type.pluginType))
+    }
+
+    func createTypeTemplate(schema: String?) -> String? {
+        pluginDriver.createTypeTemplate(schema: schema ?? pluginDriver.currentSchema)
+    }
+
+    func generateAddEnumLabelSQL(type: UserDefinedTypeInfo, label: String, placement: EnumLabelPlacement?) -> String? {
+        pluginDriver.generateAddEnumLabelSQL(type: type.pluginType, label: label, placement: placement?.pluginPlacement)
+    }
+
+    func generateRenameEnumLabelSQL(type: UserDefinedTypeInfo, from oldLabel: String, to newLabel: String) -> String? {
+        pluginDriver.generateRenameEnumLabelSQL(type: type.pluginType, from: oldLabel, to: newLabel)
     }
 
     func fetchDatabaseMetadata(_ database: String) async throws -> DatabaseMetadata {
@@ -450,6 +520,18 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         try await pluginDriver.dropSchema(name: name)
     }
 
+    func renameTable(name: String, schema: String?, to newName: String, objectType: String) async throws {
+        try await pluginDriver.renameTable(name: name, schema: schema, to: newName, objectType: objectType)
+    }
+
+    func renameDatabase(name: String, to newName: String) async throws {
+        try await pluginDriver.renameDatabase(name: name, to: newName)
+    }
+
+    func renameSchema(name: String, to newName: String) async throws {
+        try await pluginDriver.renameSchema(name: name, to: newName)
+    }
+
     func fetchSessionContexts() async throws -> [PluginSessionContext]? {
         try await pluginDriver.fetchSessionContexts()
     }
@@ -468,12 +550,7 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         let pluginResult = try await pluginDriver.fetchAllColumns(schema: pluginDriver.currentSchema)
         var result: [String: [ColumnInfo]] = [:]
         for (table, cols) in pluginResult {
-            result[table] = cols.map { col in
-                ColumnInfo(name: col.name, dataType: col.dataType, isNullable: col.isNullable,
-                           isPrimaryKey: col.isPrimaryKey, defaultValue: col.defaultValue,
-                           extra: col.extra, charset: col.charset, collation: col.collation, comment: col.comment,
-                           allowedValues: col.allowedValues)
-            }
+            result[table] = mapPluginColumns(cols)
         }
         return result
     }
@@ -587,6 +664,39 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
 
     func generateMoveColumnSQL(table: String, column: PluginColumnDefinition, afterColumn: String?) -> String? {
         pluginDriver.generateMoveColumnSQL(table: table, column: column, afterColumn: afterColumn)
+    }
+
+    /// Routed to the session driver rather than through `withMetadataDriver`. A rebuild plan reads
+    /// the catalog of the database this session is on, and a pooled driver is a second connection
+    /// that an embedded engine answers from a different database entirely.
+    func generateColumnReorderPlan(
+        table: String,
+        schema: String?,
+        columns: [PluginColumnDefinition],
+        desiredOrder: [String]
+    ) async throws -> PluginColumnReorderPlan? {
+        try await pluginDriver.generateColumnReorderPlan(
+            table: table,
+            schema: schema,
+            columns: columns,
+            desiredOrder: desiredOrder
+        )
+    }
+
+    func generateTableRebuildPlan(
+        table: String,
+        schema: String?,
+        respecification: PluginTableRespecification
+    ) async throws -> PluginColumnReorderPlan? {
+        try await pluginDriver.generateTableRebuildPlan(
+            table: table,
+            schema: schema,
+            respecification: respecification
+        )
+    }
+
+    func columnReorderSchemaFingerprint(table: String, schema: String?) async throws -> String? {
+        try await pluginDriver.columnReorderSchemaFingerprint(table: table, schema: schema)
     }
 
     func generateCreateTableSQL(definition: PluginCreateTableDefinition) -> String? {
@@ -703,6 +813,7 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         )
         result.isTruncated = pluginResult.isTruncated
         result.statusMessage = pluginResult.statusMessage
+        result.timing = pluginResult.timing
         result.columnMeta = pluginResult.columnMeta?.map {
             ResultColumnMeta(isPrimaryKey: $0.isPrimaryKey, isNullable: $0.isNullable, isAutoIncrement: $0.isIdentity)
         }

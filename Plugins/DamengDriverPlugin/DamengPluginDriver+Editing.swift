@@ -292,7 +292,7 @@ extension DamengPluginDriver {
             definition += " IDENTITY(1,1)"
         }
         if let defaultValue = column.defaultValue, !defaultValue.isEmpty {
-            definition += " DEFAULT \(defaultExpression(defaultValue))"
+            definition += " DEFAULT \(defaultValue)"
         }
         if !column.isNullable {
             definition += " NOT NULL"
@@ -315,18 +315,8 @@ extension DamengPluginDriver {
         let referencedTable = qualifiedName(schema: foreignKey.referencedSchema, object: foreignKey.referencedTable)
         let constraint = foreignKey.name.isEmpty ? "" : "CONSTRAINT \(quoteIdentifier(foreignKey.name)) "
         let onDelete = foreignKey.onDelete.uppercased() == "NO ACTION" ? "" : " ON DELETE \(foreignKey.onDelete)"
-        return "\(constraint)FOREIGN KEY (\(columns)) REFERENCES \(referencedTable) (\(referencedColumns))\(onDelete)"
-    }
-
-    private func defaultExpression(_ value: String) -> String {
-        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        let uppercased = normalized.uppercased()
-        if PluginNumericLiteral.isValid(normalized) || [
-            "NULL", "CURRENT_DATE", "CURRENT_TIME", "CURRENT_TIMESTAMP", "SYSDATE"
-        ].contains(uppercased) || normalized.hasPrefix("'") || normalized.hasPrefix("\"") {
-            return normalized
-        }
-        return stringLiteral(normalized)
+        let references = referencedColumns.isEmpty ? "" : " (\(referencedColumns))"
+        return "\(constraint)FOREIGN KEY (\(columns)) REFERENCES \(referencedTable)\(references)\(onDelete)"
     }
 
     /// Routes through the driver's single escaping seam. `replacingOccurrences` matches whole

@@ -127,7 +127,12 @@ struct ImportDialog: View {
         }
         .onChange(of: showSuccessDialog) { _, isShowing in
             guard isShowing else { return }
-            TransferResultAlert.presentImportSuccess(result: importResult, window: hostWindow) {
+            TransferResultAlert.presentImportSuccess(
+                result: importResult,
+                window: hostWindow,
+                sourceFileName: fileURL?.lastPathComponent ?? "",
+                targetTable: nil
+            ) {
                 showSuccessDialog = false
                 isPresented = false
                 AppCommands.shared.refreshData.send(DataRefreshRequest(connectionId: connection.id))
@@ -185,7 +190,6 @@ struct ImportDialog: View {
                             await selectFile()
                         }
                     }
-                    .buttonStyle(.link)
                     .font(.callout)
                 }
 
@@ -222,12 +226,13 @@ struct ImportDialog: View {
                 .font(.body)
                 .frame(width: 80, alignment: .leading)
 
-            Picker("", selection: $selectedFormatId) {
+            Picker(String(localized: "Format"), selection: $selectedFormatId) {
                 ForEach(availableFormats.map { (id: type(of: $0).formatId, name: type(of: $0).formatDisplayName) }, id: \.id) { item in
                     Text(item.name).tag(item.id)
                 }
             }
             .pickerStyle(.menu)
+            .labelsHidden()
             .frame(width: 120)
 
             Spacer()
@@ -262,23 +267,23 @@ struct ImportDialog: View {
                 Button("Reset to Defaults") {
                     resetOptionsToDefaults()
                 }
-                .buttonStyle(.link)
+                .buttonStyle(.borderless)
                 .font(.callout)
             }
 
             VStack(alignment: .leading, spacing: 12) {
-                // Encoding picker (always shown, independent of plugin)
                 HStack(spacing: 8) {
                     Text("Encoding:")
                         .font(.body)
                         .frame(width: 80, alignment: .leading)
 
-                    Picker("", selection: $selectedEncoding) {
+                    Picker(String(localized: "Encoding"), selection: $selectedEncoding) {
                         ForEach(ImportEncoding.allCases) { enc in
                             Text(enc.rawValue).tag(enc)
                         }
                     }
                     .pickerStyle(.menu)
+                    .labelsHidden()
                     .frame(width: 120)
                     .onChange(of: selectedEncoding) { _, _ in
                         loadFileTask?.cancel()
@@ -487,6 +492,10 @@ struct ImportDialog: View {
             } catch is PluginImportCancellationError {
                 await MainActor.run {
                     showProgressDialog = false
+                    TransferResultAlert.presentImportCancelled(
+                        executedStatements: service.state.processedStatements,
+                        window: hostWindow
+                    ) {}
                 }
             } catch {
                 await MainActor.run {

@@ -32,7 +32,7 @@ Press `Cmd+N` anywhere in the app to open the connection form. **Create Connecti
   <img className="hidden dark:block" src="/images/database-type-chooser-dark.png" alt="Database type chooser" />
 </Frame>
 
-Every driver's default port, and which of SSH tunnel, SSL/TLS, Cloudflare Tunnel, Cloud SQL Proxy, and SOCKS Proxy it accepts, is in the [connection form reference](/connections/connection-form#which-drivers-get-which-panes).
+Every driver's default port, and which of SSH tunnel, SSL/TLS, Cloudflare Tunnel, Cloud SQL Proxy, and SOCKS Proxy it accepts, is in the [connection form reference](/connections/connection-form#which-drivers-get-which-transports).
 
 ### Import from URL
 
@@ -59,9 +59,9 @@ A confirmation alert names the target first. Matching a saved connection on type
 
 The **Customization** pane holds a color, tags, and a group. The color tints the toolbar while the connection is open.
 
-<Frame caption="Customization pane">
-  <img className="block dark:hidden" src="/images/connection-customization.png" alt="Customization pane" />
-  <img className="hidden dark:block" src="/images/connection-customization-dark.png" alt="Customization pane" />
+<Frame caption="Color, tags and group on the Appearance section">
+  <img className="block dark:hidden" src="/images/connection-customization.png" alt="Color swatches, a tag field and a group picker" />
+  <img className="hidden dark:block" src="/images/connection-customization-dark.png" alt="Color swatches, a tag field and a group picker" />
 </Frame>
 
 <Tip>
@@ -78,11 +78,21 @@ A connection's group, tags, and favorite star sync through iCloud unless it is m
 
 ## Switch connections and databases
 
-**Switch Connection** (`Ctrl+Cmd+C`) lists active sessions and saved connections: type to filter, arrow keys to move, Return to switch. **Open Database** (`Cmd+K`) moves to another database on the same server.
+Press `Ctrl+Cmd+C` for **Switch Connection**. Whatever is already open sits at the top, and the rest are listed under the group they belong to, a nested group carrying its full path. Arrow keys move, `Return` switches the window to that connection, and `Cmd`-click opens a saved one in a window of its own. Typing searches every group at once and collapses the matches into a single list.
+
+A footer under that list names the transport the window's connection runs on. On an SSH tunnel or a SOCKS proxy it also carries the bytes that have crossed since the transport opened, received and sent.
+
+The rest show their name alone. Cloudflare Tunnel, Cloud SQL Auth Proxy and Tunnel Command each run a separate binary that holds the connection end to end, a [remote database file](/connections/remote-database-files) is fetched once and then read from disk, and a direct connection's socket belongs to the database driver.
+
+### Throughput in the toolbar
+
+The same two transports put a live figure beside the connection name in the middle of the toolbar, an arrow for whichever direction is busier and the rate: `↓145 kB/s`. It reads `0 kB/s` while nothing moves, which is most of the time on a database connection. A connection on any other transport has no figure there at all.
+
+**Open Database** (`Cmd+K`) moves to another database on the same server.
 
 <Frame caption="Database switcher in toolbar">
-  <img className="block dark:hidden" src="/images/database-switcher-toolbar.png" alt="Database switcher in toolbar" />
-  <img className="hidden dark:block" src="/images/database-switcher-toolbar-dark.png" alt="Database switcher in toolbar" />
+  <img className="block dark:hidden" src="/images/database-switcher-toolbar.png" alt="Database list with the current database checked" />
+  <img className="hidden dark:block" src="/images/database-switcher-toolbar-dark.png" alt="Database list with the current database checked" />
 </Frame>
 
 Leaving **Database** empty on MySQL, MariaDB, MongoDB, SQL Server, and ClickHouse browses every database the user can reach. PostgreSQL and Redshift need one to connect at all: use `postgres` (Redshift: `dev`) and switch with `Cmd+K`. To hide the rest, choose **View > Filter Databases** and check the ones you want; the choice is saved per connection.

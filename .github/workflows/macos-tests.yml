@@ -29,10 +29,21 @@ on:
   workflow_dispatch:
   workflow_call:
 
-# Only one run per PR/branch at a time; new pushes cancel pending older ones.
+# One run per PR/branch at a time. On a pull request a new push cancels the run in flight, because
+# only the newest commit's verdict is wanted and the older one is about to be replaced anyway.
+#
+# A push to main is different: its run is the only verdict that commit will ever get, and cancelling
+# it leaves main untested. That is not hypothetical. Of the last 30 main runs of this workflow, 13
+# were cancelled by the next merge, and the merges are frequent enough that whole days passed with
+# no conclusive result on main at all.
+#
+# Queueing them does not pile up. With cancel-in-progress false GitHub still replaces the *pending*
+# run in the group: "any existing pending job or workflow in the same concurrency group will be
+# canceled and the new queued job or workflow will take its place." So a burst of merges holds at
+# most one running plus one queued, and the one that ends up queued is the newest.
 concurrency:
   group: macos-tests-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # A downgrade or an exact match is always allowed for a called workflow; only asking for more than
 # the caller holds fails at run creation. Declaring read here therefore cannot break build.yml's
@@ -62,6 +73,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       run: ${{ steps.decide.outputs.run }}
+      oracle: ${{ steps.decide.outputs.oracle }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -90,6 +102,14 @@ jobs:
             'TableProMobile/project\.yml$' 'project\.yml$' \
             '\.github/workflows/macos-tests\.yml$')
           echo "run=$RUN" >> "$GITHUB_OUTPUT"
+          ORACLE=$(scripts/ci/detect-changed-paths.sh \
+            --event "$EVENT_NAME" \
+            --base "$BASE_SHA" \
+            --ref "$REF" \
+            --skip-release-commit \
+            'Packages/TableProOracle/' \
+            '\.github/workflows/macos-tests\.yml$')
+          echo "oracle=$ORACLE" >> "$GITHUB_OUTPUT"
 
   packages:
     name: Package Tests
@@ -107,6 +127,18 @@ jobs:
 
       - name: Run TableProCore package tests
         run: swift test --package-path Packages/TableProCore
+
+      # The only thing that runs TableProOracleCore's suites. AllPlugins proves the module
+      # compiles and nothing more, and the package is not a TableProTests dependency, so the cases
+      # cannot move there: importing it drags oracle-nio into the app test bundle. Gated on its own
+      # narrower filter because it resolves a second dependency graph, and pinned to the tracked
+      # Package.resolved so a manifest bump that forgets the lockfile fails here rather than
+      # silently floating. It cannot run on a developer Mac with Xcode 27 / Swift 6.4: oracle-nio's
+      # @TaskLocal macro expands to `unknown attribute 'usableFromInlinenonisolated'` there, which
+      # is the dependency and not your diff.
+      - name: Run TableProOracle package tests
+        if: needs.changes.outputs.oracle == 'true'
+        run: swift test --package-path Packages/TableProOracle --force-resolved-versions
 
       # CodeEditSourceEditor is deliberately not run here. `swift test` cannot build it on this
       # runner: its CodeEditSymbols dependency fails with "type 'Bundle' has no member 'module'",
@@ -291,17 +323,27 @@ jobs:
       - name: Run unit tests
         run: |
           set -o pipefail
+          # To a file on its own line, not through a process substitution. `< <(...)` discards the
+          # producer's exit status, so the script refusing an entry that would skip nothing printed
+          # its diagnostic, exited 1, and the step carried on to run the whole suite unskipped and
+          # report success. The refusal the comment above promises never once failed a job.
+          SKIP_FILE="${RUNNER_TEMP:-.}/quarantine-skip-args.txt"
+          scripts/ci/quarantine-args.sh .github/macos-test-quarantine.txt TableProTests "$XCTESTRUN" "$TEST_DESTINATION" > "$SKIP_FILE"
           # A read loop, not mapfile: the macOS runner's /bin/bash is 3.2, which has neither
           # mapfile nor readarray, and a `run:` block gets that bash.
           SKIP_ARGS=()
           while IFS= read -r arg; do
+            # A blank line would become a literal empty argument, and xcodebuild reads that as a
+            # build action and refuses the whole run. An empty array expands to nothing and is
+            # fine; one empty string is not.
+            [ -n "$arg" ] || continue
             SKIP_ARGS+=("$arg")
-          done < <(scripts/ci/quarantine-args.sh .github/macos-test-quarantine.txt TableProTests "$XCTESTRUN" "$TEST_DESTINATION")
+          done < "$SKIP_FILE"
           xcodebuild test-without-building \
             -xctestrun "$XCTESTRUN" \
             -destination "$TEST_DESTINATION" \
             -only-testing:TableProTests \
-            "${SKIP_ARGS[@]}" \
+            ${SKIP_ARGS[@]+"${SKIP_ARGS[@]}"} \
             -parallel-testing-enabled NO \
             -resultBundlePath TestResults.xcresult \
             | xcbeautify --renderer github-actions
@@ -320,8 +362,12 @@ jobs:
         if: ${{ !cancelled() }}
         run: scripts/ci/summarize-xcresult.sh TestResults.xcresult "Unit tests"
 
+      # The bundle is evidence about the run, not the run's verdict, so a failure to upload it
+      # must not decide whether the suite passed. GitHub's own artifact endpoint answered
+      # ENOTFOUND on run 34056832569 and turned a green suite red, which failed the gate on main.
       - name: Upload test results
         if: ${{ !cancelled() }}
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: macos-test-results
@@ -369,17 +415,22 @@ jobs:
           SHARD_COUNT: ${{ matrix.of }}
         run: |
           set -o pipefail
+          # To a file on its own line, so a failure of the lister fails the step. A process
+          # substitution discards its exit status, which reads here as "the shard selected nothing".
+          ONLY_FILE="${RUNNER_TEMP:-.}/shard-only-args.txt"
+          scripts/ci/list-tests.sh \
+            --xctestrun "$XCTESTRUN" \
+            --target TableProUITests \
+            --quarantine .github/macos-ui-test-quarantine.txt \
+            --shard "$SHARD/$SHARD_COUNT" > "$ONLY_FILE"
           # A read loop, not mapfile: the macOS runner's /bin/bash is 3.2, which has neither.
           ONLY_ARGS=()
           while IFS= read -r arg; do
+            # The count check below cannot see an empty argument: one blank line makes the count 1
+            # and xcodebuild then reads that empty argument as a build action.
+            [ -n "$arg" ] || continue
             ONLY_ARGS+=("$arg")
-          done < <(
-            scripts/ci/list-tests.sh \
-              --xctestrun "$XCTESTRUN" \
-              --target TableProUITests \
-              --quarantine .github/macos-ui-test-quarantine.txt \
-              --shard "$SHARD/$SHARD_COUNT"
-          )
+          done < "$ONLY_FILE"
           [ "${#ONLY_ARGS[@]}" -gt 0 ] || { echo "::error::shard $SHARD selected no cases"; exit 1; }
           echo "shard $SHARD of $SHARD_COUNT runs ${#ONLY_ARGS[@]} cases"
           xcodebuild test-without-building \
@@ -396,8 +447,11 @@ jobs:
         if: ${{ !cancelled() }}
         run: scripts/ci/summarize-xcresult.sh UITestResults.xcresult "UI tests ${{ matrix.shard }}/${{ matrix.of }}"
 
+      # Diagnostic, exactly as in the unit job above: an upload that cannot reach GitHub says
+      # nothing about the tests and must not fail the shard.
       - name: Upload UI test results
         if: ${{ !cancelled() }}
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: macos-ui-test-results-${{ matrix.shard }}

@@ -70,8 +70,9 @@ enum QueryClassifier {
     }
 
     static func isMultiStatement(_ sql: String, databaseType: DatabaseType) -> Bool {
-        SQLStatementScanner.allStatements(
+        QueryStatementScanner.executableStatements(
             in: sql,
+            model: QueryStatementModel.forDatabaseType(databaseType),
             dialect: SqlDialect.from(databaseTypeId: databaseType.rawValue)
         ).count > 1
     }
@@ -93,9 +94,18 @@ enum QueryClassifier {
         return explainInnerStatement(trimmed, keyword: keyword)?.statement
     }
 
+    /// A parenthesised query expression is idiomatic when each arm of a set operation carries its
+    /// own ORDER BY, so the opening parens are skipped to reach the keyword that classifies the
+    /// statement. Skipping cannot loosen the classification: an unrecognised keyword still falls to
+    /// the write arm, and the body-wide filesystem and destructive scans run over the whole text.
     static func leadingKeyword(of sql: String) -> String {
-        let stripped = strippingLeadingComments(sql)
-        return stripped.prefix { $0.isLetter || $0.isNumber || $0 == "_" }.uppercased()
+        var remaining = strippingLeadingComments(sql)[...]
+        while remaining.first == "(" {
+            remaining = remaining.dropFirst().drop { $0.isWhitespace }
+            guard remaining.hasPrefix("--") || remaining.hasPrefix("/*") else { continue }
+            remaining = strippingLeadingComments(String(remaining))[...]
+        }
+        return remaining.prefix { $0.isLetter || $0.isNumber || $0 == "_" }.uppercased()
     }
 
     static func strippingLeadingComments(_ sql: String) -> String {
@@ -514,6 +524,8 @@ private extension QueryClassifier {
             return etcdClassification(trimmed)
         case .elasticsearch:
             return elasticsearchClassification(trimmed)
+        case .typesense:
+            return typesenseClassification(trimmed)
         default:
             return nil
         }
@@ -537,7 +549,17 @@ private extension QueryClassifier {
         return QueryClassification(tier: .safe, reachesFilesystemOrExecutesCode: touchesUnsafeSurface)
     }
 
+    /// Every method a MongoDB statement invokes, by either spelling.
+    ///
+    /// The query language is JavaScript, so `db.users.deleteMany({})` and
+    /// `db.users["deleteMany"]({})` are the same call. Reading only the dotted form let the bracket
+    /// form past the destructive gate, which is what decides whether an external or assistant
+    /// client has to confirm before it runs.
     static func invokedMethodNames(in lowered: String) -> [String] {
+        dottedMethodNames(in: lowered) + bracketedMethodNames(in: lowered)
+    }
+
+    private static func dottedMethodNames(in lowered: String) -> [String] {
         var names: [String] = []
         var current = ""
         var sawDot = false
@@ -558,6 +580,36 @@ private extension QueryClassifier {
                 sawDot = false
             }
             current = ""
+        }
+        return names
+    }
+
+    /// Names taken through bracket access, whether or not they are called on the spot.
+    ///
+    /// A name is counted even without a following `(`, because `var drop = db.c["drop"]; drop()`
+    /// reaches the same command and no scan of the text can follow the binding.
+    private static func bracketedMethodNames(in lowered: String) -> [String] {
+        var names: [String] = []
+        var index = lowered.startIndex
+
+        while let open = lowered[index...].firstIndex(of: "[") {
+            var cursor = lowered.index(after: open)
+            while cursor < lowered.endIndex, lowered[cursor].isWhitespace {
+                cursor = lowered.index(after: cursor)
+            }
+            guard cursor < lowered.endIndex, lowered[cursor] == "\"" || lowered[cursor] == "'" else {
+                index = lowered.index(after: open)
+                continue
+            }
+            let quote = lowered[cursor]
+            var name = ""
+            cursor = lowered.index(after: cursor)
+            while cursor < lowered.endIndex, lowered[cursor] != quote {
+                name.append(lowered[cursor])
+                cursor = lowered.index(after: cursor)
+            }
+            if !name.isEmpty { names.append(name) }
+            index = cursor < lowered.endIndex ? lowered.index(after: cursor) : lowered.endIndex
         }
         return names
     }
@@ -591,6 +643,50 @@ private extension QueryClassifier {
             return QueryClassification(tier: .safe, reachesFilesystemOrExecutesCode: touchesUnsafeSurface)
         }
         if verb == "POST", elasticsearchReadPaths.contains(where: { upper.contains($0) }) {
+            return QueryClassification(tier: .safe, reachesFilesystemOrExecutesCode: touchesUnsafeSurface)
+        }
+        if verb == "DELETE" {
+            return QueryClassification(tier: .destructive, reachesFilesystemOrExecutesCode: touchesUnsafeSurface)
+        }
+        return QueryClassification(tier: .write, reachesFilesystemOrExecutesCode: touchesUnsafeSurface)
+    }
+
+    static let typesenseReadPaths: [String] = ["/MULTI_SEARCH", "/DOCUMENTS/SEARCH", "/DOCUMENTS/EXPORT"]
+
+    /// `/operations/snapshot` writes the whole dataset to a server path the request names, and
+    /// `/keys` mints API keys, so both widen reach beyond the data the request touches.
+    static let typesenseUnsafePaths: [String] = ["/OPERATIONS/SNAPSHOT", "/KEYS"]
+
+    /// The verb and the path, and nothing else. A Typesense console request is one header line
+    /// followed by a JSON body, and the body is the caller's data: scanning the whole statement
+    /// let `POST /collections/c/documents/import` carrying `"note": "/multi_search"` in a field
+    /// read as a search, which is a read-only mode and MCP gate bypass. A URL path holds no raw
+    /// space, so the path ends at the first one: that keeps a body written on the header line out
+    /// of it, and stops `POST /collections/c /multi_search` from ending in a read path.
+    static func typesenseRequestLine(_ trimmed: String) -> (verb: String, path: String) {
+        let header = trimmed.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? ""
+        let parts = header.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+        guard let verb = parts.first else { return ("", "/") }
+        guard parts.count == 2 else { return (String(verb).uppercased(), "/") }
+
+        var path = parts[1].trimmingCharacters(in: .whitespaces)
+        for marker in ["?", "#"] {
+            if let stop = path.range(of: marker) {
+                path = String(path[..<stop.lowerBound])
+            }
+        }
+        path = String(path.prefix { !$0.isWhitespace })
+        if !path.hasPrefix("/") { path = "/" + path }
+        return (String(verb).uppercased(), path.uppercased())
+    }
+
+    static func typesenseClassification(_ trimmed: String) -> QueryClassification {
+        let (verb, path) = typesenseRequestLine(trimmed)
+        let touchesUnsafeSurface = typesenseUnsafePaths.contains { path == $0 || path.hasPrefix("\($0)/") }
+        if verb == "GET" || verb == "HEAD" {
+            return QueryClassification(tier: .safe, reachesFilesystemOrExecutesCode: touchesUnsafeSurface)
+        }
+        if verb == "POST", typesenseReadPaths.contains(where: { path == $0 || path.hasSuffix($0) }) {
             return QueryClassification(tier: .safe, reachesFilesystemOrExecutesCode: touchesUnsafeSurface)
         }
         if verb == "DELETE" {

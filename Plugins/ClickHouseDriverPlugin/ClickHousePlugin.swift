@@ -56,6 +56,8 @@ final class ClickHousePlugin: NSObject, TableProPlugin, DriverPlugin {
     static let structureColumnFields: [StructureColumnField] = [.name, .type, .nullable, .defaultValue, .comment]
     static let supportsQueryProgress = true
     static let supportsDropDatabase = true
+    static let supportsRenameTable = true
+    static let supportsRenameDatabase = true
 
     static let sqlDialect: SQLDialectDescriptor? = SQLDialectDescriptor(
         identifierQuote: "`",
@@ -136,6 +138,10 @@ struct CHQueryResult {
     let rows: [[PluginCellValue]]
     let affectedRows: Int
     let isTruncated: Bool
+
+    /// Execution time as the server reported it in `X-ClickHouse-Summary`, so the figure carries no
+    /// network round trip. Nil on a server too old to send it.
+    var serverElapsed: TimeInterval?
 }
 
 // MARK: - Plugin Driver
@@ -152,6 +158,11 @@ final class ClickHousePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     let _queryTimeout = HttpQueryTimeoutBox()
 
     static let logger = Logger(subsystem: "com.TablePro", category: "ClickHousePluginDriver")
+
+    /// The columns the last schema read found under a kind other than DEFAULT, by name. It is the
+    /// driver's own record of what the server told it, because the kind has nowhere to ride on a
+    /// column definition and `generateModifyColumnSQL` is synchronous, so it cannot ask again.
+    var nonDefaultColumnKinds: Set<String> = []
 
     var serverVersion: String? { _serverVersion }
     var supportsSchemas: Bool { false }
@@ -263,7 +274,7 @@ final class ClickHousePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
             columnTypeNames: result.columnTypeNames,
             rows: result.rows,
             rowsAffected: result.affectedRows,
-            executionTime: executionTime,
+            timing: PluginQueryTiming(total: executionTime, server: result.serverElapsed),
             isTruncated: result.isTruncated
         )
     }
@@ -284,7 +295,7 @@ final class ClickHousePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
             columnTypeNames: result.columnTypeNames,
             rows: result.rows,
             rowsAffected: result.affectedRows,
-            executionTime: executionTime,
+            timing: PluginQueryTiming(total: executionTime, server: result.serverElapsed),
             isTruncated: result.isTruncated
         )
     }
@@ -484,6 +495,120 @@ final class ClickHousePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
     // MARK: - Streaming
 
+    /// A bounded read is one HTTP request. The unbounded `streamRows` path still pays a separate
+    /// `LIMIT 0` probe to learn its columns, so it is deliberately not reused here.
+    func executeBoundedQuery(query: String, rowCap: Int) async throws -> PluginQueryResult? {
+        let started = Date()
+        let stream = PluginRowStream.make { continuation, abort in
+            let streamTask = Task {
+                do {
+                    try await self.performBoundedStreamRows(
+                        query: query,
+                        rowCap: rowCap,
+                        continuation: continuation
+                    )
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            abort.onAbort { streamTask.cancel() }
+        }
+        return try await PluginBoundedStream.collect(stream, rowCap: rowCap, startedAt: started)
+    }
+
+    private func performBoundedStreamRows(
+        query: String,
+        rowCap: Int,
+        continuation: AsyncThrowingStream<PluginStreamElement, Error>.Continuation
+    ) async throws {
+        let (session, database) = try lock.withLock { () throws -> (URLSession, String) in
+            guard let session = self.session else { throw ClickHouseError.notConnected }
+            return (session, _currentDatabase)
+        }
+
+        var trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        while trimmedQuery.hasSuffix(";") {
+            trimmedQuery = String(trimmedQuery.dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        let request = try buildStreamRequest(query: trimmedQuery, database: database, rowCap: rowCap)
+        let (bytes, response) = try await session.bytes(for: request)
+
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode >= 400 {
+            var body = ""
+            for try await line in bytes.lines {
+                body += line
+            }
+            throw ClickHouseError(message: body.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+
+        /// JSONCompactEachRowWithNamesAndTypes puts the names on line one and the types on line
+        /// two, both as positional arrays, so the columns arrive without a second round trip and
+        /// survive a zero-row result.
+        var columns: [String] = []
+        var columnTypeNames: [String] = []
+        var headerSent = false
+        let batchSize = min(5_000, rowCap + 1)
+        var batch: [PluginRow] = []
+        batch.reserveCapacity(batchSize)
+
+        for try await line in bytes.lines {
+            try Task.checkCancellation()
+
+            let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmedLine.isEmpty { continue }
+            guard let lineData = trimmedLine.data(using: .utf8) else { continue }
+
+            if columns.isEmpty {
+                columns = (try? JSONSerialization.jsonObject(with: lineData) as? [String]) ?? []
+                continue
+            }
+            if columnTypeNames.isEmpty {
+                columnTypeNames = (try? JSONSerialization.jsonObject(with: lineData) as? [String]) ?? []
+                continuation.yield(.header(PluginStreamHeader(
+                    columns: columns,
+                    columnTypeNames: columnTypeNames,
+                    estimatedRowCount: nil
+                )))
+                headerSent = true
+                continue
+            }
+
+            guard let values = try? JSONSerialization.jsonObject(with: lineData) as? [Any] else { continue }
+            var row: [PluginCellValue] = []
+            row.reserveCapacity(columns.count)
+            for index in columns.indices {
+                let value: Any? = index < values.count ? values[index] : nil
+                row.append(Self.boundedCellValue(value))
+            }
+            batch.append(row)
+            if batch.count >= batchSize {
+                continuation.yield(.rows(batch))
+                batch.removeAll(keepingCapacity: true)
+            }
+        }
+
+        if !headerSent {
+            continuation.yield(.header(PluginStreamHeader(
+                columns: columns,
+                columnTypeNames: columnTypeNames,
+                estimatedRowCount: nil
+            )))
+        }
+        if !batch.isEmpty {
+            continuation.yield(.rows(batch))
+        }
+        continuation.finish()
+    }
+
+    private static func boundedCellValue(_ value: Any?) -> PluginCellValue {
+        guard let value, !(value is NSNull) else { return .null }
+        if let str = value as? String { return .text(str) }
+        if let num = value as? NSNumber { return .text(NumberText.text(for: num)) }
+        if let jsonStr = NumberText.json(from: value, sortedKeys: false) { return .text(jsonStr) }
+        return .text(String(describing: value))
+    }
+
     func streamRows(query: String) -> AsyncThrowingStream<PluginStreamElement, Error> {
         return AsyncThrowingStream(bufferingPolicy: .unbounded) { continuation in
             let streamTask = Task {
@@ -591,7 +716,7 @@ final class ClickHousePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         continuation.finish()
     }
 
-    private func buildStreamRequest(query: String, database: String) throws -> URLRequest {
+    private func buildStreamRequest(query: String, database: String, rowCap: Int? = nil) throws -> URLRequest {
         let useTLS = config.ssl.isEnabled
 
         var components = URLComponents()
@@ -604,7 +729,16 @@ final class ClickHousePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         if !database.isEmpty {
             queryItems.append(URLQueryItem(name: "database", value: database))
         }
-        queryItems.append(URLQueryItem(name: "default_format", value: "JSONEachRow"))
+        if let rowCap {
+            /// The bound rides as an HTTP setting so the SQL in the body stays exactly what the
+            /// user wrote. One row past the cap, so a full page can be told from a truncated one.
+            queryItems.append(URLQueryItem(name: "default_format", value: "JSONCompactEachRowWithNamesAndTypes"))
+            queryItems.append(URLQueryItem(name: "max_result_rows", value: String(rowCap + 1)))
+            queryItems.append(URLQueryItem(name: "result_overflow_mode", value: "break"))
+            queryItems.append(URLQueryItem(name: "cancel_http_readonly_queries_on_client_close", value: "1"))
+        } else {
+            queryItems.append(URLQueryItem(name: "default_format", value: "JSONEachRow"))
+        }
         components.queryItems = queryItems
 
         guard let url = components.url else {
@@ -662,21 +796,12 @@ final class ClickHousePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
         var def = "\(quoteIdentifier(col.name)) \(dataType)"
         if let defaultValue = col.defaultValue {
-            def += " DEFAULT \(clickhouseDefaultValue(defaultValue))"
+            def += " DEFAULT \(defaultValue)"
         }
         if let comment = col.comment, !comment.isEmpty {
             def += " COMMENT '\(escapeStringLiteral(comment))'"
         }
         return def
-    }
-
-    private func clickhouseDefaultValue(_ value: String) -> String {
-        let upper = value.uppercased()
-        if upper == "NULL" || upper == "NOW()" || upper == "TODAY()"
-            || value.hasPrefix("'") || Int64(value) != nil || Double(value) != nil {
-            return value
-        }
-        return "'\(escapeStringLiteral(value))'"
     }
 
     // MARK: - ALTER TABLE DDL
@@ -685,7 +810,15 @@ final class ClickHousePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         "ALTER TABLE \(quoteIdentifier(table)) ADD COLUMN \(clickhouseColumnDefinition(column))"
     }
 
+    /// A column whose kind is MATERIALIZED, EPHEMERAL or ALIAS has no default, so a statement that
+    /// gives it one converts it and its stored values stop being computed. The kind reaches the app
+    /// as `extra` and does not survive the round trip back into a column definition, so the driver
+    /// answers from what it read from `system.columns` itself.
     func generateModifyColumnSQL(table: String, oldColumn: PluginColumnDefinition, newColumn: PluginColumnDefinition) -> String? {
+        if newColumn.defaultValue != nil, nonDefaultColumnKinds.contains(newColumn.name) {
+            Self.logger.warning("Refusing to set a default on a non-DEFAULT ClickHouse column kind")
+            return nil
+        }
         let tableName = quoteIdentifier(table)
         var stmts: [String] = []
         if oldColumn.name != newColumn.name {
@@ -695,11 +828,63 @@ final class ClickHousePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
             || oldColumn.defaultValue != newColumn.defaultValue || oldColumn.comment != newColumn.comment {
             stmts.append("ALTER TABLE \(tableName) MODIFY COLUMN \(clickhouseColumnDefinition(newColumn))")
         }
+        // MODIFY COLUMN changes only the properties it spells out, so omitting the clause leaves the
+        // old default in place and the save reports a removal that never happened.
+        if oldColumn.defaultValue != nil, newColumn.defaultValue == nil {
+            let column = quoteIdentifier(newColumn.name)
+            stmts.append("ALTER TABLE \(tableName) MODIFY COLUMN \(column) REMOVE DEFAULT")
+        }
         return stmts.isEmpty ? nil : stmts.joined(separator: ";\n")
     }
 
     func generateDropColumnSQL(table: String, columnName: String) -> String? {
         "ALTER TABLE \(quoteIdentifier(table)) DROP COLUMN \(quoteIdentifier(columnName))"
+    }
+
+    /// `ALTER TABLE … MODIFY COLUMN name type FIRST | AFTER other`.
+    ///
+    /// Measured against 26.8: the type is mandatory (`MODIFY COLUMN c AFTER b` is a syntax error),
+    /// and naming it alone is enough. `MODIFY COLUMN` changes only the properties the statement
+    /// spells out, so the default, comment, codec, TTL and the MATERIALIZED, ALIAS and EPHEMERAL
+    /// kinds all survive a move, and the statement rewrites metadata without starting a mutation.
+    /// Restating the full definition instead would rewrite a MATERIALIZED column as a DEFAULT one
+    /// and requote every expression default.
+    ///
+    /// The type comes from the server rather than from the caller's definition, because it has to
+    /// be the stored type down to the `Nullable(…)` wrapper and a round trip is cheaper than a
+    /// column that comes back with a different type than it went in with.
+    func generateColumnReorderPlan(
+        table: String,
+        schema: String?,
+        columns: [PluginColumnDefinition],
+        desiredOrder: [String]
+    ) async throws -> PluginColumnReorderPlan? {
+        let storedTypes = try await fetchStoredColumnTypes(table: table)
+        let currentOrder = storedTypes.map(\.name)
+        let statements = PluginColumnReorderPlanner
+            .moves(from: currentOrder, to: desiredOrder)
+            .compactMap { move -> String? in
+                guard let type = storedTypes.first(where: { $0.name == move.column })?.type else { return nil }
+                let position = move.afterColumn.map { "AFTER \(quoteIdentifier($0))" } ?? "FIRST"
+                return "ALTER TABLE \(quoteIdentifier(table)) "
+                    + "MODIFY COLUMN \(quoteIdentifier(move.column)) \(type) \(position)"
+            }
+        guard !statements.isEmpty else { return nil }
+        return PluginColumnReorderPlan(statements: statements, cost: .metadataOnly)
+    }
+
+    private func fetchStoredColumnTypes(table: String) async throws -> [(name: String, type: String)] {
+        let escapedTable = table.replacingOccurrences(of: "'", with: "''")
+        let result = try await execute(query: """
+            SELECT name, type
+            FROM system.columns
+            WHERE database = currentDatabase() AND table = '\(escapedTable)'
+            ORDER BY position
+            """)
+        return result.rows.compactMap { row in
+            guard let name = row[safe: 0]?.asText, let type = row[safe: 1]?.asText else { return nil }
+            return (name, type)
+        }
     }
 
     func generateAddIndexSQL(table: String, index: PluginIndexDefinition) -> String? {

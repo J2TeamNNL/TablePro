@@ -21,6 +21,9 @@ enum DiscardAction {
     case pagination
     case filter
     case resultSwitch
+    case navigation
+    case displayOrder
+    case columnVisibility
 }
 
 struct DisplayFormatsCacheEntry {
@@ -51,14 +54,28 @@ enum ActiveSheet: Identifiable {
     case importDialog(formatId: String)
     case rowImport(formatId: String)
     case exportQueryResults
-    case backupDatabase
+    /// The tables the user right-clicked travel with the request, because the object browser may be
+    /// pointed somewhere else by the time the sheet appears.
+    case transferTables(tables: Set<String>, schema: String?)
+    /// The databases the user right-clicked travel with the request, so the sheet opens on them
+    /// rather than on wherever the object browser happens to point. Empty means the browse database.
+    case backupDatabase(databases: Set<String>)
     case restoreDatabase(fileURL: URL)
+    /// Oracle, Snowflake and BigQuery unload to a server directory or a bucket, so this is a
+    /// separate command from Backup Dump rather than a mode of it.
+    case serverSideExport(table: String?)
     /// The object's own database and schema travel with the request. A maintenance statement names
     /// its table and nothing else, so acting on wherever the object browser happens to point
     /// maintains the same-named table in another database whenever the two have drifted apart.
     /// This is the rule the sidebar's other destructive commands already keep by carrying their ref.
     case maintenance(operation: String, tableName: String, database: String?, schema: String?)
     case createDatabase
+    /// Copying carries the whole launch request, because the source database, the source schema
+    /// and the objects the user right-clicked are all part of what the sheet opens onto, and the
+    /// object browser may be pointed somewhere else by the time the sheet appears.
+    case copyObjects(ObjectCopyLaunchRequest)
+    case rewind
+    case tableRebuildReview
 
     var id: String {
         switch self {
@@ -67,11 +84,17 @@ enum ActiveSheet: Identifiable {
         case .importDialog(let formatId): "importDialog-\(formatId)"
         case .rowImport(let formatId): "rowImport-\(formatId)"
         case .exportQueryResults: "exportQueryResults"
+        case .transferTables(let tables, let schema):
+            "transferTables-\(schema ?? "")-\(tables.sorted().joined(separator: ","))"
         case .backupDatabase: "backupDatabase"
         case .restoreDatabase(let fileURL): "restoreDatabase-\(fileURL.path)"
+        case .serverSideExport(let table): "serverSideExport-\(table ?? "")"
         case .maintenance(let operation, let tableName, let database, let schema):
             "maintenance-\(operation)-\(database ?? "")-\(schema ?? "")-\(tableName)"
         case .createDatabase: "createDatabase"
+        case .copyObjects(let launch): "copyObjects-\(launch.id)"
+        case .rewind: "rewind"
+        case .tableRebuildReview: "tableRebuildReview"
         }
     }
 }
@@ -95,6 +118,7 @@ final class MainContentCoordinator {
     let connection: DatabaseConnection
     var connectionId: UUID { connection.id }
     var sqlDialect: SqlDialect { SqlDialect.from(databaseTypeId: connection.type.rawValue) }
+    var statementModel: QueryStatementModel { QueryStatementModel.forDatabaseType(connection.type) }
     var browseDatabaseName: String {
         services.databaseManager.browseDatabaseName(for: connection)
     }
@@ -178,9 +202,12 @@ final class MainContentCoordinator {
     var inspectorRowSourceRevision: Int = 0
 
     /// Direct reference to AI chat viewmodel — eliminates notification broadcasts
-    weak var aiViewModel: AIChatViewModel?
+    /// The assistant's view model, and only if something has already brought one into existence.
+    /// Reading this never builds one: an editor command that wants to talk to the assistant reveals
+    /// it first, and revealing is what activates it.
+    var aiViewModel: AIChatViewModel? { trailingPaneState?.assistant.viewModelIfActivated }
 
-    weak var rightPanelState: RightPanelState?
+    weak var trailingPaneState: TrailingPaneState?
 
     /// Direct reference to the data tab grid delegate — enables row mutation operations to
     /// Observable mirror of the grid's display revision, so views outside the grid re-render when
@@ -201,7 +228,7 @@ final class MainContentCoordinator {
     @ObservationIgnored var pendingGridFocusOnOpen = false
 
     /// Proxy for toggling the inspector NSSplitViewItem from coordinator code
-    @ObservationIgnored weak var inspectorProxy: InspectorVisibilityProxy?
+    @ObservationIgnored weak var trailingPaneProxy: TrailingPaneProxy?
 
     /// Direct reference to split view controller for sidebar toggle
     @ObservationIgnored weak var splitViewController: MainSplitViewController?
@@ -216,21 +243,24 @@ final class MainContentCoordinator {
     @ObservationIgnored weak var commandActions: MainContentCommandActions?
 
     /// Presents the quick switcher as a floating panel anchored over this coordinator's window.
-    @ObservationIgnored let quickSwitcherPanel = QuickSwitcherPanelController()
+    /// The window owns it, because the panel anchors on the window and every connection the window
+    /// hosts would otherwise bring one of its own to the same point.
+    var quickSwitcherPanel: QuickSwitcherPanelController? {
+        splitViewController?.quickSwitcherPanel
+    }
 
     // MARK: - Published State
 
     var cursorPositions: [CursorPosition] = []
     var tableMetadata: TableMetadata?
     var activeSheet: ActiveSheet?
-    /// Which scope the toolbar chip is showing a chooser for, so the popover opens against the
-    /// component the user clicked. Separate from the switchers the presenter owns, and cleared
-    /// alongside them so a window never holds two of them.
-    var presentedScopeSwitcher: ContainerSwitchTarget?
     /// Owns the connection and database switcher surfaces. The commands present through this
     /// rather than flipping a flag a toolbar-hosted view has to observe, because that view is
-    /// absent whenever its item is clipped into the overflow menu or removed by the user.
-    @ObservationIgnored lazy var switcherPresenter = ToolbarSwitcherPresenter(panelController: quickSwitcherPanel)
+    /// absent whenever its item is clipped into the overflow menu or removed by the user. It
+    /// belongs to the window for the same reason the panel it drives does.
+    var switcherPresenter: ToolbarSwitcherPresenter? {
+        splitViewController?.switcherPresenter
+    }
     var sessionContexts: [PluginSessionContext] = []
     var containerDropRequest: DatabaseDropRequest?
     var importFileURL: URL?
@@ -240,6 +270,9 @@ final class MainContentCoordinator {
 
     @ObservationIgnored var displayFormatsCache: [UUID: DisplayFormatsCacheEntry] = [:]
     @ObservationIgnored var displayOrderCache: [UUID: DisplayOrderCacheEntry] = [:]
+    @ObservationIgnored var displayStateCache: [UUID: DisplayStateCacheEntry] = [:]
+    @ObservationIgnored var tableMetadataCache: [UUID: TableMetadataCacheEntry] = [:]
+    @ObservationIgnored var displayStateClock = 0
 
     @ObservationIgnored let schemaColumns = SchemaColumnStore()
     @ObservationIgnored var columnScopeRequeryTask: Task<Void, Never>?
@@ -325,6 +358,12 @@ final class MainContentCoordinator {
     /// Guards against duplicate safe mode confirmation prompts
     @ObservationIgnored internal var isShowingSafeModePrompt = false
 
+    /// What restoring the last save would do, once it has been planned against the live rows.
+    internal var rewindPlan: RewindPlan?
+
+    /// The rebuild a column drag asked for, held while the user reads it.
+    internal var tableRebuildRequest: TableRebuildReviewRequest?
+
     /// Continuation for callers that need to await the result of a fire-and-forget save
     /// (e.g. save-then-close). Set before calling `saveChanges`, resumed by `executeCommitStatements`.
     @ObservationIgnored internal var saveCompletionContinuation: CheckedContinuation<Bool, Never>?
@@ -394,15 +433,22 @@ final class MainContentCoordinator {
         _didActivate.withLock { $0 }
     }
 
-    /// One window hosts every connection and a connection has one coordinator, so a
-    /// connection's tabs are simply that coordinator's list. Tabs used to be scattered across
-    /// a connection's windows and had to be gathered and renumbered.
+    /// Every tab the connection has open, across every window hosting it. Tearing a tab off into
+    /// its own window splits one connection's tabs over two coordinators, and the saved set is the
+    /// union: saving from one of them alone writes a partial list over the full one, which is how
+    /// tabs that were never closed get erased.
+    ///
+    /// Deduped by tab id, because `activeCoordinators` also holds the throwaway coordinators
+    /// SwiftUI builds and discards while re-evaluating a body, and those report the same tabs as
+    /// the real one until they deallocate.
     static func aggregatedTabs(for connectionId: UUID) -> [QueryTab] {
-        activeCoordinators.values
+        var seen = Set<UUID>()
+        return activeCoordinators.values
             .filter { $0.connectionId == connectionId }
             .flatMap { coordinator in
                 coordinator.tabManager.tabs.map(coordinator.enrichedForPersistence)
             }
+            .filter { seen.insert($0.id).inserted }
     }
 
     /// Resolve transient view state that only the live coordinator knows about
@@ -427,6 +473,12 @@ final class MainContentCoordinator {
            let range = cursorPositions.first?.range {
             enriched.restoredCursorOffset = range.location
             enriched.restoredCursorLength = range.length
+        }
+        // The grid's own teardown keeps the selection on the tab, but a tab moved to another window
+        // is snapshotted while its grid is still mounted, so that capture has not run yet.
+        if tab.id == tabManager.selectedTabId, let live = mountedGridSelection() {
+            enriched.selectedRowIndices = live.rows
+            enriched.cellSelection = live.cells
         }
         return enriched
     }
@@ -607,7 +659,7 @@ final class MainContentCoordinator {
             dialect: dialect,
             dialectQuote: dialect.map { quoteIdentifierFromDialect($0) }
         )
-        self.persistence = TabPersistenceCoordinator(connectionId: connection.id)
+        self.persistence = TabPersistenceCoordinator.forConnection(connection.id)
 
         ConnectionDataCache.shared(for: connection.id).ensureLoaded()
         changeManager.undoManagerProvider = { [weak self] in self?.contentWindow?.undoManager }
@@ -726,9 +778,22 @@ final class MainContentCoordinator {
         fileWatcher = watcher
     }
 
-    func showAIChatPanel() {
-        inspectorProxy?.showInspector()
-        rightPanelState?.activeTab = .aiChat
+    /// Reveals the assistant, building its view model if this is the first time anything asked for
+    /// one. Activation happens here rather than at window open, which is what keeps a window that
+    /// never opens the assistant from reading the whole conversation history off disk.
+    func showAssistant() {
+        /// The gate comes first. Activating builds the view model, whose init reads the stored
+        /// conversations, and the pane would then refuse to open it anyway.
+        guard AppSettingsManager.shared.ai.enabled else { return }
+        trailingPaneState?.assistant.activate()
+        trailingPaneProxy?.showAssistant()
+    }
+
+    /// Reveals the inspector on its JSON rendering. The view mode is part of the inspector's own
+    /// state, so "show the row as JSON" is two facts: which surface, and which rendering.
+    func showRowAsJSON() {
+        trailingPaneState?.inspector.viewMode = .json
+        trailingPaneProxy?.showInspector()
     }
 
     /// Set up the plugin driver for query building dispatch on the query builder and change manager.
@@ -759,15 +824,29 @@ final class MainContentCoordinator {
     }
 
     func refreshRoutines() async {
+        let scope = services.databaseManager.browseScope(for: connectionId)
         try? await services.databaseManager.withBrowseMetadataDriver(connectionId: connectionId) { [services, connectionId] driver in
-            _ = await services.schemaService.reloadRoutines(connectionId: connectionId, driver: driver)
+            _ = await services.schemaService.reloadRoutines(connectionId: connectionId, driver: driver, scope: scope)
         }
     }
 
     func refreshTriggers() async {
         guard connection.type.supportsDatabaseTriggerBrowse else { return }
+        let scope = services.databaseManager.browseScope(for: connectionId)
         try? await services.databaseManager.withBrowseMetadataDriver(connectionId: connectionId) { [services, connectionId] driver in
-            _ = await services.schemaService.reloadTriggers(connectionId: connectionId, driver: driver)
+            _ = await services.schemaService.reloadTriggers(connectionId: connectionId, driver: driver, scope: scope)
+        }
+    }
+
+    func refreshUserDefinedTypes() async {
+        guard connection.type.supportsUserDefinedTypeBrowse else { return }
+        let scope = services.databaseManager.browseScope(for: connectionId)
+        try? await services.databaseManager.withBrowseMetadataDriver(connectionId: connectionId) { [services, connectionId] driver in
+            _ = await services.schemaService.reloadUserDefinedTypes(
+                connectionId: connectionId,
+                driver: driver,
+                scope: scope
+            )
         }
     }
 
@@ -808,22 +887,22 @@ final class MainContentCoordinator {
         let tables = services.schemaService.allLoadedTables(for: connectionId)
         guard let vm = sidebarViewModel else { return }
         let validNames = Set(tables.map(\.name))
-        let staleSelections = vm.selectedTables.filter { !validNames.contains($0.name) }
+        let staleSelections = vm.selectedTables.filter { !validNames.contains($0.table.name) }
         if !staleSelections.isEmpty {
             vm.selectedTables.subtract(staleSelections)
         }
-        let stalePendingDeletes = vm.pendingDeletes.subtracting(validNames)
+        let stalePendingDeletes = vm.pendingDeletes.filter { !validNames.contains($0.table.name) }
         if !stalePendingDeletes.isEmpty {
             vm.pendingDeletes.subtract(stalePendingDeletes)
-            for name in stalePendingDeletes {
-                vm.tableOperationOptions.removeValue(forKey: name)
+            for ref in stalePendingDeletes {
+                vm.tableOperationOptions.removeValue(forKey: ref)
             }
         }
-        let stalePendingTruncates = vm.pendingTruncates.subtracting(validNames)
+        let stalePendingTruncates = vm.pendingTruncates.filter { !validNames.contains($0.table.name) }
         if !stalePendingTruncates.isEmpty {
             vm.pendingTruncates.subtract(stalePendingTruncates)
-            for name in stalePendingTruncates {
-                vm.tableOperationOptions.removeValue(forKey: name)
+            for ref in stalePendingTruncates {
+                vm.tableOperationOptions.removeValue(forKey: ref)
             }
         }
     }
@@ -880,6 +959,8 @@ final class MainContentCoordinator {
         createTableDrafts.removeAll()
         displayFormatsCache.removeAll()
         displayOrderCache.removeAll()
+        displayStateCache.removeAll()
+        tableMetadataCache.removeAll()
         schemaColumns.removeAll()
         columnScopeRequeryTask?.cancel()
 
@@ -941,13 +1022,11 @@ final class MainContentCoordinator {
         toolbarState.update(from: connection)
 
         if let session = services.databaseManager.session(for: connectionId) {
-            toolbarState.updateConnectionState(from: session.status)
+            toolbarState.updateConnectionState(from: session.reportedStatus)
             if let driver = session.driver {
-                toolbarState.databaseVersion = driver.serverVersion
             }
         } else if let driver = services.databaseManager.driver(for: connectionId) {
             toolbarState.connectionState = .connected
-            toolbarState.databaseVersion = driver.serverVersion
         }
     }
 
@@ -999,9 +1078,10 @@ final class MainContentCoordinator {
             sql = nsQuery.substring(with: clampedRange)
             sourceOffset = clampedRange.location
         } else {
-            let statement = SQLStatementScanner.locatedStatementAtCursor(
+            let statement = QueryStatementScanner.locatedStatementAtCursor(
                 in: fullQuery,
                 cursorPosition: cursorPositions.first?.range.location ?? 0,
+                model: statementModel,
                 dialect: sqlDialect
             )
             sql = statement.sql
@@ -1053,8 +1133,13 @@ final class MainContentCoordinator {
             return statements.map { $0.offset(by: sourceOffset) }
         }
 
-        if services.appSettings.editor.queryParametersEnabled {
-            let paramStatements = anchored(SQLStatementScanner.executableStatements(in: sql, dialect: sqlDialect))
+        // `:active` is a bind placeholder in SQL and an ordinary object key in JavaScript, so a
+        // script would open the parameter panel and then be rewritten into something the driver
+        // cannot run.
+        if services.appSettings.editor.queryParametersEnabled, statementModel == .sql {
+            let paramStatements = anchored(
+                QueryStatementScanner.executableStatements(in: sql, model: statementModel, dialect: sqlDialect)
+            )
             guard !paramStatements.isEmpty else { return false }
             let combinedSQL = paramStatements.map(\.sql).joined(separator: "; ")
             let detectedNames = SQLParameterExtractor.extractParameters(from: combinedSQL)
@@ -1082,7 +1167,9 @@ final class MainContentCoordinator {
             }
         }
 
-        let statements = anchored(SQLStatementScanner.executableStatements(in: sql, dialect: sqlDialect))
+        let statements = anchored(
+            QueryStatementScanner.executableStatements(in: sql, model: statementModel, dialect: sqlDialect)
+        )
         guard !statements.isEmpty else { return false }
 
         tabManager.tabStructureVersion += 1
@@ -1215,10 +1302,6 @@ final class MainContentCoordinator {
         }
         let tab = tabManager.tabs[index]
 
-        if services.pluginManager.supportsQueryProgress(for: connection.type) {
-            installClickHouseProgressHandler()
-        }
-
         let conn = connection
         let tabId = tabManager.tabs[index].id
 
@@ -1234,6 +1317,11 @@ final class MainContentCoordinator {
         } else {
             needsMetadataFetch = false
         }
+        /// Captured now, while the result this decision was made against is still the active one.
+        let cachedMetadata: ParsedSchemaMetadata? = needsMetadataFetch ? nil : ParsedSchemaMetadata.cached(
+            rows: tabSessionRegistry.tableRows(for: tabId),
+            primaryKeyColumns: tabManager.tabs[index].tableContext.primaryKeyColumns
+        )
         if let tableName {
             Self.logger.info(
                 "[fk] metadata decision table=\(tableName, privacy: .public) isEditable=\(isEditable) needsFetch=\(needsMetadataFetch)"
@@ -1318,10 +1406,7 @@ final class MainContentCoordinator {
                         traceStaleResultDropped(traceToken)
                         return
                     }
-                    if services.pluginManager.supportsQueryProgress(for: self.connection.type) {
-                        self.clearClickHouseProgress()
-                    }
-                    toolbarState.lastQueryDuration = fetchResult.executionTime
+                    toolbarState.recordQueryTiming(fetchResult.resolvedTiming, for: tabId)
 
                     traceApplyingResult(traceToken, tabId: tabId)
 
@@ -1335,12 +1420,13 @@ final class MainContentCoordinator {
                         statusMessage: fetchResult.statusMessage,
                         tableName: tableName,
                         isEditable: isEditable,
-                        metadata: inlineMeta,
+                        metadata: inlineMeta ?? cachedMetadata,
                         hasSchema: false,
                         sql: sql,
                         connection: conn,
                         isTruncated: fetchResult.isTruncated,
-                        anchor: anchor
+                        anchor: anchor,
+                        timing: fetchResult.resolvedTiming
                     )
 
                     scheduleTraceCompletion(traceToken, outcome: .completed)
@@ -1452,7 +1538,7 @@ final class MainContentCoordinator {
         ])
         guard currentQueryTaskOwner == claim else { return }
         retireQueryTask(for: claim)
-        toolbarState.lastQueryDuration = executionTime
+        toolbarState.recordQueryTiming(PluginQueryTiming(total: executionTime), for: claim.tabId)
     }
 
     internal func resolveTableEditability(tab: QueryTab, sql: String) -> (tableName: String?, isEditable: Bool) {
@@ -1503,12 +1589,6 @@ final class MainContentCoordinator {
         return result
     }
 
-    // MARK: - SQL Helpers
-
-    static func stripTrailingOrderBy(from sql: String) -> String {
-        QuerySqlParser.stripTrailingOrderBy(from: sql)
-    }
-
     // MARK: - SQL Parsing
 
     func extractTableName(from sql: String) -> String? {
@@ -1537,14 +1617,17 @@ final class MainContentCoordinator {
             let capturedColumns = tableRows.columns
             confirmDiscardChangesIfNeeded(action: .sort) { [weak self] confirmed in
                 guard let self, confirmed else { return }
-                let strippedQuery = Self.stripTrailingOrderBy(from: baseQuery)
                 let orderClause = capturedSort.columns.compactMap { sortCol -> String? in
                     guard sortCol.columnIndex >= 0, sortCol.columnIndex < capturedColumns.count else { return nil }
                     let columnName = capturedColumns[sortCol.columnIndex]
                     let direction = sortCol.direction == .ascending ? "ASC" : "DESC"
                     return "\(self.queryBuilder.quoteIdentifier(columnName)) \(direction)"
                 }.joined(separator: ", ")
-                let orderQuery = orderClause.isEmpty ? strippedQuery : "\(strippedQuery) ORDER BY \(orderClause)"
+                let orderQuery = QuerySqlParser.applyingOrderBy(
+                    orderClause,
+                    to: baseQuery,
+                    lexicalDialect: self.sqlDialect
+                )
                 guard self.tabManager.mutate(tabId: tabId, { tab in
                     tab.sortState = capturedSort
                     tab.hasUserInteraction = true

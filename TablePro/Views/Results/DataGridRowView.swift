@@ -15,7 +15,27 @@ class DataGridRowView: NSTableRowView {
     }
 
     weak var coordinator: TableViewCoordinator?
-    var rowIndex: Int = 0
+
+    /// The row this view is showing now, asked of the table rather than remembered.
+    ///
+    /// `insertRows(at:)` and `removeRows(at:)` move an already-built row view to its new slot
+    /// without calling `tableView(_:rowViewForRow:)` for it again, so an index captured at mount
+    /// goes stale the moment a row is inserted or removed above this one, and every read of it then
+    /// names a different row. Measured: after `removeRows(at: [1])` the view at display row 1 still
+    /// carried 2, the one at 2 carried 3, and an insert left two views both claiming 0, while
+    /// `row(for:)` answered correctly throughout at 26ns a call. AppKit keeps that mapping itself,
+    /// so it is asked for it. The seed answers only for a row view that is in no table, which is how
+    /// the copy tests build one.
+    var rowIndex: Int {
+        get {
+            guard let tableView = coordinator?.tableView else { return seededRowIndex }
+            let resolved = tableView.row(for: self)
+            return resolved >= 0 ? resolved : seededRowIndex
+        }
+        set { seededRowIndex = newValue }
+    }
+
+    private var seededRowIndex: Int = 0
 
     private(set) var visualState: RowVisualState = .empty
     private var rowTint: NSColor?
@@ -50,7 +70,14 @@ class DataGridRowView: NSTableRowView {
     }
 
     func redrawCells() {
-        contentView.needsDisplay = true
+        cellsNeedDisplay = true
+    }
+
+    /// Whether the drawn cells are waiting on a repaint. The row's own `needsDisplay` answers for
+    /// the background and the selection fill, which are painted separately from the cells.
+    var cellsNeedDisplay: Bool {
+        get { contentView.needsDisplay }
+        set { contentView.needsDisplay = newValue }
     }
 
     // MARK: - Accessibility
@@ -125,13 +152,14 @@ class DataGridRowView: NSTableRowView {
         guard let coordinator, let tableView = coordinator.tableView else { return }
         let inTableView = view.convert(dirtyRect, to: tableView)
         let onEmphasizedSelection = isSelected && isEmphasized
+        let row = rowIndex
 
         for tableColumnIndex in tableView.columnIndexes(in: inTableView) {
             guard tableColumnIndex < tableView.tableColumns.count else { continue }
             let identifier = tableView.tableColumns[tableColumnIndex].identifier
             guard let dataColumn = coordinator.dataColumnIndex(from: identifier) else { continue }
             guard let appearance = coordinator.cellAppearance(
-                row: rowIndex,
+                row: row,
                 columnIndex: dataColumn,
                 onEmphasizedSelection: onEmphasizedSelection
             ) else { continue }
@@ -234,8 +262,8 @@ class DataGridRowView: NSTableRowView {
 
         cellSelectionFill.setFill()
 
-        for dataColumn in columns {
-            guard let tableColumnIndex = coordinator.tableColumnIndex(for: dataColumn) else { continue }
+        for position in columns {
+            guard let tableColumnIndex = coordinator.tableColumnIndex(forDisplayPosition: position) else { continue }
             let columnRect = tableView.rect(ofColumn: tableColumnIndex)
             let localRect = NSRect(x: columnRect.minX, y: 0, width: columnRect.width, height: bounds.height)
             guard localRect.intersects(dirtyRect) else { continue }
@@ -266,11 +294,29 @@ class DataGridRowView: NSTableRowView {
     private func addForeignKeyMenuItems(to menu: NSMenu, dataColumnIndex: Int, tableRows: TableRows) {
         guard let coordinator, dataColumnIndex >= 0, dataColumnIndex < tableRows.columns.count else { return }
         let columnName = tableRows.columns[dataColumnIndex]
-        guard let fkInfo = tableRows.columnForeignKeys[columnName],
-              let cellValue = coordinator.cellValue(at: rowIndex, column: dataColumnIndex),
-              !cellValue.isEmpty else { return }
+        guard let fkInfo = tableRows.columnForeignKeys[columnName] else { return }
+
+        /// Choosing a value is offered on an empty cell too, which is where it is needed most,
+        /// while previewing and following a key still need one to resolve.
+        let hasValue = coordinator.cellValue(at: rowIndex, column: dataColumnIndex)?.isEmpty == false
+        let canChoose = coordinator.canStartInlineEdit(row: rowIndex, columnIndex: dataColumnIndex)
+            && !ForeignKeyConstraintSpan.isMultiColumn(fkInfo, among: tableRows.columnForeignKeys)
+        guard hasValue || canChoose else { return }
 
         menu.addItem(NSMenuItem.separator())
+
+        if canChoose {
+            let chooseItem = NSMenuItem(
+                title: String(format: String(localized: "Choose %@ Row…"), fkInfo.referencedTable),
+                action: #selector(chooseForeignKeyValue(_:)),
+                keyEquivalent: ""
+            )
+            chooseItem.representedObject = dataColumnIndex
+            chooseItem.target = self
+            menu.addItem(chooseItem)
+        }
+
+        guard hasValue else { return }
 
         let previewItem = NSMenuItem(
             title: String(localized: "Preview Referenced Row"),
@@ -300,20 +346,72 @@ class DataGridRowView: NSTableRowView {
         menu.addItem(navInNewTabItem)
     }
 
+    /// What a right-click landed on, as much as the row menu needs to know. A click that hit no
+    /// column at all is not the same as one that hit a column carrying no data, such as the row
+    /// number, so the two misses stay apart.
+    enum MenuTarget: Equatable {
+        case cell(dataColumn: Int)
+        case row
+        case unresolved
+
+        var dataColumn: Int {
+            guard case .cell(let index) = self else { return -1 }
+            return index
+        }
+    }
+
+    /// Where a right-click landed, resolved through the table view the row belongs to.
+    private func menuTarget(for event: NSEvent) -> MenuTarget {
+        guard let coordinator, let tableView = coordinator.tableView else { return .unresolved }
+        let locationInRow = convert(event.locationInWindow, from: nil)
+        let locationInTable = tableView.convert(locationInRow, from: self)
+        let clickedColumn = tableView.column(at: locationInTable)
+        guard clickedColumn >= 0 else { return .unresolved }
+        guard let dataColumn = DataGridView.dataColumnIndex(
+            for: clickedColumn, in: tableView, schema: coordinator.identitySchema
+        ) else { return .row }
+        return .cell(dataColumn: dataColumn)
+    }
+
+    /// Copy, meaning the cell under the pointer. Shared so a grid that builds its own row menu
+    /// offers the same item rather than leaving the pointer with no route to a value the keyboard
+    /// can already copy: the Structure tab had `Cmd+C` copying the clicked cell and no menu item
+    /// for it at all.
+    internal func makeCopyItem(for event: NSEvent) -> NSMenuItem {
+        makeCopyItem(target: menuTarget(for: event))
+    }
+
+    private func makeCopyItem(target: MenuTarget) -> NSMenuItem {
+        let copyTarget: CopyContextTarget = switch target {
+        case .cell(let dataColumn): .cell(dataColumn)
+        case .row: .row
+        case .unresolved: .unresolved
+        }
+        let item = NSMenuItem(
+            title: String(localized: "Copy"), action: #selector(copyFromContextMenu(_:)), keyEquivalent: ""
+        )
+        item.representedObject = copyTarget
+        item.target = self
+        return item
+    }
+
     /// Deliberately not `menu(for:)`. The table view owns context-menu handling because it
     /// is the only level that can re-target the selection to the clicked row first; a row
     /// view answering `menuForEvent:` would swallow the event and act on the old selection.
     func contextMenu(for event: NSEvent) -> NSMenu? {
+        contextMenu(target: menuTarget(for: event))
+    }
+
+    /// The row menu for a click whose target is already known.
+    ///
+    /// The pinned row gutter needs this: it overlays whatever data column is scrolled under the
+    /// leading edge, so resolving its click through the table view would report a cell and give the
+    /// gutter the cell menu, with Set Value and IN Clause on a column the pointer never touched.
+    func contextMenu(target: MenuTarget) -> NSMenu? {
         guard let coordinator = coordinator,
               let tableView = coordinator.tableView else { return nil }
 
-        let locationInRow = convert(event.locationInWindow, from: nil)
-        let locationInTable = tableView.convert(locationInRow, from: self)
-        let clickedColumn = tableView.column(at: locationInTable)
-
-        let dataColumnIndex: Int = clickedColumn >= 0
-            ? DataGridView.dataColumnIndex(for: clickedColumn, in: tableView, schema: coordinator.identitySchema) ?? -1
-            : -1
+        let dataColumnIndex = target.dataColumn
 
         let menu = NSMenu()
 
@@ -324,19 +422,7 @@ class DataGridRowView: NSTableRowView {
             return menu
         }
 
-        let copyTarget: CopyContextTarget = if dataColumnIndex >= 0 {
-            .cell(dataColumnIndex)
-        } else if clickedColumn >= 0 {
-            .row
-        } else {
-            .unresolved
-        }
-
-        let copyItem = NSMenuItem(
-            title: String(localized: "Copy"), action: #selector(copyFromContextMenu(_:)), keyEquivalent: "")
-        copyItem.representedObject = copyTarget
-        copyItem.target = self
-        menu.addItem(copyItem)
+        menu.addItem(makeCopyItem(target: target))
 
         let copyAsMenu = NSMenu()
 
@@ -424,6 +510,16 @@ class DataGridRowView: NSTableRowView {
             menu.addItem(pasteItem)
         }
 
+        menu.addItem(NSMenuItem.separator())
+
+        let jsonViewItem = NSMenuItem(
+            title: String(localized: "Show Row as JSON"),
+            action: #selector(showRowAsJSON),
+            keyEquivalent: ""
+        )
+        jsonViewItem.target = self
+        menu.addItem(jsonViewItem)
+
         let tableRows = coordinator.tableRowsProvider()
         addForeignKeyMenuItems(to: menu, dataColumnIndex: dataColumnIndex, tableRows: tableRows)
 
@@ -431,7 +527,9 @@ class DataGridRowView: NSTableRowView {
             menu.addItem(NSMenuItem.separator())
         }
 
-        if coordinator.isEditable && dataColumnIndex >= 0 {
+        let namesWritableColumn = dataColumnIndex >= 0 && dataColumnIndex < tableRows.columns.count
+            && coordinator.isColumnWritable(tableRows.columns[dataColumnIndex])
+        if coordinator.isEditable && namesWritableColumn {
             let setValueItem = NSMenuItem(title: String(localized: "Set Value"), action: nil, keyEquivalent: "")
             setValueItem.submenu = buildSetValueMenu(dataColumnIndex: dataColumnIndex, tableRows: tableRows)
             menu.addItem(setValueItem)
@@ -466,10 +564,14 @@ class DataGridRowView: NSTableRowView {
                 }
             }
 
-            let duplicateItem = NSMenuItem(
-                title: String(localized: "Duplicate"), action: #selector(duplicateRow), keyEquivalent: "")
-            duplicateItem.target = self
-            menu.addItem(duplicateItem)
+            /// The copy resets the columns the server owns, which only the schema names, so the item
+            /// stays away until it has arrived rather than appearing and doing nothing.
+            if tableRows.hasAuthoritativeSchema {
+                let duplicateItem = NSMenuItem(
+                    title: String(localized: "Duplicate"), action: #selector(duplicateRow), keyEquivalent: "")
+                duplicateItem.target = self
+                menu.addItem(duplicateItem)
+            }
 
             let deleteItem = NSMenuItem(
                 title: String(localized: "Delete"),
@@ -505,8 +607,8 @@ class DataGridRowView: NSTableRowView {
             setValueMenu.addItem(nullItem)
         }
 
-        let hasDefault = columnName.flatMap({ tableRows.columnDefaults[$0] ?? nil }) != nil
-        if hasDefault {
+        let serverAssignsValue = columnName.map { tableRows.serverAssignsValue(forColumn: $0) } ?? false
+        if serverAssignsValue {
             let defaultItem = NSMenuItem(
                 title: String(localized: "Default"), action: #selector(setDefaultValue(_:)), keyEquivalent: "")
             defaultItem.representedObject = dataColumnIndex
@@ -665,6 +767,19 @@ class DataGridRowView: NSTableRowView {
         coordinator.copyRowsAsInClause(
             at: coordinator.currentRowSelection(fallbackRow: rowIndex),
             columnIndex: columnIndex
+        )
+    }
+
+    @objc private func showRowAsJSON() {
+        coordinator?.delegate?.dataGridShowRowAsJSON()
+    }
+
+    @objc private func chooseForeignKeyValue(_ sender: NSMenuItem) {
+        guard let columnIndex = sender.representedObject as? Int,
+              let coordinator, let tableView = coordinator.tableView,
+              let column = coordinator.tableColumnIndex(for: columnIndex) else { return }
+        coordinator.showForeignKeyPicker(
+            tableView: tableView, row: rowIndex, column: column, columnIndex: columnIndex
         )
     }
 

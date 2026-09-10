@@ -58,7 +58,6 @@ enum TestFixtures {
         new: String? = "value"
     ) -> CellChange {
         return CellChange(
-            rowIndex: row,
             columnIndex: col,
             columnName: colName,
             oldValue: PluginCellValue.fromOptional(old),
@@ -109,6 +108,19 @@ enum TestFixtures {
             type: type,
             rowCount: 0,
             schema: schema
+        )
+    }
+
+    static func makeTableRef(
+        name: String = "test_table",
+        type: TableInfo.TableType = .table,
+        database: String? = nil,
+        schema: String? = nil
+    ) -> DatabaseTreeTableRef {
+        DatabaseTreeTableRef(
+            database: database,
+            schema: schema,
+            table: makeTableInfo(name: name, type: type, schema: schema)
         )
     }
 

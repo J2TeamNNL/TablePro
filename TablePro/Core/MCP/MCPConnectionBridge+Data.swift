@@ -59,7 +59,7 @@ extension MCPConnectionBridge {
         }
 
         guard let count = outcome.count else {
-            throw MCPDataLayerError.dataSourceError(
+            throw DatabaseAccessError.dataSourceError(
                 String(localized: "This engine cannot count rows for that table.")
             )
         }
@@ -84,7 +84,7 @@ extension MCPConnectionBridge {
         let sql = try await DatabaseManager.shared.withMetadataDriver(scope: scope) { driver -> String in
             let columnInfos = try await driver.fetchColumns(table: request.table, schema: schema)
             guard !columnInfos.isEmpty else {
-                throw MCPDataLayerError.notFound(
+                throw DatabaseAccessError.notFound(
                     String(localized: "That table has no readable columns.")
                 )
             }
@@ -97,7 +97,16 @@ extension MCPConnectionBridge {
                 dialect: dialect
             )
             let sortState = MCPConnectionBridge.sortState(from: request.sort, columns: names)
-            let selected = try MCPConnectionBridge.validatedSelection(request.columns, available: names)
+            let requested = try MCPConnectionBridge.validatedSelection(request.columns, available: names)
+            let sortColumnNames = sortState?.columns.compactMap(\.columnName) ?? []
+            /// A projection that leaves out the sorted column drops the sort with it on any driver
+            /// that resolves its order against the list it is handed, and the caller is still told
+            /// the rows are sorted. The missing sort columns are appended rather than merged, so
+            /// every column the caller asked for keeps the position it asked for: `browse_table`
+            /// returns positional rows and reordering them would break a client silently.
+            let selected = requested.map { projection in
+                projection + sortColumnNames.filter { !projection.contains($0) && names.contains($0) }
+            }
             guard !request.filters.isEmpty else {
                 return builder.buildBaseQuery(
                     tableName: request.table,
@@ -274,7 +283,7 @@ extension MCPConnectionBridge {
         let known = Set(available)
         let unknown = requested.filter { !known.contains($0) }.sorted()
         guard unknown.isEmpty else {
-            throw MCPDataLayerError.invalidArgument(
+            throw DatabaseAccessError.invalidArgument(
                 String(
                     format: String(localized: "Unknown column(s): %@"),
                     unknown.joined(separator: ", ")
@@ -333,7 +342,7 @@ extension MCPConnectionBridge {
         let prefix: String
         if let variantId {
             guard let variant = variants.first(where: { $0.id == variantId }) else {
-                throw MCPDataLayerError.invalidArgument(
+                throw DatabaseAccessError.invalidArgument(
                     String(
                         format: String(localized: "Unknown explain variant '%@'."),
                         variantId
@@ -350,7 +359,7 @@ extension MCPConnectionBridge {
         }
         let trimmed = stripTrailingSemicolons(query)
         guard !trimmed.isEmpty else {
-            throw MCPDataLayerError.invalidArgument(String(localized: "The query is empty."))
+            throw DatabaseAccessError.invalidArgument(String(localized: "The query is empty."))
         }
         guard !QueryClassifier.isExplainStatement(trimmed) else { return trimmed }
         return "\(prefix) \(trimmed)"

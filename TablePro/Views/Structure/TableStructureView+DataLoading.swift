@@ -31,6 +31,7 @@ extension TableStructureView {
         await loadColumns()
         await loadTabDataIfNeeded(.indexes)
         await loadTabDataIfNeeded(.foreignKeys)
+        await loadTabDataIfNeeded(.checkConstraints)
         loadSchemaForEditing()
         session.hasLoaded = true
         isInitialLoading = false
@@ -64,15 +65,15 @@ extension TableStructureView {
                 indexes = try await structureLoader.indexes()
             case .foreignKeys:
                 foreignKeys = try await structureLoader.foreignKeys()
+            case .checkConstraints:
+                checkConstraints = try await structureLoader.checkConstraints()
             case .ddl:
                 let table = tableName
                 ddlStatement = try await structureLoader.perform { driver in
                     let sequences = try await driver.fetchDependentSequences(forTable: table)
                     let enumTypes = try await driver.fetchDependentTypes(forTable: table)
                     let baseDDL = try await driver.fetchTableDDL(table: table)
-                    if sequences.isEmpty && enumTypes.isEmpty {
-                        return baseDDL
-                    }
+                    let indexDDL = (try? await driver.fetchIndexDDL(table: table)) ?? []
                     var preamble = ""
                     for seq in sequences {
                         preamble += seq.ddl + "\n\n"
@@ -82,7 +83,8 @@ extension TableStructureView {
                         let quotedLabels = enumType.labels.map { "'\(SQLEscaping.escapeStringLiteral($0))'" }
                         preamble += "CREATE TYPE \(quotedName) AS ENUM (\(quotedLabels.joined(separator: ", ")));\n"
                     }
-                    return preamble + "\n" + baseDDL
+                    return TableDDLComposer.compose(
+                        tableDDL: baseDDL, indexDDL: indexDDL, preamble: preamble)
                 }
             case .triggers:
                 do {
@@ -97,6 +99,7 @@ extension TableStructureView {
             tabData.markFetched(tab)
         } catch {
             Self.logger.error("Failed to load \(tab.rawValue, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            errorMessage = error.localizedDescription
         }
     }
 
@@ -110,6 +113,7 @@ extension TableStructureView {
             columns: columns,
             indexes: indexes,
             foreignKeys: foreignKeys,
+            checkConstraints: checkConstraints,
             primaryKey: primaryKey
         )
     }
@@ -133,6 +137,11 @@ extension TableStructureView {
     }
 
     func onIndexesChanged() {
+        guard !isReloadingAfterSave, !isInitialLoading else { return }
+        loadSchemaForEditing()
+    }
+
+    func onCheckConstraintsChanged() {
         guard !isReloadingAfterSave, !isInitialLoading else { return }
         loadSchemaForEditing()
     }

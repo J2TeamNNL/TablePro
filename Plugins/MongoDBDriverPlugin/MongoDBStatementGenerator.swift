@@ -18,9 +18,8 @@ struct MongoDBStatementGenerator {
     let columns: [String]
     var columnKinds: [String: BsonValueKind] = [:]
 
-    /// Collection accessor using bracket notation for safety with dotted names
     private var collectionAccessor: String {
-        "db[\"\(escapeJsonString(collectionName))\"]"
+        MongoCollectionAccessor.expression(for: collectionName)
     }
 
     /// Index of "_id" field in the columns array (used as primary key equivalent)
@@ -109,6 +108,40 @@ struct MongoDBStatementGenerator {
         guard let docJson = serializeDocument(doc) else { return nil }
         let shell = "\(collectionAccessor).insertOne(\(docJson))"
         return (statement: shell, parameters: [])
+    }
+
+    // MARK: - Restore
+
+    /// Puts a deleted document back with the `_id` it had.
+    ///
+    /// `generateInsert` drops `_id` so a row the user just added gets a server-generated one.
+    /// Undoing a delete is the opposite requirement: a new `_id` is a different document, and
+    /// anything that referenced the old one still points at nothing.
+    func generateRestore(rows: [[PluginCellValue]]) -> [(statement: String, parameters: [PluginCellValue])]? {
+        guard let idIndex = idColumnIndex else { return nil }
+
+        var statements: [(statement: String, parameters: [PluginCellValue])] = []
+        for row in rows {
+            guard idIndex < row.count, let idValue = row[idIndex].asText else { return nil }
+
+            var doc: [String: String] = [:]
+            for (index, value) in row.enumerated() where index != idIndex {
+                guard index < columns.count else { continue }
+                /// A binary field has no text form here, and writing the document without it
+                /// restores a document that is missing a field. Refuse the whole restore instead,
+                /// which the host reports rather than passing off as a success.
+                if value.asBytes != nil { return nil }
+                guard let text = value.asText else { continue }
+                if text == "__DEFAULT__" { continue }
+                doc[columns[index]] = text
+            }
+
+            guard var docJson = serializeDocument(doc) else { return nil }
+            let idEntry = "\"_id\": \(idValueJson(idValue))"
+            docJson = docJson == "{}" ? "{\(idEntry)}" : "{\(idEntry), " + String(docJson.dropFirst())
+            statements.append((statement: "\(collectionAccessor).insertOne(\(docJson))", parameters: []))
+        }
+        return statements
     }
 
     // MARK: - UPDATE (updateOne with $set/$unset)

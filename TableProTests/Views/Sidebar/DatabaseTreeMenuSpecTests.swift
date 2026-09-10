@@ -21,7 +21,7 @@ struct DatabaseTreeMenuSpecTests {
 
     private func context(
         clicked: DatabaseTreeNode.Kind?,
-        selectedTables: Set<TableInfo> = [],
+        selectedTables: Set<DatabaseTreeTableRef> = [],
         selectedContainers: [DatabaseContainerRef] = [],
         isReadOnly: Bool = false,
         isFavorite: Bool = false,
@@ -30,7 +30,11 @@ struct DatabaseTreeMenuSpecTests {
         activeSchema: String? = "public",
         canReachOtherDatabases: Bool = true,
         canFilterDatabases: Bool = false,
-        hasDatabaseFilter: Bool = false
+        hasDatabaseFilter: Bool = false,
+        supportsRename: Bool = true,
+        canCopyObjects: Bool = true,
+        canDuplicateDatabase: Bool = true,
+        canCreateType: Bool = false
     ) -> DatabaseTreeMenuContext {
         DatabaseTreeMenuContext(
             clicked: clicked,
@@ -51,6 +55,15 @@ struct DatabaseTreeMenuSpecTests {
                 supportsDropSchema: true,
                 isReadOnly: isReadOnly
             ),
+            renameEligibility: ObjectRenameEligibility.Context(
+                activeDatabase: activeDatabase,
+                activeSchema: activeSchema,
+                supportsRenameTable: supportsRename,
+                supportsRenameView: supportsRename,
+                supportsRenameDatabase: supportsRename,
+                supportsRenameSchema: supportsRename,
+                isReadOnly: isReadOnly
+            ),
             containerEntityName: "Database",
             containerEntityNamePlural: "Databases",
             schemaEntityName: "Schema",
@@ -62,26 +75,35 @@ struct DatabaseTreeMenuSpecTests {
             showObjectComments: false,
             rowSize: .matchSystem,
             canFilterDatabases: canFilterDatabases,
-            hasDatabaseFilter: hasDatabaseFilter
+            hasDatabaseFilter: hasDatabaseFilter,
+            canCopyObjects: canCopyObjects,
+            canDuplicateDatabase: canDuplicateDatabase,
+            canCreateType: canCreateType
         )
+    }
+
+    private func commands(_ sections: [DatabaseTreeMenuSection]) -> [SidebarMenuCommand] {
+        commands(sections.flatMap(\.items))
     }
 
     private func commands(_ items: [DatabaseTreeMenuItem]) -> [SidebarMenuCommand] {
         items.flatMap { item -> [SidebarMenuCommand] in
             switch item {
-            case .separator: return []
             case .command(let entry): return [entry.command]
             case .submenu(_, let nested): return commands(nested)
             }
         }
     }
 
+    private func titles(_ sections: [DatabaseTreeMenuSection]) -> [String] {
+        titles(sections.flatMap(\.items))
+    }
+
     private func titles(_ items: [DatabaseTreeMenuItem]) -> [String] {
-        items.compactMap { item in
+        items.map { item in
             switch item {
             case .command(let entry): return entry.title
             case .submenu(let title, _): return title
-            case .separator: return nil
             }
         }
     }
@@ -92,7 +114,7 @@ struct DatabaseTreeMenuSpecTests {
     /// Options unreachable whenever the sidebar was empty, loading or failed.
     @Test("Right-clicking the empty area still gives a menu")
     func emptyAreaHasAMenu() {
-        let items = DatabaseTreeMenuSpec.items(for: context(clicked: nil))
+        let items = DatabaseTreeMenuSpec.sections(for: context(clicked: nil))
 
         #expect(!items.isEmpty)
         #expect(titles(items).contains(String(localized: "View Options")))
@@ -100,7 +122,7 @@ struct DatabaseTreeMenuSpecTests {
 
     @Test("A status row falls back to the empty-area menu rather than showing nothing")
     func statusRowUsesTheBackgroundMenu() {
-        let items = DatabaseTreeMenuSpec.items(for: context(clicked: .status(.loading)))
+        let items = DatabaseTreeMenuSpec.sections(for: context(clicked: .status(.loading)))
 
         #expect(titles(items).contains(String(localized: "View Options")))
     }
@@ -109,7 +131,7 @@ struct DatabaseTreeMenuSpecTests {
     /// critical, so the background menu is now their only sidebar-local home.
     @Test("Creating objects is reachable from the empty area")
     func emptyAreaOffersCreation() {
-        let issued = commands(DatabaseTreeMenuSpec.items(for: context(clicked: nil)))
+        let issued = commands(DatabaseTreeMenuSpec.sections(for: context(clicked: nil)))
 
         #expect(issued.contains(.createTable))
         #expect(issued.contains(.createView))
@@ -117,7 +139,7 @@ struct DatabaseTreeMenuSpecTests {
 
     @Test("Read-only hides creation from the empty area too")
     func readOnlyEmptyAreaHidesCreation() {
-        let issued = commands(DatabaseTreeMenuSpec.items(for: context(clicked: nil, isReadOnly: true)))
+        let issued = commands(DatabaseTreeMenuSpec.sections(for: context(clicked: nil, isReadOnly: true)))
 
         #expect(!issued.contains(.createTable))
         #expect(!issued.contains(.createView))
@@ -126,7 +148,7 @@ struct DatabaseTreeMenuSpecTests {
     @Test("A nested object group refresh carries its database and schema")
     func nestedObjectGroupRefreshIsScoped() {
         let group = DatabaseTreeObjectGroup(database: "archive", schema: "audit", kind: .view)
-        let issued = commands(DatabaseTreeMenuSpec.items(
+        let issued = commands(DatabaseTreeMenuSpec.sections(
             for: context(clicked: .containerObjectKindSection(group))
         ))
 
@@ -140,13 +162,13 @@ struct DatabaseTreeMenuSpecTests {
     @Test("Exporting another database is offered only where the dialog can reach it")
     func exportOfferedOnlyWhereReachable() {
         let target = DatabaseContainerRef.database("analytics")
-        let reachable = commands(DatabaseTreeMenuSpec.items(for: context(
+        let reachable = commands(DatabaseTreeMenuSpec.sections(for: context(
             clicked: .database(DatabaseMetadata.minimal(name: "analytics")),
             selectedContainers: [target],
             activeDatabase: "app",
             canReachOtherDatabases: true
         )))
-        let unreachable = commands(DatabaseTreeMenuSpec.items(for: context(
+        let unreachable = commands(DatabaseTreeMenuSpec.sections(for: context(
             clicked: .database(DatabaseMetadata.minimal(name: "analytics")),
             selectedContainers: [target],
             activeDatabase: "app",
@@ -159,8 +181,8 @@ struct DatabaseTreeMenuSpecTests {
 
     @Test("The database filter is offered only where a database list exists")
     func filterOnlyWhereADatabaseListExists() {
-        let tree = commands(DatabaseTreeMenuSpec.items(for: context(clicked: nil, canFilterDatabases: true)))
-        let flat = commands(DatabaseTreeMenuSpec.items(for: context(clicked: nil, canFilterDatabases: false)))
+        let tree = commands(DatabaseTreeMenuSpec.sections(for: context(clicked: nil, canFilterDatabases: true)))
+        let flat = commands(DatabaseTreeMenuSpec.sections(for: context(clicked: nil, canFilterDatabases: false)))
 
         #expect(tree.contains(.filterDatabases))
         #expect(!flat.contains(.filterDatabases))
@@ -168,10 +190,10 @@ struct DatabaseTreeMenuSpecTests {
 
     @Test("Show All Databases appears only when a filter is actually on")
     func showAllOnlyWhenFiltered() {
-        let filtered = commands(DatabaseTreeMenuSpec.items(
+        let filtered = commands(DatabaseTreeMenuSpec.sections(
             for: context(clicked: nil, canFilterDatabases: true, hasDatabaseFilter: true)
         ))
-        let unfiltered = commands(DatabaseTreeMenuSpec.items(
+        let unfiltered = commands(DatabaseTreeMenuSpec.sections(
             for: context(clicked: nil, canFilterDatabases: true, hasDatabaseFilter: false)
         ))
 
@@ -181,7 +203,7 @@ struct DatabaseTreeMenuSpecTests {
 
     @Test("View Options reports the settings it is toggling")
     func viewOptionsCarryTheirState() {
-        let items = DatabaseTreeMenuSpec.viewOptionItems(context(clicked: nil))
+        let items = SidebarViewOptionsMenu.sections(context(clicked: nil)).flatMap(\.items)
         let icons = items.compactMap { item -> SidebarMenuEntry<SidebarMenuCommand>? in
             guard case .command(let entry) = item, entry.command == .toggleObjectIcons else { return nil }
             return entry
@@ -195,8 +217,8 @@ struct DatabaseTreeMenuSpecTests {
     @Test("A table menu acts on the clicked table when it is outside the selection")
     func clickedTableOutsideSelectionActsOnItself() {
         let clicked = tableRef("orders")
-        let items = DatabaseTreeMenuSpec.items(
-            for: context(clicked: .table(clicked), selectedTables: [tableRef("users").table])
+        let items = DatabaseTreeMenuSpec.sections(
+            for: context(clicked: .table(clicked), selectedTables: [tableRef("users")])
         )
 
         #expect(commands(items).contains(.copyTableNames(["orders"])))
@@ -205,10 +227,10 @@ struct DatabaseTreeMenuSpecTests {
     @Test("A table menu acts on the whole selection when the clicked row is inside it")
     func clickedTableInsideSelectionActsOnAllOfIt() {
         let clicked = tableRef("orders")
-        let items = DatabaseTreeMenuSpec.items(
+        let items = DatabaseTreeMenuSpec.sections(
             for: context(
                 clicked: .table(clicked),
-                selectedTables: [clicked.table, tableRef("users").table]
+                selectedTables: [clicked, tableRef("users")]
             )
         )
 
@@ -218,11 +240,11 @@ struct DatabaseTreeMenuSpecTests {
     @Test("Read-only hides the destructive items rather than dimming them")
     func readOnlyOmitsWrites() {
         let clicked = tableRef("orders")
-        let items = DatabaseTreeMenuSpec.items(for: context(clicked: .table(clicked), isReadOnly: true))
+        let items = DatabaseTreeMenuSpec.sections(for: context(clicked: .table(clicked), isReadOnly: true))
         let issued = commands(items)
 
-        #expect(!issued.contains(.truncateTables(names: ["orders"], ref: clicked)))
-        #expect(!issued.contains(.dropTables(names: ["orders"], ref: clicked)))
+        #expect(!issued.contains(.truncateTables(targets: [clicked], ref: clicked)))
+        #expect(!issued.contains(.dropTables(targets: [clicked], ref: clicked)))
         #expect(!issued.contains(.createView))
         #expect(issued.contains(.copyTableNames(["orders"])))
     }
@@ -237,18 +259,111 @@ struct DatabaseTreeMenuSpecTests {
             schema: "public",
             table: TableInfo(name: "orders", type: .table, rowCount: nil, schema: "public")
         )
-        let issued = commands(DatabaseTreeMenuSpec.items(for: context(clicked: .table(elsewhere))))
+        let issued = commands(DatabaseTreeMenuSpec.sections(for: context(clicked: .table(elsewhere))))
 
-        #expect(issued.contains(.truncateTables(names: ["orders"], ref: elsewhere)))
-        #expect(issued.contains(.dropTables(names: ["orders"], ref: elsewhere)))
+        #expect(issued.contains(.truncateTables(targets: [elsewhere], ref: elsewhere)))
+        #expect(issued.contains(.dropTables(targets: [elsewhere], ref: elsewhere)))
         #expect(issued.contains(.exportTables(names: ["orders"], ref: elsewhere)))
+    }
+
+    /// One save runs against one database, so a queue must not gather rows from two of them. A
+    /// tree selection can span databases, and a right-click inside it used to stage the lot under
+    /// bare names, which the save then resolved against whatever the tab in front pointed at.
+    @Test("A table menu narrows a cross-database selection to the clicked row's own database")
+    func crossDatabaseSelectionNarrowsToTheClickedDatabase() {
+        let clicked = tableRef("orders")
+        let elsewhere = DatabaseTreeTableRef(
+            database: "reporting",
+            schema: "public",
+            table: TableInfo(name: "orders", type: .table, rowCount: nil, schema: "public")
+        )
+        let issued = commands(DatabaseTreeMenuSpec.sections(
+            for: context(clicked: .table(clicked), selectedTables: [clicked, elsewhere])
+        ))
+
+        #expect(issued.contains(.dropTables(targets: [clicked], ref: clicked)))
+        #expect(!issued.contains(.dropTables(targets: [clicked, elsewhere], ref: clicked)))
+    }
+
+    @Test("A table row offers Rename where the engine can do it")
+    func tableOffersRename() {
+        let clicked = tableRef("orders")
+        let issued = commands(DatabaseTreeMenuSpec.sections(for: context(clicked: .table(clicked))))
+
+        #expect(issued.contains(.beginRenameTable(ref: clicked, isRecentRow: false)))
+    }
+
+    /// No ellipsis, because it opens the row's own field rather than a sheet. Finder spells its
+    /// own inline rename the same way.
+    @Test("Rename carries no ellipsis")
+    func renameHasNoEllipsis() {
+        let clicked = tableRef("orders")
+        let items = DatabaseTreeMenuSpec.sections(for: context(clicked: .table(clicked)))
+
+        #expect(titles(items).contains(String(localized: "Rename")))
+    }
+
+    /// Omitted rather than dimmed, which is what this menu already does for a Drop the engine
+    /// cannot perform.
+    @Test("An engine that cannot rename a table omits the item")
+    func engineWithoutRenameOmitsTheItem() {
+        let clicked = tableRef("orders")
+        let issued = commands(DatabaseTreeMenuSpec.sections(
+            for: context(clicked: .table(clicked), supportsRename: false)
+        ))
+
+        #expect(!issued.contains(.beginRenameTable(ref: clicked, isRecentRow: false)))
+    }
+
+    @Test("Read-only safe mode hides Rename with the other writes")
+    func readOnlyOmitsRename() {
+        let clicked = tableRef("orders")
+        let issued = commands(DatabaseTreeMenuSpec.sections(
+            for: context(clicked: .table(clicked), isReadOnly: true)
+        ))
+
+        #expect(!issued.contains(.beginRenameTable(ref: clicked, isRecentRow: false)))
+    }
+
+    /// A table drawn twice, once in its section and once under Recent, is one object with two
+    /// rows. The rename editor belongs on the row that was clicked; opening it on the section row
+    /// puts the field somewhere the user did not click, or nowhere while that section is collapsed.
+    @Test("Rename from a Recent row says so, so the editor lands on the clicked row")
+    func renameFromARecentRowCarriesThatRow() {
+        let clicked = tableRef("orders")
+        let issued = commands(DatabaseTreeMenuSpec.sections(for: context(clicked: .recentTable(clicked))))
+
+        #expect(issued.contains(.beginRenameTable(ref: clicked, isRecentRow: true)))
+        #expect(!issued.contains(.beginRenameTable(ref: clicked, isRecentRow: false)))
+    }
+
+    /// Snowflake and Trino hang tables off schemas and draw no database rows, so their schemas
+    /// arrive as a hierarchical section. Both declare and implement a schema rename, and without
+    /// this the command has no row to be raised from.
+    @Test("A hierarchical schema row offers Rename")
+    func hierarchicalSchemaOffersRename() {
+        let issued = commands(DatabaseTreeMenuSpec.sections(
+            for: context(clicked: .hierarchicalSchemaSection(schema: "reporting"))
+        ))
+        let expected = DatabaseContainerRef.schema(database: "app", schema: "reporting", isSystem: false)
+
+        #expect(issued.contains(.renameContainer(expected)))
+    }
+
+    @Test("A hierarchical schema row omits Rename where the engine has none")
+    func hierarchicalSchemaWithoutRenameOmitsIt() {
+        let issued = commands(DatabaseTreeMenuSpec.sections(
+            for: context(clicked: .hierarchicalSchemaSection(schema: "reporting"), supportsRename: false)
+        ))
+
+        #expect(!issued.contains { if case .renameContainer = $0 { return true } else { return false } })
     }
 
     @Test("The favourite item names the action it will take")
     func favouriteItemFlipsItsTitle() {
         let clicked = tableRef("orders")
-        let add = DatabaseTreeMenuSpec.items(for: context(clicked: .table(clicked), isFavorite: false))
-        let remove = DatabaseTreeMenuSpec.items(for: context(clicked: .table(clicked), isFavorite: true))
+        let add = DatabaseTreeMenuSpec.sections(for: context(clicked: .table(clicked), isFavorite: false))
+        let remove = DatabaseTreeMenuSpec.sections(for: context(clicked: .table(clicked), isFavorite: true))
 
         #expect(titles(add).contains(String(localized: "Add to Favorites")))
         #expect(titles(remove).contains(String(localized: "Remove from Favorites")))
@@ -259,9 +374,9 @@ struct DatabaseTreeMenuSpecTests {
         let view = tableRef("active_users", type: .view)
         let table = tableRef("users")
 
-        #expect(commands(DatabaseTreeMenuSpec.items(for: context(clicked: .table(view))))
+        #expect(commands(DatabaseTreeMenuSpec.sections(for: context(clicked: .table(view))))
             .contains(.editViewDefinition(view)))
-        #expect(!commands(DatabaseTreeMenuSpec.items(for: context(clicked: .table(table))))
+        #expect(!commands(DatabaseTreeMenuSpec.sections(for: context(clicked: .table(table))))
             .contains(.editViewDefinition(table)))
     }
 
@@ -269,7 +384,7 @@ struct DatabaseTreeMenuSpecTests {
 
     @Test("Use as Active is omitted for the container already in use")
     func activeContainerHasNoUseAsActive() {
-        let items = DatabaseTreeMenuSpec.items(
+        let items = DatabaseTreeMenuSpec.sections(
             for: context(clicked: .schema(database: "app", schema: "public"))
         )
 
@@ -281,7 +396,7 @@ struct DatabaseTreeMenuSpecTests {
 
     @Test("Use as Active is offered for a container that is not in use")
     func inactiveContainerOffersUseAsActive() {
-        let items = DatabaseTreeMenuSpec.items(
+        let items = DatabaseTreeMenuSpec.sections(
             for: context(clicked: .schema(database: "app", schema: "billing"))
         )
 
@@ -294,7 +409,7 @@ struct DatabaseTreeMenuSpecTests {
     @Test("An unfavorited database offers every environment under Add to Favorites")
     func databaseCanBeFavoritedWithEnvironment() {
         let database = DatabaseMetadata.minimal(name: "analytics", isSystem: false)
-        let items = DatabaseTreeMenuSpec.items(for: context(clicked: .database(database)))
+        let items = DatabaseTreeMenuSpec.sections(for: context(clicked: .database(database)))
         let issued = commands(items)
 
         #expect(titles(items).contains(String(localized: "Add to Favorites")))
@@ -307,7 +422,7 @@ struct DatabaseTreeMenuSpecTests {
     @Test("A favorite database can change environment or be removed")
     func favoriteDatabaseMenuReflectsState() {
         let database = DatabaseMetadata.minimal(name: "analytics", isSystem: false)
-        let items = DatabaseTreeMenuSpec.items(for: context(
+        let items = DatabaseTreeMenuSpec.sections(for: context(
             clicked: .database(database),
             favoriteDatabaseEnvironments: ["analytics": .production]
         ))
@@ -324,7 +439,7 @@ struct DatabaseTreeMenuSpecTests {
     @Test("A multi-database selection still offers the favorite items, for every database")
     func favoriteItemsSurviveMultiSelection() {
         let clicked = DatabaseMetadata.minimal(name: "analytics", isSystem: false)
-        let items = DatabaseTreeMenuSpec.items(for: context(
+        let items = DatabaseTreeMenuSpec.sections(for: context(
             clicked: .database(clicked),
             selectedContainers: [
                 .database("analytics", isSystem: false),
@@ -344,7 +459,7 @@ struct DatabaseTreeMenuSpecTests {
     @Test("A mixed selection offers Add to Favorites with no environment checked")
     func mixedSelectionOffersAdd() {
         let clicked = DatabaseMetadata.minimal(name: "analytics", isSystem: false)
-        let items = DatabaseTreeMenuSpec.items(for: context(
+        let items = DatabaseTreeMenuSpec.sections(for: context(
             clicked: .database(clicked),
             selectedContainers: [
                 .database("analytics", isSystem: false),
@@ -361,7 +476,7 @@ struct DatabaseTreeMenuSpecTests {
     /// that names nothing is unreachable.
     @Test("A schema row offers no favorite items")
     func schemaRowOffersNoFavoriteItems() {
-        let items = DatabaseTreeMenuSpec.items(
+        let items = DatabaseTreeMenuSpec.sections(
             for: context(clicked: .schema(database: "app", schema: "public"))
         )
 
@@ -371,27 +486,167 @@ struct DatabaseTreeMenuSpecTests {
 
     // MARK: - Shape
 
-    @Test("A menu never opens or closes on a separator, and never doubles one")
-    func separatorsAreCollapsed() {
-        let kinds: [DatabaseTreeNode.Kind?] = [
-            nil,
+    /// The pointer is over an object, so the menu carries commands about that object. View Options
+    /// settles how the sidebar draws and View ER Diagram is the whole schema; both used to sit on
+    /// every row, View Options on literally every menu the spec produced.
+    @Test("No object row offers a command scoped to the sidebar or the connection")
+    func objectRowsCarryNoGlobalCommands() {
+        let rows: [DatabaseTreeNode.Kind] = [
             .table(tableRef("orders")),
+            .table(tableRef("summary", type: .view)),
             .recentTable(tableRef("orders")),
-            .schema(database: "app", schema: "billing"),
+            .routine(DatabaseTreeRoutineRef(
+                database: "app", schema: "public",
+                routine: RoutineInfo(name: "do_thing", kind: .function, schema: "public")
+            )),
+            .userType(userTypeRef("mood")),
+            .redisNode(.key(name: "k", fullKey: "ns:k", keyType: "string")),
             .database(DatabaseMetadata.minimal(name: "app", isSystem: false)),
-            .objectKindSection(.table),
-            .status(.loading)
+            .schema(database: "app", schema: "billing")
         ]
 
-        for kind in kinds {
-            let items = DatabaseTreeMenuSpec.items(for: context(clicked: kind, isReadOnly: false))
-            #expect(items.first != .separator)
-            #expect(items.last != .separator)
-            for (previous, next) in zip(items, items.dropFirst()) {
-                #expect(!(previous == .separator && next == .separator))
+        for row in rows {
+            let issued = commands(DatabaseTreeMenuSpec.sections(for: context(clicked: row)))
+            #expect(!issued.contains(.showERDiagram), "\(row) offered View ER Diagram")
+            #expect(!issued.contains(.toggleObjectIcons), "\(row) offered View Options")
+            #expect(!issued.contains(.toggleObjectComments), "\(row) offered View Options")
+            #expect(!issued.contains { if case .setRowSize = $0 { return true } else { return false } })
+        }
+    }
+
+    /// Creation names no existing object, so it belongs where the pointer is over none. It used to
+    /// sit in a table row's last group, beside Truncate and Delete.
+    @Test("Creating a view is offered from the empty area and never from a row")
+    func createViewIsNotOnAnObjectRow() {
+        #expect(commands(DatabaseTreeMenuSpec.sections(for: context(clicked: nil))).contains(.createView))
+        #expect(!commands(DatabaseTreeMenuSpec.sections(for: context(clicked: .table(tableRef("orders")))))
+            .contains(.createView))
+    }
+
+    @Test("A table row is four groups of open, note, move and change")
+    func tableRowGroupsByIntent() {
+        let ref = tableRef("orders")
+        let sections = DatabaseTreeMenuSpec.sections(for: context(clicked: .table(ref)))
+            .nonEmptySections()
+
+        #expect(sections.count == 4)
+        #expect(commands(sections[0].items) == [.openInNewTab(ref), .showStructure(ref)])
+        #expect(commands(sections[1].items) == [.copyTableNames(["orders"]), .toggleFavorite(ref)])
+        #expect(commands(sections[3].items).last == .dropTables(targets: [ref], ref: ref))
+    }
+
+    /// Destructive last in its own group is the only way macOS sets one apart: `NSMenuItem` has no
+    /// destructive role and Apple does not colour Finder's Move to Trash.
+    @Test("Truncate and Delete are the last group and nothing follows them")
+    func destructiveCommandsCloseTheMenu() {
+        let ref = tableRef("orders")
+        let sections = DatabaseTreeMenuSpec.sections(for: context(clicked: .table(ref)))
+            .nonEmptySections()
+        let last = commands(sections[sections.count - 1].items)
+
+        #expect(last.contains(.truncateTables(targets: [ref], ref: ref)))
+        #expect(last.last == .dropTables(targets: [ref], ref: ref))
+    }
+
+    @Test("A recent row keeps its own group after the table's four")
+    func recentRowAddsItsOwnGroup() {
+        let ref = tableRef("orders")
+        let sections = DatabaseTreeMenuSpec.sections(for: context(clicked: .recentTable(ref)))
+            .nonEmptySections()
+
+        #expect(commands(sections[sections.count - 1].items) == [.removeRecent(ref), .clearRecents])
+    }
+
+    /// A bare name does not identify a table: `orders` exists in every schema. Export and Transfer
+    /// used to hand the dialog every same-database name, which it then resolved against whichever
+    /// schema it considered current, so exporting `reporting.orders` ticked `public.orders`.
+    @Test("Export and Transfer carry only the clicked row's schema")
+    func exportAndTransferStayInTheClickedSchema() {
+        let clicked = DatabaseTreeTableRef(
+            database: "app", schema: "reporting",
+            table: TableInfo(name: "orders", type: .table, rowCount: nil, schema: "reporting")
+        )
+        let elsewhere = DatabaseTreeTableRef(
+            database: "app", schema: "public",
+            table: TableInfo(name: "users", type: .table, rowCount: nil, schema: "public")
+        )
+        let issued = commands(DatabaseTreeMenuSpec.sections(
+            for: context(clicked: .table(clicked), selectedTables: [clicked, elsewhere])
+        ))
+
+        #expect(issued.contains(.exportTables(names: ["orders"], ref: clicked)))
+        #expect(issued.contains(.transferTables(names: ["orders"], ref: clicked)))
+        #expect(!issued.contains { command in
+            if case .exportTables(let names, _) = command { return names.contains("users") }
+            return false
+        })
+    }
+
+    /// Truncate is offered from the whole target list, not the clicked row alone, so a selection
+    /// that also holds a view withdraws it rather than staging a TRUNCATE the server refuses.
+    @Test("Truncate is withheld when the selection also holds a view")
+    func truncateWithheldForMixedSelection() {
+        let table = tableRef("orders")
+        let view = tableRef("summary", type: .view)
+        let issued = commands(DatabaseTreeMenuSpec.sections(
+            for: context(clicked: .table(table), selectedTables: [table, view])
+        ))
+
+        #expect(!issued.contains { if case .truncateTables = $0 { return true } else { return false } })
+    }
+
+    /// The HIG asks for about three groups. A table row carried five, one of them seven unrelated
+    /// commands, because a flat item list gave the spec no reason to count.
+    @Test("No menu carries more than four groups")
+    func menusStayWithinFourGroups() {
+        for kind in Self.everyKind {
+            /// A recent row is a table row plus the two commands that manage the recent list
+            /// itself, which belong neither with the table's own commands nor beside Delete.
+            let allowance = if case .recentTable = kind { 5 } else { 4 }
+            let sections = DatabaseTreeMenuSpec.sections(for: context(clicked: kind, isReadOnly: false))
+                .nonEmptySections()
+            #expect(
+                sections.count <= allowance,
+                "\(String(describing: kind)) produced \(sections.count) groups"
+            )
+        }
+    }
+
+    /// One level is the HIG's hard rule for submenus; the five-item guidance is per group, which is
+    /// why View Options splits its toggles from its row sizes rather than listing six in a row.
+    @Test("Every submenu is one level deep with at most five items in a group")
+    func submenusStayShallow() {
+        for kind in Self.everyKind {
+            let sections = DatabaseTreeMenuSpec.sections(for: context(clicked: kind, isReadOnly: false))
+            for item in sections.flatMap(\.items) {
+                guard case .submenu(let title, let nested) = item else { continue }
+                for group in nested {
+                    #expect(group.items.count <= 5, "\(title) has a group of \(group.items.count)")
+                    #expect(!group.items.contains {
+                        if case .submenu = $0 { return true } else { return false }
+                    }, "\(title) nests a second level")
+                }
             }
         }
     }
+
+    private static let sampleRef = DatabaseTreeTableRef(
+        database: "app",
+        schema: "public",
+        table: TableInfo(name: "orders", type: .table, rowCount: nil, schema: "public")
+    )
+
+    private static let everyKind: [DatabaseTreeNode.Kind?] = [
+        nil,
+        .table(DatabaseTreeMenuSpecTests.sampleRef),
+        .recentTable(DatabaseTreeMenuSpecTests.sampleRef),
+        .schema(database: "app", schema: "billing"),
+        .database(DatabaseMetadata.minimal(name: "app", isSystem: false)),
+        .objectKindSection(.table),
+        .objectKindSection(.type),
+        .hierarchicalSchemaSection(schema: "billing"),
+        .status(.loading)
+    ]
 
     @Test("Every menu produces at least one item, so none opens as an empty frame")
     func everyMenuHasContent() {
@@ -402,13 +657,190 @@ struct DatabaseTreeMenuSpecTests {
                 database: "app", schema: "public",
                 routine: RoutineInfo(name: "do_thing", kind: .function, schema: "public")
             )),
+            .userType(userTypeRef("mood")),
             .status(.loading),
             .recentSection,
             .redisKeysSection
         ]
 
         for kind in kinds {
-            #expect(!DatabaseTreeMenuSpec.items(for: context(clicked: kind, isReadOnly: true)).isEmpty)
+            #expect(!DatabaseTreeMenuSpec.sections(for: context(clicked: kind, isReadOnly: true)).isEmpty)
         }
+    }
+
+    // MARK: - Types
+
+    private func userTypeRef(_ name: String, schema: String? = "public") -> DatabaseTreeUserTypeRef {
+        DatabaseTreeUserTypeRef(
+            database: "app", schema: schema,
+            type: UserDefinedTypeInfo(name: name, kind: .enumeration, schema: schema)
+        )
+    }
+
+    @Test("A type row copies its name, its qualified name, and shows its definition")
+    func typeRowItems() {
+        let ref = userTypeRef("mood")
+        let issued = commands(DatabaseTreeMenuSpec.sections(for: context(clicked: .userType(ref))))
+
+        #expect(issued.contains(.copyText("mood")))
+        #expect(issued.contains(.copyText("public.mood")))
+        #expect(issued.contains(.showObjectSource(ref.objectRef)))
+    }
+
+    @Test("A type with no schema offers no qualified copy")
+    func bareTypeRowHasNoQualifiedCopy() {
+        let ref = userTypeRef("mood", schema: nil)
+        let issued = commands(DatabaseTreeMenuSpec.sections(for: context(clicked: .userType(ref))))
+
+        #expect(issued.filter { if case .copyText = $0 { return true } else { return false } }.count == 1)
+    }
+
+    @Test("The Types section offers Create New Type when the driver has a template and writes are allowed")
+    func typesSectionOffersCreate() {
+        let flat = commands(DatabaseTreeMenuSpec.sections(
+            for: context(clicked: .objectKindSection(.type), activeSchema: "sales", canCreateType: true)
+        ))
+        #expect(flat.contains(.createType(database: "app", schema: "sales")))
+
+        /// A tree lists every database, so the section names its own rather than the browsed one:
+        /// PostgreSQL cannot reach another database by qualifying the type name.
+        let group = DatabaseTreeObjectGroup(database: "warehouse", schema: "billing", kind: .type)
+        let tree = commands(DatabaseTreeMenuSpec.sections(
+            for: context(clicked: .containerObjectKindSection(group), canCreateType: true)
+        ))
+        #expect(tree.contains(.createType(database: "warehouse", schema: "billing")))
+        #expect(tree.contains(.refreshContainerObjectKind(group)))
+    }
+
+    @Test("Create New Type is omitted in read-only mode, without a template, and on other sections")
+    func createTypeIsOmittedWhereItCannotRun() {
+        let readOnly = commands(DatabaseTreeMenuSpec.sections(
+            for: context(clicked: .objectKindSection(.type), isReadOnly: true, canCreateType: true)
+        ))
+        #expect(!readOnly.contains { if case .createType = $0 { return true } else { return false } })
+
+        let noTemplate = commands(DatabaseTreeMenuSpec.sections(for: context(clicked: .objectKindSection(.type))))
+        #expect(!noTemplate.contains { if case .createType = $0 { return true } else { return false } })
+
+        let functions = commands(DatabaseTreeMenuSpec.sections(
+            for: context(clicked: .objectKindSection(.function), canCreateType: true)
+        ))
+        #expect(!functions.contains { if case .createType = $0 { return true } else { return false } })
+    }
+
+    // MARK: - Copying
+
+    private func databaseKind(_ name: String, isSystem: Bool = false) -> DatabaseTreeNode.Kind {
+        .database(DatabaseMetadata.minimal(name: name, isSystem: isSystem))
+    }
+
+    @Test("A table row offers Copy To")
+    func tableOffersCopyTo() {
+        let ref = tableRef("orders")
+        let issued = commands(DatabaseTreeMenuSpec.sections(
+            for: context(clicked: .table(ref), selectedTables: [ref])
+        ))
+
+        #expect(issued.contains { command in
+            guard case .copyObjectsTo(let objects, _) = command else { return false }
+            return objects.map(\.name) == ["orders"]
+        })
+    }
+
+    /// A right-click inside a multi-selection acts on the whole selection, the same rule Export,
+    /// Truncate and Drop already keep.
+    @Test("Copy To on a multi-selection carries every table in it")
+    func copyToCarriesTheSelection() {
+        let orders = tableRef("orders")
+        let customers = tableRef("customers")
+        let issued = commands(DatabaseTreeMenuSpec.sections(
+            for: context(clicked: .table(orders), selectedTables: [orders, customers])
+        ))
+
+        let names = issued.compactMap { command -> [String]? in
+            guard case .copyObjectsTo(let objects, _) = command else { return nil }
+            return objects.map(\.name).sorted()
+        }
+        #expect(names == [["customers", "orders"]])
+    }
+
+    /// A view holds rows a copy can read, so it takes part, but it is copied as its definition
+    /// rather than as columns.
+    @Test("A view row is offered as a view rather than as a table")
+    func viewIsOfferedAsAView() {
+        let ref = tableRef("active_users", type: .view)
+        let issued = commands(DatabaseTreeMenuSpec.sections(
+            for: context(clicked: .table(ref), selectedTables: [ref])
+        ))
+
+        #expect(issued.contains { command in
+            guard case .copyObjectsTo(let objects, _) = command else { return false }
+            return objects.first?.kind == .view
+        })
+    }
+
+    @Test("An engine that cannot copy offers neither command")
+    func ineligibleEngineHidesCopying() {
+        let ref = tableRef("orders")
+        let tableCommands = commands(DatabaseTreeMenuSpec.sections(for: context(
+            clicked: .table(ref), selectedTables: [ref], canCopyObjects: false
+        )))
+        let databaseCommands = commands(DatabaseTreeMenuSpec.sections(for: context(
+            clicked: databaseKind("app"),
+            selectedContainers: [.database("app")],
+            canCopyObjects: false,
+            canDuplicateDatabase: false
+        )))
+
+        #expect(!tableCommands.contains { if case .copyObjectsTo = $0 { return true } else { return false } })
+        #expect(!databaseCommands.contains { if case .copyContainerTo = $0 { return true } else { return false } })
+        #expect(!databaseCommands.contains { if case .duplicateDatabase = $0 { return true } else { return false } })
+    }
+
+    @Test("A database row offers Copy To and Duplicate Database")
+    func databaseOffersCopyAndDuplicate() {
+        let issued = commands(DatabaseTreeMenuSpec.sections(for: context(
+            clicked: databaseKind("app"), selectedContainers: [.database("app")]
+        )))
+
+        #expect(issued.contains(.copyContainerTo(.database("app"))))
+        #expect(issued.contains(.duplicateDatabase(.database("app"))))
+    }
+
+    /// `CREATE DATABASE information_schema` is not a thing anyone wants offered.
+    @Test("A system database is not offered for duplication")
+    func systemDatabaseIsNotDuplicated() {
+        let issued = commands(DatabaseTreeMenuSpec.sections(for: context(
+            clicked: databaseKind("information_schema", isSystem: true),
+            selectedContainers: [.database("information_schema", isSystem: true)]
+        )))
+
+        #expect(!issued.contains { if case .duplicateDatabase = $0 { return true } else { return false } })
+    }
+
+    /// No engine creates a schema from a `CREATE DATABASE`, so a schema is copied into one that
+    /// already exists rather than duplicated.
+    @Test("A schema row offers Copy To but not Duplicate Database")
+    func schemaOffersCopyOnly() {
+        let schema = DatabaseContainerRef.schema(database: "app", schema: "sales")
+        let issued = commands(DatabaseTreeMenuSpec.sections(for: context(
+            clicked: .schema(database: "app", schema: "sales"), selectedContainers: [schema]
+        )))
+
+        #expect(issued.contains(.copyContainerTo(schema)))
+        #expect(!issued.contains { if case .duplicateDatabase = $0 { return true } else { return false } })
+    }
+
+    /// A copy names one source and one target, so two databases selected at once would need a
+    /// target each.
+    @Test("A multi-container selection offers neither copy command")
+    func multipleContainersHideCopying() {
+        let issued = commands(DatabaseTreeMenuSpec.sections(for: context(
+            clicked: databaseKind("app"),
+            selectedContainers: [.database("app"), .database("archive")]
+        )))
+
+        #expect(!issued.contains { if case .copyContainerTo = $0 { return true } else { return false } })
+        #expect(!issued.contains { if case .duplicateDatabase = $0 { return true } else { return false } })
     }
 }

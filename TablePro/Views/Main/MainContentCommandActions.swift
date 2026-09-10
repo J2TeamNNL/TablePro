@@ -35,11 +35,11 @@ final class MainContentCommandActions {
     // MARK: - Bindings
 
     @ObservationIgnored private let selectionState: GridSelectionState
-    @ObservationIgnored private let selectedTables: Binding<Set<TableInfo>>
-    @ObservationIgnored private let pendingTruncates: Binding<Set<String>>
-    @ObservationIgnored private let pendingDeletes: Binding<Set<String>>
-    @ObservationIgnored private let tableOperationOptions: Binding<[String: TableOperationOptions]>
-    @ObservationIgnored private let rightPanelState: RightPanelState
+    @ObservationIgnored private let selectedTables: Binding<Set<DatabaseTreeTableRef>>
+    @ObservationIgnored private let pendingTruncates: Binding<Set<DatabaseTreeTableRef>>
+    @ObservationIgnored private let pendingDeletes: Binding<Set<DatabaseTreeTableRef>>
+    @ObservationIgnored private let tableOperationOptions: Binding<[DatabaseTreeTableRef: TableOperationOptions]>
+    @ObservationIgnored private let trailingPaneState: TrailingPaneState
 
     /// The window this instance belongs to — used for key-window guards.
     @ObservationIgnored weak var window: NSWindow? {
@@ -72,11 +72,11 @@ final class MainContentCommandActions {
         coordinator: MainContentCoordinator,
         connection: DatabaseConnection,
         selectionState: GridSelectionState,
-        selectedTables: Binding<Set<TableInfo>>,
-        pendingTruncates: Binding<Set<String>>,
-        pendingDeletes: Binding<Set<String>>,
-        tableOperationOptions: Binding<[String: TableOperationOptions]>,
-        rightPanelState: RightPanelState
+        selectedTables: Binding<Set<DatabaseTreeTableRef>>,
+        pendingTruncates: Binding<Set<DatabaseTreeTableRef>>,
+        pendingDeletes: Binding<Set<DatabaseTreeTableRef>>,
+        tableOperationOptions: Binding<[DatabaseTreeTableRef: TableOperationOptions]>,
+        trailingPaneState: TrailingPaneState
     ) {
         self.coordinator = coordinator
         self.connection = connection
@@ -85,9 +85,8 @@ final class MainContentCommandActions {
         self.pendingTruncates = pendingTruncates
         self.pendingDeletes = pendingDeletes
         self.tableOperationOptions = tableOperationOptions
-        self.rightPanelState = rightPanelState
+        self.trailingPaneState = trailingPaneState
 
-        setupSaveAction()
         setupObservers()
     }
 
@@ -153,21 +152,23 @@ final class MainContentCommandActions {
 
     // MARK: - Save Action
 
-    private func setupSaveAction() {
-        rightPanelState.onSave = { [weak self] in
+    /// Writes the inspector's pending edits.
+    ///
+    /// This used to be stored back on the panel's state as an `onSave` closure that only this type
+    /// ever set and only this type ever called; no view read it, despite a comment saying the panel
+    /// did. Calling the coordinator directly is the same work with one fewer hop.
+    private func saveInspectorEdits() {
+        let editState = trailingPaneState.inspector.editState
+        Task { [weak self] in
             guard let self else { return }
-            Task {
-                do {
-                    try await self.coordinator?.saveSidebarEdits(
-                        editState: self.rightPanelState.editState
-                    )
-                } catch {
-                    AlertHelper.showErrorSheet(
-                        title: String(localized: "Failed to Save Changes"),
-                        message: error.localizedDescription,
-                        window: self.window
-                    )
-                }
+            do {
+                try await self.coordinator?.saveSidebarEdits(editState: editState)
+            } catch {
+                AlertHelper.showErrorSheet(
+                    title: String(localized: "Failed to Save Changes"),
+                    message: error.localizedDescription,
+                    window: self.window
+                )
             }
         }
     }
@@ -234,22 +235,10 @@ final class MainContentCommandActions {
         if !indices.isEmpty {
             coordinator?.deleteSelectedRows(indices: indices)
         } else if !fromDataGrid, !selectedTables.wrappedValue.isEmpty {
-            // Only toggle table deletion when the call did NOT originate from
-            // the data grid (e.g., from the app menu Cmd+Delete with no rows selected)
-            var updatedDeletes = pendingDeletes.wrappedValue
-            var updatedTruncates = pendingTruncates.wrappedValue
-
-            for table in selectedTables.wrappedValue {
-                updatedTruncates.remove(table.name)
-                if updatedDeletes.contains(table.name) {
-                    updatedDeletes.remove(table.name)
-                } else {
-                    updatedDeletes.insert(table.name)
-                }
-            }
-
-            pendingTruncates.wrappedValue = updatedTruncates
-            pendingDeletes.wrappedValue = updatedDeletes
+            /// Through the sidebar's own path rather than a second copy of it. Staging the queue
+            /// here directly skipped the confirmation `batchToggleDelete` raises, so Delete from
+            /// the menu bar queued a drop with no dialog while the sidebar's Delete asked first.
+            coordinator?.sidebarViewModel?.batchToggleDelete(refs: Array(selectedTables.wrappedValue))
         }
     }
 
@@ -373,6 +362,13 @@ final class MainContentCommandActions {
         PluginManager.shared.supportsDatabaseTree(for: connection.type)
     }
 
+    /// Whether the driver published any session context to switch. Only Snowflake does today, and
+    /// it pays two round trips for the list, so this reads what `loadSessionContexts` already
+    /// fetched rather than asking again.
+    var hasSessionContexts: Bool {
+        !(coordinator?.sessionContexts.isEmpty ?? true)
+    }
+
     var supportsSchemaSwitching: Bool {
         PluginManager.shared.supportsSchemaSwitching(for: connection.type)
     }
@@ -403,6 +399,16 @@ final class MainContentCommandActions {
         return coordinator.canEditActiveResult
     }
 
+    var isCurrentTabSchemaResolved: Bool {
+        guard let coordinator, let tabId = coordinator.tabManager.selectedTabId else { return false }
+        return coordinator.tabSessionRegistry.tableRows(for: tabId).hasAuthoritativeSchema
+    }
+
+    var canRestorePreviousValues: Bool {
+        coordinator?.canRewindSelectedTab ?? false
+    }
+
+
     /// Find and the filter panel act on the result grid, so they need a table tab that is showing
     /// one. Chart mode is not, and neither is Structure, whose own grid has its own commands.
     var canUseTableResultCommands: Bool {
@@ -427,6 +433,18 @@ final class MainContentCommandActions {
         guard canUseGridFindCommands,
               let findState = coordinator?.tabManager.selectedTab?.findState else { return false }
         return findState.isVisible && !findState.matches.isEmpty
+    }
+
+    /// Jump to Column reads the mounted data grid, so it needs the grid on screen and a result that
+    /// names columns. A query's result counts as much as a table's: a wide result is a wide result.
+    var canJumpToColumn: Bool {
+        guard dataGridOwnsSelection,
+              let coordinator,
+              coordinator.hasMountedDataGrid,
+              let tab = coordinator.tabManager.selectedTab,
+              tab.display.resultsViewMode == .data else { return false }
+        let resultColumns = coordinator.tabSessionRegistry.existingTableRows(for: tab.id)?.columns ?? []
+        return !coordinator.columnsForVisibilityPicker(for: tab, resultColumns: resultColumns).isEmpty
     }
 
     /// What `pasteRows()` will actually do, so the Edit menu's Paste item is enabled only when it
@@ -473,12 +491,18 @@ final class MainContentCommandActions {
         !selectedTables.wrappedValue.isEmpty
     }
 
+    /// A selection can be perfectly valid and still hold nothing truncatable, so the menu bar asks
+    /// this rather than `hasTableSelection`, which is what let it stage a `TRUNCATE` on a view.
+    var canTruncateSelectedTables: Bool {
+        TableOperationEligibility.canTruncate(selectedTables.wrappedValue)
+    }
+
     /// The one selected object, or nil when the selection is empty or spans several.
     /// Commands that open a single object need this rather than `hasTableSelection`.
     var selectedObject: TableInfo? {
         let selection = selectedTables.wrappedValue
         guard selection.count == 1 else { return nil }
-        return selection.first
+        return selection.first?.table
     }
 
     var hasQueryText: Bool {
@@ -780,8 +804,8 @@ final class MainContentCommandActions {
         }
 
         // Sidebar-only edits (made directly in the inspector panel)
-        if rightPanelState.editState.hasEdits {
-            rightPanelState.onSave?()
+        if trailingPaneState.inspector.editState.hasEdits {
+            saveInspectorEdits()
             return true
         }
 
@@ -840,7 +864,7 @@ final class MainContentCommandActions {
         coordinator?.changeManager.clearChangesAndUndoHistory()
         pendingTruncates.wrappedValue.removeAll()
         pendingDeletes.wrappedValue.removeAll()
-        rightPanelState.editState.clearEdits()
+        trailingPaneState.inspector.editState.clearEdits()
         finish(asBatchSurvivor: asBatchSurvivor)
     }
 
@@ -849,7 +873,7 @@ final class MainContentCommandActions {
     }
 
     func truncateTables() {
-        guard !(selectedTables.wrappedValue.isEmpty) else { return }
+        guard canTruncateSelectedTables else { return }
         coordinator?.sidebarViewModel?.batchToggleTruncate()
     }
 
@@ -936,6 +960,10 @@ final class MainContentCommandActions {
         Task { _ = await session.applyStagedChanges(coordinator: coordinator) }
     }
 
+    func restorePreviousValues() {
+        coordinator?.rewindLastSave()
+    }
+
     func saveChanges() {
         if isUsersRolesTab {
             coordinator?.usersRolesActions?.reviewAndApply()
@@ -964,9 +992,9 @@ final class MainContentCommandActions {
             pendingTruncates.wrappedValue = truncates
             pendingDeletes.wrappedValue = deletes
             tableOperationOptions.wrappedValue = options
-        } else if rightPanelState.editState.hasEdits {
+        } else if trailingPaneState.inspector.editState.hasEdits {
             // Save sidebar-only edits (edits made directly in the right panel)
-            rightPanelState.onSave?()
+            saveInspectorEdits()
         }
         // File save: write query back to source file
         else if let tab = coordinator?.tabManager.selectedTab,
@@ -1003,31 +1031,32 @@ final class MainContentCommandActions {
         }
     }
 
-    func openSQLFile() {
-        Task {
-            guard let urls = await SQLFileService.showOpenPanel() else { return }
-            AppCommands.shared.openSQLFiles.send(urls)
-        }
-    }
-
     func explainQuery() {
         coordinator?.runExplain()
     }
 
     func aiExplainQuery() {
         guard let query = coordinator?.tabManager.selectedTab?.content.query, !query.isEmpty else { return }
-        coordinator?.showAIChatPanel()
+        coordinator?.showAssistant()
         coordinator?.aiViewModel?.handleExplainSelection(query)
     }
 
     func aiOptimizeQuery() {
         guard let query = coordinator?.tabManager.selectedTab?.content.query, !query.isEmpty else { return }
-        coordinator?.showAIChatPanel()
+        coordinator?.showAssistant()
         coordinator?.aiViewModel?.handleOptimizeSelection(query)
     }
 
     func previewFKReference() {
         coordinator?.toggleFKPreviewForFocusedCell()
+    }
+
+    func showRowAsJSON() {
+        coordinator?.showRowAsJSON()
+    }
+
+    func openForeignKeyTable(reference: JSONForeignKeyRef, value: String) {
+        coordinator?.navigateToFKReference(reference: reference, value: value)
     }
 
     func exportTables() {
@@ -1047,14 +1076,30 @@ final class MainContentCommandActions {
     }
 
     func backupDatabase() {
-        coordinator?.activeSheet = .backupDatabase
+        coordinator?.activeSheet = .backupDatabase(databases: [])
     }
 
+    /// Asked of the connection, not only its type. libSQL reaches either a local file or a Turso
+    /// URL and only the file can be handed to `sqlite3`, so a remote one offered a Backup Dump that
+    /// wrote a 52-byte file and reported success.
     var supportsBackup: Bool {
-        connection.type == .postgresql || connection.type == .redshift
+        NativeDumpRegistry.supports(
+            connection,
+            localFilePath: NativeDumpService.localFilePath(for: connection)
+        )
     }
 
     var supportsRestore: Bool { supportsBackup }
+
+    /// Oracle, Snowflake and BigQuery unload to a server directory or a bucket rather than to a
+    /// file on this Mac, so they get their own command instead of a mode of Backup Dump.
+    var supportsServerSideExport: Bool {
+        ServerSideExport.supports(connection.type)
+    }
+
+    func serverSideExport() {
+        coordinator?.activeSheet = .serverSideExport(table: nil)
+    }
 
     func restoreDatabase() {
         Task { @MainActor [weak self] in
@@ -1067,10 +1112,12 @@ final class MainContentCommandActions {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = Self.restoreSourceContentTypes
+        panel.allowedContentTypes = restoreSourceContentTypes
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = restoreAcceptsDirectory
         panel.title = String(localized: "Choose Dump File")
         panel.prompt = String(localized: "Choose")
-        panel.message = String(localized: "Select a dump file produced by pg_dump in custom archive format.")
+        panel.message = restoreSourceMessage
 
         let response: NSApplication.ModalResponse
         if let window = NSApp.keyWindow {
@@ -1082,11 +1129,31 @@ final class MainContentCommandActions {
         coordinator?.activeSheet = .restoreDatabase(fileURL: url)
     }
 
-    private static var restoreSourceContentTypes: [UTType] {
-        if let dumpType = UTType(filenameExtension: "dump") {
-            return [dumpType, .data]
+    /// The engine's own archive, not PostgreSQL's. Every engine the registry supports is offered
+    /// Restore Dump, and the panel used to tell all of them to pick a `pg_dump` custom archive.
+    private var restoreSourceContentTypes: [UTType] {
+        let extensions = NativeDumpRegistry.formats(for: connection.type)
+            .map(\.fileExtension)
+            .filter { !$0.isEmpty }
+        let types = extensions.compactMap { UTType(filenameExtension: $0) }
+        guard restoreAcceptsDirectory else { return types + [.data] }
+        return types + [.folder, .data]
+    }
+
+    /// DuckDB restores either one `.duckdb` file or a folder of Parquet, so the panel has to accept
+    /// a folder as well.
+    private var restoreAcceptsDirectory: Bool {
+        NativeDumpRegistry.formats(for: connection.type).contains { $0.producesDirectory }
+    }
+
+    private var restoreSourceMessage: String {
+        let descriptions = NativeDumpRegistry.formats(for: connection.type)
+            .map(\.contentDescription)
+            .filter { !$0.isEmpty }
+        guard let joined = descriptions.formatted(.list(type: .or)).nilIfEmpty else {
+            return String(localized: "Select a dump file this engine's own tool wrote.")
         }
-        return [.data]
+        return String(format: String(localized: "Select a dump this connection's engine wrote: %@."), joined)
     }
 
     func saveAsFavorite() {
@@ -1166,27 +1233,7 @@ final class MainContentCommandActions {
     }
 
     func toggleRightSidebar() {
-        coordinator?.inspectorProxy?.toggleInspector()
-    }
-
-    var isWorkspaceRailEnabled: Bool {
-        coordinator?.splitViewController?.isWorkspaceRailEnabled ?? false
-    }
-
-    var canToggleWorkspaceRail: Bool {
-        coordinator?.splitViewController?.canToggleWorkspaceRail ?? false
-    }
-
-    func toggleWorkspaceRail() {
-        coordinator?.splitViewController?.toggleWorkspaceRail()
-    }
-
-    func showPreviousWorkspace() {
-        coordinator?.splitViewController?.activateWorkspace(offsetBy: -1)
-    }
-
-    func showNextWorkspace() {
-        coordinator?.splitViewController?.activateWorkspace(offsetBy: 1)
+        coordinator?.trailingPaneProxy?.toggleInspector()
     }
 
     func goToPreviousPage() {
@@ -1264,51 +1311,62 @@ final class MainContentCommandActions {
     // MARK: - Database Operations (Group A — Called Directly)
 
     func openDatabaseSwitcher() {
-        guard let coordinator else { return }
-        let type = coordinator.connection.type
-        guard PluginManager.shared.supportsContainerSwitching(for: type) else { return }
-        guard PluginManager.shared.connectionMode(for: type) != .fileBased else { return }
-        coordinator.contentWindow?.makeFirstResponder(nil)
-        coordinator.presentedScopeSwitcher = nil
-        presentDatabaseSwitcher(on: coordinator, target: nil)
+        openScopeSwitcher(nil)
     }
 
-    /// The same chooser, opened from the toolbar chip so it appears against the scope it switches.
-    /// Clearing first responder is what lets the popover's search field take focus, which is why
-    /// the chip cannot just flip its own presentation flag.
-    func openScopeSwitcher(_ target: ContainerSwitchTarget) {
-        guard let coordinator else { return }
-        let type = coordinator.connection.type
-        guard PluginManager.shared.switchableContainers(for: type).contains(target) else { return }
+    /// The one way into the container chooser, for either scope. It used to have two, and the
+    /// second skipped the session gate the first applies: the centred toolbar chip opened the
+    /// chooser over a session the health monitor had given up on, while the button 200pt away and
+    /// the menu command were both correctly disabled. A chooser with one entry point cannot drift
+    /// from itself.
+    ///
+    /// `nil` means the engine's primary container, which is what a command with no scope named can
+    /// mean.
+    func openScopeSwitcher(_ target: ContainerSwitchTarget?) {
+        guard let coordinator, canSwitchContainer(target, on: coordinator) else { return }
+        /// Clearing first responder is what lets the popover's search field take focus.
         coordinator.contentWindow?.makeFirstResponder(nil)
-        coordinator.switcherPresenter.dismiss()
-        coordinator.presentedScopeSwitcher = target
+        presentDatabaseSwitcher(on: coordinator, target: target)
+    }
+
+    private func canSwitchContainer(
+        _ target: ContainerSwitchTarget?,
+        on coordinator: MainContentCoordinator
+    ) -> Bool {
+        let type = coordinator.connection.type
+        guard MainWindowToolbar.hasLiveSession(coordinator.toolbarState.connectionState) else { return false }
+        guard PluginManager.shared.connectionMode(for: type) != .fileBased else { return false }
+        guard let target else { return PluginManager.shared.supportsContainerSwitching(for: type) }
+        return PluginManager.shared.switchableContainers(for: type).contains(target)
     }
 
     func openQuickSwitcher() {
         coordinator?.showQuickSwitcher()
     }
 
-    func openConnectionSwitcher() {
-        guard let coordinator else { return }
-        coordinator.contentWindow?.makeFirstResponder(nil)
-        coordinator.presentedScopeSwitcher = nil
-        coordinator.switcherPresenter.present(
-            from: coordinator.contentWindow,
-            anchoredTo: MainWindowToolbar.connectionGroup,
-            contentSize: ConnectionSwitcherPopover.contentSize
-        ) { dismiss in
-            ConnectionSwitcherPopover(dismiss: dismiss)
-        }
+    func showColumnJump() {
+        guard canJumpToColumn else { return }
+        coordinator?.showColumnJump()
     }
 
-    /// Anchored to the connection group rather than to the Database button inside it, because the
-    /// group is the only item AppKit draws a frame for: its subitems exist to populate the overflow
-    /// menu and carry no frame of their own.
+    /// The window presents this one. It is a window command wherever it is invoked from, and
+    /// keeping a copy of the presentation here would give one window two owners for one popover.
+    func openConnectionSwitcher() {
+        coordinator?.splitViewController?.openConnectionSwitcher()
+    }
+
+    func dismissScopeSwitcher() {
+        coordinator?.switcherPresenter?.dismiss()
+    }
+
+    /// Anchored to the Database subitem, which is the capsule the user pressed. The group is two
+    /// capsules wide, so anchoring to it points the chooser at the seam between them; the presenter
+    /// falls back to the group by itself once AppKit clips it into the overflow menu.
     private func presentDatabaseSwitcher(on coordinator: MainContentCoordinator, target: ContainerSwitchTarget?) {
-        coordinator.switcherPresenter.present(
+        coordinator.switcherPresenter?.present(
             from: coordinator.contentWindow,
-            anchoredTo: MainWindowToolbar.connectionGroup,
+            anchoredTo: MainWindowToolbar.database,
+            subject: .container(target),
             contentSize: DatabaseSwitcherPopover.contentSize
         ) { dismiss in
             DatabaseSwitcherPopoverHost(coordinator: coordinator, target: target, dismiss: dismiss)
@@ -1317,9 +1375,16 @@ final class MainContentCommandActions {
 
     // MARK: - Undo/Redo (Group A — Called Directly)
 
+    /// A Create Table tab keeps its `resultsViewMode` at `.data`, so it needs its own arm. Without
+    /// one, Cmd+Z in the visual table editor reached the window's undo manager, which owns none of
+    /// the draft, and the grid's own undo had no caller at all.
     func undoChange() {
         if isUsersRolesTab {
             coordinator?.usersRolesActions?.undo()
+            return
+        }
+        if coordinator?.tabManager.selectedTab?.tabType == .createTable {
+            coordinator?.createTableActions?.undo?()
             return
         }
         if coordinator?.tabManager.selectedTab?.display.resultsViewMode == .structure {
@@ -1332,6 +1397,10 @@ final class MainContentCommandActions {
     func redoChange() {
         if isUsersRolesTab {
             coordinator?.usersRolesActions?.redo()
+            return
+        }
+        if coordinator?.tabManager.selectedTab?.tabType == .createTable {
+            coordinator?.createTableActions?.redo?()
             return
         }
         if coordinator?.tabManager.selectedTab?.display.resultsViewMode == .structure {
@@ -1397,7 +1466,6 @@ final class MainContentCommandActions {
         Task { [weak coordinator] in
             guard let coordinator, !coordinator.isTearingDown else { return }
             if let driver = DatabaseManager.shared.driver(for: coordinator.connection.id) {
-                coordinator.toolbarState.databaseVersion = driver.serverVersion
             }
             if case .loading = SchemaService.shared.state(for: coordinator.connection.id) {
                 coordinator.initRedisKeyTreeIfNeeded()

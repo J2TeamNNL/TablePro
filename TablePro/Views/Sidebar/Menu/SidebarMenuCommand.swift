@@ -15,6 +15,10 @@ import TableProPluginKit
 internal enum SidebarMenuCommand: Equatable {
     case createTable
     case createView
+    /// Carries the database and schema of the section it was raised from, because a tree lists
+    /// every database and schema, and a template opened against the browsed one would create the
+    /// type somewhere else: PostgreSQL cannot reach another database by qualifying the name.
+    case createType(database: String?, schema: String?)
     case filterDatabases
     case showAllDatabases
     case openInNewTab(DatabaseTreeTableRef)
@@ -27,10 +31,18 @@ internal enum SidebarMenuCommand: Equatable {
     /// without switching there first runs the command against a same-named table somewhere else,
     /// which for Truncate and Drop destroys the wrong data.
     case exportTables(names: Set<String>, ref: DatabaseTreeTableRef)
+    case transferTables(names: Set<String>, ref: DatabaseTreeTableRef)
     case importTables(formatId: String, ref: DatabaseTreeTableRef)
     case maintenance(operation: String, tableName: String, ref: DatabaseTreeTableRef)
-    case truncateTables(names: [String], ref: DatabaseTreeTableRef)
-    case dropTables(names: [String], ref: DatabaseTreeTableRef)
+    /// Queued rather than run, so these carry every target in full: a queue keyed by name is
+    /// resolved against whatever the tab in front points at by the time Save runs.
+    case truncateTables(targets: [DatabaseTreeTableRef], ref: DatabaseTreeTableRef)
+    case dropTables(targets: [DatabaseTreeTableRef], ref: DatabaseTreeTableRef)
+    /// Renaming runs at once rather than joining the queue, because the row's label is what the
+    /// user edits: a queued rename would leave the tree showing a name the server does not have,
+    /// and every later command on that row would name an object that does not exist.
+    case beginRenameTable(ref: DatabaseTreeTableRef, isRecentRow: Bool)
+    case renameContainer(DatabaseContainerRef)
     case toggleFavorite(DatabaseTreeTableRef)
     case removeRecent(DatabaseTreeTableRef)
     case clearRecents
@@ -40,7 +52,13 @@ internal enum SidebarMenuCommand: Equatable {
     case refreshContainers([DatabaseContainerRef])
     case copyContainerNames([DatabaseContainerRef])
     case exportContainers([DatabaseContainerRef])
+    case backUpContainers([String])
     case dropContainers([DatabaseContainerRef])
+    /// Copy carries its objects rather than a scope, because the sheet needs to know what the user
+    /// right-clicked: one table preselects that table, a database preselects everything in it.
+    case copyObjectsTo(objects: [ObjectCopySelection], ref: DatabaseTreeTableRef?)
+    case copyContainerTo(DatabaseContainerRef)
+    case duplicateDatabase(DatabaseContainerRef)
     case showAllTablesMetadata
     case refreshObjectKind(SidebarObjectKind)
     case refreshContainerObjectKind(DatabaseTreeObjectGroup)

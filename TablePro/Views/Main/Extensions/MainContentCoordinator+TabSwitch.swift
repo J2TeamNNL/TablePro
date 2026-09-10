@@ -36,7 +36,20 @@ extension MainContentCoordinator {
         if let oldId = oldTabId,
            let oldIndex = tabManager.tabs.firstIndex(where: { $0.id == oldId })
         {
-            if changeManager.hasChanges {
+            /// The second half of the condition is the fix. Gated on `hasChanges` alone, an undo was
+            /// never recorded: the tab kept the snapshot a previous switch had saved, so switching
+            /// back restored the edit the reader had just taken back and the tab went on reporting
+            /// unsaved work. Writing the empty snapshot is what clears it.
+            ///
+            /// Still conditional, because `mutate` takes the element `inout` and so runs the array's
+            /// setter whether or not the block writes: an unconditional write would fire `tabs`'
+            /// `didSet` over every open tab on every switch, for nothing.
+            ///
+            /// Safe to take the snapshot from the change manager here because nothing has repointed
+            /// it yet: every other `configureForTable` and `restoreState` caller is either the
+            /// incoming block below or guarded to the selected tab, and this runs synchronously
+            /// from the selection change with no suspension in between.
+            if changeManager.hasChanges || tabManager.tabs[oldIndex].pendingChanges.hasChanges {
                 let savedState = changeManager.saveState()
                 tabManager.mutate(at: oldIndex) { $0.pendingChanges = savedState }
             }
@@ -58,6 +71,12 @@ extension MainContentCoordinator {
                     $0.restoredCursorOffset = range.location
                     $0.restoredCursorLength = range.length
                 }
+            }
+            /// Before the restore below repoints `selectionState` at the incoming tab. The outgoing
+            /// grid is still mounted and still bound to that shared channel, so the repoint clears
+            /// its table view and its own teardown then has nothing left to report. (#2667)
+            if let live = mountedGridSelection() {
+                storeGridSelection(rows: live.rows, cells: live.cells, forTab: oldId)
             }
             if let tableName = tabManager.tabs[oldIndex].tableContext.tableName {
                 FilterSettingsStorage.shared.saveLastFilters(
@@ -90,7 +109,7 @@ extension MainContentCoordinator {
 
             recordSelectedTabContainer()
 
-            selectionState.indices = newTab.selectedRowIndices
+            selectionState.indices = newTab.selectedDisplayRows
             toolbarState.isTableTab = newTab.tabType == .table
             toolbarState.isResultsCollapsed = newTab.display.isResultsCollapsed
 
@@ -100,7 +119,8 @@ extension MainContentCoordinator {
                     from: pendingState,
                     tableName: newTab.tableContext.tableName ?? "",
                     schemaName: newTab.tableContext.schemaName,
-                    databaseType: connection.type
+                    databaseType: connection.type,
+                    generatedColumns: newRows.generatedColumns
                 )
             } else {
                 changeManager.configureForTable(
@@ -109,6 +129,7 @@ extension MainContentCoordinator {
                     columns: newRows.columns,
                     primaryKeyColumns: newTab.tableContext.primaryKeyColumns,
                     databaseType: connection.type,
+                    generatedColumns: newRows.generatedColumns,
                     triggerReload: false
                 )
             }
@@ -118,7 +139,11 @@ extension MainContentCoordinator {
                 "[switch] handleTabChange phases: saveOutgoing=\(saveMs)ms restoreIncoming=\(restoreMs)ms"
             )
 
-            changeManager.reloadVersion += 1
+            // No `reloadVersion` bump here. It is the change manager's throw-away-and-fetch-again
+            // signal and it is shared by every tab in the window, so bumping it on a switch told
+            // the incoming grid its rows had changed and made it re-format the whole result. The
+            // reload a switch does need is already forced by the freshly mounted grid's zero row
+            // count, and a real content change still arrives through `configureForTable`. (#2424)
             lazyLoadCurrentTabIfNeeded()
         } else {
             toolbarState.isTableTab = false
@@ -164,6 +189,7 @@ extension MainContentCoordinator {
             tab.loadEpoch &+= 1
         }
         tabSessionRegistry.evict(for: tabId)
+        displayStateCache.removeValue(forKey: tabId)
         return true
     }
 

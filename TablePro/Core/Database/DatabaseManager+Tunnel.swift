@@ -69,6 +69,14 @@ extension DatabaseManager {
         if connection.type.pluginTypeId == "Redis" {
             effectiveFields["redisMode"] = "standalone"
         }
+        /// Kafka's Metadata reply names every broker by its ADVERTISED address, and a client is
+        /// expected to dial those directly for the partitions they lead. Behind a tunnel there
+        /// is one forwarded port, so an advertised `broker-2.internal:9092` is unreachable and
+        /// the fetch hangs until it times out. Pinning the driver to the bootstrap endpoint is
+        /// the same move MongoDB and Redis get above, for the same reason.
+        if connection.type.pluginTypeId == "Kafka" {
+            effectiveFields["kafkaBrokerRouting"] = "bootstrapOnly"
+        }
 
         return DatabaseConnection(
             id: connection.id,
@@ -91,6 +99,8 @@ extension DatabaseManager {
         case .cloudflare: return CloudflareTunnelManager.shared
         case .cloudSQLProxy: return CloudSQLProxyManager.shared
         case .socksProxy: return SOCKSProxyManager.shared
+        case .tunnelCommand: return TunnelCommandManager.shared
+        case .remoteFile: return RemoteFileTransportManager.shared
         case .none: return nil
         }
     }

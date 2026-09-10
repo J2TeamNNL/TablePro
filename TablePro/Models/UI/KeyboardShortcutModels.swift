@@ -82,6 +82,7 @@ enum ShortcutAction: String, Codable, CaseIterable, Identifiable {
     case nextStatement
     case runStatementAndAdvance
     case previewSQL
+    case find
     case findNext
     case findPrevious
     case aiExplainQuery
@@ -112,6 +113,7 @@ enum ShortcutAction: String, Codable, CaseIterable, Identifiable {
     case refresh
     case export
     case importData
+    case jumpToColumn
 
     // Navigation
     case navigateBack
@@ -125,6 +127,7 @@ enum ShortcutAction: String, Codable, CaseIterable, Identifiable {
     case quickSwitcher
     case toggleTableBrowser
     case toggleInspector
+    case toggleAssistant
     case toggleFilters
     case toggleHistory
     case toggleResults
@@ -149,17 +152,18 @@ enum ShortcutAction: String, Codable, CaseIterable, Identifiable {
              .executeQueryWithoutLimit, .cancelQuery, .explainQuery, .formatQuery,
              .foldAll, .unfoldAll, .toggleFold,
              .previousStatement, .nextStatement, .runStatementAndAdvance,
-             .previewSQL, .findNext, .findPrevious, .aiExplainQuery, .aiOptimizeQuery:
+             .previewSQL, .find, .findNext, .findPrevious, .aiExplainQuery, .aiOptimizeQuery:
             return .editor
         case .undo, .redo, .cut, .copy, .copyRowsExplicit, .copyWithHeaders, .copyAsJson,
              .paste, .delete, .selectAll, .clearSelection, .addRow, .duplicateRow,
              .truncateTable, .toggleHeaderRow, .previewFKReference, .saveAsFavorite, .previousPage,
-             .nextPage, .firstPage, .lastPage, .refresh, .export, .importData:
+             .nextPage, .firstPage, .lastPage, .refresh, .export, .importData, .jumpToColumn:
             return .dataGrid
         case .navigateBack, .navigateForward,
              .newTab, .closeTab, .closeOtherTabs, .closeTabsForOtherDatabases, .closeAllTabs,
              .reopenClosedTab, .quickSwitcher, .toggleTableBrowser,
-             .toggleInspector, .toggleFilters, .toggleHistory, .toggleResults, .previousResultTab,
+             .toggleInspector, .toggleAssistant, .toggleFilters, .toggleHistory, .toggleResults,
+             .previousResultTab,
              .nextResultTab, .pinResultTab, .closeResultTab, .focusSidebarSearch,
              .showPreviousTab, .showNextTab,
              .toggleWorkspaceRail, .showPreviousWorkspace, .showNextWorkspace:
@@ -167,17 +171,21 @@ enum ShortcutAction: String, Codable, CaseIterable, Identifiable {
         }
     }
 
+    /// A command that dispatches to whichever surface holds focus must be `.global`, or the
+    /// conflict resolver treats its combo as free in the other context and AppKit blanks one of
+    /// the two menu items that end up claiming it. The three find commands all route that way.
     var context: ShortcutContext {
         switch self {
+        case .find, .findNext, .findPrevious:
+            return .global
         case .executeQuery, .executeAllStatements, .executeQueryWithoutLimit,
              .cancelQuery, .explainQuery, .formatQuery, .foldAll, .unfoldAll,
              .toggleFold, .previousStatement, .nextStatement, .runStatementAndAdvance,
-             .previewSQL, .findNext,
-             .findPrevious, .aiExplainQuery, .aiOptimizeQuery:
+             .previewSQL, .aiExplainQuery, .aiOptimizeQuery:
             return .editor
         case .previousPage, .nextPage, .firstPage, .lastPage, .addRow, .duplicateRow,
              .delete, .truncateTable, .previewFKReference, .saveAsFavorite,
-             .copyRowsExplicit, .copyWithHeaders, .copyAsJson, .toggleFilters:
+             .copyRowsExplicit, .copyWithHeaders, .copyAsJson, .toggleFilters, .jumpToColumn:
             return .dataGrid
         default:
             return .global
@@ -224,10 +232,12 @@ enum ShortcutAction: String, Codable, CaseIterable, Identifiable {
         case .previousStatement: return String(localized: "Previous Statement")
         case .nextStatement: return String(localized: "Next Statement")
         case .runStatementAndAdvance: return String(localized: "Run Statement and Advance")
+        case .find: return String(localized: "Find")
         case .findNext: return String(localized: "Find Next")
         case .findPrevious: return String(localized: "Find Previous")
         case .export: return String(localized: "Export")
         case .importData: return String(localized: "Import")
+        case .jumpToColumn: return String(localized: "Jump to Column")
         case .quickSwitcher: return String(localized: "Open Quickly")
         case .previousPage: return String(localized: "Previous Page")
         case .nextPage: return String(localized: "Next Page")
@@ -252,6 +262,7 @@ enum ShortcutAction: String, Codable, CaseIterable, Identifiable {
         case .saveAsFavorite: return String(localized: "Save as Favorite")
         case .toggleTableBrowser: return String(localized: "Toggle Table Browser")
         case .toggleInspector: return String(localized: "Toggle Inspector")
+        case .toggleAssistant: return String(localized: "Toggle Assistant")
         case .toggleFilters: return String(localized: "Toggle Filters")
         case .toggleHistory: return String(localized: "Toggle History")
         case .toggleResults: return String(localized: "Toggle Results")
@@ -281,12 +292,12 @@ extension ShortcutAction {
         (.character("/", command: true), String(localized: "Toggle Comment")),
         (.character("[", command: true), String(localized: "Indent")),
         (.character("]", command: true), String(localized: "Outdent")),
-        (.character("f", command: true), String(localized: "Find")),
         (.character("d", command: true, shift: true), String(localized: "Duplicate Line")),
         (.character("k", command: true, shift: true), String(localized: "Delete Line")),
         (.special(.space, control: true), String(localized: "Show Completions")),
         (.special(.upArrow, option: true), String(localized: "Move Line Up")),
         (.special(.downArrow, option: true), String(localized: "Move Line Down")),
+        (.character("j", command: true, control: true), String(localized: "Jump to Definition")),
         (.special(.upArrow, shift: true, option: true), String(localized: "Extend Selection to Previous Statement")),
         (.special(.downArrow, shift: true, option: true), String(localized: "Extend Selection to Next Statement"))
     ]
@@ -309,14 +320,21 @@ extension ShortcutAction {
         (.special(.rightArrow, option: true), String(localized: "Move Word Right"))
     ]
 
-    /// App-level shortcuts that are wired directly in the menu and are not
-    /// customizable: tab selection (Cmd+1 through Cmd+9) and editor zoom. These
-    /// fire regardless of focus, so a user binding would silently collide.
+    /// Every key equivalent a menu builder hardcodes, and so every combo no `ShortcutAction`
+    /// can be bound to. These fire regardless of focus, and AppKit blanks the loser when two
+    /// menu items claim one combo, so a binding the recorder let through would silently kill
+    /// the hardcoded command instead. An entry added to a menu builder belongs here too.
     static let reservedAppShortcuts: [(key: BoundKey, name: String)] = {
         var shortcuts: [(key: BoundKey, name: String)] = [
             (.character("=", command: true), String(localized: "Zoom In")),
             (.character("-", command: true), String(localized: "Zoom Out")),
-            (.character("f", command: true), String(localized: "Find"))
+            (.character(",", command: true), String(localized: "Settings…")),
+            (.character("h", command: true), String(localized: "Hide TablePro")),
+            (.character("h", command: true, option: true), String(localized: "Hide Others")),
+            (.character("q", command: true), String(localized: "Quit TablePro")),
+            (.character("m", command: true), String(localized: "Minimize")),
+            (.character("t", command: true, option: true), String(localized: "Show Toolbar")),
+            (.character("f", command: true, control: true), String(localized: "Enter Full Screen"))
         ]
         for number in 1...9 {
             shortcuts.append((
@@ -517,6 +535,7 @@ struct KeyboardSettings: Codable, Equatable {
         .unfoldAll: .special(.rightArrow, command: true, shift: true, option: true),
         .toggleFold: .special(.leftArrow, command: true, option: true),
         .previewSQL: .character("p", command: true, shift: true),
+        .find: .character("f", command: true),
         .findNext: .character("g", command: true),
         .findPrevious: .character("g", command: true, shift: true),
         .aiExplainQuery: .character("l", command: true),
@@ -547,6 +566,7 @@ struct KeyboardSettings: Codable, Equatable {
         .firstPage: .special(.upArrow, command: true, option: true),
         .lastPage: .special(.downArrow, command: true, option: true),
         .refresh: .character("r", command: true),
+        .jumpToColumn: .character("j", command: true, shift: true),
 
         // Navigation
         /// Not the Safari chord. Command+[ and Command+] are Previous/Next Page and are claimed
@@ -563,6 +583,7 @@ struct KeyboardSettings: Codable, Equatable {
         .quickSwitcher: .character("o", command: true, shift: true),
         .toggleTableBrowser: .character("0", command: true),
         .toggleInspector: .character("i", command: true, option: true),
+        .toggleAssistant: .character("a", command: true, option: true),
         .toggleFilters: .character("f", command: true, option: true),
         .toggleHistory: .character("y", command: true),
         .toggleResults: .character("r", command: true, option: true),

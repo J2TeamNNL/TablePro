@@ -6,6 +6,7 @@
 //  to MainContentCoordinator and its sub-handlers.
 //
 
+import AppKit
 import Foundation
 import SwiftUI
 @testable import TablePro
@@ -21,6 +22,12 @@ private final class CommandActionsClipboard: ClipboardProvider {
     func readGridRows() -> GridRowsClipboardPayload? { nil }
     func writeText(_ text: String) { self.text = text; hasGridRowsValue = false }
     func writeCsv(_ csv: String) { text = csv; hasGridRowsValue = false }
+
+    var copiedImages: [NSImage] = []
+
+    func writeImage(_ image: NSImage) {
+        copiedImages.append(image)
+    }
     func writeRows(tsv: String, html: String?, gridRows: GridRowsClipboardPayload) { text = tsv; hasGridRowsValue = true }
     var hasText: Bool { text != nil }
     var hasGridRows: Bool { hasGridRowsValue }
@@ -42,11 +49,11 @@ struct CommandActionsDispatchTests {
         let state = SessionStateFactory.create(connection: connection, payload: nil)
         let coordinator = state.coordinator
 
-        var selectedTables: Set<TableInfo> = []
-        var pendingTruncates: Set<String> = []
-        var pendingDeletes: Set<String> = []
-        var tableOperationOptions: [String: TableOperationOptions] = [:]
-        let rightPanelState = RightPanelState()
+        var selectedTables: Set<DatabaseTreeTableRef> = []
+        var pendingTruncates: Set<DatabaseTreeTableRef> = []
+        var pendingDeletes: Set<DatabaseTreeTableRef> = []
+        var tableOperationOptions: [DatabaseTreeTableRef: TableOperationOptions] = [:]
+        let trailingPaneState = TrailingPaneState()
 
         let actions = MainContentCommandActions(
             coordinator: coordinator,
@@ -59,7 +66,7 @@ struct CommandActionsDispatchTests {
                 get: { tableOperationOptions },
                 set: { tableOperationOptions = $0 }
             ),
-            rightPanelState: rightPanelState
+            trailingPaneState: trailingPaneState
         )
 
         return (actions, coordinator)
@@ -287,8 +294,8 @@ struct CommandActionsDispatchTests {
         tableViewCoordinator.selectionController.update(
             .single(
                 GridRect(rows: 0...1, columns: 0...0),
-                anchor: GridCoord(row: 0, column: 0),
-                active: GridCoord(row: 1, column: 0)
+                anchor: GridCoord(row: 0, displayColumn: 0),
+                active: GridCoord(row: 1, displayColumn: 0)
             )
         )
         delegate.dataGridAttach(tableViewCoordinator: tableViewCoordinator)

@@ -87,11 +87,19 @@ extension MainSplitViewController {
         commandActions?.stepFindBackward()
     }
 
+    @objc func jumpToColumn(_ sender: Any?) {
+        commandActions?.showColumnJump()
+    }
+
     @objc func addRow(_ sender: Any?) {
         commandActions?.addNewRow()
     }
 
     @objc func duplicateRow(_ sender: Any?) {
         commandActions?.duplicateRow()
+    }
+
+    @objc func restorePreviousValues(_ sender: Any?) {
+        commandActions?.restorePreviousValues()
     }
 }

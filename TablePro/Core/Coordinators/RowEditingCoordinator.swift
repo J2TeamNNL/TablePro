@@ -10,8 +10,25 @@ import TableProPluginKit
 final class RowEditingCoordinator {
     @ObservationIgnored unowned let parent: MainContentCoordinator
 
+    /// A save is between assembling its statements and hearing back.
+    ///
+    /// Nothing clears the pending changes until the write returns, so a second Cmd+S inside the
+    /// round trip finds them still there, assembles the same statements again and commits them
+    /// twice. Over a slow link that is easy to do by accident.
+    @ObservationIgnored private(set) var isSaveInFlight = false
+
     init(parent: MainContentCoordinator) {
         self.parent = parent
+    }
+
+    func beginSaveInFlight() -> Bool {
+        guard !isSaveInFlight else { return false }
+        isSaveInFlight = true
+        return true
+    }
+
+    func endSaveInFlight() {
+        isSaveInFlight = false
     }
 
     /// A row command selects the row it just made so the grid can highlight it and scroll to it.
@@ -30,18 +47,15 @@ final class RowEditingCoordinator {
               tab.tableContext.tableName != nil else { return }
 
         let tabId = tab.id
-        let columnDefaults = parent.tabSessionRegistry.tableRows(for: tabId).columnDefaults
-        let columns = parent.tabSessionRegistry.tableRows(for: tabId).columns
+        /// A new row is pre-filled from the schema's account of which columns the server owns, so
+        /// staging one before that account exists writes NULL into an identity column.
+        guard parent.tabSessionRegistry.tableRows(for: tabId).hasAuthoritativeSchema else { return }
 
         parent.dataTabDelegate?.tableViewCoordinator?.commitActiveCellEdit()
 
         var addResult: RowOperationsManager.AddNewRowResult?
         parent.mutateActiveTableRows(for: tabId) { rows in
-            let result = parent.rowOperationsManager.addNewRow(
-                columns: columns,
-                columnDefaults: columnDefaults,
-                tableRows: &rows
-            )
+            let result = parent.rowOperationsManager.addNewRow(tableRows: &rows)
             addResult = result
             return result?.delta ?? .none
         }
@@ -53,7 +67,7 @@ final class RowEditingCoordinator {
         }
         parent.tabManager.mutate(at: tabIndex) { $0.hasUserInteraction = true }
         parent.dataTabDelegate?.tableViewCoordinator?.applyDelta(result.delta)
-        parent.dataTabDelegate?.tableViewCoordinator?.beginEditing(displayRow: result.rowIndex, column: 0)
+        parent.dataTabDelegate?.tableViewCoordinator?.beginEditingFirstEditableColumn(displayRow: result.rowIndex)
     }
 
     func deleteSelectedRows(indices: Set<Int>) {
@@ -157,7 +171,8 @@ final class RowEditingCoordinator {
         guard !parent.safeModeLevel.blocksAllWrites,
               let (tab, tabIndex) = parent.tabManager.selectedTabAndIndex,
               tab.tableContext.isEditable,
-              tab.tableContext.tableName != nil else { return }
+              tab.tableContext.tableName != nil,
+              parent.tabSessionRegistry.tableRows(for: tab.id).hasAuthoritativeSchema else { return }
 
         if parent.activeGridDisplayIDs != nil {
             duplicateFilteredRow(displayIndex: index, tab: tab, tabIndex: tabIndex)
@@ -165,7 +180,6 @@ final class RowEditingCoordinator {
         }
 
         let tabId = tab.id
-        let columns = parent.tabSessionRegistry.tableRows(for: tabId).columns
         guard index >= 0, index < parent.tabSessionRegistry.tableRows(for: tabId).count else { return }
 
         parent.dataTabDelegate?.tableViewCoordinator?.commitActiveCellEdit()
@@ -174,7 +188,6 @@ final class RowEditingCoordinator {
         parent.mutateActiveTableRows(for: tabId) { rows in
             let result = parent.rowOperationsManager.duplicateRow(
                 sourceRowIndex: index,
-                columns: columns,
                 tableRows: &rows
             )
             dupResult = result
@@ -188,13 +201,12 @@ final class RowEditingCoordinator {
         }
         parent.tabManager.mutate(at: tabIndex) { $0.hasUserInteraction = true }
         parent.dataTabDelegate?.tableViewCoordinator?.applyDelta(result.delta)
-        parent.dataTabDelegate?.tableViewCoordinator?.beginEditing(displayRow: result.rowIndex, column: 0)
+        parent.dataTabDelegate?.tableViewCoordinator?.beginEditingFirstEditableColumn(displayRow: result.rowIndex)
     }
 
     private func duplicateFilteredRow(displayIndex: Int, tab: QueryTab, tabIndex: Int) {
         let tabId = tab.id
         let tableRows = parent.tabSessionRegistry.tableRows(for: tabId)
-        let columns = tableRows.columns
         guard let storageIndex = DisplayRowMapping.rowIndex(
             forDisplay: displayIndex, displayIDs: parent.activeGridDisplayIDs, in: tableRows
         ), storageIndex >= 0, storageIndex < tableRows.count else { return }
@@ -205,7 +217,6 @@ final class RowEditingCoordinator {
         parent.mutateActiveTableRows(for: tabId) { rows in
             let result = parent.rowOperationsManager.duplicateRow(
                 sourceRowIndex: storageIndex,
-                columns: columns,
                 tableRows: &rows
             )
             dupResult = result
@@ -223,7 +234,7 @@ final class RowEditingCoordinator {
         let newDisplayIndex = displayCount - 1
         guard newDisplayIndex >= 0 else { return }
         parent.selectionState.indices = [newDisplayIndex]
-        parent.dataTabDelegate?.tableViewCoordinator?.beginEditing(displayRow: newDisplayIndex, column: 0)
+        parent.dataTabDelegate?.tableViewCoordinator?.beginEditingFirstEditableColumn(displayRow: newDisplayIndex)
     }
 
     func undoInsertRow(at rowIndex: Int) {
@@ -254,8 +265,11 @@ final class RowEditingCoordinator {
         let tabId = tab.id
 
         var application = RowOperationsManager.UndoApplicationResult(adjustedSelection: nil, delta: .none)
+        let displayIDs = parent.activeGridDisplayIDs
         parent.mutateActiveTableRows(for: tabId) { rows in
-            let applied = parent.rowOperationsManager.applyUndoResult(result, tableRows: &rows)
+            let applied = parent.rowOperationsManager.applyUndoResult(
+                result, displayIDs: displayIDs, tableRows: &rows
+            )
             application = applied
             return applied.delta
         }
@@ -334,6 +348,9 @@ final class RowEditingCoordinator {
 
         parent.tabManager.mutate(at: tabIndex) { tab in
             tab.selectedRowIndices = newIndices
+            /// The pasted rows are the selection now. Left behind, the stored rectangle would
+            /// outrank them in `selectedDisplayRows` and come back instead of them.
+            tab.cellSelection = .empty
             tab.hasUserInteraction = true
         }
         parent.dataTabDelegate?.tableViewCoordinator?.applyDelta(pasteResult.delta)

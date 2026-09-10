@@ -46,6 +46,19 @@ enum DatabaseMenuBuilder {
                 action: #selector(MainSplitViewController.createNewView(_:))
             ),
             MenuItemFactory.separator,
+            /// The sidebar's own Copy To and Duplicate Database, mirrored so both are reachable
+            /// from the keyboard. The menu acts on the database being browsed, which is what a
+            /// command with no clicked row can mean. Spelled exactly as the sidebar and the sheet
+            /// spell it: one command carrying two names reads as two commands.
+            MenuItemFactory.item(
+                String(localized: "Copy To…"),
+                action: #selector(MainSplitViewController.copyObjectsToDatabase(_:))
+            ),
+            MenuItemFactory.item(
+                String(localized: "Duplicate Database…"),
+                action: #selector(MainSplitViewController.duplicateCurrentDatabase(_:))
+            ),
+            MenuItemFactory.separator,
             MenuItemFactory.item(
                 String(localized: "Show Table Structure"),
                 action: #selector(MainSplitViewController.showTableStructure(_:))
@@ -55,6 +68,8 @@ enum DatabaseMenuBuilder {
                 action: #selector(MainSplitViewController.editViewDefinition(_:))
             ),
             schemaSubmenu(),
+            sessionContextSubmenu(),
+            safeModeSubmenu(),
             favoriteDatabaseSubmenu(),
             maintenanceSubmenu(),
             MenuItemFactory.item(
@@ -81,6 +96,13 @@ enum DatabaseMenuBuilder {
                 action: #selector(MainSplitViewController.showQueryInsights(_:))
             ),
             MenuItemFactory.separator,
+            /// No ellipsis: the HIG reserves one for an action that needs more information before
+            /// it can complete, and this needs none. It validates to disabled for every connection
+            /// whose driver holds no file, which is all of them but the embedded engines.
+            MenuItemFactory.item(
+                String(localized: "Release File Lock"),
+                action: #selector(MainSplitViewController.releaseFileLock(_:))
+            ),
             MenuItemFactory.item(
                 String(localized: "Disconnect"),
                 action: #selector(MainSplitViewController.requestDisconnect)
@@ -103,6 +125,11 @@ enum DatabaseMenuBuilder {
             MenuItemFactory.item(
                 String(localized: "Compare & Sync Databases…"),
                 action: #selector(AppDelegate.compareAndSyncDatabases(_:))
+            ),
+            MenuItemFactory.separator,
+            MenuItemFactory.item(
+                String(localized: "Save Comparison…"),
+                action: #selector(CompareSyncWindowController.saveComparison(_:))
             ),
             MenuItemFactory.separator,
             MenuItemFactory.item(
@@ -154,11 +181,39 @@ enum DatabaseMenuBuilder {
 
     private static let schemaDelegate = SchemaMenuDelegate()
 
-    /// Where switching schema lives now that the sidebar has no bottom bar. The active schema is
-    /// still readable at a glance from the toolbar's chip, which already shows it.
+    /// Where switching schema lives now that the sidebar has no bottom bar, and the only place the
+    /// active schema is named: the toolbar's centred control shows the database it switches and
+    /// nothing else, and the window carries no subtitle.
+    ///
+    /// The checked list this delegate fills is the quick path. Open Schema Switcher above it is the
+    /// same chooser the database item opens, and it is what carries search, favourites, drop and
+    /// export for the inner scope.
     private static func schemaSubmenu() -> NSMenuItem {
         let container = MenuItemFactory.submenu(String(localized: "Schema"), items: [])
         container.submenu?.delegate = schemaDelegate
+        return container
+    }
+
+    private static let sessionContextDelegate = SessionContextMenuDelegate()
+
+    /// Snowflake's warehouse and role, and anything else a driver publishes through
+    /// `fetchSessionContexts`. The set is per-driver and dynamic, which a toolbar item cannot be.
+    private static func sessionContextSubmenu() -> NSMenuItem {
+        let container = MenuItemFactory.submenu(String(localized: "Session Context"), items: [])
+        container.submenu?.delegate = sessionContextDelegate
+        return container
+    }
+
+    private static let safeModeDelegate = SafeModeMenuDelegate()
+
+    /// The same list the toolbar's Safe Mode control opens, so every toolbar item keeps a menu-bar
+    /// command as the HIG asks.
+    private static func safeModeSubmenu() -> NSMenuItem {
+        /// "Safe Mode Level", not "Safe Mode": the levels inside it include one called Safe Mode,
+        /// and a submenu holding an item of its own name reads as a loop. It also gave the menu bar
+        /// two items with one title, which System Settings binds App Shortcuts by.
+        let container = MenuItemFactory.submenu(String(localized: "Safe Mode Level"), items: [])
+        container.submenu?.delegate = safeModeDelegate
         return container
     }
 }

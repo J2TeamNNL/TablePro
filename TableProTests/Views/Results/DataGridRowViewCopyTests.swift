@@ -14,6 +14,12 @@ private final class DataGridRowViewCopyClipboard: ClipboardProvider {
     func readGridRows() -> GridRowsClipboardPayload? { nil }
     func writeText(_ text: String) { self.text = text; hasGridRowsValue = false }
     func writeCsv(_ csv: String) { text = csv; hasGridRowsValue = false }
+
+    var copiedImages: [NSImage] = []
+
+    func writeImage(_ image: NSImage) {
+        copiedImages.append(image)
+    }
     func writeRows(tsv: String, html: String?, gridRows: GridRowsClipboardPayload) { text = tsv; hasGridRowsValue = true }
     var hasText: Bool { text != nil }
     var hasGridRows: Bool { hasGridRowsValue }
@@ -81,6 +87,7 @@ struct DataGridRowViewCopyTests {
             savedLayout: nil,
             isEditable: true,
             hiddenColumnNames: [],
+            firstClickSortDirection: .ascending,
             widthCalculator: { _, _ in 100 }
         )
         return tableView
@@ -192,7 +199,7 @@ struct DataGridRowViewCopyTests {
         )
         coordinator.updateDisplayFormats([nil, .uuid])
         let tableView = makeTableView(for: coordinator)
-        let selectedCell = GridCoord(row: 0, column: 1)
+        let selectedCell = GridCoord(row: 0, displayColumn: 1)
         _ = coordinator.selectionController.beginDrag(at: selectedCell, modifiers: .command)
         coordinator.selectionController.endDrag(dragged: false, originalCoord: selectedCell)
 
@@ -217,7 +224,7 @@ struct DataGridRowViewCopyTests {
         coordinator.updateDisplayFormats([.uuid])
         coordinator.valueFilteredIDs = [.existing(1), .existing(0)]
         let tableView = makeTableView(for: coordinator)
-        let selectedCell = GridCoord(row: 0, column: 0)
+        let selectedCell = GridCoord(row: 0, displayColumn: 0)
         _ = coordinator.selectionController.beginDrag(at: selectedCell, modifiers: .command)
         coordinator.selectionController.endDrag(dragged: false, originalCoord: selectedCell)
 
@@ -362,8 +369,8 @@ struct DataGridRowViewCopyTests {
         coordinator.selectionController.update(
             .single(
                 GridRect(rows: 0...1, columns: 0...1),
-                anchor: GridCoord(row: 0, column: 0),
-                active: GridCoord(row: 1, column: 0)
+                anchor: GridCoord(row: 0, displayColumn: 0),
+                active: GridCoord(row: 1, displayColumn: 0)
             )
         )
         let rowView = DataGridRowView()
@@ -547,11 +554,11 @@ struct DataGridRowViewCopyTests {
         coordinator.selectionController.update(
             GridSelection(
                 rectangles: [
-                    GridRect(cell: GridCoord(row: 0, column: 2)),
-                    GridRect(cell: GridCoord(row: 0, column: 3))
+                    GridRect(cell: GridCoord(row: 0, displayColumn: 2)),
+                    GridRect(cell: GridCoord(row: 0, displayColumn: 3))
                 ],
-                activeCell: GridCoord(row: 0, column: 3),
-                anchor: GridCoord(row: 0, column: 2)
+                activeCell: GridCoord(row: 0, displayColumn: 3),
+                anchor: GridCoord(row: 0, displayColumn: 2)
             )
         )
         return coordinator
@@ -597,9 +604,9 @@ struct DataGridRowViewCopyTests {
             coordinator.databaseType = .mysql
             coordinator.selectionController.update(
                 GridSelection(
-                    rectangles: [GridRect(cell: GridCoord(row: 0, column: 2))],
-                    activeCell: GridCoord(row: 0, column: 2),
-                    anchor: GridCoord(row: 0, column: 2)
+                    rectangles: [GridRect(cell: GridCoord(row: 0, displayColumn: 2))],
+                    activeCell: GridCoord(row: 0, displayColumn: 2),
+                    anchor: GridCoord(row: 0, displayColumn: 2)
                 )
             )
             let rowView = DataGridRowView()
@@ -627,11 +634,11 @@ struct DataGridRowViewCopyTests {
             coordinator.selectionController.update(
                 GridSelection(
                     rectangles: [
-                        GridRect(cell: GridCoord(row: 0, column: 2)),
-                        GridRect(cell: GridCoord(row: 1, column: 0))
+                        GridRect(cell: GridCoord(row: 0, displayColumn: 2)),
+                        GridRect(cell: GridCoord(row: 1, displayColumn: 0))
                     ],
-                    activeCell: GridCoord(row: 1, column: 0),
-                    anchor: GridCoord(row: 0, column: 2)
+                    activeCell: GridCoord(row: 1, displayColumn: 0),
+                    anchor: GridCoord(row: 0, displayColumn: 2)
                 )
             )
             let rowView = DataGridRowView()

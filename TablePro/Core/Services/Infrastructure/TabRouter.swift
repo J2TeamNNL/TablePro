@@ -10,6 +10,7 @@ import os
 internal enum TabRouterError: Error, LocalizedError {
     case connectionNotFound(UUID)
     case malformedDatabaseURL(URL)
+    case fileNoLongerExists(URL)
     case userCancelled
     case unsupportedIntent(String)
 
@@ -22,6 +23,10 @@ internal enum TabRouterError: Error, LocalizedError {
         case .malformedDatabaseURL(let url):
             return String(
                 format: String(localized: "Could not parse database URL: %@"), url.sanitizedForLogging
+            )
+        case .fileNoLongerExists(let url):
+            return String(
+                format: String(localized: "“%@” is no longer at that location."), url.lastPathComponent
             )
         case .userCancelled:
             return String(localized: "Cancelled by user.")
@@ -94,6 +99,38 @@ internal final class TabRouter {
         try await openConnection(id: connection.id, transientConnection: connection)
     }
 
+    /// Open a saved connection in a window of its own. One some window already hosts takes the
+    /// ordinary route instead, which selects it where it already is.
+    ///
+    /// The host is checked here rather than by the caller. A caller decides on a modifier key and
+    /// the work runs a main-actor job later, and anything else that opens a connection in between,
+    /// the MCP tool among them, would leave that answer stale and two workspaces restoring the same
+    /// tabs. Nothing is awaited between the question and the window.
+    ///
+    /// No pre-connect script prompt here, matching the window-opening half of `openConnection`. A
+    /// window whose connection carries a script does not auto-connect at all: it waits in its
+    /// not-connected state, where Connect asks. Asking first would put the same question twice and
+    /// the first answer would change nothing.
+    internal func openConnectionPreferringNewWindow(id: UUID) async throws {
+        guard WindowManager.shared.window(for: id) == nil else {
+            try await openConnection(id: id)
+            return
+        }
+        guard let connection = ConnectionStorage.shared.loadConnections().first(where: { $0.id == id }) else {
+            throw TabRouterError.connectionNotFound(id)
+        }
+
+        let payload = EditorTabPayload(connectionId: connection.id, intent: .restoreOrDefault)
+        WindowManager.shared.openInNewWindow(
+            payload: payload,
+            activate: true,
+            autoConnect: true,
+            joinsTabGroup: false
+        )
+        AppActivationPolicyController.shared.activate(ignoringOtherApps: true)
+        WindowOpener.shared.closeWelcome()
+    }
+
     private func openConnection(id: UUID, transientConnection: DatabaseConnection? = nil) async throws {
         let connection: DatabaseConnection
         if let stored = ConnectionStorage.shared.loadConnections().first(where: { $0.id == id }) {
@@ -105,13 +142,25 @@ internal final class TabRouter {
         }
         if let existing = WindowLifecycleMonitor.shared.mostRecentWindow(for: id)
             ?? WindowManager.shared.window(for: id) {
+            /// A window that is a background member of a tab group is one AppKit will make key
+            /// without bringing to the front of its group, so the tab has to be selected first or
+            /// the user is left looking at a different one.
+            if let group = existing.tabGroup, group.selectedWindow !== existing {
+                group.selectedWindow = existing
+            }
             existing.makeKeyAndOrderFront(nil)
             AppActivationPolicyController.shared.activate(ignoringOtherApps: true)
             WindowOpener.shared.closeWelcome()
+            let host = existing.contentViewController as? MainSplitViewController
+            /// Raising the window is not the same as showing the connection the user picked, and a
+            /// window hosts several. Without this, choosing a connected one from the connection list
+            /// re-fronted a window still showing a different connection and stopped there.
+            if let host, host.workspaces.contains(id) {
+                host.selectHostedConnection(id)
+            }
             guard DatabaseManager.shared.activeSessions[id]?.driver == nil else { return }
-            if let splitVC = existing.contentViewController as? MainSplitViewController,
-               splitVC.workspaces.contains(id) {
-                splitVC.reconnectWorkspace(id)
+            if let host, host.workspaces.contains(id) {
+                host.reconnectWorkspace(id)
             } else {
                 try await runPreConnectScriptIfNeeded(connection)
                 try await DatabaseManager.shared.ensureConnected(connection)
@@ -328,26 +377,42 @@ internal final class TabRouter {
 
     // MARK: - Database File
 
+    /// A driver that opens a local file keeps the path in whichever field it declares, and DuckDB
+    /// and libSQL leave `database` empty. Reading it directly missed a live session on the same
+    /// file, and a second `duckdb_open` is an independent read-write instance whose writes the
+    /// first one never sees.
     private func openDatabaseFile(_ url: URL, type: DatabaseType) async throws {
         let filePath = url.path(percentEncoded: false)
         let connectionName = url.deletingPathExtension().lastPathComponent
+        let pathField = PluginManager.shared.localFilePathField(for: type) ?? .database
 
         for (sessionId, session) in DatabaseManager.shared.activeSessions
         where session.connection.type == type
-            && session.connection.database == filePath
+            && session.connection.localFilePath(in: pathField) == filePath
             && session.driver != nil {
             bringConnectionWindowToFront(sessionId)
             return
+        }
+
+        guard await MissingDriverPluginPrompt.ensureInstalled(for: type, opening: url) else {
+            throw TabRouterError.userCancelled
+        }
+
+        /// Installing the driver can take long enough for the file to be renamed or removed under
+        /// us, and both engines create a database at a path that no longer exists. An empty one
+        /// left where the original stood is worse than reporting that it is gone.
+        guard FileManager.default.fileExists(atPath: filePath) else {
+            throw TabRouterError.fileNoLongerExists(url)
         }
 
         let connection = DatabaseConnection(
             name: connectionName,
             host: "",
             port: 0,
-            database: filePath,
+            database: "",
             username: "",
             type: type
-        )
+        ).substitutingLocalFilePath(filePath, in: pathField)
 
         let payload = EditorTabPayload(connectionId: connection.id, intent: .restoreOrDefault)
         DatabaseManager.shared.registerPendingSession(connection)

@@ -9,14 +9,29 @@
 
 import Foundation
 
-enum TemporalComponents: Equatable {
-    case dateOnly
-    case timeOnly
-    case dateAndTime
+/// Which fields a temporal column offers. The editor asks it to decide which steppers to show and
+/// which parts to write back; the grid asks it to pick a pattern and to decide whether an offset
+/// belongs on the rendered text. One vocabulary, because two would have to agree.
+///
+/// The raw values key the display formatter's cache, so a value formatted for one column shape is
+/// never served to another.
+enum TemporalComponents: String {
+    case dateOnly = "d"
+    case timeOnly = "t"
+    case dateAndTime = "dt"
 }
 
 enum DateEditingService {
-    static func string(from date: Date, like parsed: ParsedTemporalValue) -> String {
+    /// `offered` is the set of fields the editor actually showed, which comes from the column type
+    /// rather than from the text. They disagree whenever a column typed `DATETIME` holds a date-only
+    /// value, which SQLite allows and which MySQL produces for a zero time. Writing back only what
+    /// the old text spelled then dropped the time the user had just entered, and because the result
+    /// equalled the stored value the commit was discarded as a no-op: no error, no dirty marker.
+    static func string(
+        from date: Date,
+        like parsed: ParsedTemporalValue,
+        offered: TemporalComponents? = nil
+    ) -> String {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = parsed.timeZone
         let components = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
@@ -25,13 +40,15 @@ enum DateEditingService {
         let datePart = dateString(from: components)
         let timePart = timeString(from: components) + (layout.fractionalSeconds ?? "")
 
+        let writesDate = layout.hasDate || offered == .dateOnly || offered == .dateAndTime
+        let writesTime = layout.hasTime || offered == .timeOnly || offered == .dateAndTime
+
+        let separator = layout.dateTimeSeparator.isEmpty ? " " : layout.dateTimeSeparator
         var result: String
-        if layout.hasDate && layout.hasTime {
-            result = datePart + layout.dateTimeSeparator + timePart
-        } else if layout.hasDate {
-            result = datePart
-        } else {
-            result = timePart
+        switch (writesDate, writesTime) {
+        case (true, true): result = datePart + separator + timePart
+        case (true, false): result = datePart
+        default: result = timePart
         }
         if let suffix = layout.timeZoneSuffix {
             result += suffix

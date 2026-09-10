@@ -28,12 +28,27 @@ private final class EditorWindow: NSWindow, NSDraggingDestination {
         TabWindowController.applyTitlebarChrome(to: self)
     }
 
+    /// Deciding what a drag carries reads the head of each file, and `draggingUpdated:` fires on
+    /// every pointer move. A drag session's pasteboard cannot change while it is in flight.
+    private var dragSessionOperation: NSDragOperation?
+
     func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        FileDropDestination.acceptedURLs(from: sender.draggingPasteboard).isEmpty ? [] : .copy
+        let operation: NSDragOperation =
+            FileDropDestination.acceptedURLs(from: sender.draggingPasteboard).isEmpty ? [] : .copy
+        dragSessionOperation = operation
+        return operation
     }
 
     func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        draggingEntered(sender)
+        dragSessionOperation ?? draggingEntered(sender)
+    }
+
+    func draggingExited(_ sender: (any NSDraggingInfo)?) {
+        dragSessionOperation = nil
+    }
+
+    func draggingEnded(_ sender: any NSDraggingInfo) {
+        dragSessionOperation = nil
     }
 
     func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
@@ -54,7 +69,13 @@ extension EditorWindow: CloseCommandNaming {
 internal final class TabWindowController: NSWindowController, NSWindowDelegate {
     nonisolated private static let lifecycleLogger = Logger(subsystem: "com.TablePro", category: "NativeTabLifecycle")
 
-    internal static let frameAutosaveName: NSWindow.FrameAutosaveName = "MainEditorWindow"
+    /// Namespaced per sandbox under UI test. This one is the main window's own size and position,
+    /// so a case that resized the window used to hand that size to every case after it in its
+    /// shard. See `SplitViewAutosaveName`.
+    @MainActor
+    internal static var frameAutosaveName: NSWindow.FrameAutosaveName {
+        NSWindow.FrameAutosaveName(SplitViewAutosaveName.current("MainEditorWindow"))
+    }
 
     internal let payload: EditorTabPayload
 
@@ -213,7 +234,7 @@ internal final class TabWindowController: NSWindowController, NSWindowDelegate {
             "[switch] windowDidBecomeKey seq=\(seq) controllerId=\(self.controllerId, privacy: .public) connId=\(coordinator.connectionId, privacy: .public)"
         )
         if let splitVC = window.contentViewController as? MainSplitViewController {
-            splitVC.installToolbar(coordinator: coordinator)
+            splitVC.pointToolbar(at: coordinator)
         }
         Self.lifecycleLogger.debug("[switch] windowDidBecomeKey seq=\(seq) installToolbar ms=\(Int(Date().timeIntervalSince(t0) * 1_000))")
         updateUserActivity(coordinator: coordinator)

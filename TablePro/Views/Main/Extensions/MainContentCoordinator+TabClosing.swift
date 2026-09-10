@@ -35,9 +35,12 @@ extension MainContentCoordinator {
     func cleanupTabCaches(openTabIds: Set<UUID>) {
         prune(&displayFormatsCache, keeping: openTabIds)
         prune(&displayOrderCache, keeping: openTabIds)
+        prune(&displayStateCache, keeping: openTabIds)
+        prune(&tableMetadataCache, keeping: openTabIds)
         prune(&createTableDrafts, keeping: openTabIds)
         prune(&navigationHistories, keeping: openTabIds)
         prune(&pendingRowAnchors, keeping: openTabIds)
+        toolbarState.forgetQueryTimings(keeping: openTabIds)
         for (tabId, session) in structureSessions where !openTabIds.contains(tabId) {
             session.releaseViewWiring()
             structureSessions.removeValue(forKey: tabId)
@@ -59,6 +62,8 @@ extension MainContentCoordinator {
     /// retargeted at all; this is what keeps the caches honest once one without work has been.
     func releaseRetargetedTabState(for tabId: UUID) {
         pendingRowAnchors.removeValue(forKey: tabId)
+        displayStateCache.removeValue(forKey: tabId)
+        tableMetadataCache.removeValue(forKey: tabId)
         structureSessions.removeValue(forKey: tabId)?.releaseViewWiring()
         createTableDrafts.removeValue(forKey: tabId)
         tabsWithStagedPrincipals.remove(tabId)
@@ -85,6 +90,8 @@ extension MainContentCoordinator {
         createTableDrafts.removeValue(forKey: tab.id)
         navigationHistories.removeValue(forKey: tab.id)
         pendingRowAnchors.removeValue(forKey: tab.id)
+        displayStateCache.removeValue(forKey: tab.id)
+        tableMetadataCache.removeValue(forKey: tab.id)
         guard isSelectedTab(tab) else { return }
         changeManager.clearChangesAndUndoHistory()
         toolbarState.hasStructureChanges = false

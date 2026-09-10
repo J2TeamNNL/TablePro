@@ -37,6 +37,8 @@ struct DataGridView: NSViewRepresentable {
     var displayFormats: [ValueDisplayFormat?] = []
     var delegate: (any DataGridViewDelegate)?
     var layoutPersister: (any ColumnLayoutPersisting)?
+    /// Whether a row may be dragged to a new position, and why not when it may not.
+    var rowReorder: DataGridRowReorder = .disabled
 
     @Binding var selectedRowIndices: Set<Int>
     @Binding var sortState: SortState
@@ -48,6 +50,21 @@ struct DataGridView: NSViewRepresentable {
     /// menu's row commands all read it with no grid mounted. A grid with no owner keeps the filter
     /// on its own coordinator, which is all a structure or create-table grid ever needs. (#2251)
     var valueFilter: Binding<GridValueFilterState>?
+    /// The formatted text and viewport anchor for this result, owned the same way and for the same
+    /// reason as the value filter above. The owner hands back a fresh instance whenever the inputs
+    /// that decide the text have moved, so adopting one is always safe. (#2424)
+    var displayState: DataGridDisplayState?
+    /// The selection to put back once the rows are in, owned the same way again. A grid with no
+    /// owner has nothing to restore and keeps whatever its own gestures build. (#2667)
+    ///
+    /// The rows come from the tab rather than from `selectedRowIndices`, which is the shared
+    /// `GridSelectionState`: the structure grid clears that channel and then publishes its own
+    /// schema rows into it, so on a Data to Structure to Data round trip it holds either nothing or
+    /// positions belonging to another grid entirely.
+    var restoredRowSelection: Set<Int>?
+    var restoredCellSelection: GridSelection?
+    /// Handed this grid's selection on the way out, for the owner to keep until the next mount.
+    var onSelectionTeardown: (@MainActor (Set<Int>, GridSelection) -> Void)?
     var contentRevision: Int = 0
 
     // MARK: - NSViewRepresentable
@@ -105,6 +122,9 @@ struct DataGridView: NSViewRepresentable {
         if let valueFilter {
             coordinator.adoptValueFilter(valueFilter.wrappedValue)
         }
+        if let displayState {
+            coordinator.adoptDisplayState(displayState)
+        }
         coordinator.delegate = delegate
         coordinator.syncDisplayFormats(displayFormats)
         // A remount inherits the owner's filter, so resolve the order before the first update
@@ -136,13 +156,14 @@ struct DataGridView: NSViewRepresentable {
         coordinator.isRebuildingColumns = false
         coordinator.updateColumnPresentations(from: initialRows)
 
-        let hasMoveRow = delegate != nil
-        if hasMoveRow {
+        coordinator.rowReorder = rowReorder
+        if rowReorder.isEnabled {
             tableView.registerForDraggedTypes([NSPasteboard.PasteboardType("com.TablePro.rowDrag")])
             tableView.draggingDestinationFeedbackStyle = .gap
         }
 
         installSelectionOverlay(tableView: tableView, coordinator: coordinator)
+        installRowGutter(scrollView: scrollView, tableView: tableView, coordinator: coordinator)
         coordinator.attachScrollObservers(scrollView: scrollView)
         // Intentionally do not prime cachedRowCount/cachedColumnCount here.
         // They represent what NSTableView has actually rendered. Leaving them
@@ -174,6 +195,9 @@ struct DataGridView: NSViewRepresentable {
             coordinator.adoptValueFilter(valueFilter.wrappedValue)
             coordinator.recomputeValueFilteredIDs()
         }
+        if let displayState {
+            coordinator.adoptDisplayState(displayState)
+        }
 
         let latestRows = tableRowsProvider()
         let rowDisplayCount = coordinator.valueFilteredIDs?.count ?? latestRows.count
@@ -191,7 +215,7 @@ struct DataGridView: NSViewRepresentable {
             displayFormats: displayFormats,
             configuration: configuration,
             isEditable: isEditable,
-            hasMoveDelegate: delegate != nil,
+            rowReorder: rowReorder,
             rowHeight: rowHeight,
             alternatingRows: alternatingRows,
             reloadVersion: changeManager.reloadVersion,
@@ -199,9 +223,18 @@ struct DataGridView: NSViewRepresentable {
             columnComments: columnComments
         )
 
+        var contentReplaced = false
         if snapshot != coordinator.lastUpdateSnapshot {
-            let contentChanged = snapshot.reloadVersion != coordinator.lastUpdateSnapshot?.reloadVersion
-                || snapshot.contentRevision != coordinator.lastUpdateSnapshot?.contentRevision
+            // Read from the retained state rather than from `lastUpdateSnapshot`, which is nil on a
+            // freshly mounted coordinator and would therefore report every remount as a content
+            // change and discard the text the owner just handed over.
+            let contentIdentity = DataGridContentIdentity(
+                reloadVersion: changeManager.reloadVersion,
+                contentRevision: contentRevision
+            )
+            let contentChanged = coordinator.displayState.contentIdentity != contentIdentity
+            contentReplaced = contentChanged
+            coordinator.displayState.contentIdentity = contentIdentity
             applyStructuralUpdate(
                 tableView: tableView,
                 coordinator: coordinator,
@@ -210,7 +243,7 @@ struct DataGridView: NSViewRepresentable {
                 columnCount: columnCount,
                 rowHeight: rowHeight,
                 alternatingRows: alternatingRows,
-                hasMoveDelegate: snapshot.hasMoveDelegate,
+                rowReorder: snapshot.rowReorder,
                 contentChanged: contentChanged,
                 columnComments: columnComments
             )
@@ -218,7 +251,9 @@ struct DataGridView: NSViewRepresentable {
         }
 
         syncSortState(tableView: tableView, coordinator: coordinator)
+        restoreSelection(tableView: tableView, coordinator: coordinator)
         syncSelection(tableView: tableView, coordinator: coordinator)
+        coordinator.schedulePendingColumnJump(contentReplaced: contentReplaced)
     }
 
     private func applyStructuralUpdate(
@@ -229,7 +264,7 @@ struct DataGridView: NSViewRepresentable {
         columnCount: Int,
         rowHeight: CGFloat,
         alternatingRows: Bool,
-        hasMoveDelegate: Bool,
+        rowReorder: DataGridRowReorder,
         contentChanged: Bool,
         columnComments: [String: String]
     ) {
@@ -240,15 +275,17 @@ struct DataGridView: NSViewRepresentable {
                 if !shouldHide {
                     coordinator.resizeRowNumberColumnForCurrentRange()
                 }
+                coordinator.columnGeometryDidChange()
             }
         }
 
+        coordinator.rowReorder = rowReorder
         let rowDragType = NSPasteboard.PasteboardType("com.TablePro.rowDrag")
         let hasDragRegistered = tableView.registeredDraggedTypes.contains(rowDragType)
-        if hasMoveDelegate && !hasDragRegistered {
+        if rowReorder.isEnabled && !hasDragRegistered {
             tableView.registerForDraggedTypes([rowDragType])
             tableView.draggingDestinationFeedbackStyle = .gap
-        } else if !hasMoveDelegate && hasDragRegistered {
+        } else if !rowReorder.isEnabled && hasDragRegistered {
             let remaining = tableView.registeredDraggedTypes.filter { $0 != rowDragType }
             tableView.unregisterDraggedTypes()
             if !remaining.isEmpty {
@@ -282,7 +319,7 @@ struct DataGridView: NSViewRepresentable {
 
         if oldRowCount == 0, rowDisplayCount > 0, rowHeight > 0 {
             let visibleRows = Int(tableView.visibleRect.height / rowHeight) + 5
-            coordinator.preWarmDisplayCache(upTo: visibleRows)
+            coordinator.preWarmDisplayCache(rowCount: visibleRows, from: coordinator.scrollAnchorRow)
         }
 
         coordinator.updateCache()
@@ -332,17 +369,76 @@ struct DataGridView: NSViewRepresentable {
         if needsFullReload || remappedValueFilters {
             coordinator.selectionController.clear()
             tableView.reloadData()
+            coordinator.restoreScrollAnchor()
             coordinator.startBackgroundPrewarm()
         } else if displayFormatsChanged {
             coordinator.reloadAfterDisplayFormatChange()
         }
     }
 
+    /// Puts back the selection the owner kept while this tab had no grid.
+    ///
+    /// Runs after `applyStructuralUpdate`, never before: that pass ends in
+    /// `selectionController.clear()` and `reloadData()`, and `reloadData()` drops the row selection
+    /// unconditionally even when the row count has not changed (measured). Anything restored ahead
+    /// of it is thrown away on the same update.
+    ///
+    /// Clamped, because the rows can have shrunk while the grid was gone and
+    /// `NSTableView.selectRowIndexes` is all-or-nothing on an out-of-range member (measured): an
+    /// unclamped push selects nothing at all rather than the rows that do still exist. A grid whose
+    /// rows have not landed yet is left for the next pass rather than clamped away to nothing.
+    private func restoreSelection(tableView: NSTableView, coordinator: TableViewCoordinator) {
+        guard !coordinator.hasRestoredSelection else { return }
+        let rowLimit = tableView.numberOfRows
+        guard rowLimit > 0 else { return }
+        coordinator.hasRestoredSelection = true
+
+        let restored = GridSelectionRestore.resolve(
+            storedRows: restoredRowSelection ?? selectedRowIndices,
+            storedCells: restoredCellSelection ?? .empty,
+            rowLimit: rowLimit,
+            columnLimit: coordinator.presentedColumnCount
+        )
+        /// Published even when nothing survived the clamp. Returning early here would leave the
+        /// shared channel holding the old out-of-range positions, and `syncSelection` would then
+        /// push them at a table view that refuses them whole and republish them anyway: an empty
+        /// grid under a status bar and a row menu that both still report a selection.
+        coordinator.selectRowsProgrammatically(IndexSet(restored.nativeRows), in: tableView)
+        if restored.cells.isEmpty {
+            coordinator.publishRowSelection(rowSelection: restored.publishedRows)
+        } else {
+            coordinator.selectionController.update(restored.cells)
+        }
+        /// `focusedColumn` indexes `tableColumns`, which also holds the row-number column, both
+        /// spacers and the unused pool slots, while a `GridCoord` carries a display position. Writing
+        /// one into the other lands the cell cursor on chrome, and Return, Tab and column navigation
+        /// then act on the wrong column or on none.
+        guard let keyTableView = tableView as? KeyHandlingTableView,
+              let active = restored.cells.activeCell,
+              let column = coordinator.tableColumnIndex(forDisplayPosition: active.displayColumn) else { return }
+        keyTableView.focusedRow = active.row
+        keyTableView.focusedColumn = column
+    }
+
+    /// Pushes a selection the app set from outside into the table view.
+    ///
+    /// The binding now carries `currentRowSelection()`, which spans every row a cell drag covers
+    /// while the table view holds only the anchor. Pushing that back would turn a cell rectangle
+    /// into a full row selection, and `DataGridRowView.drawCellSelectionFill` skips a selected row
+    /// because AppKit already fills it, so the rectangle would be painted as whole rows. A value
+    /// this coordinator published is therefore not a value to sync.
     private func syncSelection(tableView: NSTableView, coordinator: TableViewCoordinator) {
+        guard selectedRowIndices != coordinator.lastPublishedRowSelection else { return }
         let currentSelection = tableView.selectedRowIndexes
         let targetSelection = IndexSet(selectedRowIndices)
         guard currentSelection != targetSelection else { return }
+        /// The cell selection outranks the row selection in `publishRowSelection`, and this write is
+        /// programmatic, so the delegate will not clear it. Leaving it would let the old range win
+        /// and republish its rows, rejecting the row the owner just asked for: `RowEditingCoordinator`
+        /// selecting the row after a delete is exactly that case.
+        coordinator.selectionController.clear()
         coordinator.selectRowsProgrammatically(targetSelection, in: tableView)
+        coordinator.publishRowSelection(rowSelection: Set(targetSelection))
     }
 
     private static func effectiveColumnComments(for tableRows: TableRows) -> [String: String] {
@@ -357,7 +453,7 @@ struct DataGridView: NSViewRepresentable {
         columnComments: [String: String],
         savedLayout: ColumnLayoutState?
     ) {
-        coordinator.columnPool.reconcile(
+        let visibilityChanged = coordinator.columnPool.reconcile(
             tableView: tableView,
             schema: coordinator.identitySchema,
             columnTypes: tableRows.columnTypes,
@@ -365,6 +461,7 @@ struct DataGridView: NSViewRepresentable {
             savedLayout: savedLayout,
             isEditable: isEditable,
             hiddenColumnNames: configuration.hiddenColumns,
+            firstClickSortDirection: coordinator.firstClickSortDirection,
             widthCalculator: { columnName, slot in
                 coordinator.automaticColumnWidth(
                     for: columnName,
@@ -373,6 +470,8 @@ struct DataGridView: NSViewRepresentable {
                 )
             }
         )
+        guard visibilityChanged else { return }
+        coordinator.columnGeometryDidChange()
     }
 
     private func syncSortState(tableView: NSTableView, coordinator: TableViewCoordinator) {
@@ -403,6 +502,16 @@ struct DataGridView: NSViewRepresentable {
     }
 
     @MainActor
+    /// The column is pinned to one width, so the interval has to be opened before the width can be
+    /// assigned through it.
+    ///
+    /// Raising `minWidth` past the current width does move `width` with it, but `NSTableView` keeps
+    /// its cumulative column geometry at the old value and posts no `columnDidResizeNotification`,
+    /// and the assignment that follows then has nothing left to change, so `rect(ofColumn:)` never
+    /// catches up. Measured on macOS 27: pinning 40 to 60 reported `width == 60` while the
+    /// row-number rect stayed 47pt wide and the next column's origin stayed at 57, and neither
+    /// `tile()` nor a display pass repaired it. Assigning the width while it genuinely moves is what
+    /// makes AppKit adopt the geometry and announce it.
     static func sizeRowNumberColumn(_ column: NSTableColumn, forMaxRowNumber maxNumber: Int) {
         let display = "\(max(maxNumber, 1))"
         let font = ThemeEngine.shared.dataGridFonts.rowNumber
@@ -411,9 +520,39 @@ struct DataGridView: NSViewRepresentable {
             + 2 * DataGridMetrics.cellHorizontalInset
             + DataGridMetrics.rowNumberHeaderPadding
         let columnWidth = max(DataGridMetrics.rowNumberColumnMinWidth, measured)
+        guard column.width != columnWidth
+            || column.minWidth != columnWidth
+            || column.maxWidth != columnWidth else { return }
+        column.minWidth = min(column.minWidth, columnWidth)
+        column.maxWidth = max(column.maxWidth, columnWidth)
+        column.width = columnWidth
         column.minWidth = columnWidth
         column.maxWidth = columnWidth
-        column.width = columnWidth
+    }
+
+    /// The row-number strip that holds the viewport's leading edge, and its header cap.
+    ///
+    /// Two views because they sit in two clip views: `addFloatingSubview(_:for:)` covers the content
+    /// clip view only, and the header has its own. See `DataGridRowGutterView` for why this is the
+    /// mechanism and why the `__rowNumber__` column stays attached underneath it.
+    private func installRowGutter(
+        scrollView: NSScrollView,
+        tableView: KeyHandlingTableView,
+        coordinator: TableViewCoordinator
+    ) {
+        let gutter = DataGridRowGutterView(frame: .zero)
+        gutter.coordinator = coordinator
+        tableView.addSubview(gutter)
+        scrollView.addFloatingSubview(gutter, for: .horizontal)
+
+        let headerCap = DataGridRowGutterHeaderView(frame: .zero)
+        headerCap.coordinator = coordinator
+        scrollView.addSubview(headerCap)
+
+        coordinator.rowGutter = gutter
+        coordinator.rowGutterHeader = headerCap
+        gutter.observeTableGeometry()
+        coordinator.synchronizeRowGutter()
     }
 
     private func installSelectionOverlay(tableView: KeyHandlingTableView, coordinator: TableViewCoordinator) {
@@ -439,7 +578,17 @@ struct DataGridView: NSViewRepresentable {
 
     static func dismantleNSView(_ nsView: NSScrollView, coordinator: TableViewCoordinator) {
         coordinator.overlayEditor?.dismiss(commit: true)
+        coordinator.recordScrollAnchor()
+        coordinator.captureSelectionForTeardown()
         coordinator.flushPendingColumnLayoutPersistence()
+        /// The mount's own registrations, taken off with it. `NotificationCenter` retains a block
+        /// observer's closure and a coordinator is built fresh per mount, so anything left here is
+        /// never fired again and never reclaimed: three scroll observers and the accessibility
+        /// activation observer per tab switch and per result-mode toggle, for the life of the
+        /// process. `releaseData()` already did this, but it only runs on session teardown.
+        coordinator.detachScrollObservers()
+        coordinator.detachAccessibilityActivationObserver()
+        coordinator.rowGutter?.detachTableGeometryObserver()
         coordinator.settingsCancellable = nil
         coordinator.themeCancellable = nil
     }
@@ -452,6 +601,12 @@ struct DataGridView: NSViewRepresentable {
             delegate: delegate,
             layoutPersister: layoutPersister ?? FileColumnLayoutPersister.shared
         )
+        /// The cell selection's half of the row selection. Every mutator funnels through
+        /// `GridSelectionController.update(_:)`, so this is the one hook that sees a drag widen.
+        coordinator.selectionController.onSelectionChange = { [weak coordinator] _ in
+            coordinator?.publishRowSelection()
+        }
+        coordinator.onSelectionTeardown = onSelectionTeardown
         let columnLayoutBinding = $columnLayout
         coordinator.onColumnLayoutDidChange = { layout in
             if columnLayoutBinding.wrappedValue != layout {

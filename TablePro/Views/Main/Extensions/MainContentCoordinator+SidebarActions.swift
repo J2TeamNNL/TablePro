@@ -115,6 +115,25 @@ extension MainContentCoordinator {
         WindowManager.shared.openTab(payload: payload)
     }
 
+    /// Opens the engine's CREATE TYPE template in a query tab, the way Create New View does. A type
+    /// has no form of its own: its shape is the statement, and the editor is where that is written.
+    func createType(database: String?, schema: String?) {
+        guard !safeModeLevel.blocksAllWrites else { return }
+        guard let driver = DatabaseManager.shared.driver(for: connection.id),
+              let template = driver.createTypeTemplate(schema: schema ?? toolbarState.currentSchema)
+        else { return }
+
+        let targetDatabase = database.flatMap { $0.isEmpty ? nil : $0 } ?? browseDatabaseName
+        let payload = EditorTabPayload(
+            connectionId: connection.id,
+            tabType: .query,
+            databaseName: targetDatabase,
+            schemaName: schema,
+            initialQuery: template
+        )
+        WindowManager.shared.openTab(payload: payload)
+    }
+
     func editViewDefinition(_ viewName: String) {
         Task {
             do {
@@ -146,8 +165,10 @@ extension MainContentCoordinator {
 
     // MARK: - Export/Import
 
-    func openExportDialog(preselectedTableNames: Set<String>? = nil) {
-        exportPreselection = preselectedTableNames.map { .tables($0) }
+    /// The scope travels with the names because a bare name does not identify a table. Without it
+    /// the dialog resolved `orders` against whichever container it considered current.
+    func openExportDialog(preselectedTableNames: Set<String>? = nil, scope: DatabaseContainerRef? = nil) {
+        exportPreselection = preselectedTableNames.map { .tables(names: $0, scope: scope) }
         activeSheet = .exportDialog
     }
 
@@ -155,6 +176,13 @@ extension MainContentCoordinator {
         guard !containers.isEmpty else { return }
         exportPreselection = .containers(containers)
         activeSheet = .exportDialog
+    }
+
+    /// Copies rows into another open connection. The tables the user right-clicked travel with the
+    /// request rather than being read back from the object browser, which may have moved on by the
+    /// time the sheet appears.
+    func openTableTransferSheet(preselectedTableNames: Set<String> = [], schema: String? = nil) {
+        activeSheet = .transferTables(tables: preselectedTableNames, schema: schema)
     }
 
     func openExportQueryResultsDialog() {

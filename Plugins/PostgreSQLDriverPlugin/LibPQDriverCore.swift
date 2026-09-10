@@ -100,8 +100,19 @@ final class LibPQDriverCore: @unchecked Sendable {
         libpqConnection = nil
     }
 
+    /// Non-reconnecting on purpose, which is what makes the answer mean anything.
+    ///
+    /// `execute` recovers a dropped connection privately, and that recovery restores none of the
+    /// session state the app put there: the startup commands, the query timeout, the database and
+    /// the schema all belong to `DatabaseManager.reconnectDriver`. A ping that healed itself that
+    /// way would report success into a server session reset behind the user's back, and the next
+    /// statement would run without the role, search path or time zone their startup SQL set.
+    /// Failing instead routes recovery through the manager, which restores all of it.
     func ping() async throws {
-        _ = try await execute(query: "SELECT 1")
+        guard let pqConn = libpqConnection else {
+            throw LibPQPluginError.notConnected
+        }
+        _ = try await pqConn.executeQuery("SELECT 1")
     }
 
     // MARK: - Query Execution
@@ -126,6 +137,42 @@ final class LibPQDriverCore: @unchecked Sendable {
         )
     }
 
+    func executeBoundedQuery(query: String, rowCap: Int) async throws -> PluginQueryResult? {
+        try await boundedQueryWithReconnect(query: query, rowCap: rowCap, isRetry: false)
+    }
+
+    /// A bounded read only ever runs a statement the host classified as a read, so retrying it after
+    /// a dropped connection is safe, the same way the buffered path retries.
+    private func boundedQueryWithReconnect(
+        query: String,
+        rowCap: Int,
+        isRetry: Bool
+    ) async throws -> PluginQueryResult {
+        guard let pqConn = libpqConnection else {
+            throw LibPQPluginError.notConnected
+        }
+
+        let startTime = Date()
+
+        do {
+            let result = try await pqConn.boundedQuery(query, rowCap: rowCap)
+            return PluginQueryResult(
+                columns: result.columns,
+                columnTypeNames: result.columnTypeNames,
+                rows: result.rows,
+                rowsAffected: result.affectedRows,
+                timing: PluginQueryTiming(
+                    total: Date().timeIntervalSince(startTime),
+                    firstRow: result.firstRowTime
+                ),
+                isTruncated: result.isTruncated
+            )
+        } catch let error as NSError where !isRetry && Self.isConnectionLostError(error) {
+            try await reconnect()
+            return try await boundedQueryWithReconnect(query: query, rowCap: rowCap, isRetry: true)
+        }
+    }
+
     func streamRows(query: String) -> AsyncThrowingStream<PluginStreamElement, Error> {
         guard let pqConn = libpqConnection else {
             return AsyncThrowingStream { $0.finish(throwing: LibPQPluginError.notConnected) }
@@ -141,8 +188,8 @@ final class LibPQDriverCore: @unchecked Sendable {
         libpqConnection?.setPostgisOidMap(map)
     }
 
-    func setEnumOidMap(_ map: [UInt32: String]) {
-        libpqConnection?.setEnumOidMap(map)
+    func mergeCatalogTypeNames(_ names: [UInt32: String]) {
+        libpqConnection?.mergeCatalogTypeNames(names)
     }
 
     func applyQueryTimeout(_ seconds: Int) async throws {
@@ -198,6 +245,31 @@ protocol LibPQBackedDriver: PluginDatabaseDriver {
 }
 
 extension LibPQBackedDriver {
+    /// The new name must be bare. Every libpq engine here rejects a qualified one, because this
+    /// statement renames in place and never moves the object; `SET SCHEMA` is the separate verb.
+    ///
+    /// It lives on the protocol rather than on `PostgreSQLPluginDriver`, because Redshift and
+    /// CockroachDB are siblings of that class rather than subclasses: an implementation there
+    /// leaves both of them declaring the capability with nothing behind it.
+    func renameTable(name: String, schema: String?, to newName: String, objectType: String) async throws {
+        let target = "\(quoteIdentifier(schema ?? core.currentSchema)).\(quoteIdentifier(name))"
+        _ = try await execute(query: "ALTER \(objectType) \(target) RENAME TO \(quoteIdentifier(newName))")
+    }
+
+    /// Not the database the connection is on: PostgreSQL, Redshift and CockroachDB all answer that
+    /// with a refusal, so the app keeps the item off a row it is browsing.
+    func renameDatabase(name: String, to newName: String) async throws {
+        _ = try await execute(
+            query: "ALTER DATABASE \(quoteIdentifier(name)) RENAME TO \(quoteIdentifier(newName))"
+        )
+    }
+
+    func renameSchema(name: String, to newName: String) async throws {
+        _ = try await execute(
+            query: "ALTER SCHEMA \(quoteIdentifier(name)) RENAME TO \(quoteIdentifier(newName))"
+        )
+    }
+
     func connect() async throws {
         try await core.connect()
     }
@@ -224,6 +296,10 @@ extension LibPQBackedDriver {
 
     func executeParameterized(query: String, parameters: [PluginCellValue]) async throws -> PluginQueryResult {
         try await core.executeParameterized(query: query, parameters: parameters)
+    }
+
+    func executeBoundedQuery(query: String, rowCap: Int) async throws -> PluginQueryResult? {
+        try await core.executeBoundedQuery(query: query, rowCap: rowCap)
     }
 
     func streamRows(query: String) -> AsyncThrowingStream<PluginStreamElement, Error> {

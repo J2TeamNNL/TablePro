@@ -12,6 +12,11 @@ enum QuerySqlParser {
         options: []
     )
 
+    private static let mongoGetCollectionRegex = try? NSRegularExpression(
+        pattern: #"^\s*db\.getCollection\(\s*"((?:[^"\\]|\\.)*)"\s*\)"#,
+        options: []
+    )
+
     /// The table a result grid may be edited through, or `nil` when the statement reads from
     /// anything other than exactly one table.
     ///
@@ -33,6 +38,12 @@ enum QuerySqlParser {
 
         let nsRange = NSRange(sql.startIndex..., in: sql)
 
+        if let regex = mongoGetCollectionRegex,
+           let match = regex.firstMatch(in: sql, options: [], range: nsRange),
+           let range = Range(match.range(at: 1), in: sql) {
+            return MongoCollectionAccessor.unescape(String(sql[range]))
+        }
+
         if let regex = mongoBracketCollectionRegex,
            let match = regex.firstMatch(in: sql, options: [], range: nsRange),
            let range = Range(match.range(at: 1), in: sql) {
@@ -53,6 +64,30 @@ enum QuerySqlParser {
     /// schema through the session, so treating them as equal cannot widen the write target.
     private static func matchesSessionSchema(_ parsed: String, _ session: String) -> Bool {
         parsed.compare(session, options: .caseInsensitive) == .orderedSame
+    }
+
+    /// Splices an ORDER BY into `sql` ahead of any row-limiting clause the user wrote.
+    ///
+    /// Appending it to the end instead produced `... LIMIT 100 ORDER BY "total" ASC`, a syntax
+    /// error on every engine, and stripping the old ORDER BY took the user's LIMIT with it, which
+    /// silently replaced their limit with the app's row cap.
+    static func applyingOrderBy(_ orderClause: String, to sql: String, lexicalDialect: SqlDialect) -> String {
+        let trimmed = sql.trimmingCharacters(in: .whitespacesAndNewlines)
+        let buffer = trimmed as NSString
+        let splitOffset = SQLLimitDetector.firstRowLimitClauseOffset(trimmed, lexicalDialect: lexicalDialect)
+        let head = splitOffset.map { buffer.substring(to: $0) } ?? trimmed
+        let tail = splitOffset.map { buffer.substring(from: $0) } ?? ""
+
+        let strippedHead = stripTrailingOrderBy(from: head)
+        guard !orderClause.isEmpty else {
+            /// `OFFSET n ROWS FETCH NEXT m ROWS ONLY` is only legal with an ORDER BY, so clearing
+            /// the sort has to take that tail with it. A `LIMIT` tail stands on its own and stays.
+            let keepsTail = tail.uppercased().hasPrefix("LIMIT")
+            return [strippedHead, keepsTail ? tail : ""].filter { !$0.isEmpty }.joined(separator: " ")
+        }
+        return [strippedHead, "ORDER BY \(orderClause)", tail]
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 
     static func stripTrailingOrderBy(from sql: String) -> String {

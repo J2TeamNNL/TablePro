@@ -12,9 +12,11 @@ Most of the grid's controls sit in the status bar beneath it. The view switcher 
 
 ## Sorting
 
-Click a header to cycle through ascending, descending, and off. `Shift`-click a second header to sort by both. Sorting re-runs the query with a new `ORDER BY`, so it orders the whole table rather than the page in front of you.
+Click a header to cycle through the first direction, its opposite, and off. `Shift`-click a second header to sort by both. Sorting re-runs the query with a new `ORDER BY`, so it orders the whole table rather than the page in front of you.
 
-To sort on open, set **Default row sort** in [Settings > Data](/customization/data-settings) to **Primary key** or **First column**; out of the box the order is the server's. A click on any header overrides it.
+**Sort direction** in [Settings > Data](/customization/data-settings) decides which way that first click goes. It is Ascending out of the box; set it to Descending to open on the newest rows and reach them in one click.
+
+To sort on open, set **Default row sort** to **Primary key** or **First column**; out of the box the order is the server's. That order is marked with a dimmed arrow rather than the solid one a click leaves, so a table you have not sorted does not look sorted. Clicking the same header reverses it, and **Don't Sort** in the header menu returns to the server's order and stays there.
 
 <Warning>
 Sorting on a `BLOB`, `JSON`, or spatial column the server cannot order on fails the query. Sort on another column, or set **Default row sort** back to the engine's order.
@@ -44,13 +46,35 @@ Drag a border to resize a column, or double-click it to fit the content; **Size 
 
 Hide columns from the columns button in the status bar or from the header menu. A hidden column is not fetched, so hiding a large one makes the table load faster; the primary key and the sorted column are fetched either way. On a schemaless store the popover lists every field the grid can draw, including ones that turn up only in later documents.
 
-Widths, order, and hidden columns are remembered per table, scoped to the connection, database, and schema; **Reset Columns** in the popover puts them back. Right-click a header and choose **Display As** to render a column as a UUID, a Unix timestamp, JSON, or PHP serialized data; see [Cell and Row Viewers](/features/json-viewer).
+Widths, order, and hidden columns are remembered per table, scoped to the connection, database, and schema; **Reset Columns** in the popover puts them back. Right-click a header and choose **Display As** to read a column's stored values in a different form; [Cell and Row Viewers](/features/json-viewer) lists the formats.
+
+### Jump to a column
+
+`Cmd+Shift+J`, or **Edit > Find > Jump to Column**, lists every column of the result with its type and its place in the grid. Type part of a name; matching is fuzzy, so `crat` finds `created_at`. `Return` scrolls the selected column into view and puts the cell cursor in it, on the selected row. A hidden column is listed too, marked **Hidden**, and jumping to it shows it first. **Jump to Column** at the foot of the columns popover opens the same panel with the popover's search carried over.
+
+<Frame caption="Jump to Column ranking a fuzzy match">
+  <img className="block dark:hidden" src="/images/column-jump.png" alt="A floating panel over the data grid listing columns with their types and positions" />
+  <img className="hidden dark:block" src="/images/column-jump-dark.png" alt="A floating panel over the data grid listing columns with their types and positions" />
+</Frame>
 
 ## Foreign keys
 
 A foreign key cell carries an arrow on its right edge. Click it to open the referenced table filtered to the matching row, or right-click for **Preview Referenced Row**, which shows that row in a popover. `Cmd`-click always opens a new tab; otherwise the reference takes over the current tab unless that tab holds a query or unsaved edits.
 
-Step back with the Back and Forward buttons at the leading edge of the toolbar, or **View > Back** (`Ctrl+Cmd+[`) and **View > Forward** (`Ctrl+Cmd+]`). Back restores the table you came from as you left it: same filters, sort, page, and selected row. Each tab keeps its own history, Back never closes a tab, and it is unavailable while a tab holds unsaved edits.
+Double-click a foreign key cell, press `Return` on it, or open its right-click menu to pick the key rather than type it. The picker lists rows from the referenced table, each key with a label beside it, and narrows as you type. `Return` in the search field commits the text as typed, which covers a key the search has not turned up. **Set NULL** appears on a nullable column.
+
+**Label** at the foot of the picker chooses the column that reads as the row's name. The choice is remembered for the referenced table, so every column pointing at it shows the same one. A search fetches the first 50 matches, which keeps the list quick on a large table.
+
+A column of a foreign key that spans several columns keeps the text editor. The picker sets one column, and a key it offered might not pair with the values the row holds in the constraint's other columns. Type the key, or open the referenced table and read the pair off it.
+
+<Frame caption="Every artist the key can point at, with its name">
+  <img className="block dark:hidden" src="/images/fk-value-picker.png" alt="Foreign key value picker over a data grid cell" />
+  <img className="hidden dark:block" src="/images/fk-value-picker-dark.png" alt="Foreign key value picker over a data grid cell" />
+</Frame>
+
+The inspector's **JSON** view follows a key without leaving the row: see [Row as JSON](/features/json-viewer#row-as-json).
+
+Step back with the Back and Forward buttons at the leading edge of the toolbar, or **View > Back** (`Ctrl+Cmd+[`) and **View > Forward** (`Ctrl+Cmd+]`). Back restores the table you came from as you left it: same filters, sort, page, and selected row. Each tab keeps its own history and Back never closes a tab. With unsaved edits in the tab, Back asks to discard them first; with a staged structure edit it stands down, because that work cannot be discarded from here.
 
 <Frame caption="Foreign key lookup">
   <img className="block dark:hidden" src="/images/fk-lookup-popover.png" alt="Foreign key lookup" />
@@ -59,16 +83,20 @@ Step back with the Back and Forward buttons at the leading edge of the toolbar, 
 
 ## Inspector
 
-`Cmd+Option+I`, or the button at the trailing end of the toolbar, opens the inspector beside the grid. With a row selected it lists every column with an editor matched to the value; with no row selected it shows the table's statistics. [Cell and Row Viewers](/features/json-viewer) covers both. **Auto-show inspector on row select** in [Settings > Data](/customization/data-settings) opens it whenever you pick a row.
+Press `Cmd+Option+I`, or click the button at the trailing end of the toolbar, to open the inspector beside the grid. Its header names the table and which row of how many is selected, and a **Fields** / **JSON** control switches between two renderings of that row. [Cell and Row Viewers](/features/json-viewer) covers both. Turn on **Auto-show inspector on row select** in [Settings > Data](/customization/data-settings) to open it whenever a row is picked, in a query result as well as a table.
 
-<Frame caption="Row inspector">
-  <img className="block dark:hidden" src="/images/cell-inspector.png" alt="Row inspector" />
-  <img className="hidden dark:block" src="/images/cell-inspector-dark.png" alt="Row inspector" />
+Short values sit on one line, label leading and value trailing. Long text, JSON, PHP, binary and images take the full width. Long text and JSON carry a resize handle; PHP, binary and images draw at a fixed height. `Tab` and `Shift+Tab` move between fields; the menu at the trailing edge of each field carries **Set NULL**, **Set DEFAULT**, **Set EMPTY** and **SQL Functions**, with `Ctrl+Option+N` and `Ctrl+Option+D` as shortcuts for the first two. Search filters the list by column name or stored value, and the pencil button narrows it to fields already edited.
+
+With no row selected and a table open, the inspector shows that table's size, row count, engine, collation and timestamps, as far as the database reports them.
+
+<Frame caption="A Track row with its scalar columns on one line each">
+  <img className="block dark:hidden" src="/images/cell-inspector.png" alt="Inspector listing a row's columns beside a data grid" />
+  <img className="hidden dark:block" src="/images/cell-inspector-dark.png" alt="Inspector listing a row's columns beside a data grid" />
 </Frame>
 
 ## Find in the loaded rows
 
-`Cmd+F` opens the find bar above the grid. `Return` and `Cmd+G` step forward, `Cmd+Shift+G` back, `Escape` clears the term and then closes the bar. Matching ignores case and accents and runs over the text as displayed; binary and spatial columns are skipped. The counter says which rows were searched:
+`Cmd+F` opens the find bar above the grid. `Return` and `Cmd+G` step forward, `Cmd+Shift+G` back, `Escape` clears the term and then closes the bar. Matching ignores case and accents and runs over the text as displayed; spatial columns are skipped, and so is a binary column still showing hex. The counter says which rows were searched:
 
 | What you see | What it means |
 |---|---|
@@ -89,7 +117,7 @@ A query tab does not page. It stops at the [row cap](/customization/data-setting
 
 ## Copying
 
-Click a cell to select it, drag or `Shift`-click for a range, and click a row number for a whole row. Copy acts on the whole selection.
+Click a cell to select it, drag or `Shift`-click for a range, and click a row number for a whole row. The row-number gutter stays at the left edge on a table wider than the window, so whole rows are still selectable when the columns have scrolled past it. `Shift+Space` widens whatever is selected to every row it touches. Copy acts on the whole selection.
 
 | Shortcut | Copies |
 |---|---|
