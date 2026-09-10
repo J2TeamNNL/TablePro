@@ -1,11 +1,30 @@
 import Foundation
 import TableProPluginKit
 
-internal struct SpannerType: Decodable, Sendable, Equatable {
+internal final class SpannerType: Decodable, Sendable, Equatable {
     let code: String
     let arrayElementType: SpannerType?
     let structType: SpannerStructType?
     let typeAnnotation: String?
+
+    init(
+        code: String,
+        arrayElementType: SpannerType?,
+        structType: SpannerStructType?,
+        typeAnnotation: String?
+    ) {
+        self.code = code
+        self.arrayElementType = arrayElementType
+        self.structType = structType
+        self.typeAnnotation = typeAnnotation
+    }
+
+    static func == (lhs: SpannerType, rhs: SpannerType) -> Bool {
+        lhs.code == rhs.code
+            && lhs.arrayElementType == rhs.arrayElementType
+            && lhs.structType == rhs.structType
+            && lhs.typeAnnotation == rhs.typeAnnotation
+    }
 
     func displayName() -> String {
         let upper = code.uppercased()

@@ -5,7 +5,7 @@ import Testing
 @Suite("Spanner query builder")
 struct SpannerQueryBuilderTests {
     @Test("Browse SQL uses backticks on GoogleSQL and empty schema")
-    func googleSQLBrowse() {
+    func googleSQLBrowse() throws {
         let tagged = SpannerQueryBuilder.encodeBrowseQuery(
             table: "Singers",
             schema: "",
@@ -21,7 +21,7 @@ struct SpannerQueryBuilderTests {
     }
 
     @Test("Browse SQL quotes public schema on PostgreSQL dialect")
-    func postgreSQLBrowse() {
+    func postgreSQLBrowse() throws {
         let tagged = SpannerQueryBuilder.encodeBrowseQuery(
             table: "singers",
             schema: "public",
@@ -36,7 +36,7 @@ struct SpannerQueryBuilderTests {
     }
 
     @Test("Filter equality becomes a WHERE clause")
-    func filterEquals() {
+    func filterEquals() throws {
         let tagged = SpannerQueryBuilder.encodeFilteredQuery(
             table: "Singers",
             schema: "",

@@ -269,7 +269,7 @@ internal struct SpannerQueryBuilder {
         let col = quoteIdentifier(filter.column, dialect: dialect)
         let escaped = filter.value.replacingOccurrences(of: "'", with: "''")
         let kind = filter.columnKind
-        let isNullKeyword = filter.value.lowercased() == "null" && !PluginColumnKind.isKnownTextLike(kind)
+        let isNullKeyword = filter.value.lowercased() == "null" && !PluginSQLLiteral.isKnownTextLike(kind)
         let folding = filter.folding
         let foldedColumn = folding.foldingLikeOperand(col)
 
