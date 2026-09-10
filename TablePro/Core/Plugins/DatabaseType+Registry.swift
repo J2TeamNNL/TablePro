@@ -103,7 +103,7 @@ extension DatabaseType {
                 Preferred tries TLS first, falls back to plain. Matches psql and DataGrip defaults. \
                 Required by AWS RDS, Cloud SQL, Heroku, Supabase, Neon.
                 """)
-        case "MySQL", "MariaDB":
+        case "MySQL", "MariaDB", "TiDB", "Databend":
             return String(localized: """
                 Preferred performs a 2-pass connect: tries TLS first, falls back to plain only on \
                 SSL handshake errors. Required by Cloud SQL and Azure MySQL.
