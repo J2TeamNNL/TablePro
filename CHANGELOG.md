@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Google Cloud Spanner as a registry plugin over the REST API. (#1226, #2480)
 - Support TablePro in the Help menu, and a standing link in the welcome window and sidebar until a license is active.
 - Account booking, note tags and links, balance assertion details, and a `directives` table with metadata for every dated Beancount directive that is not a transaction. (#2415)
 - Named query and typed custom directives as read-only Beancount tables. (#2413)

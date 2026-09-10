@@ -90,6 +90,7 @@ TablePro 补上缺失的第四类:原生、多数据库、开源。
 | Cloudflare D1 | 插件 |
 | DynamoDB | 插件 |
 | BigQuery | 插件 |
+| Spanner | 插件 |
 | libSQL / Turso | 插件 |
 
 内置驱动随应用一起发布。插件驱动按需从[插件仓库](https://github.com/TableProApp/plugins)安装。

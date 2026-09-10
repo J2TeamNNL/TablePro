@@ -337,6 +337,12 @@ targets:
       - Plugins/BigQueryDriverPlugin/BigQueryQueryBuilder.swift
       - Plugins/BigQueryDriverPlugin/BigQueryStatementGenerator.swift
       - Plugins/BigQueryDriverPlugin/BigQueryTypeMapper.swift
+      - Plugins/SpannerDriverPlugin/SpannerAuth.swift
+      - Plugins/SpannerDriverPlugin/SpannerConnection.swift
+      - Plugins/SpannerDriverPlugin/SpannerOAuthServer.swift
+      - Plugins/SpannerDriverPlugin/SpannerQueryBuilder.swift
+      - Plugins/SpannerDriverPlugin/SpannerStatementGenerator.swift
+      - Plugins/SpannerDriverPlugin/SpannerTypeMapper.swift
       - Plugins/CSVImportPlugin/CSVImportOptions.swift
       - Plugins/CSVImportPlugin/CSVImportParsing.swift
       - Plugins/CSVInspectorPlugin/CSVDocument.swift
@@ -706,6 +712,12 @@ targets:
       folder: BigQueryDriverPlugin
       principalClass: BigQueryPlugin
 
+  SpannerDriverPlugin:
+    templates: [DriverPlugin]
+    templateAttributes:
+      folder: SpannerDriverPlugin
+      principalClass: SpannerPlugin
+
   CassandraDriver:
     templates: [DriverPlugin]
     templateAttributes:
@@ -995,6 +1007,7 @@ aggregateTargets:
       - SQLImport
       - SQLiteDriver
       - SnowflakeDriverPlugin
+      - SpannerDriverPlugin
       - SurrealDBDriverPlugin
       - TeradataDriver
       - TrinoDriverPlugin

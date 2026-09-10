@@ -49,7 +49,7 @@ struct DatabaseTreeCapabilityTests {
     /// declared one out of the tree: `supportsDatabaseSwitching` defaults to true.
     @Test("Flat and hierarchical engines stay out of the tree whatever their mode")
     func nonGroupingEnginesStayOut() {
-        let types = [DatabaseType.mongodb, .redis, .cloudflareD1, .oracle, .bigQuery]
+        let types = [DatabaseType.mongodb, .redis, .cloudflareD1, .oracle, .bigQuery, .spanner]
             + [DatabaseType(rawValue: "Snowflake"), DatabaseType(rawValue: "Trino")]
         for type in types {
             #expect(

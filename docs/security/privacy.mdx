@@ -132,7 +132,7 @@ There are none. The app links no crash reporting SDK, its only remote packages b
 
 ## Your database connections
 
-The largest thing leaving your Mac is the traffic you asked for: the connection to your own server, plus whatever hops you configured, such as an SSH tunnel, a Cloudflare tunnel, a SOCKS proxy, or Cloud SQL Proxy. Cloud drivers reach their vendor's endpoint by design, so BigQuery talks to `bigquery.googleapis.com`, DynamoDB to AWS, and Microsoft Entra authentication to `login.microsoftonline.com`.
+The largest thing leaving your Mac is the traffic you asked for: the connection to your own server, plus whatever hops you configured, such as an SSH tunnel, a Cloudflare tunnel, a SOCKS proxy, or Cloud SQL Proxy. Cloud drivers reach their vendor's endpoint by design, so BigQuery talks to `bigquery.googleapis.com`, Spanner to `spanner.googleapis.com`, DynamoDB to AWS, and Microsoft Entra authentication to `login.microsoftonline.com`.
 
 Two helpers download on first use, and each is verified before it runs: the Cloud SQL Proxy binary from `storage.googleapis.com` against a pinned SHA-256, and the Copilot language server tarball against the integrity hash npm publishes with it.
 

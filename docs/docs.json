@@ -164,6 +164,7 @@
               "databases/postgresql",
               "databases/redis",
               "databases/snowflake",
+              "databases/spanner",
               "databases/sqlite",
               "databases/surrealdb",
               "databases/teradata",

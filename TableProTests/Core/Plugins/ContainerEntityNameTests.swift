@@ -22,6 +22,11 @@ struct ContainerEntityNameTests {
         #expect(PluginManager.shared.containerEntityName(for: .bigQuery) == "Dataset")
     }
 
+    @Test("Spanner container is Schema")
+    func spannerContainerIsSchema() {
+        #expect(PluginManager.shared.containerEntityName(for: .spanner) == "Schema")
+    }
+
     @Test("Cassandra and ScyllaDB containers are Keyspace")
     func cassandraFamilyContainerIsKeyspace() {
         #expect(PluginManager.shared.containerEntityName(for: .cassandra) == "Keyspace")

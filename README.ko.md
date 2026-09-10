@@ -91,6 +91,7 @@ TablePro는 네 번째 선택지입니다. 네이티브이고 여러 데이터�
 | Cloudflare D1 | 플러그인 |
 | DynamoDB | 플러그인 |
 | BigQuery | 플러그인 |
+| Spanner | 플러그인 |
 | libSQL / Turso | 플러그인 |
 
 내장 드라이버는 앱에 포함되어 있습니다. 플러그인 드라이버는 [플러그인 레지스트리](https://github.com/TableProApp/plugins)에서 필요할 때 설치됩니다.

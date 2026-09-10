@@ -1,0 +1,90 @@
+---
+title: Google Cloud Spanner
+description: Connect to Cloud Spanner with a service account, ADC, or OAuth, over the REST API
+---
+
+import RegistryPlugin from "/snippets/registry-plugin.mdx";
+
+A connection is one database: Project ID, Instance ID, and Database. The dialect is not a setting. Connect reads it from the database (`GOOGLE_STANDARD_SQL` or `POSTGRESQL`) and quoting, catalog SQL, and the default schema follow that.
+
+<RegistryPlugin name="Spanner" plugin="Spanner Driver" />
+
+## Quick setup
+
+Click **Create Connection…**, select **Spanner**, pick an auth method, fill Project ID, Instance ID, and Database, then click **Save & Connect**.
+
+## Connection settings
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| **Auth Method** | Yes | Service Account Key, Application Default Credentials, or Google Account (OAuth) |
+| **Project ID** | Yes | The ID (`my-project-123456`), not the name or number |
+| **Instance ID** | Yes | The instance id, not the display name |
+| **Database** | Yes | One database per connection. Switching database means a new connection |
+| **Service Account Key** | Service account only | A `.json` key file path, or the raw JSON |
+| **OAuth Client ID**, **OAuth Client Secret** | OAuth only | From GCP Console > APIs & Services > Credentials |
+| **OAuth Refresh Token** | No | Set it and the browser flow is skipped |
+| **REST Endpoint** | No | Advanced tab. Leave empty for `spanner.googleapis.com`. The emulator listens on `http://127.0.0.1:9020` |
+
+There is no host, port, SSL pane, or SSH tunnel. Production traffic is HTTPS to Google. A tab stays on the database it opened against; the sidebar switches schema inside that database. See [Tabs](/features/tabs#where-a-tab-points).
+
+There is no URL scheme.
+
+## Authentication
+
+### Application default credentials
+
+```bash
+gcloud auth application-default login --project=my-project
+```
+
+The driver reads `~/.config/gcloud/application_default_credentials.json`, accepting the `authorized_user`, `service_account`, and `impersonated_service_account` types. The form still needs Project ID, Instance ID, and Database.
+
+### Service account key
+
+Point **Service Account Key** at a `.json` key file from Google Cloud Console (IAM > Service Accounts > Keys), or paste the JSON into the field. Grant `roles/spanner.databaseUser` to run SQL, plus `roles/spanner.viewer` if the connect path lists instances.
+
+### Google account (OAuth 2.0)
+
+<Steps>
+  <Step title="Create a desktop OAuth client">
+    In [Google Cloud Console](https://console.cloud.google.com/), under APIs & Services > Credentials, click Create Credentials > OAuth client ID and pick Desktop app.
+  </Step>
+  <Step title="Copy it into TablePro">
+    Paste the Client ID and Client Secret into the connection form.
+  </Step>
+  <Step title="Authorize in the browser">
+    On connect the browser opens Google's consent screen, and the token arrives on an ephemeral loopback redirect. The step times out after two minutes.
+  </Step>
+</Steps>
+
+<Warning>
+The refresh token from a browser sign-in is held in memory only, so the browser opens again on every connect. Paste a refresh token into **OAuth Refresh Token** to mint access tokens from it instead.
+</Warning>
+
+## Dialect
+
+GoogleSQL uses backticks and an empty default schema. The PostgreSQL interface uses double quotes and `public`. Both run on the same REST methods. `EXPLAIN` in the editor becomes a plan-only request and stays as text. See [EXPLAIN Visualization](/features/explain-visualization).
+
+## Emulator
+
+[Spanner Emulator](https://cloud.google.com/spanner/docs/emulator) exposes REST on port 9020. Set **REST Endpoint** to `http://127.0.0.1:9020`, keep a project, instance, and database that already exist in the emulator, and skip real credentials. Auth is not sent.
+
+## Limitations
+
+- Structure is read-only. Run `CREATE TABLE` and `ALTER TABLE` in the editor. Those go through the DDL API, not a SQL transaction.
+- A single `SELECT` result over 10 MiB fails. Add `LIMIT` or a tighter `WHERE`.
+- Grid UPDATE and DELETE need a primary key, or they skip the row.
+- An aborted read-write transaction retries once on autocommit DML. An explicit `BEGIN` surfaces the abort; run the statements again.
+- No procedures, functions, or triggers. No Unix socket. No Users & Roles.
+- The emulator is plaintext HTTP and serializes the whole database for writes.
+
+## Troubleshooting
+
+**Application default credentials not found at ~/.config/gcloud/application_default_credentials.json**: Run `gcloud auth application-default login`, or switch the connection to a service account key.
+
+**Permission denied**: Authenticated but unauthorized. Grant `roles/spanner.databaseUser` on the database.
+
+**Project not found** or **Instance not found**: Enter the Project ID and Instance ID, not the display names.
+
+**NOT_FOUND** on a session: the idle session was deleted. The next query creates another one.

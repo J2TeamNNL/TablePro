@@ -1213,6 +1213,8 @@ final class PluginMetadataRegistry: @unchecked Sendable {
             return .relational
         case "Redshift", "ClickHouse", "DuckDB", "BigQuery":
             return .analytical
+        case "Spanner":
+            return .relational
         case "MongoDB", "Elasticsearch", "SurrealDB":
             return .document
         case "Redis":
@@ -1249,6 +1251,7 @@ final class PluginMetadataRegistry: @unchecked Sendable {
         case "libSQL":         return String(localized: "Distributed SQLite by Turso")
         case "DynamoDB":       return String(localized: "AWS managed key-value/document store")
         case "BigQuery":       return String(localized: "Google Cloud serverless data warehouse")
+        case "Spanner":        return String(localized: "Google Cloud globally distributed SQL")
         case "SurrealDB":      return String(localized: "Multi-model database with SurrealQL")
         default:               return ""
         }

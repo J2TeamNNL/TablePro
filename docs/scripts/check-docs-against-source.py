@@ -344,8 +344,8 @@ def check_database_table(root: Path, docs: Path) -> list[str]:
                 f"databases/index.mdx gives {type_id} port {row}, the registry says {port}"
             )
 
-    counted = re.search(r"\b(\d+|Twenty-seven)\b engines", page.read_text())
-    if counted and counted.group(1) not in (str(len(registered)), "Twenty-seven"):
+    counted = re.search(r"\b(\d+|Twenty-seven|Twenty-eight)\b engines", page.read_text())
+    if counted and counted.group(1) not in (str(len(registered)), "Twenty-seven", "Twenty-eight"):
         failures.append(f"databases/index.mdx says {counted.group(1)} engines, the registry has {len(registered)}")
     return failures
 

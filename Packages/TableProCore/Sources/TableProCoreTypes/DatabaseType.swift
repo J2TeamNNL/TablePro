@@ -26,6 +26,7 @@ public struct DatabaseType: Hashable, Codable, Sendable, RawRepresentable {
     public static let cloudflareD1 = DatabaseType(rawValue: "Cloudflare D1")
     public static let dynamodb = DatabaseType(rawValue: "DynamoDB")
     public static let bigquery = DatabaseType(rawValue: "BigQuery")
+    public static let spanner = DatabaseType(rawValue: "Spanner")
     public static let snowflake = DatabaseType(rawValue: "Snowflake")
     public static let libsql = DatabaseType(rawValue: "libSQL")
     public static let beancount = DatabaseType(rawValue: "Beancount")
@@ -39,7 +40,7 @@ public struct DatabaseType: Hashable, Codable, Sendable, RawRepresentable {
     public static let allKnownTypes: [DatabaseType] = [
         .mysql, .mariadb, .postgresql, .sqlite, .redis, .mongodb,
         .clickhouse, .mssql, .oracle, .dameng, .duckdb, .cassandra, .redshift,
-        .etcd, .cloudflareD1, .dynamodb, .bigquery, .snowflake, .libsql, .beancount,
+        .etcd, .cloudflareD1, .dynamodb, .bigquery, .spanner, .snowflake, .libsql, .beancount,
         .surrealdb, .teradata, .trino
     ]
 
@@ -63,6 +64,7 @@ public struct DatabaseType: Hashable, Codable, Sendable, RawRepresentable {
         case .cloudflareD1: return "cloudflare-d1-icon"
         case .dynamodb: return "dynamodb-icon"
         case .bigquery: return "bigquery-icon"
+        case .spanner: return "spanner-icon"
         case .snowflake: return "snowflake-icon"
         case .libsql: return "libsql-icon"
         case .beancount: return "beancount-icon"

@@ -91,6 +91,7 @@ TablePro là mảnh thứ tư còn thiếu: native, đa database, và mã nguồ
 | Cloudflare D1 | Plugin |
 | DynamoDB | Plugin |
 | BigQuery | Plugin |
+| Spanner | Plugin |
 | libSQL / Turso | Plugin |
 
 Driver tích hợp sẵn đi kèm app. Driver dạng plugin cài thêm khi cần từ [plugin registry](https://github.com/TableProApp/plugins).
