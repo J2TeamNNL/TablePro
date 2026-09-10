@@ -52,9 +52,6 @@ packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     majorVersion: 2.9.5
-  swift-certificates:
-    url: https://github.com/apple/swift-certificates
-    majorVersion: 1.19.0
   Yams:
     url: https://github.com/jpsim/Yams
     majorVersion: 5.1.0
@@ -235,8 +232,6 @@ targets:
       - package: CodeEditTextView
       - package: Sparkle
       - package: Yams
-      - package: swift-certificates
-        product: X509
       - package: TableProCore
         products: [TableProAnalytics, TableProImport, TableProNumberFormatting, TableProSyncTransport]
     settings:
@@ -480,6 +475,7 @@ targets:
       - Plugins/MongoDBDriverPlugin/MongoStreamProjection.swift
       - Plugins/OracleDriverPlugin/OracleObjectQueries.swift
       - Plugins/MySQLDriverPlugin/MySQLColumnDefinitionSQL.swift
+      - Plugins/MySQLDriverPlugin/MySQLCreateTableSQL.swift
       - Plugins/MySQLDriverPlugin/MySQLIdleRelease.swift
       - Plugins/MySQLDriverPlugin/MySQLSessionFootprint.swift
       - Plugins/MySQLDriverPlugin/MySQLGeneratedColumnClassification.swift
@@ -491,6 +487,7 @@ targets:
       - Plugins/MySQLDriverPlugin/MySQLStatementClassification.swift
       - Plugins/MySQLDriverPlugin/MySQLTransactionStatement.swift
       - Plugins/SQLiteDriverPlugin/SQLiteCheckConstraintParser.swift
+      - Plugins/SQLiteDriverPlugin/SQLiteCreateTableDDL.swift
       - Plugins/SQLiteDriverPlugin/SQLiteDefaultValue.swift
       - Plugins/LibSQLDriverPlugin/LibSQLDefaultValue.swift
       - Plugins/CloudflareD1DriverPlugin/CloudflareD1DefaultValue.swift

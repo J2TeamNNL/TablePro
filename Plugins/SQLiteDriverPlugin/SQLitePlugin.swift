@@ -33,6 +33,7 @@ final class SQLitePlugin: NSObject, TableProPlugin, DriverPlugin {
     static let isDownloadable = false
     static let pathFieldRole: PathFieldRole = .filePath
     static let connectionMode: ConnectionMode = .fileBased
+    static let supportsHealthMonitor = false
     static let urlSchemes: [String] = ["sqlite"]
     static let fileExtensions: [String] = ["db", "db3", "s3db", "sl3", "sqlite", "sqlite3", "sqlitedb"]
     static let brandColorHex = "#003B57"
@@ -952,8 +953,34 @@ final class SQLitePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         return SQLiteForeignKeyGrouping.infos(
             table: table,
             pragmaRows: pragmaRows,
-            createTableSQL: createTableSQL
+            createTableSQL: createTableSQL,
+            primaryKeysByTable: try await primaryKeys(
+                ofTablesReferencedIn: pragmaRows.compactMap { $0[safe: 2]?.asText }
+            )
         )
+    }
+
+    /// The primary key columns of each named table, in key order, keyed by lower-cased table name.
+    ///
+    /// A foreign key written `REFERENCES parent` with no column list points at the parent's primary
+    /// key, and `PRAGMA foreign_key_list` reports null rather than resolving it, so the parent has
+    /// to be asked. One query covers every parent a table references.
+    private func primaryKeys(ofTablesReferencedIn tables: [String]) async throws -> [String: [String]] {
+        let names = Set(tables.map { $0.lowercased() })
+        guard !names.isEmpty else { return [:] }
+        let literals = names.map { "'\(escapeStringLiteral($0))'" }.joined(separator: ", ")
+
+        let rows = try await execute(query: """
+            SELECT m.name, i.name
+            FROM sqlite_master m, pragma_table_info(m.name) i
+            WHERE m.type = 'table' AND lower(m.name) IN (\(literals)) AND i.pk > 0
+            ORDER BY m.name, i.pk
+            """).rows
+
+        return rows.reduce(into: [:]) { keys, row in
+            guard let table = row[safe: 0]?.asText, let column = row[safe: 1]?.asText else { return }
+            keys[table.lowercased(), default: []].append(column)
+        }
     }
 
     func fetchTriggers(table: String, schema: String?) async throws -> [PluginTriggerInfo] {
@@ -1107,62 +1134,14 @@ final class SQLitePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     // MARK: - Create Table DDL
 
     func generateCreateTableSQL(definition: PluginCreateTableDefinition) -> String? {
-        guard !definition.columns.isEmpty else { return nil }
-
-        let tableName = quoteIdentifier(definition.tableName)
-        let pkColumns = definition.columns.filter { $0.isPrimaryKey }
-        let inlinePK = pkColumns.count == 1
-        var parts: [String] = definition.columns.map { sqliteColumnDefinition($0, inlinePK: inlinePK) }
-
-        if pkColumns.count > 1 {
-            let pkCols = pkColumns.map { quoteIdentifier($0.name) }.joined(separator: ", ")
-            parts.append("PRIMARY KEY (\(pkCols))")
-        }
-
-        for fk in definition.foreignKeys {
-            parts.append(sqliteForeignKeyDefinition(fk))
-        }
-
-        let sql = "CREATE TABLE \(tableName) (\n  " +
-            parts.joined(separator: ",\n  ") +
-            "\n);"
-
-        return sql
+        sqliteCreateTableSQL(definition: definition)
     }
 
-    func sqliteColumnDefinition(_ col: PluginColumnDefinition, inlinePK: Bool) -> String {
-        var def = "\(quoteIdentifier(col.name)) \(col.dataType)"
-        if let expression = col.generationExpression?.nilIfEmpty {
-            def += " GENERATED ALWAYS AS (\(expression)) \((col.generationKind ?? .virtual).rawValue)"
-            if !col.isNullable { def += " NOT NULL" }
-            return def
-        }
-        if inlinePK && col.isPrimaryKey {
-            def += " PRIMARY KEY"
-            if col.autoIncrement {
-                def += " AUTOINCREMENT"
-            }
-        }
-        if !col.isNullable {
-            def += " NOT NULL"
-        }
-        if let defaultValue = col.defaultValue {
-            def += " DEFAULT \(defaultValue)"
-        }
-        return def
-    }
-
-    private func sqliteForeignKeyDefinition(_ fk: PluginForeignKeyDefinition) -> String {
-        let cols = fk.columns.map { quoteIdentifier($0) }.joined(separator: ", ")
-        let refCols = fk.referencedColumns.map { quoteIdentifier($0) }.joined(separator: ", ")
-        var def = "FOREIGN KEY (\(cols)) REFERENCES \(quoteIdentifier(fk.referencedTable)) (\(refCols))"
-        if fk.onDelete != "NO ACTION" {
-            def += " ON DELETE \(fk.onDelete)"
-        }
-        if fk.onUpdate != "NO ACTION" {
-            def += " ON UPDATE \(fk.onUpdate)"
-        }
-        return def
+    /// Kept as a method because the table-rebuild path renders its columns through it. The body is
+    /// the extracted free function, so the create path and the rebuild path cannot spell a column
+    /// two different ways.
+    func sqliteColumnDefinition(_ column: PluginColumnDefinition, inlinePK: Bool) -> String {
+        sqliteColumnDefinitionSQL(column, isInlinePrimaryKey: inlinePK && column.isPrimaryKey)
     }
 
     // MARK: - ALTER TABLE DDL
@@ -1181,7 +1160,7 @@ final class SQLitePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     }
 
     func generateAddColumnSQL(table: String, column: PluginColumnDefinition) -> String? {
-        let colDef = sqliteColumnDefinition(addableColumn(column), inlinePK: false)
+        let colDef = sqliteColumnDefinitionSQL(addableColumn(column), isInlinePrimaryKey: false)
         return "ALTER TABLE \(quoteIdentifier(table)) ADD COLUMN \(colDef)"
     }
 
@@ -1260,9 +1239,7 @@ final class SQLitePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     }
 
     func generateAddIndexSQL(table: String, index: PluginIndexDefinition) -> String? {
-        let cols = index.columns.map { quoteIdentifier($0) }.joined(separator: ", ")
-        let unique = index.isUnique ? "UNIQUE " : ""
-        return "CREATE \(unique)INDEX \(quoteIdentifier(index.name)) ON \(quoteIdentifier(table)) (\(cols))"
+        sqliteAddIndexSQL(table: table, index: index)
     }
 
     func generateDropIndexSQL(table: String, indexName: String) -> String? {

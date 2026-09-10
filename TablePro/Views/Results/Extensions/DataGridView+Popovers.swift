@@ -199,7 +199,9 @@ extension TableViewCoordinator {
 
         let columnType = tableRows.columnTypes[columnIndex]
         let parsed = DatabaseDateParser.parse(cellValue(at: row, column: columnIndex))
-        let initialDate = parsed?.date ?? Date()
+        /// The whole second, not the instant: a fraction near one second rounds the `Double` up, so
+        /// the picker would open a second, and sometimes a day, past the value the cell shows.
+        let initialDate = parsed?.wholeSecond ?? Date()
         let timeZone = parsed?.timeZone ?? DateEditingService.defaultTimeZone
         let components = DateEditingService.components(for: columnType)
 
@@ -213,6 +215,7 @@ extension TableViewCoordinator {
                 initialDate: initialDate,
                 components: components,
                 timeZone: timeZone,
+                carriesItsOwnZone: parsed?.carriesItsOwnZone ?? false,
                 onCommit: { picked in
                     guard picked != initialDate else { return }
                     let newValue = parsed
@@ -388,17 +391,33 @@ extension TableViewCoordinator {
         editor.close()
     }
 
+    /// A column the owner listed as a dropdown but supplied no fixed vocabulary for. Its list comes
+    /// from the delegate per row, so a nil answer means "nothing to offer here", not "fall back".
+    private func declaresRowDependentMenu(columnIndex: Int) -> Bool {
+        dropdownColumns?.contains(columnIndex) == true && customDropdownOptions?[columnIndex] == nil
+    }
+
     func showDropdownMenu(tableView: NSTableView, row: Int, column: Int, columnIndex: Int) {
         guard presentsCell(row: row, tableColumnIndex: column) else { return }
         let tableRows = tableRowsProvider()
         guard columnIndex >= 0, columnIndex < tableRows.columns.count else { return }
 
         let currentValue = cellValue(at: row, column: columnIndex)
-        let custom = customDropdownOptions?[columnIndex]
+        /// The delegate is asked first, because a list that depends on the row cannot be held in a
+        /// dictionary keyed by column. Either answer counts as custom, so a curated vocabulary never
+        /// gains a `Set NULL` the schema grids have no use for.
+        let custom = delegate?.dataGridMenuOptions(forRow: row, columnIndex: columnIndex)
+            ?? customDropdownOptions?[columnIndex]
 
+        /// The boolean pair is the fallback for a cell whose column is a boolean, not for a column
+        /// that declared a chevron and then had no list to show. A schema grid does the latter
+        /// whenever its delegate declines the row, and offering `1` and `0` there writes a digit
+        /// into a name.
         let options: [GridMenuOption]
         if let custom {
             options = custom
+        } else if declaresRowDependentMenu(columnIndex: columnIndex) {
+            return
         } else if let dbType = databaseType, PluginManager.shared.usesTrueFalseBooleans(for: dbType) {
             options = GridMenuOption.values(["true", "false"])
         } else {

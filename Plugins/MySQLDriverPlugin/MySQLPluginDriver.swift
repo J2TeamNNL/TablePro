@@ -165,9 +165,22 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     /// And a released connection is healthy by definition: nothing is wrong with it, it is waiting
     /// to be used, so reconnecting to prove it works would undo the release 30 seconds after it
     /// happened and pay the reconnect cost for nothing.
+    /// And it never reconnects, through either door, which is what makes the answer mean anything.
+    ///
+    /// A private reconnect restores none of the session state the app put there: the startup
+    /// commands, the query timeout, the database and the schema all belong to
+    /// `DatabaseManager.reconnectDriver`. A ping that healed itself would report success into a
+    /// server session reset behind the user's back, and their next statement would run without the
+    /// role, search path or time zone their startup SQL set. Failing instead routes recovery
+    /// through the manager, which restores all of it.
+    ///
+    /// It still takes an operation slot, because `release(idleFor:)` only hands the connection
+    /// back while `activeOperations` is zero and would otherwise null the handle mid-ping.
     func ping() async throws {
         guard !sessionLock.withLock({ isReleased }) else { return }
-        _ = try await executeWithReconnect(query: "SELECT 1", isRetry: false, countsAsActivity: false)
+        let conn = try requireLiveConnection()
+        defer { endOperation() }
+        _ = try await conn.executeQuery("SELECT 1", rowCap: nil)
     }
 
     // MARK: - Transaction Management
@@ -338,6 +351,20 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         }
         sessionLock.withLock { activeOperations += 1 }
         return conn
+    }
+
+    /// `requireConnection` without the reacquire. It is the second reconnect door: a nil handle
+    /// sends it through `reacquireOnce()`, which opens a fresh server connection and re-applies
+    /// only the query timeout. Anything that must not silently rebuild the session asks for the
+    /// connection this way instead.
+    private func requireLiveConnection() throws -> MariaDBPluginConnection {
+        try sessionLock.withLock {
+            guard !isDisconnected, let conn = mariadbConnection else {
+                throw MariaDBPluginError.notConnected
+            }
+            activeOperations += 1
+            return conn
+        }
     }
 
     private func endOperation() {
@@ -1022,140 +1049,35 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     // MARK: - Create Table DDL
 
     func generateCreateTableSQL(definition: PluginCreateTableDefinition) -> String? {
-        let tableName = quoteIdentifier(definition.tableName)
-        let ifNotExists = definition.ifNotExists ? " IF NOT EXISTS" : ""
-
-        var parts: [String] = []
-
-        for column in definition.columns {
-            parts.append(buildColumnDefinitionSQL(column))
-        }
-
-        var pkCols = definition.primaryKeyColumns
-        if pkCols.isEmpty {
-            pkCols = definition.columns.filter { $0.autoIncrement }.map(\.name)
-        }
-        if !pkCols.isEmpty {
-            let quoted = pkCols.map { quoteIdentifier($0) }.joined(separator: ", ")
-            parts.append("PRIMARY KEY (\(quoted))")
-        }
-
-        for index in definition.indexes {
-            parts.append(buildIndexDefinitionSQL(index))
-        }
-
-        for fk in definition.foreignKeys {
-            parts.append(buildForeignKeyDefinitionSQL(fk))
-        }
-
-        var sql = "CREATE TABLE\(ifNotExists) \(tableName) (\n"
-        sql += parts.map { "    \($0)" }.joined(separator: ",\n")
-        sql += "\n)"
-
-        var tableOptions: [String] = []
-        if let engine = definition.engine, !engine.isEmpty {
-            tableOptions.append("ENGINE=\(engine)")
-        }
-        if let charset = definition.charset, !charset.isEmpty {
-            tableOptions.append("DEFAULT CHARSET=\(charset)")
-        }
-        if let collation = definition.collation, !collation.isEmpty {
-            tableOptions.append("COLLATE=\(collation)")
-        }
-
-        if !tableOptions.isEmpty {
-            sql += " " + tableOptions.joined(separator: " ")
-        }
-
-        sql += ";"
-        return sql
-    }
-
-    private func buildColumnDefinitionSQL(_ column: PluginColumnDefinition) -> String {
-        mysqlColumnDefinitionSQL(column, isMariaDB: isMariaDB)
-    }
-
-    private func buildIndexDefinitionSQL(_ index: PluginIndexDefinition) -> String {
-        let cols = index.columns.map { col -> String in
-            let quoted = quoteIdentifier(col)
-            if let prefixes = index.columnPrefixes, let prefix = prefixes[col] {
-                return "\(quoted)(\(prefix))"
-            }
-            return quoted
-        }.joined(separator: ", ")
-        var def = ""
-
-        let upperType = index.indexType?.uppercased() ?? ""
-        if upperType == "FULLTEXT" {
-            def += "FULLTEXT INDEX"
-        } else if upperType == "SPATIAL" {
-            def += "SPATIAL INDEX"
-        } else if index.isUnique {
-            def += "UNIQUE INDEX"
-        } else {
-            def += "INDEX"
-        }
-
-        def += " \(quoteIdentifier(index.name)) (\(cols))"
-
-        if upperType == "BTREE" || upperType == "HASH" {
-            def += " USING \(upperType)"
-        }
-
-        return def
-    }
-
-    private func buildForeignKeyDefinitionSQL(_ fk: PluginForeignKeyDefinition) -> String {
-        let cols = fk.columns.map { quoteIdentifier($0) }.joined(separator: ", ")
-        let refCols = fk.referencedColumns.map { quoteIdentifier($0) }.joined(separator: ", ")
-        let refTable: String
-        if let schema = fk.referencedSchema, !schema.isEmpty {
-            refTable = "\(quoteIdentifier(schema)).\(quoteIdentifier(fk.referencedTable))"
-        } else {
-            refTable = quoteIdentifier(fk.referencedTable)
-        }
-
-        var def = "CONSTRAINT \(quoteIdentifier(fk.name)) FOREIGN KEY (\(cols)) REFERENCES \(refTable) (\(refCols))"
-
-        let onDelete = fk.onDelete.uppercased()
-        if onDelete != "NO ACTION" {
-            def += " ON DELETE \(onDelete)"
-        }
-
-        let onUpdate = fk.onUpdate.uppercased()
-        if onUpdate != "NO ACTION" {
-            def += " ON UPDATE \(onUpdate)"
-        }
-
-        return def
+        mysqlCreateTableSQL(definition: definition, isMariaDB: isMariaDB)
     }
 
     // MARK: - Definition SQL (clipboard copy)
 
     func generateColumnDefinitionSQL(column: PluginColumnDefinition) -> String? {
-        buildColumnDefinitionSQL(column)
+        mysqlColumnDefinitionSQL(column, isMariaDB: isMariaDB)
     }
 
     func generateIndexDefinitionSQL(index: PluginIndexDefinition, tableName: String?) -> String? {
-        buildIndexDefinitionSQL(index)
+        mysqlIndexDefinitionSQL(index)
     }
 
     func generateForeignKeyDefinitionSQL(fk: PluginForeignKeyDefinition) -> String? {
-        buildForeignKeyDefinitionSQL(fk)
+        mysqlForeignKeyDefinitionSQL(fk)
     }
 
     // MARK: - ALTER TABLE DDL
 
     func generateAddColumnSQL(table: String, column: PluginColumnDefinition) -> String? {
-        "ALTER TABLE \(quoteIdentifier(table)) ADD COLUMN \(buildColumnDefinitionSQL(column))"
+        "ALTER TABLE \(quoteIdentifier(table)) ADD COLUMN \(mysqlColumnDefinitionSQL(column, isMariaDB: isMariaDB))"
     }
 
     func generateModifyColumnSQL(table: String, oldColumn: PluginColumnDefinition, newColumn: PluginColumnDefinition) -> String? {
         let tableName = quoteIdentifier(table)
         if oldColumn.name != newColumn.name {
-            return "ALTER TABLE \(tableName) CHANGE COLUMN \(quoteIdentifier(oldColumn.name)) \(buildColumnDefinitionSQL(newColumn))"
+            return "ALTER TABLE \(tableName) CHANGE COLUMN \(quoteIdentifier(oldColumn.name)) \(mysqlColumnDefinitionSQL(newColumn, isMariaDB: isMariaDB))"
         }
-        return "ALTER TABLE \(tableName) MODIFY COLUMN \(buildColumnDefinitionSQL(newColumn))"
+        return "ALTER TABLE \(tableName) MODIFY COLUMN \(mysqlColumnDefinitionSQL(newColumn, isMariaDB: isMariaDB))"
     }
 
     func generateDropColumnSQL(table: String, columnName: String) -> String? {
@@ -1163,7 +1085,7 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     }
 
     func generateAddIndexSQL(table: String, index: PluginIndexDefinition) -> String? {
-        "ALTER TABLE \(quoteIdentifier(table)) ADD \(buildIndexDefinitionSQL(index))"
+        "ALTER TABLE \(quoteIdentifier(table)) ADD \(mysqlIndexDefinitionSQL(index))"
     }
 
     func generateDropIndexSQL(table: String, indexName: String) -> String? {
@@ -1171,7 +1093,7 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     }
 
     func generateAddForeignKeySQL(table: String, fk: PluginForeignKeyDefinition) -> String? {
-        "ALTER TABLE \(quoteIdentifier(table)) ADD \(buildForeignKeyDefinitionSQL(fk))"
+        "ALTER TABLE \(quoteIdentifier(table)) ADD \(mysqlForeignKeyDefinitionSQL(fk))"
     }
 
     func generateDropForeignKeySQL(table: String, constraintName: String) -> String? {
@@ -1212,7 +1134,7 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         /// replaces the whole definition, and the attribute list does not carry
         /// `GENERATED ALWAYS AS`, so moving a generated column with it dropped the expression and
         /// left a plain column of stored defaults behind.
-        return "ALTER TABLE \(tableName) MODIFY COLUMN \(buildColumnDefinitionSQL(column)) \(position)"
+        return "ALTER TABLE \(tableName) MODIFY COLUMN \(mysqlColumnDefinitionSQL(column, isMariaDB: isMariaDB)) \(position)"
     }
 
     /// `MODIFY COLUMN` replaces the whole definition, so every move restates the column in full.

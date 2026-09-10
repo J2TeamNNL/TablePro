@@ -16,6 +16,20 @@ final class CreateTableGridDelegate: DataGridViewDelegate {
     let connection: DatabaseConnection
     var onSelectedRowsChanged: ((Set<Int>) -> Void)?
     var orderedFields: [StructureColumnField] = []
+    /// The lists behind the Foreign Keys grid's reference cells. Held per delegate, so the column
+    /// cache dies with the tab rather than outliving every connection.
+    let referenceMenus: ForeignKeyReferenceMenus
+
+    /// The schema the draft is being created in, so the reference menus offer that schema's tables.
+    var schemaName: String? {
+        get { referenceMenus.schemaName }
+        set { referenceMenus.schemaName = newValue }
+    }
+
+    var onReferenceListsChanged: (() -> Void)? {
+        get { referenceMenus.onListsChanged }
+        set { referenceMenus.onListsChanged = newValue }
+    }
 
     /// Captured from `DataGridView.updateNSView` so we can ask `NSTableView` to
     /// reload affected rows after a state mutation. Required because the
@@ -32,6 +46,7 @@ final class CreateTableGridDelegate: DataGridViewDelegate {
         self.structureChangeManager = structureChangeManager
         self.structureTab = structureTab
         self.connection = connection
+        self.referenceMenus = ForeignKeyReferenceMenus(connectionId: connection.id)
     }
 
     // MARK: - DataGridViewDelegate
@@ -61,6 +76,11 @@ final class CreateTableGridDelegate: DataGridViewDelegate {
             var fk = structureChangeManager.workingForeignKeys[row]
             StructureEditingSupport.updateForeignKey(&fk, at: column, with: newValue ?? "")
             structureChangeManager.updateForeignKey(id: fk.id, with: fk)
+            if column == 2 {
+                referenceMenus.prefetchReferencedColumns(
+                    of: fk.referencedTable, schema: fk.referencedSchema
+                )
+            }
 
         default:
             break

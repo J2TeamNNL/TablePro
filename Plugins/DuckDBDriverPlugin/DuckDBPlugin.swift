@@ -27,6 +27,7 @@ final class DuckDBPlugin: NSObject, TableProPlugin, DriverPlugin {
     static let pathFieldRole: PathFieldRole = .database
     static let requiresAuthentication = false
     static let connectionMode: ConnectionMode = .apiOnly
+    static let supportsHealthMonitor = false
     static let urlSchemes: [String] = ["duckdb", "quack"]
 
     static let additionalConnectionFields: [ConnectionField] = [
@@ -1030,8 +1031,11 @@ final class DuckDBPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
     private func duckdbForeignKeyDefinition(_ fk: PluginForeignKeyDefinition) -> String {
         let cols = fk.columns.map { quoteIdentifier($0) }.joined(separator: ", ")
-        let refCols = fk.referencedColumns.map { quoteIdentifier($0) }.joined(separator: ", ")
-        var def = "CONSTRAINT \(quoteIdentifier(fk.name)) FOREIGN KEY (\(cols)) REFERENCES \(quoteIdentifier(fk.referencedTable)) (\(refCols))"
+        let constraint = fk.name.isEmpty ? "" : "CONSTRAINT \(quoteIdentifier(fk.name)) "
+        var def = "\(constraint)FOREIGN KEY (\(cols)) REFERENCES \(quoteIdentifier(fk.referencedTable))"
+        if !fk.referencedColumns.isEmpty {
+            def += " (\(fk.referencedColumns.map { quoteIdentifier($0) }.joined(separator: ", ")))"
+        }
         if fk.onDelete != "NO ACTION" {
             def += " ON DELETE \(fk.onDelete)"
         }

@@ -17,9 +17,19 @@ final class AppEvents {
 
     let accessibilityTextSizeChanged = PassthroughSubject<Void, Never>()
 
+    // MARK: - System Environment
+
+    /// The Mac's time zone moved. Formatted text that was derived in the old one is now wrong, and
+    /// nothing else re-derives it: a grid keeps its cached strings until the result is re-fetched.
+    let systemTimeZoneChanged = PassthroughSubject<Void, Never>()
+
     // MARK: - Settings
 
     let editorSettingsChanged = PassthroughSubject<Void, Never>()
+
+    /// A live session's health monitor is started once, at connect, so a change to how often
+    /// TablePro checks its connections reaches nothing already open without this.
+    let connectionHealthCheckChanged = PassthroughSubject<Void, Never>()
 
     let dataGridSettingsChanged = PassthroughSubject<Void, Never>()
 

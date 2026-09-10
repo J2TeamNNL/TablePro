@@ -53,12 +53,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Separate timeouts because the two arms genuinely differ: measured over v0.62 to v0.67,
-          # x86_64 was never the faster of the two and once ran 22 minutes longer than an ARM64
-          # sibling that started in the same second, so this is the architecture rather than the
-          # notary queue.
+          # One budget for both arms. The arms run on separate runners at the same time, so a
+          # tighter budget on one buys nothing and only decides which arm dies first. v0.73.0 is
+          # what that cost: ARM64 reached "Build complete" at 30:01 and was cancelled 13 seconds
+          # into notarization, while x86_64 finished the whole job in 31:15. The two arms are not
+          # reliably ordered (over v0.62 to v0.67 x86_64 was the slower one, once by 22 minutes),
+          # and the notary queue is not something a build budget can predict, so the budget has to
+          # clear the slowest arm plus a notary wait rather than the arm's own past average.
           - arch: arm64
-            timeout: 30
+            timeout: 45
           - arch: x86_64
             timeout: 45
 
