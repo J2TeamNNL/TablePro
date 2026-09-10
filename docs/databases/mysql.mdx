@@ -44,7 +44,7 @@ Opening a URL connects directly. See [Connection URL Reference](/connections/url
 | Docker | `localhost` with the mapped port, password from `MYSQL_ROOT_PASSWORD` |
 | MAMP Pro | `localhost:8889`, user and password `root` |
 | AWS RDS / Aurora | Endpoint hostname, password or [AWS IAM](/connections/aws-iam), which signs a fresh 15-minute token on each connect |
-| Google Cloud SQL | **Enable Cloud SQL Auth Proxy** and the instance name, in the [Cloud SQL Auth Proxy](/connections/cloud-sql-proxy) pane |
+| Google Cloud SQL | **Connect via > Cloud SQL Auth Proxy** and the instance name. See [Cloud SQL Auth Proxy](/connections/cloud-sql-proxy) |
 | Remote production | [SSH tunnel](/connections/ssh-tunneling) |
 
 ## Users & Roles
@@ -64,7 +64,17 @@ Opening a URL connects directly. See [Connection URL Reference](/connections/url
 
 The sidebar lists every accessible database with each table's structure and DDL. Switch databases with `Cmd+K`. A tab keeps the database it was opened on; MySQL switches database in place, so that tab runs on the same connection rather than a second one.
 
-Table and column comments show in the UI: dimmed after a table's name in the sidebar, and in the grid header tooltip. Right-click the sidebar and choose **View Options > Comments** to turn that off.
+Table and column comments show in the UI: dimmed after a table's name in the sidebar, and in the grid header tooltip. Turn that off under **View Options**, the button beside the sidebar’s filter field.
+
+## Releasing an idle connection
+
+A connection holds a server thread and one slot against `max_connections` for as long as it is open, and MySQL's `wait_timeout` rarely reclaims it because the connection check counts as activity on the server. **Release the Server Connection After**, in **Options**, hands the connection back after that many minutes of no queries and takes a new one on the next query. `0`, the default, keeps it.
+
+To stop the check itself, set **Check connections** to **Only when I use the connection** in Settings > General. That is the connection-wide setting; this one is per connection and closes the connection rather than quietening it.
+
+Reconnecting costs a TCP connect, the TLS handshake and authentication: measured at 2ms against a server on the same machine and 800ms to 1.9s across the internet. That cost lands on the first query after an idle period, so leave this at `0` for a remote server unless the slot matters more than the wait.
+
+A release is refused, with the reason, while the session holds anything a reconnect would destroy: an open transaction, a temporary table, a prepared statement, a `GET_LOCK`, `LOCK TABLES`, a user variable, a changed session setting, or a stored routine call, whose body is opaque.
 
 ## SSL/TLS
 

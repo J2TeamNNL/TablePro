@@ -33,12 +33,12 @@ struct MainContentView: View {
     @Binding var windowSubtitle: String
     @Bindable var schemaService = SchemaService.shared
     var sidebarState: SharedSidebarState
-    @Binding var pendingTruncates: Set<String>
-    @Binding var pendingDeletes: Set<String>
-    @Binding var tableOperationOptions: [String: TableOperationOptions]
-    var rightPanelState: RightPanelState
+    @Binding var pendingTruncates: Set<DatabaseTreeTableRef>
+    @Binding var pendingDeletes: Set<DatabaseTreeTableRef>
+    @Binding var tableOperationOptions: [DatabaseTreeTableRef: TableOperationOptions]
+    var trailingPaneState: TrailingPaneState
 
-    private var tables: [TableInfo] {
+    var tables: [TableInfo] {
         schemaService.tables(for: connection.id)
     }
 
@@ -71,10 +71,10 @@ struct MainContentView: View {
         windowTitle: Binding<String>,
         windowSubtitle: Binding<String>,
         sidebarState: SharedSidebarState,
-        pendingTruncates: Binding<Set<String>>,
-        pendingDeletes: Binding<Set<String>>,
-        tableOperationOptions: Binding<[String: TableOperationOptions]>,
-        rightPanelState: RightPanelState,
+        pendingTruncates: Binding<Set<DatabaseTreeTableRef>>,
+        pendingDeletes: Binding<Set<DatabaseTreeTableRef>>,
+        tableOperationOptions: Binding<[DatabaseTreeTableRef: TableOperationOptions]>,
+        trailingPaneState: TrailingPaneState,
         tabManager: QueryTabManager,
         changeManager: DataChangeManager,
         toolbarState: ConnectionToolbarState,
@@ -88,7 +88,7 @@ struct MainContentView: View {
         self._pendingTruncates = pendingTruncates
         self._pendingDeletes = pendingDeletes
         self._tableOperationOptions = tableOperationOptions
-        self.rightPanelState = rightPanelState
+        self.trailingPaneState = trailingPaneState
         self.tabManager = tabManager
         self.changeManager = changeManager
         self.toolbarState = toolbarState
@@ -137,7 +137,7 @@ struct MainContentView: View {
 
     /// Connection with the active database from the current session,
     /// so export/import dialogs see the database the user actually switched to.
-    private var connectionWithCurrentDatabase: DatabaseConnection {
+    var connectionWithCurrentDatabase: DatabaseConnection {
         var conn = connection
         if let currentDB = DatabaseManager.shared.session(for: connection.id)?.browseDatabase {
             conn.database = currentDB
@@ -148,7 +148,7 @@ struct MainContentView: View {
     /// Exporting a container names the database that container lives in, which is not always the
     /// one being browsed. The dialog scopes every list and the export itself to this connection's
     /// database, so naming it here is what makes exporting another database show that database.
-    private var exportConnection: DatabaseConnection {
+    var exportConnection: DatabaseConnection {
         var conn = connectionWithCurrentDatabase
         if let scoped = coordinator.exportPreselection?.scopedDatabase, !scoped.isEmpty {
             conn.database = scoped
@@ -159,6 +159,18 @@ struct MainContentView: View {
     /// Returns the appropriate sheet view for the given `ActiveSheet` case.
     /// Uses a dismissal binding that sets `coordinator.activeSheet = nil` when the
     /// child view sets `isPresented = false`.
+    /// The transfer sheet is built here rather than inline, because `sheetContent(for:)` is one
+    /// switch over every sheet the window can present and is already at the function length limit.
+    @ViewBuilder
+    func transferSheet(tables: Set<String>, schema: String?, dismiss: Binding<Bool>) -> some View {
+        TableTransferSheet(
+            isPresented: dismiss,
+            sourceConnection: connectionWithCurrentDatabase,
+            preselectedTables: tables,
+            preselectedSchema: schema
+        )
+    }
+
     @ViewBuilder
     private func sheetContent(for sheet: ActiveSheet) -> some View {
         let dismissBinding = Binding<Bool>(
@@ -167,6 +179,12 @@ struct MainContentView: View {
                 if !$0 {
                     coordinator.activeSheet = nil
                     coordinator.exportPreselection = nil
+                    /// Cleared on every dismissal, Cancel included. The request holds the closure
+                    /// that runs the rebuild, and that closure holds the structure view, which
+                    /// holds this coordinator; leaving it set after a cancel keeps the cycle alive
+                    /// for the window's life and offers a stale plan to whatever opens the sheet
+                    /// next.
+                    coordinator.tableRebuildRequest = nil
                 }
             }
         )
@@ -185,87 +203,11 @@ struct MainContentView: View {
                     Task { await coordinator.switchContainer(to: newDatabaseName) }
                 }
             )
-        case .exportDialog:
-            let exportConnection = exportConnection
-            ExportDialog(
-                isPresented: dismissBinding,
-                mode: .tables(
-                    connection: exportConnection,
-                    preselection: coordinator.exportPreselection
-                        ?? .tables(Set(coordinator.windowSidebarState.selectedTables.map(\.name)))
-                ),
-                sidebarTables: tables
-            )
-        case .exportQueryResults:
-            if let tab = coordinator.tabManager.selectedTab {
-                let fileName = tab.tableContext.tableName ?? "query_results"
-                if tab.pagination.hasMoreRows, let baseQuery = tab.pagination.baseQueryForMore {
-                    ExportDialog(
-                        isPresented: dismissBinding,
-                        mode: .streamingQuery(
-                            connection: connectionWithCurrentDatabase,
-                            query: baseQuery,
-                            suggestedFileName: fileName
-                        )
-                    )
-                } else {
-                    ExportDialog(
-                        isPresented: dismissBinding,
-                        mode: .queryResults(
-                            connection: connectionWithCurrentDatabase,
-                            tableRows: coordinator.tabSessionRegistry.tableRows(for: tab.id),
-                            suggestedFileName: fileName
-                        )
-                    )
-                }
-            }
-        case .importDialog(let formatId):
-            let importDismiss = Binding<Bool>(
-                get: { coordinator.activeSheet != nil },
-                set: { if !$0 {
-                    coordinator.activeSheet = nil
-                    coordinator.importFileURL = nil
-                }
-                }
-            )
-            ImportDialog(
-                isPresented: importDismiss,
-                connection: connection,
-                initialFileURL: coordinator.importFileURL,
-                initialFormatId: formatId
-            )
-        case .rowImport(let formatId):
-            let rowDismiss = Binding<Bool>(
-                get: { coordinator.activeSheet != nil },
-                set: { if !$0 {
-                    coordinator.activeSheet = nil
-                    coordinator.importFileURL = nil
-                }
-                }
-            )
-            if let url = coordinator.importFileURL {
-                RowImportSheet(
-                    isPresented: rowDismiss,
-                    connection: connection,
-                    fileURL: url,
-                    formatId: formatId
-                )
-            }
-        case .backupDatabase:
-            BackupDatabaseFlow(
-                isPresented: dismissBinding,
-                connection: connectionWithCurrentDatabase,
-                initialDatabase: DatabaseManager.shared.session(for: connection.id)?.browseDatabase
-                    ?? connection.database
-            )
-        case .restoreDatabase(let fileURL):
-            RestoreDatabaseFlow(
-                isPresented: dismissBinding,
-                connection: connectionWithCurrentDatabase,
-                initialDatabase: DatabaseManager.shared.session(for: connection.id)?.browseDatabase
-                    ?? connection.database,
-                sourceURL: fileURL
-            )
+        case .copyObjects(let launch):
+            CopyObjectsSheet(launch: launch, connection: connection)
+        case .exportDialog, .exportQueryResults, .importDialog, .rowImport,
+             .transferTables, .backupDatabase, .restoreDatabase, .serverSideExport:
+            transferSheetContent(for: sheet, dismiss: dismissBinding)
         case .maintenance(let operation, let tableName, let database, let schema):
             MaintenanceSheet(
                 operation: operation,
@@ -287,6 +229,35 @@ struct MainContentView: View {
                 statements: coordinator.toolbarState.previewStatements,
                 databaseType: coordinator.toolbarState.databaseType
             )
+        case .rewind:
+            if let plan = coordinator.rewindPlan {
+                RewindReviewSheet(plan: plan) {
+                    await coordinator.applyRewind()
+                }
+            }
+        case .tableRebuildReview:
+            if let request = coordinator.tableRebuildRequest {
+                SQLReviewSheet(
+                    isPresented: dismissBinding,
+                    statements: request.scriptStatements,
+                    databaseType: connection.type,
+                    warning: request.warning,
+                    primaryAction: request.isRunnable
+                        ? SQLReviewSheet.PrimaryAction(
+                            title: request.actionTitle,
+                            isDestructive: true,
+                            perform: {
+                                await request.perform()
+                                coordinator.tableRebuildRequest = nil
+                                coordinator.activeSheet = nil
+                            }
+                        )
+                        : nil,
+                    onOpenInEditor: {
+                        coordinator.openTableRebuildScriptInEditor(request)
+                    }
+                )
+            }
         }
     }
 
@@ -317,6 +288,14 @@ struct MainContentView: View {
                 await loadTableMetadataIfNeeded()
                 scheduleInspectorUpdate()
             }
+            /// Keyed on the connection alone. The only driver that answers `fetchSessionContexts`
+            /// is Snowflake, which pays two round trips for it, so this must not reload per query.
+            /// It lives with the connection's content rather than with the toolbar control it used
+            /// to feed, because the Database menu is what offers these now and a menu has no view
+            /// to hang a `task` on.
+            .task(id: coordinator.toolbarState.connectionState) {
+                await coordinator.loadSessionContexts()
+            }
             .onChange(of: inspectorTrigger) {
                 scheduleInspectorUpdate()
             }
@@ -329,12 +308,14 @@ struct MainContentView: View {
                 setupCommandActions()
                 updateToolbarPendingState()
                 updateInspectorContext()
-                coordinator.aiViewModel = rightPanelState.aiViewModel
-                coordinator.rightPanelState = rightPanelState
+                coordinator.trailingPaneState = trailingPaneState
 
                 Self.lifecycleLogger.info(
                     "[open] MainContentView.onAppear done windowId=\(windowId, privacy: .public) elapsedMs=\(Int(Date().timeIntervalSince(start) * 1_000))"
                 )
+            }
+            .onChange(of: trailingPaneState.assistant.isActivated) {
+                updateAssistantContext()
             }
             .onChange(of: pendingChangeTrigger) {
                 updateToolbarPendingState()
@@ -428,11 +409,12 @@ struct MainContentView: View {
                 coordinator.undoInsertRow(at: rowIndex)
             },
             onSelectionChange: { newIndices in
-                if !newIndices.isEmpty,
-                    AppSettingsManager.shared.dataGrid.autoShowInspector,
-                    tabManager.selectedTab?.tabType == .table
-                {
-                    coordinator.inspectorProxy?.showInspector()
+                /// Any grid selection counts, not just a table tab's. The setting is called
+                /// "Auto-show inspector on row select" and both docs pages describe it that way,
+                /// but it was gated on `tabType == .table`, so picking a row in a query result did
+                /// nothing and the setting read as intermittently broken rather than scoped.
+                if !newIndices.isEmpty, AppSettingsManager.shared.dataGrid.autoShowInspector {
+                    coordinator.trailingPaneProxy?.revealInspectorForSelection()
                 }
                 scheduleInspectorUpdate()
             },

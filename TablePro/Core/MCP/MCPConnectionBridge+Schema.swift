@@ -53,8 +53,9 @@ extension MCPConnectionBridge {
             let columns = try await driver.fetchColumns(table: table, schema: schema)
             let indexes = try await driver.fetchIndexes(table: table)
             let foreignKeys = try await driver.fetchForeignKeys(table: table)
+            let checkConstraints = (try? await driver.fetchCheckConstraints(table: table)) ?? []
             let approximateRowCount = (try? await driver.fetchApproximateRowCount(table: table)) ?? nil
-            let ddl = try? await driver.fetchTableDDL(table: table)
+            let ddl = await MCPConnectionBridge.composedTableDDL(driver: driver, table: table)
 
             var result: [String: JsonValue] = [
                 "table": .string(table),
@@ -62,7 +63,8 @@ extension MCPConnectionBridge {
                 "schema": schema.map { .string($0) } ?? .null,
                 "columns": .array(columns.map(MCPConnectionBridge.encode(column:))),
                 "indexes": .array(indexes.map(MCPConnectionBridge.encode(index:))),
-                "foreign_keys": .array(foreignKeys.map(MCPConnectionBridge.encode(foreignKey:)))
+                "foreign_keys": .array(foreignKeys.map(MCPConnectionBridge.encode(foreignKey:))),
+                "check_constraints": .array(checkConstraints.map(MCPConnectionBridge.encode(checkConstraint:)))
             ]
             if let ddl {
                 result["ddl"] = .string(ddl)
@@ -93,10 +95,20 @@ extension MCPConnectionBridge {
         ])
     }
 
+    /// The table's own statement plus the indexes it does not declare, because a caller asking for
+    /// a table's DDL wants what recreates it, not the half the export replays first.
+    static func composedTableDDL(driver: DatabaseDriver, table: String) async -> String? {
+        guard let base = try? await driver.fetchTableDDL(table: table) else { return nil }
+        let indexes = (try? await driver.fetchIndexDDL(table: table)) ?? []
+        return TableDDLComposer.compose(tableDDL: base, indexDDL: indexes)
+    }
+
     func getTableDDL(scope: DatabaseScope, table: String) async throws -> JsonValue {
         try await ensureConnected(scope.connectionId)
         let ddl = try await DatabaseManager.shared.withMetadataDriver(scope: scope) { driver in
-            try await driver.fetchTableDDL(table: table)
+            let base = try await driver.fetchTableDDL(table: table)
+            let indexes = (try? await driver.fetchIndexDDL(table: table)) ?? []
+            return TableDDLComposer.compose(tableDDL: base, indexDDL: indexes)
         }
         return .object([
             "table": .string(table),
@@ -254,6 +266,44 @@ extension MCPConnectionBridge {
         return .object(["routines": .array(payload)])
     }
 
+    func listUserDefinedTypes(scope: DatabaseScope, kind: String?) async throws -> JsonValue {
+        try await ensureConnected(scope.connectionId)
+        let schema = scope.schema
+        let types = try await DatabaseManager.shared.withMetadataDriver(scope: scope) { driver in
+            let all = try await driver.fetchUserDefinedTypes(schema: schema)
+            guard let kind else { return all }
+            return all.filter { $0.kind.rawValue == kind }
+        }
+        let payload = types
+            .sorted { $0.qualifiedName < $1.qualifiedName }
+            .map { type -> JsonValue in
+                var fields: [String: JsonValue] = [
+                    "name": .string(type.name),
+                    "kind": .string(type.kind.rawValue),
+                    "qualified_name": .string(type.qualifiedName)
+                ]
+                if let schema = type.schema {
+                    fields["schema"] = .string(schema)
+                }
+                if !type.enumLabels.isEmpty {
+                    fields["labels"] = .array(type.enumLabels.map(JsonValue.string))
+                }
+                if !type.fields.isEmpty {
+                    fields["fields"] = .array(type.fields.map {
+                        .object(["name": .string($0.name), "type": .string($0.type)])
+                    })
+                }
+                if let baseType = type.baseType {
+                    fields["base_type"] = .string(baseType)
+                }
+                if let definition = type.definition {
+                    fields["definition"] = .string(definition)
+                }
+                return .object(fields)
+            }
+        return .object(["types": .array(payload)])
+    }
+
     func listPartitions(scope: DatabaseScope, table: String) async throws -> JsonValue {
         try await ensureConnected(scope.connectionId)
         let schema = scope.schema
@@ -289,7 +339,7 @@ extension MCPConnectionBridge {
         try await ensureConnected(connectionId)
         let scope = await MainActor.run { DatabaseManager.shared.browseScope(for: connectionId) }
         guard let scope else {
-            throw MCPDataLayerError.notConnected(connectionId)
+            throw DatabaseAccessError.notConnected(connectionId)
         }
         let metadata = try await DatabaseManager.shared.withMetadataDriver(
             scope: scope,
@@ -354,6 +404,24 @@ extension MCPConnectionBridge {
         if let value = column.comment, !value.isEmpty { fields["comment"] = .string(value) }
         if let values = column.allowedValues, !values.isEmpty {
             fields["allowed_values"] = .array(values.map { .string($0) })
+        }
+        if let expression = column.generationExpression, !expression.isEmpty {
+            fields["generation_expression"] = .string(expression)
+        }
+        if let kind = column.generationKind {
+            fields["generation_kind"] = .string(kind.rawValue)
+        }
+        return .object(fields)
+    }
+
+    static func encode(checkConstraint: CheckConstraintInfo) -> JsonValue {
+        var fields: [String: JsonValue] = [
+            "name": .string(checkConstraint.name),
+            "expression": .string(checkConstraint.expression),
+            "is_validated": .bool(checkConstraint.isValidated)
+        ]
+        if !checkConstraint.columns.isEmpty {
+            fields["columns"] = .array(checkConstraint.columns.map { .string($0) })
         }
         return .object(fields)
     }

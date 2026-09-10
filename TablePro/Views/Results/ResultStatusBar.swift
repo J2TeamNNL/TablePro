@@ -26,6 +26,10 @@ struct ResultStatusBar: View {
     let columnState: StatusBarColumnState
     let paginationCallbacks: PaginationCallbacks
     let structureFooter: StructureFooterCapability
+    let execution: ExecutionReadout
+    /// The object tree's own reload, reported where every other piece of background activity in
+    /// this window is. It had no surface at all between the centred toolbar item going and this.
+    let isRefreshingSchema: Bool
     @Binding var viewMode: ResultsViewMode
     let onToggleFilters: () -> Void
     let onFetchAll: (() -> Void)?
@@ -114,7 +118,28 @@ struct ResultStatusBar: View {
                         .truncationMode(.tail)
                         .layoutPriority(-1)
                 }
+
+                executionReadout
             }
+        }
+    }
+
+    /// Whether a query is running and how long the last one took, beside the rows it produced. It
+    /// used to be a hosted SwiftUI view in the centre of the toolbar, where AppKit dropped it whole
+    /// before any command as soon as the window narrowed.
+    @ViewBuilder
+    private var executionReadout: some View {
+        if execution.isActive {
+            separator
+            ExecutionIndicatorView(
+                isExecuting: execution.isExecuting,
+                lastTiming: execution.lastTiming,
+                onCancel: execution.onCancel
+            )
+        }
+        if isRefreshingSchema {
+            DelayedProgressIndicator(isActive: true)
+                .accessibilityLabel(String(localized: "Refreshing"))
         }
     }
 
@@ -146,6 +171,8 @@ struct ResultStatusBar: View {
                     removeLabel: structureFooter.removeLabel,
                     canAdd: structureFooter.canAdd,
                     canRemove: structureFooter.canRemove,
+                    addHelp: structureFooter.unavailableReason,
+                    removeHelp: structureFooter.unavailableReason,
                     addIdentifier: "structure-footer-add",
                     removeIdentifier: "structure-footer-remove",
                     onAdd: onStructureAdd,
@@ -188,19 +215,25 @@ struct ResultStatusBar: View {
         .controlSize(.small)
         /// Present but inert until the result names its columns, so a reload dims the button rather
         /// than removing it and shifting everything beside it.
-        .disabled(columnState.all.isEmpty)
+        .disabled(columnState.columns.isEmpty)
         .help(String(localized: "Choose which columns the grid shows"))
         .accessibilityLabel(String(localized: "Columns"))
         .accessibilityValue(columnsAccessibilityValue)
         .accessibilityIdentifier("result-status-columns")
         .popover(isPresented: $showColumnPopover, arrowEdge: .top) {
             ColumnVisibilityPopover(
-                columns: columnState.all,
+                columns: columnState.visibilityColumns,
                 hiddenColumns: columnState.hidden,
                 onToggleColumn: columnState.onToggle,
                 onShowAll: columnState.onShowAll,
                 onHideAll: columnState.onHideAll,
-                onReset: columnState.onReset
+                onReset: columnState.onReset,
+                onJumpToColumn: columnState.onJumpToColumn.map { jump in
+                    { query in
+                        showColumnPopover = false
+                        jump(query)
+                    }
+                }
             )
         }
     }
@@ -232,8 +265,8 @@ struct ResultStatusBar: View {
     /// different control name depending on how many columns happened to be hidden.
     private var columnsAccessibilityValue: String {
         guard hasHiddenColumns else { return String(localized: "All columns visible") }
-        let visible = columnState.all.count - columnState.hidden.count
-        return String(format: String(localized: "%d of %d columns visible"), visible, columnState.all.count)
+        let total = columnState.visibilityColumns.count
+        return String(format: String(localized: "%d of %d columns visible"), total - columnState.hidden.count, total)
     }
 
     private var filtersAccessibilityValue: String {

@@ -43,6 +43,16 @@ internal enum WorkspaceCloseAction {
         return remaining.indices.contains(index) ? remaining[index] : remaining.last
     }
 
+    /// A tab is closed by the window that owns it. Sending every id to one coordinator drops the
+    /// ones it has never heard of, which is exactly the tabs that were torn off into another window.
+    private static func closeTabs(_ ids: [UUID], across coordinators: [MainContentCoordinator]) {
+        for coordinator in coordinators {
+            let owned = ids.filter { id in coordinator.tabManager.tabs.contains { $0.id == id } }
+            guard !owned.isEmpty else { continue }
+            coordinator.closeTabsByUser(ids: owned)
+        }
+    }
+
     internal static func close(_ workspace: WorkspaceID) async {
         let containers = listedContainers(of: workspace.connectionId)
         Self.logger.info(
@@ -56,19 +66,24 @@ internal enum WorkspaceCloseAction {
             await ConnectionCloseAction.close(connectionId: workspace.connectionId)
             return
         }
-        guard let hosted = WindowManager.shared.workspace(for: workspace.connectionId) else {
+        /// Every window hosting the connection. A tab torn off into its own window can be the
+        /// container's only remaining tab, and closing the entry from the window that happens to
+        /// answer first would leave that tab open under an entry the user just closed.
+        let hostedWorkspaces = WindowManager.shared.workspaces(for: workspace.connectionId)
+        guard let hosted = hostedWorkspaces.first else {
             Self.logger.error("close has no hosted workspace container=\(workspace.container, privacy: .public)")
             return
         }
 
-        let coordinator = hosted.sessionState?.coordinator
-        let victims = tabs(in: workspace.container, of: coordinator)
+        let coordinators = hostedWorkspaces.compactMap { $0.sessionState?.coordinator }
+        let coordinator = coordinators.first
+        let victims = coordinators.flatMap { tabs(in: workspace.container, of: $0) }
         /// Where the user was before the alert. Confirming reveals the work at risk, which switches
         /// the window to that connection and selects one of the tabs, and an answer that closes
         /// nothing has to put all of that back: leaving the user on a connection they did not ask
         /// for, with the entry still listed, is a close that reads as a switch.
         let wasShowing = WindowManager.shared.shownConnection(besides: workspace.connectionId)
-        guard let closable = await confirm(victims, coordinator: coordinator, revealing: workspace) else {
+        guard let closable = await confirm(victims, across: coordinators, revealing: workspace) else {
             WindowManager.shared.show(wasShowing, inWindowHosting: workspace.connectionId)
             Self.logger.info("close cancelled at the save prompt container=\(workspace.container, privacy: .public)")
             return
@@ -77,7 +92,7 @@ internal enum WorkspaceCloseAction {
         /// work in it. Closing the entry regardless would destroy exactly what the alert said would
         /// stay, which is the promise the wording makes.
         guard closable.isSuperset(of: Set(victims.map(\.id))) else {
-            coordinator?.closeTabsByUser(ids: victims.map(\.id).filter { closable.contains($0) })
+            closeTabs(victims.map(\.id).filter { closable.contains($0) }, across: coordinators)
             WindowManager.shared.show(wasShowing, inWindowHosting: workspace.connectionId)
             Self.logger.info(
                 """
@@ -93,10 +108,14 @@ internal enum WorkspaceCloseAction {
         /// while the window loaded somewhere else. `beginClosing` is what lets the strip drop the
         /// browse cursor's own row early, and the cursor follows underneath.
         if !victims.isEmpty {
-            coordinator?.closeTabsByUser(ids: victims.map(\.id))
+            closeTabs(victims.map(\.id), across: coordinators)
         }
-        hosted.closeContainer(workspace.container)
-        hosted.beginClosing(workspace.container)
+        for hostedWorkspace in hostedWorkspaces {
+            hostedWorkspace.closeContainer(workspace.container)
+        }
+        for hostedWorkspace in hostedWorkspaces {
+            hostedWorkspace.beginClosing(workspace.container)
+        }
         Self.logger.info(
             """
             close done container=\(workspace.container, privacy: .public) \
@@ -106,12 +125,16 @@ internal enum WorkspaceCloseAction {
         )
 
         let left = await browseAway(from: workspace, among: containers, coordinator: coordinator)
-        hosted.endClosing()
+        for hostedWorkspace in hostedWorkspaces {
+            hostedWorkspace.endClosing()
+        }
         guard left else {
             /// The connection never left, so the container is open again: it is where the next tab
             /// still opens, and a strip that did not list it would be lying about where the user is.
             /// The driver's own error is already on screen.
-            hosted.openContainer(workspace.container)
+            for hostedWorkspace in hostedWorkspaces {
+                hostedWorkspace.openContainer(workspace.container)
+            }
             WindowManager.shared.show(wasShowing, inWindowHosting: workspace.connectionId)
             Self.logger.error(
                 "close could not leave container=\(workspace.container, privacy: .public)"
@@ -122,10 +145,12 @@ internal enum WorkspaceCloseAction {
         /// Read again rather than reusing the list from before the switch: a table opened while the
         /// reconnect ran anchors the container all over again, and the entry would come back with
         /// one stray tab under it. A tab that new has nothing to lose.
-        let opened = tabs(in: workspace.container, of: coordinator)
+        let opened = coordinators.flatMap { tabs(in: workspace.container, of: $0) }
         if !opened.isEmpty {
-            coordinator?.closeTabsByUser(ids: opened.map(\.id))
-            hosted.closeContainer(workspace.container)
+            closeTabs(opened.map(\.id), across: coordinators)
+            for hostedWorkspace in hostedWorkspaces {
+                hostedWorkspace.closeContainer(workspace.container)
+            }
         }
         landOnRemainingTab(after: workspace, among: containers, coordinator: coordinator)
     }
@@ -137,21 +162,65 @@ internal enum WorkspaceCloseAction {
     /// selection is a side effect no one asked for when the close has nothing to lose.
     /// nil when the user cancelled; otherwise the victims that may now be closed, which is every one
     /// of them unless Save could not reach some.
+    /// Asked of the window that owns each tab.
+    ///
+    /// A tab's live grid and structure edits exist only in its own coordinator: a background
+    /// snapshot of a tab in another window reads as clean whatever is staged in it. Once a
+    /// connection can be hosted twice, a container's tabs span both windows, and putting all of
+    /// them to the coordinator that answered first reported the foreign ones as safe and closed
+    /// over the edits without a prompt.
+    ///
+    /// Cancel anywhere cancels everything, because the entry either closes or it does not.
     private static func confirm(
         _ victims: [QueryTab],
-        coordinator: MainContentCoordinator?,
+        across coordinators: [MainContentCoordinator],
         revealing workspace: WorkspaceID
     ) async -> Set<UUID>? {
         let everything = Set(victims.map(\.id))
-        guard let actions = coordinator?.commandActions, !victims.isEmpty else { return everything }
-        guard actions.hasUnsavedWork(among: victims) else { return everything }
-        reveal(workspace, coordinator: coordinator)
-        switch await actions.resolveUnsavedWork(in: victims) {
-        case .cancel:
-            return nil
-        case .close(let closable):
-            return closable
+        guard !victims.isEmpty else { return everything }
+
+        var closable: Set<UUID> = []
+        /// What each window was showing before it was brought forward to ask. A dirty split
+        /// connection reveals more than one of them, and the caller can only put one back, so an
+        /// abandoned close left the others switched to a connection the user never chose.
+        var revealed: [(host: MainSplitViewController, shown: UUID?)] = []
+        func restoreRevealed() {
+            for entry in revealed {
+                entry.host.workspaces.select(entry.shown)
+            }
         }
+
+        for coordinator in coordinators {
+            let owned = victims.filter { victim in
+                coordinator.tabManager.tabs.contains { $0.id == victim.id }
+            }
+            guard !owned.isEmpty else { continue }
+            guard let actions = coordinator.commandActions else {
+                closable.formUnion(owned.map(\.id))
+                continue
+            }
+            guard actions.hasUnsavedWork(among: owned) else {
+                closable.formUnion(owned.map(\.id))
+                continue
+            }
+            if let host = coordinator.splitViewController {
+                revealed.append((host, host.workspaces.selectedConnectionId))
+            }
+            reveal(workspace, in: coordinator)
+            switch await actions.resolveUnsavedWork(in: owned) {
+            case .cancel:
+                restoreRevealed()
+                return nil
+            case .close(let resolved):
+                closable.formUnion(resolved)
+            }
+        }
+        /// A victim no window claims is already gone, so nothing is holding work for it.
+        let unclaimed = victims.map(\.id).filter { id in
+            !coordinators.contains { coordinator in coordinator.tabManager.tabs.contains { $0.id == id } }
+        }
+        closable.formUnion(unclaimed)
+        return closable
     }
 
     /// Leaves the container before it stops being listed, and only when it is the one being browsed.
@@ -199,8 +268,29 @@ internal enum WorkspaceCloseAction {
         }
     }
 
+    /// Brings forward the window that owns the tabs about to be asked about.
+    ///
+    /// `resolveUnsavedWork` attaches its sheet to its own coordinator's window, so revealing the
+    /// connection's first host instead would select one window and then wait on a sheet hanging off
+    /// another, behind it or on a different native tab.
+    private static func reveal(_ workspace: WorkspaceID, in coordinator: MainContentCoordinator) {
+        reveal(workspace, window: coordinator.contentWindow, coordinator: coordinator)
+    }
+
     private static func reveal(_ workspace: WorkspaceID, coordinator: MainContentCoordinator?) {
-        if let window = WindowManager.shared.window(for: workspace.connectionId) {
+        reveal(
+            workspace,
+            window: WindowManager.shared.window(for: workspace.connectionId),
+            coordinator: coordinator
+        )
+    }
+
+    private static func reveal(
+        _ workspace: WorkspaceID,
+        window: NSWindow?,
+        coordinator: MainContentCoordinator?
+    ) {
+        if let window {
             if let group = window.tabGroup, group.selectedWindow !== window {
                 group.selectedWindow = window
             }

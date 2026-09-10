@@ -2,13 +2,30 @@
 //  HexEditorContentView.swift
 //  TablePro
 //
-//  SwiftUI popover content for viewing and editing BLOB column values as hex.
+//  The hex dump and editor a binary cell's popover shows, unframed so a viewer that puts it
+//  behind a tab sizes the popover once.
 //
 
 import AppKit
 import SwiftUI
 
-struct HexEditorContentView: View {
+@MainActor
+internal enum HexEditorMetrics {
+    /// A dump line is a fixed count of monospaced characters, so the popover is only as wide as
+    /// that count in the value font. Fixing the width instead wraps every line and breaks the
+    /// column alignment the dump exists for.
+    static var popoverWidth: CGFloat {
+        let line = ThemeEngine.shared.dataGridFonts.monoCharWidth
+            * CGFloat(HexDumpLayout.lineWidthInCharacters)
+        return line + textViewChromeWidth
+    }
+
+    /// The text container's own inset on both edges, the layout manager's line fragment padding,
+    /// and room for the vertical scroller.
+    private static let textViewChromeWidth: CGFloat = 42
+}
+
+struct HexEditorBody: View {
     let initialValue: String?
     let isEditable: Bool
     let onCommit: (String) -> Void
@@ -21,6 +38,12 @@ struct HexEditorContentView: View {
     @State private var isTruncated: Bool = false
     @State private var byteCount: Int = 0
     @State private var validateTask: Task<Void, Never>?
+
+    /// Whether the value this editor opened on was already a prefix. It is a fact about the stored
+    /// value, so it is settled once here and never recomputed from what the user types. Deriving it
+    /// from the draft instead let deleting the ellipsis re-enable Save over a value the editor only
+    /// ever held the first 10,240 bytes of, which then overwrote the rest of the blob.
+    private let sourceIsTruncated: Bool
 
     init(
         initialValue: String?,
@@ -44,10 +67,12 @@ struct HexEditorContentView: View {
             self._byteCount = State(initialValue: value.data(using: .isoLatin1)?.count ?? 0)
             self._isTruncated = State(initialValue: truncated)
             self._isValid = State(initialValue: !truncated)
+            self.sourceIsTruncated = truncated
         } else {
             self._hexDumpText = State(initialValue: "")
             self._editableHex = State(initialValue: "")
             self._byteCount = State(initialValue: 0)
+            self.sourceIsTruncated = false
         }
     }
 
@@ -71,7 +96,7 @@ struct HexEditorContentView: View {
                             .font(.caption)
                             .foregroundStyle(.tertiary)
 
-                        if isTruncated {
+                        if sourceIsTruncated || isTruncated {
                             Text(String(localized: "Truncated, read only"))
                                 .font(.caption)
                                 .foregroundStyle(.orange)
@@ -95,7 +120,7 @@ struct HexEditorContentView: View {
                         .keyboardShortcut(.cancelAction)
                     Button("Save") { saveHex() }
                         .keyboardShortcut(.defaultAction)
-                        .disabled(!isValid || isTruncated)
+                        .disabled(!isValid || isTruncated || sourceIsTruncated)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -114,29 +139,15 @@ struct HexEditorContentView: View {
                 .padding(.vertical, 8)
             }
         }
-        .frame(width: Self.popoverWidth, height: isEditable ? 400 : 280)
         .onChange(of: editableHex) { _, newValue in
             scheduleValidation(newValue)
         }
     }
 
-    /// A dump line is a fixed count of monospaced characters, so the popover is only as wide as
-    /// that count in the value font. Fixing the width instead wraps every line and breaks the
-    /// column alignment the dump exists for.
-    private static var popoverWidth: CGFloat {
-        let line = ThemeEngine.shared.dataGridFonts.monoCharWidth
-            * CGFloat(HexDumpLayout.lineWidthInCharacters)
-        return line + textViewChromeWidth
-    }
-
-    /// The text container's own inset on both edges, the layout manager's line fragment padding,
-    /// and room for the vertical scroller.
-    private static let textViewChromeWidth: CGFloat = 42
-
     // MARK: - Actions
 
     private func saveHex() {
-        guard isValid else { return }
+        guard isValid, !sourceIsTruncated else { return }
 
         if editableHex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             if initialValue != nil, initialValue != "" {

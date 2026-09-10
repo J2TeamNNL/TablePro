@@ -503,6 +503,19 @@ extension PluginManager {
             .capabilities.supportsSSH ?? true
     }
 
+    /// Which connection field carries the local database file this type opens, or nil when it
+    /// reaches its database over the network.
+    func localFilePathField(for databaseType: DatabaseType) -> LocalFilePathField? {
+        PluginMetadataRegistry.shared.snapshot(for: databaseType)?
+            .capabilities.localFilePathField
+    }
+
+    /// Whether this type can point at a database file on an SSH server instead of a local one.
+    func supportsRemoteDatabaseFile(for databaseType: DatabaseType) -> Bool {
+        PluginMetadataRegistry.shared.snapshot(for: databaseType)?
+            .capabilities.supportsRemoteDatabaseFile ?? false
+    }
+
     func supportsSSL(for databaseType: DatabaseType) -> Bool {
         PluginMetadataRegistry.shared.snapshot(for: databaseType)?
             .capabilities.supportsSSL ?? true
@@ -518,9 +531,19 @@ extension PluginManager {
             .capabilities.supportsSOCKSProxy ?? true
     }
 
-    func supportsColumnReorder(for databaseType: DatabaseType) -> Bool {
+    func supportsTunnelCommand(for databaseType: DatabaseType) -> Bool {
         PluginMetadataRegistry.shared.snapshot(for: databaseType)?
-            .supportsColumnReorder ?? false
+            .capabilities.supportsTunnelCommand ?? true
+    }
+
+    func columnReorderSupport(for databaseType: DatabaseType) -> ColumnReorderSupport {
+        PluginMetadataRegistry.shared.snapshot(for: databaseType)?
+            .structureEditing.columnReorder ?? .unsupported
+    }
+
+    func foreignKeyEditSupport(for databaseType: DatabaseType) -> ForeignKeyEditSupport {
+        PluginMetadataRegistry.shared.snapshot(for: databaseType)?
+            .structureEditing.foreignKeyEdit ?? .unsupported
     }
 
     func supportsDropDatabase(for databaseType: DatabaseType) -> Bool {
@@ -531,6 +554,26 @@ extension PluginManager {
     func supportsDropSchema(for databaseType: DatabaseType) -> Bool {
         PluginMetadataRegistry.shared.snapshot(for: databaseType)?
             .capabilities.supportsDropSchema ?? false
+    }
+
+    func supportsRenameTable(for databaseType: DatabaseType) -> Bool {
+        PluginMetadataRegistry.shared.snapshot(for: databaseType)?
+            .capabilities.supportsRenameTable ?? false
+    }
+
+    func supportsRenameView(for databaseType: DatabaseType) -> Bool {
+        PluginMetadataRegistry.shared.snapshot(for: databaseType)?
+            .capabilities.supportsRenameView ?? false
+    }
+
+    func supportsRenameDatabase(for databaseType: DatabaseType) -> Bool {
+        PluginMetadataRegistry.shared.snapshot(for: databaseType)?
+            .capabilities.supportsRenameDatabase ?? false
+    }
+
+    func supportsRenameSchema(for databaseType: DatabaseType) -> Bool {
+        PluginMetadataRegistry.shared.snapshot(for: databaseType)?
+            .capabilities.supportsRenameSchema ?? false
     }
 
     func autoLimitStyle(for databaseType: DatabaseType) -> AutoLimitStyle {
@@ -647,8 +690,27 @@ extension PluginManager {
             throw PluginError.notFound
         }
 
-        let entry = try await installFromRegistry(registryPlugin, registryClient: registryClient, progress: progress)
-        Self.logger.info("Installed missing plugin '\(entry.name)' for database type '\(databaseType.rawValue)'")
+        /// Published to the tracker as well as to the caller's handler. `PluginInstallStatusRow`
+        /// is built to draw the fraction and reaches it only through the tracker, so without this
+        /// every install started from a connection or a file fell back to its indeterminate
+        /// spinner while the determinate bar beside it was never fed.
+        let tracker = PluginInstallTracker.shared
+        tracker.beginInstall(pluginId: registryPlugin.id)
+        do {
+            let entry = try await installFromRegistry(
+                registryPlugin,
+                registryClient: registryClient,
+                progress: { fraction in
+                    tracker.updateProgress(pluginId: registryPlugin.id, fraction: fraction)
+                    progress(fraction)
+                }
+            )
+            tracker.completeInstall(pluginId: registryPlugin.id)
+            Self.logger.info("Installed missing plugin '\(entry.name)' for database type '\(databaseType.rawValue)'")
+        } catch {
+            tracker.failInstall(pluginId: registryPlugin.id, error: error.localizedDescription)
+            throw error
+        }
     }
 
     nonisolated static func registryPlugin(forTypeId pluginTypeId: String, in manifest: RegistryManifest?) -> RegistryPlugin? {

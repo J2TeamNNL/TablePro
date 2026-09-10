@@ -12,32 +12,6 @@ import Testing
 
 @Suite("SidebarContextMenuLogicTests")
 struct SidebarContextMenuLogicTests {
-    // MARK: - hasSelection
-
-    @Test("hasSelection false when empty selection and no clicked table")
-    func hasSelectionEmpty() {
-        #expect(!SidebarContextMenuLogic.hasSelection(selectedTables: [], clickedTable: nil))
-    }
-
-    @Test("hasSelection true when clicked table exists")
-    func hasSelectionClickedOnly() {
-        let table = TestFixtures.makeTableInfo(name: "users")
-        #expect(SidebarContextMenuLogic.hasSelection(selectedTables: [], clickedTable: table))
-    }
-
-    @Test("hasSelection true when selection exists")
-    func hasSelectionSelectedOnly() {
-        let table = TestFixtures.makeTableInfo(name: "users")
-        #expect(SidebarContextMenuLogic.hasSelection(selectedTables: [table], clickedTable: nil))
-    }
-
-    @Test("hasSelection true when both exist")
-    func hasSelectionBoth() {
-        let t1 = TestFixtures.makeTableInfo(name: "users")
-        let t2 = TestFixtures.makeTableInfo(name: "orders")
-        #expect(SidebarContextMenuLogic.hasSelection(selectedTables: [t1], clickedTable: t2))
-    }
-
     // MARK: - isView
 
     @Test("isView true for view type")
@@ -94,31 +68,31 @@ struct SidebarContextMenuLogicTests {
     @Test("Truncate visible for table")
     func truncateVisibleForTable() {
         let table = TestFixtures.makeTableInfo(name: "t", type: .table)
-        #expect(SidebarContextMenuLogic.truncateVisible(clickedTable: table))
+        #expect(SidebarContextMenuLogic.truncateVisible(targets: [Self.ref(table)]))
     }
 
     @Test("Truncate hidden for view")
     func truncateHiddenForView() {
         let view = TestFixtures.makeTableInfo(name: "v", type: .view)
-        #expect(!SidebarContextMenuLogic.truncateVisible(clickedTable: view))
+        #expect(!SidebarContextMenuLogic.truncateVisible(targets: [Self.ref(view)]))
     }
 
     @Test("Truncate hidden for materialized view")
     func truncateHiddenForMaterializedView() {
         let mv = TestFixtures.makeTableInfo(name: "mv", type: .materializedView)
-        #expect(!SidebarContextMenuLogic.truncateVisible(clickedTable: mv))
+        #expect(!SidebarContextMenuLogic.truncateVisible(targets: [Self.ref(mv)]))
     }
 
     @Test("Truncate hidden for foreign table")
     func truncateHiddenForForeignTable() {
         let ft = TestFixtures.makeTableInfo(name: "ft", type: .foreignTable)
-        #expect(!SidebarContextMenuLogic.truncateVisible(clickedTable: ft))
+        #expect(!SidebarContextMenuLogic.truncateVisible(targets: [Self.ref(ft)]))
     }
 
     @Test("Truncate hidden for system table")
     func truncateHiddenForSystemTable() {
         let sys = TestFixtures.makeTableInfo(name: "s", type: .systemTable)
-        #expect(!SidebarContextMenuLogic.truncateVisible(clickedTable: sys))
+        #expect(!SidebarContextMenuLogic.truncateVisible(targets: [Self.ref(sys)]))
     }
 
     // MARK: - Delete Label per Kind
@@ -146,33 +120,6 @@ struct SidebarContextMenuLogicTests {
     @Test("Delete label for nil falls back to Delete")
     func deleteLabelForNil() {
         #expect(SidebarContextMenuLogic.deleteLabel(for: nil) == "Delete")
-    }
-
-    // MARK: - Disabled State Combinations
-
-    @Test("Copy name disabled with no selection")
-    func copyNameDisabledNoSelection() {
-        let hasSelection = SidebarContextMenuLogic.hasSelection(selectedTables: [], clickedTable: nil)
-        #expect(!hasSelection)
-    }
-
-    @Test("Copy name enabled with selection")
-    func copyNameEnabledWithSelection() {
-        let table = TestFixtures.makeTableInfo(name: "users")
-        let hasSelection = SidebarContextMenuLogic.hasSelection(selectedTables: [table], clickedTable: nil)
-        #expect(hasSelection)
-    }
-
-    @Test("Show structure disabled when clicked table is nil")
-    func showStructureDisabledNilTable() {
-        let clickedTable: TableInfo? = nil
-        #expect(clickedTable == nil)
-    }
-
-    @Test("Show structure enabled when clicked table exists")
-    func showStructureEnabledWithTable() {
-        let clickedTable: TableInfo? = TestFixtures.makeTableInfo(name: "users")
-        #expect(clickedTable != nil)
     }
 
     // MARK: - Maintenance group disabled rule
@@ -229,7 +176,7 @@ struct SidebarContextMenuLogicTests {
     @Test("Truncate is hidden for an external table")
     func truncateHiddenForExternalTable() {
         let table = TableInfo(name: "customers", type: .externalTable, rowCount: nil)
-        #expect(!SidebarContextMenuLogic.truncateVisible(clickedTable: table))
+        #expect(!SidebarContextMenuLogic.truncateVisible(targets: [Self.ref(table)]))
     }
 
     @Test("External table drop label names the object kind")
@@ -237,51 +184,20 @@ struct SidebarContextMenuLogicTests {
         #expect(SidebarContextMenuLogic.deleteLabel(for: .externalTable) == "Drop External Table")
     }
 
-    // MARK: - contextTargets
-
-    @Test("Clicking outside the selection targets only the clicked row")
-    func contextTargetsClickOutsideSelection() {
-        let selected = TestFixtures.makeTableInfo(name: "users")
-        let clicked = TestFixtures.makeTableInfo(name: "orders")
-        let targets = SidebarContextMenuLogic.contextTargets(
-            clickedTable: clicked,
-            selectedTables: [selected]
-        )
-        #expect(targets == ["orders"])
+    /// The predicate now answers for every row a Truncate would act on, so the tests build refs.
+    private static func ref(_ table: TableInfo) -> DatabaseTreeTableRef {
+        DatabaseTreeTableRef(database: "app", schema: "public", table: table)
     }
 
-    @Test("Clicking inside the selection targets the whole selection")
-    func contextTargetsClickInsideSelection() {
-        let users = TestFixtures.makeTableInfo(name: "users")
-        let orders = TestFixtures.makeTableInfo(name: "orders")
-        let targets = SidebarContextMenuLogic.contextTargets(
-            clickedTable: users,
-            selectedTables: [users, orders]
-        )
-        #expect(targets == ["orders", "users"])
+    @Test("Truncate is hidden when a selection mixes a table with a view")
+    func truncateHiddenForMixedSelection() {
+        let table = TableInfo(name: "orders", type: .table, rowCount: nil)
+        let view = TableInfo(name: "summary", type: .view, rowCount: nil)
+        #expect(!SidebarContextMenuLogic.truncateVisible(targets: [Self.ref(table), Self.ref(view)]))
     }
 
-    @Test("Clicking with no selection targets the clicked row")
-    func contextTargetsNoSelection() {
-        let clicked = TestFixtures.makeTableInfo(name: "users")
-        #expect(SidebarContextMenuLogic.contextTargets(clickedTable: clicked, selectedTables: []) == ["users"])
-    }
-
-    @Test("No clicked row falls back to the selection")
-    func contextTargetsNoClickedRow() {
-        let users = TestFixtures.makeTableInfo(name: "users")
-        let orders = TestFixtures.makeTableInfo(name: "orders")
-        let targets = SidebarContextMenuLogic.contextTargets(
-            clickedTable: nil,
-            selectedTables: [users, orders]
-        )
-        #expect(targets == ["orders", "users"])
-    }
-
-    @Test("A clicked row of a different kind is not treated as selected")
-    func contextTargetsMatchesOnIdentity() {
-        let table = TestFixtures.makeTableInfo(name: "users", type: .table)
-        let view = TestFixtures.makeTableInfo(name: "users", type: .view)
-        #expect(SidebarContextMenuLogic.contextTargets(clickedTable: view, selectedTables: [table]) == ["users"])
+    @Test("Truncate is hidden for an empty selection")
+    func truncateHiddenForEmptySelection() {
+        #expect(!SidebarContextMenuLogic.truncateVisible(targets: [DatabaseTreeTableRef]()))
     }
 }

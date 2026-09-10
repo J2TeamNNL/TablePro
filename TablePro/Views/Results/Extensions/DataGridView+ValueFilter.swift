@@ -67,19 +67,55 @@ extension TableViewCoordinator {
         valueFilterState = state
     }
 
-    func applyValueFilter(_ filter: ColumnValueFilter?, columnName: String, forColumn dataIndex: Int) {
+    /// Confirmed before the state moves, not after: the alert's whole purpose is to let the reader
+    /// keep edits that this change would re-point, so the filter must not be written until they
+    /// have said yes.
+    func applyValueFilter(
+        _ filter: ColumnValueFilter?,
+        columnName: String,
+        forColumn dataIndex: Int,
+        onApplied: (() -> Void)? = nil
+    ) {
+        /// Nothing to confirm when the filter lands on the state it already had. Opening the popover
+        /// and pressing Apply without touching anything is an ordinary thing to do, and asking the
+        /// reader to discard their edits for a change that moves no row at all trains them to
+        /// dismiss the alert without reading it.
+        var candidate = valueFilterState
         if let filter {
-            valueFilterState.set(filter, columnName: columnName, forColumn: dataIndex)
+            candidate.set(filter, columnName: columnName, forColumn: dataIndex)
         } else {
-            valueFilterState.clear(column: dataIndex)
+            candidate.clear(column: dataIndex)
         }
-        reloadAfterValueFilterChange()
+        guard candidate != valueFilterState else {
+            onApplied?()
+            return
+        }
+
+        confirmDisplayOrderChange { [weak self] in
+            guard let self else { return }
+            self.valueFilterState = candidate
+            self.reloadAfterValueFilterChange()
+            onApplied?()
+        }
     }
 
     func clearAllValueFilters() {
         guard valueFilterState.isActive else { return }
-        valueFilterState.clearAll()
-        reloadAfterValueFilterChange()
+        confirmDisplayOrderChange { [weak self] in
+            guard let self else { return }
+            self.valueFilterState.clearAll()
+            self.reloadAfterValueFilterChange()
+        }
+    }
+
+    /// A grid with no owner has no pending edits to lose, and the protocol default runs the work
+    /// directly, so the structure, create-table and inspector grids are unaffected.
+    func confirmDisplayOrderChange(_ apply: @escaping () -> Void) {
+        guard let delegate else {
+            apply()
+            return
+        }
+        delegate.dataGridConfirmDisplayOrderChange(then: apply)
     }
 
     func reloadAfterValueFilterChange() {
@@ -116,9 +152,16 @@ extension TableViewCoordinator {
                 values: values,
                 loadedRowCount: loadedRowCount,
                 initialFilter: initialFilter,
+                /// Dismissed from inside the applied work, not beside it. The confirmation is a
+                /// sheet and resolves asynchronously, so closing here would put the popover away
+                /// before the reader had answered the alert it raised.
                 onApply: { filter in
-                    self?.applyValueFilter(filter, columnName: columnName, forColumn: dataIndex)
-                    dismiss()
+                    self?.applyValueFilter(
+                        filter,
+                        columnName: columnName,
+                        forColumn: dataIndex,
+                        onApplied: dismiss
+                    )
                 },
                 onCancel: dismiss
             )

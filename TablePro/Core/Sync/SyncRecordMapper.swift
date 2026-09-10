@@ -45,6 +45,23 @@ struct SyncRecordMapper {
         SyncRecordType.parse(recordName: recordName)
     }
 
+    /// Maps every record the push is about to send back onto the local identifier it was built
+    /// from. `SyncRecordType.recordName(for:)` shortens an identifier that would take the name
+    /// past CloudKit's limit, so a saved record cannot be read back through `parse(recordName:)`
+    /// without clearing the wrong dirty entry and pushing the same record on every sync forever.
+    static func identities(
+        for localIds: [SyncRecordType: Set<String>],
+        in zone: CKRecordZone.ID
+    ) -> [CKRecord.ID: SyncRecordIdentity] {
+        var identities: [CKRecord.ID: SyncRecordIdentity] = [:]
+        for (type, ids) in localIds {
+            for id in ids {
+                identities[recordID(type: type, id: id, in: zone)] = SyncRecordIdentity(type: type, id: id)
+            }
+        }
+        return identities
+    }
+
     // MARK: - Connection
 
     static func toCKRecord(
@@ -70,6 +87,11 @@ struct SyncRecordMapper {
         fields[.type] = connection.type.rawValue
         fields[.color] = connection.color.rawValue
         fields[.safeModeLevel] = connection.safeModeLevel.rawValue
+        /// `safeModeLevel` superseded `isReadOnly`, but both are still on the wire and this mapper
+        /// still reads the old one when the new one is absent. Writing only the new one left the
+        /// old one holding whatever it last held, so a connection taken out of read-only on a Mac
+        /// stayed read-only for anything reading the legacy field.
+        fields[.isReadOnly] = Int64(connection.safeModeLevel == .readOnly ? 1 : 0)
         fields[.modifiedAtLocal] = Date()
         fields[.schemaVersion] = schemaVersion
         fields[.sortOrder] = Int64(connection.sortOrder)
@@ -107,9 +129,10 @@ struct SyncRecordMapper {
         // Note: sshTunnelMode is intentionally NOT synced — it is re-derived
         // on decode from sshConfig + sshProfileId. If adding sshTunnelMode to
         // the sync schema in the future, apply path contraction to its snapshot.
-        // cloudflareTunnelMode, cloudSQLProxyMode, and socksProxyMode are also NOT
-        // synced: they are device-local runtime config and their secrets live in
-        // the Keychain.
+        // cloudflareTunnelMode, cloudSQLProxyMode, socksProxyMode and
+        // tunnelCommandMode are also NOT synced: they are device-local runtime
+        // config, their secrets live in the Keychain, and a tunnel command names a
+        // process that only exists on the Mac it was written on.
         // passwordSource is also NOT synced: its file path, env var, or command
         // is device-local and may not exist or resolve on another Mac.
         do {
@@ -154,7 +177,11 @@ struct SyncRecordMapper {
         let port = (fields[.port] as? Int64).map { Int($0) } ?? 0
         let database = fields[.database] as? String ?? ""
         let username = fields[.username] as? String ?? ""
-        let colorRaw = fields[.color] as? String ?? ConnectionColor.none.rawValue
+        /// `colorTag` is where iOS wrote a connection's colour as hex before the two platforms
+        /// converged on this enum, so a colour set on an iPhone shows up here rather than nowhere.
+        let colorRaw = fields[.color] as? String
+            ?? fields[.colorTag] as? String
+            ?? ConnectionColor.none.rawValue
         let isReadOnly = (fields[.isReadOnly] as? Int64 ?? 0) != 0
         let safeModeLevel = Self.safeModeLevel(fromWire: fields[.safeModeLevel] as? String, isReadOnly: isReadOnly)
         let tagIds: [UUID]
@@ -215,7 +242,7 @@ struct SyncRecordMapper {
             type: connectionType,
             sshConfig: sshConfig,
             sslConfig: sslConfig,
-            color: ConnectionColor(rawValue: colorRaw) ?? .none,
+            color: ConnectionColor(storedValue: colorRaw),
             tagIds: tagIds,
             groupId: groupId,
             sshProfileId: sshProfileId,

@@ -13,11 +13,13 @@ private let navigationHistoryLogger = Logger(subsystem: "com.TablePro", category
 extension MainContentCoordinator {
     // MARK: - Availability
 
-    /// Back is refused while the tab holds work that lives nowhere else, for the same reason a
-    /// retarget is: going back replaces the tab's content, and unsaved edits would go with it.
+    /// Back is refused once the tab is showing something other than a table, because stepping back
+    /// would have nothing to put on the forward stack in its place.
     ///
-    /// It is also refused once the tab is showing something other than a table, because stepping
-    /// back would have nothing to put on the forward stack in its place.
+    /// Unsaved cell edits do NOT refuse it. Going back does replace the tab's content and would
+    /// take them with it, but that is what the discard alert is for, and `step(back:)` routes
+    /// through the same one refresh, sort, pagination and filter already use. Refusing instead left
+    /// Back dim over a destination that still existed, with nothing saying why.
     var canNavigateBack: Bool {
         guard let tabId = navigableTabId else { return false }
         return navigationHistories[tabId]?.canGoBack ?? false
@@ -31,8 +33,19 @@ extension MainContentCoordinator {
     private var navigableTabId: UUID? {
         guard let tab = tabManager.selectedTab,
               tab.tabType == .table,
-              !selectedTabHoldsProtectedContent else { return nil }
+              !selectedTabBlocksNavigation else { return nil }
         return tab.id
+    }
+
+    /// The half of `selectedTabHoldsProtectedContent` navigation cannot offer to discard.
+    ///
+    /// Staged structure edits are the only one that survives the `tabType == .table` requirement
+    /// alongside cell edits: `holdsQueryWork` is false off a query tab and the `.createTable` arm
+    /// cannot be reached. They stay a refusal because the discard alert clears `changeManager` and
+    /// nothing else, so offering to discard them would be a promise this path cannot keep.
+    private var selectedTabBlocksNavigation: Bool {
+        guard let tab = tabManager.selectedTab else { return true }
+        return hasStagedStructureEdits(in: tab)
     }
 
     // MARK: - Recording
@@ -56,6 +69,7 @@ extension MainContentCoordinator {
             resultsViewMode: tab.display.resultsViewMode,
             filterState: tab.filterState,
             sortColumns: tab.sortState.persistedColumns,
+            sortSource: tab.sortState.source,
             page: tab.pagination.currentPage,
             pageSize: tab.pagination.pageSize,
             anchorRowKey: capturePrimaryKeyAnchor(for: tab)
@@ -88,13 +102,17 @@ extension MainContentCoordinator {
         let tableRows = tabSessionRegistry.tableRows(for: tab.id)
         guard let row = gridCoordinator.displayRow(at: displayIndex, in: tableRows) else { return nil }
 
-        var anchor: [String: String] = [:]
-        for name in keyColumns {
-            guard let column = tableRows.columns.firstIndex(of: name),
-                  let value = row[column].asText else { return nil }
-            anchor[name] = value
-        }
-        return anchor.isEmpty ? nil : anchor
+        let rowIndex = gridCoordinator.tableRowsIndex(forDisplayRow: displayIndex)
+
+        return NavigationRowAnchor.build(
+            keyColumns: keyColumns,
+            columns: tableRows.columns,
+            values: row.values,
+            isModified: { column in
+                guard let rowIndex else { return false }
+                return changeManager.isCellModified(rowIndex: rowIndex, columnIndex: column)
+            }
+        )
     }
 
     // MARK: - Navigating
@@ -107,15 +125,30 @@ extension MainContentCoordinator {
         step(back: false)
     }
 
+    /// Asks before it discards, through the alert the other reload paths use. With nothing staged
+    /// the guard completes synchronously with `true`, so an ordinary step never defers a turn.
+    ///
+    /// The departing entry is captured *before* the guard on purpose. Discarding clears the change
+    /// records but leaves the edited values in `TableRows`, so a capture afterwards cannot tell a
+    /// staged key from a saved one and would anchor the forward stack on a value the user just
+    /// threw away.
+    private func step(back: Bool) {
+        let departing = captureNavigationEntry()
+        confirmDiscardChangesIfNeeded(action: .navigation) { [weak self] confirmed in
+            guard confirmed else { return }
+            self?.commitStep(back: back, from: departing)
+        }
+    }
+
     /// Moves one entry and puts it back on the tab, or leaves the history exactly as it was.
     ///
     /// The stacks are mutated on a copy and only written back once the restore has actually landed.
     /// Moving them first would strand the reader if the retarget failed: the entry they asked for
     /// would be gone and Forward would point at the view they are still looking at.
-    private func step(back: Bool) {
+    private func commitStep(back: Bool, from departing: TabNavigationEntry?) {
         guard let tabId = navigableTabId,
               var history = navigationHistories[tabId],
-              let current = captureNavigationEntry() else { return }
+              let current = departing else { return }
         guard let entry = back ? history.stepBack(from: current) : history.stepForward(from: current) else {
             return
         }
@@ -159,6 +192,10 @@ extension MainContentCoordinator {
         tabManager.mutate(at: tabIndex) { tab in
             tab.filterState = entry.filterState
             tab.pendingRestoredSort = entry.sortColumns.isEmpty ? nil : entry.sortColumns
+            tab.restoredSortSource = entry.sortSource
+            if entry.sortColumns.isEmpty {
+                tab.sortState = SortState(columns: [], source: entry.sortSource)
+            }
             tab.restoredPage = max(1, entry.page)
             tab.restoredPageSize = entry.pageSize
         }

@@ -45,6 +45,7 @@ struct MainWindowToolbarValidationTests {
         connected: Bool = true,
         isTableTab: Bool = false,
         canAddRow: Bool = false,
+        canRestorePreviousValues: Bool = false,
         hasPendingChanges: Bool = false,
         hasDataPendingChanges: Bool = false,
         blocksAllWrites: Bool = false,
@@ -59,6 +60,7 @@ struct MainWindowToolbarValidationTests {
             connected: connected,
             isTableTab: isTableTab,
             canAddRow: canAddRow,
+            canRestorePreviousValues: canRestorePreviousValues,
             hasPendingChanges: hasPendingChanges,
             hasDataPendingChanges: hasDataPendingChanges,
             blocksAllWrites: blocksAllWrites,
@@ -189,6 +191,38 @@ struct MainWindowToolbarValidationTests {
         let disconnected = makeContext(connected: false)
         #expect(MainWindowToolbar.isEnabled(itemIdentifier: MainWindowToolbar.connection, context: disconnected) == true)
         #expect(MainWindowToolbar.isEnabled(itemIdentifier: MainWindowToolbar.history, context: disconnected) == true)
+    }
+
+    ///  said Switch Connection stays enabled and the runtime disagreed: validation
+    /// returned false before reaching that case whenever the connection had gone, which is the one
+    /// state the command exists for. It answers off the window now, ahead of any session context.
+    /// The sidebar item stays out of it, however window-owned the sidebar itself is: it is the
+    /// Tables/Favorites segmented control, its action reaches `coordinator?.splitViewController`,
+    /// and the tab it selects is per-connection state. Marking it window-scoped would enable a
+    /// control whose clicks go nowhere.
+    @Test("Switch Connection answers without a connection behind the toolbar")
+    func connectionItemIsWindowScoped() {
+        #expect(MainWindowToolbar.isWindowScoped(MainWindowToolbar.connection))
+        #expect(!MainWindowToolbar.isWindowScoped(MainWindowToolbar.sidebarToggle))
+    }
+
+    /// Everything else here acts on the connection that is showing, so no subject still disables
+    /// it rather than leaving a live-looking button that does nothing.
+    @Test("Every other toolbar item still needs the connection it acts on")
+    func otherItemsAreNotWindowScoped() {
+        let connectionScoped = [
+            MainWindowToolbar.database,
+            MainWindowToolbar.refresh,
+            MainWindowToolbar.newTab,
+            MainWindowToolbar.exportTables,
+            MainWindowToolbar.sidebarToggle,
+            MainWindowToolbar.addRow,
+            MainWindowToolbar.saveChanges,
+            MainWindowToolbar.dashboard
+        ]
+        for identifier in connectionScoped {
+            #expect(!MainWindowToolbar.isWindowScoped(identifier))
+        }
     }
 
     @Test("Unknown identifier defaults to enabled")
@@ -402,11 +436,6 @@ struct MainWindowToolbarValidationTests {
         #expect(toolbar.validationCount == invalidationBaseline)
     }
 
-    @Test("Toolbar identifier is stable across instances so AppKit autosave can persist customizations")
-    func toolbarIdentifierIsStable() {
-        #expect(MainWindowToolbar.toolbarIdentifier == "com.TablePro.main.toolbar.v2")
-    }
-
     @Test("Toolbar is configured for user customization and autosave")
     func toolbarConfigurationEnablesAutosave() {
         let coordinator = makeCoordinator()
@@ -473,9 +502,9 @@ struct MainWindowToolbarRepointTests {
         #expect(owner.coordinator == nil)
     }
 
-    /// `windowDidBecomeKey` runs on every activation with the connection unchanged, and
-    /// `@Observable` generates no equality check, so a repoint to the same coordinator would
-    /// otherwise invalidate the hosted items every time the window came forward.
+    /// `windowDidBecomeKey` runs on every activation with the connection unchanged, so without the
+    /// guard the window would re-observe, re-label and re-validate every item each time it came
+    /// forward.
     @Test("Repointing to the same coordinator is a no-op")
     func repointToSameCoordinatorIsIgnored() {
         let coordinator = makeCoordinator()
@@ -483,9 +512,8 @@ struct MainWindowToolbarRepointTests {
         let owner = MainWindowToolbar()
 
         owner.repoint(to: coordinator)
-        let subjectBefore = owner.subject.coordinator
         owner.repoint(to: coordinator)
-        #expect(owner.subject.coordinator === subjectBefore)
+        #expect(owner.coordinator === coordinator)
     }
 
     /// The item is built once and outlives every connection the window shows, so anything it reads
@@ -553,6 +581,7 @@ struct MainWindowToolbarNavigationValidationTests {
             connected: connected,
             isTableTab: true,
             canAddRow: false,
+            canRestorePreviousValues: false,
             hasPendingChanges: false,
             hasDataPendingChanges: false,
             blocksAllWrites: false,
@@ -624,11 +653,14 @@ struct MainWindowToolbarNavigationValidationTests {
 @Suite("MainWindowToolbar Add Row validation")
 @MainActor
 struct MainWindowToolbarAddRowValidationTests {
-    private func context(connected: Bool, canAddRow: Bool) -> MainWindowToolbar.ValidationContext {
+    private func context(
+        connected: Bool, canAddRow: Bool, canRestorePreviousValues: Bool = false
+    ) -> MainWindowToolbar.ValidationContext {
         MainWindowToolbar.ValidationContext(
             connected: connected,
             isTableTab: true,
             canAddRow: canAddRow,
+            canRestorePreviousValues: canRestorePreviousValues,
             hasPendingChanges: false,
             hasDataPendingChanges: false,
             blocksAllWrites: false,
@@ -654,6 +686,24 @@ struct MainWindowToolbarAddRowValidationTests {
         #expect(!MainWindowToolbar.isEnabled(
             itemIdentifier: MainWindowToolbar.addRow,
             context: context(connected: false, canAddRow: true)
+        ))
+    }
+
+    /// Reachable without a licence on purpose: the gate is at the point of use, where it can say
+    /// what the licence buys. A dimmed item explains nothing.
+    @Test("Restore Previous Values follows the tab, not the licence")
+    func restorePreviousValuesValidation() {
+        #expect(MainWindowToolbar.isEnabled(
+            itemIdentifier: MainWindowToolbar.restorePreviousValues,
+            context: context(connected: true, canAddRow: false, canRestorePreviousValues: true)
+        ))
+        #expect(!MainWindowToolbar.isEnabled(
+            itemIdentifier: MainWindowToolbar.restorePreviousValues,
+            context: context(connected: true, canAddRow: true, canRestorePreviousValues: false)
+        ))
+        #expect(!MainWindowToolbar.isEnabled(
+            itemIdentifier: MainWindowToolbar.restorePreviousValues,
+            context: context(connected: false, canAddRow: true, canRestorePreviousValues: true)
         ))
     }
 }

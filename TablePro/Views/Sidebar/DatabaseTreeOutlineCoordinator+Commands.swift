@@ -17,6 +17,8 @@ extension DatabaseTreeOutlineCoordinator {
             mainCoordinator?.createNewTable()
         case .createView:
             mainCoordinator?.createView()
+        case .createType(let database, let schema):
+            mainCoordinator?.createType(database: database, schema: schema)
         case .filterDatabases:
             mainCoordinator?.splitViewController?.presentDatabaseFilter()
         case .showAllDatabases:
@@ -45,7 +47,18 @@ extension DatabaseTreeOutlineCoordinator {
             ClipboardService.shared.writeText(names.joined(separator: ","))
         case .exportTables(let names, let ref):
             activateThen(ref) { [weak self] in
-                self?.mainCoordinator?.openExportDialog(preselectedTableNames: names)
+                guard let self else { return }
+                self.mainCoordinator?.openExportDialog(
+                    preselectedTableNames: names,
+                    scope: self.exportScope(for: ref)
+                )
+            }
+        case .transferTables(let names, let ref):
+            activateThen(ref) { [weak self] in
+                self?.mainCoordinator?.openTableTransferSheet(
+                    preselectedTableNames: names,
+                    schema: ref.qualifyingSchema
+                )
             }
         case .importTables(let formatId, let ref):
             activateThen(ref) { [weak self] in
@@ -60,14 +73,20 @@ extension DatabaseTreeOutlineCoordinator {
                     schema: ref.schema
                 )
             }
-        case .truncateTables(let names, let ref):
+        case .truncateTables(let targets, let ref):
             activateThen(ref) { [weak self] in
-                self?.viewModel?.batchToggleTruncate(tableNames: names)
+                self?.viewModel?.batchToggleTruncate(refs: targets)
             }
-        case .dropTables(let names, let ref):
+        case .dropTables(let targets, let ref):
             activateThen(ref) { [weak self] in
-                self?.viewModel?.batchToggleDelete(tableNames: names)
+                self?.viewModel?.batchToggleDelete(refs: targets)
             }
+        case .beginRenameTable(let ref, let isRecentRow):
+            activateThen(ref) { [weak self] in
+                self?.beginRename(.table(ref), isRecentRow: isRecentRow)
+            }
+        case .renameContainer(let ref):
+            beginRename(.container(ref))
         case .toggleFavorite(let ref):
             toggleFavorite(ref)
         case .removeRecent(let ref):
@@ -94,8 +113,31 @@ extension DatabaseTreeOutlineCoordinator {
             ClipboardService.shared.writeText(targets.map(\.name).joined(separator: ","))
         case .exportContainers(let targets):
             mainCoordinator?.openExportDialog(containers: targets)
+        case .backUpContainers(let databases):
+            mainCoordinator?.activeSheet = .backupDatabase(databases: Set(databases))
         case .dropContainers(let targets):
             mainCoordinator?.requestContainerDrop(targets)
+        case .copyObjectsTo(let objects, let ref):
+            mainCoordinator?.openCopyObjects(
+                mode: .copyTo,
+                database: ref?.database,
+                schema: ref?.qualifyingSchema,
+                objects: objects
+            )
+        case .copyContainerTo(let container):
+            mainCoordinator?.openCopyObjects(
+                mode: .copyTo,
+                database: container.database,
+                schema: container.kind == .schema ? container.schema : nil,
+                objects: []
+            )
+        case .duplicateDatabase(let container):
+            mainCoordinator?.openCopyObjects(
+                mode: .duplicateDatabase,
+                database: container.database,
+                schema: nil,
+                objects: []
+            )
         case .showAllTablesMetadata:
             mainCoordinator?.showAllTablesMetadata()
         case .refreshObjectKind(let kind):
@@ -114,15 +156,16 @@ extension DatabaseTreeOutlineCoordinator {
             ClipboardService.shared.writeText(key)
         case .openRedisKey(let key, let keyType):
             mainCoordinator?.openRedisKey(key, keyType: keyType)
-        case .toggleObjectIcons:
-            AppSettingsManager.shared.general.showObjectIcons.toggle()
-            refreshVisibleRows()
-        case .toggleObjectComments:
-            AppSettingsManager.shared.general.showObjectComments.toggle()
-            refreshVisibleRows()
-        case .setRowSize(let size):
-            AppSettingsManager.shared.general.sidebarRowSize = size
+        case .toggleObjectIcons, .toggleObjectComments, .setRowSize:
+            _ = SidebarViewOptionsMenu.apply(command)
         }
+    }
+
+    private func exportScope(for ref: DatabaseTreeTableRef) -> DatabaseContainerRef? {
+        ExportPreselection.scope(
+            for: ref,
+            grouping: PluginManager.shared.databaseGroupingStrategy(for: databaseType)
+        )
     }
 
     /// A command that opens or edits an object has to reach the database that object lives in

@@ -36,7 +36,7 @@ struct SupportView: View {
     private var appIcon: some View {
         Image(nsImage: NSApp.applicationIconImage)
             .resizable()
-            .aspectRatio(contentMode: .fit)
+            .scaledToFit()
             .frame(width: 64, height: 64)
             .accessibilityHidden(true)
     }

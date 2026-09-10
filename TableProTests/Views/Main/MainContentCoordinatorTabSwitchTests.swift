@@ -346,6 +346,7 @@ struct MainContentCoordinatorTabSwitchTests {
             columns: ["id", "name"],
             primaryKeyColumns: ["id"],
             databaseType: .mysql,
+            generatedColumns: [],
             triggerReload: false
         )
         coordinator.changeManager.recordCellChange(
@@ -365,6 +366,49 @@ struct MainContentCoordinatorTabSwitchTests {
             return
         }
         #expect(tabManager.tabs[oldIndex].pendingChanges.hasChanges == true)
+    }
+
+    /// The write used to be gated on `changeManager.hasChanges`, so an undo left the snapshot a
+    /// previous switch had saved sitting on the tab. Switching back restored the edit the reader had
+    /// just taken back, and the tab went on reporting unsaved work until it was closed.
+    @Test("Switching clears a snapshot the reader has undone")
+    func undoneChangesClearTheOutgoingSnapshot() throws {
+        let (coordinator, tabManager) = makeCoordinator()
+        let oldId = addQueryTab(to: tabManager, title: "Old")
+        let newId = addQueryTab(to: tabManager, title: "New")
+        seedRows(coordinator, for: oldId)
+        seedRows(coordinator, for: newId)
+
+        coordinator.changeManager.configureForTable(
+            tableName: "users",
+            columns: ["id", "name"],
+            primaryKeyColumns: ["id"],
+            databaseType: .mysql,
+            generatedColumns: [],
+            triggerReload: false
+        )
+        coordinator.changeManager.recordCellChange(
+            rowIndex: 0,
+            columnIndex: 1,
+            columnName: "name",
+            oldValue: "Alice",
+            newValue: "Bob",
+            originalRow: ["1", "Alice"]
+        )
+        coordinator.handleTabChange(from: oldId, to: newId, tabs: tabManager.tabs)
+        let afterFirstSwitch = try #require(tabManager.tabs.first { $0.id == oldId })
+        #expect(afterFirstSwitch.pendingChanges.hasChanges == true)
+
+        tabManager.selectedTabId = oldId
+        coordinator.handleTabChange(from: newId, to: oldId, tabs: tabManager.tabs)
+        coordinator.changeManager.clearChanges()
+        #expect(coordinator.changeManager.hasChanges == false)
+
+        tabManager.selectedTabId = newId
+        coordinator.handleTabChange(from: oldId, to: newId, tabs: tabManager.tabs)
+
+        let afterUndo = try #require(tabManager.tabs.first { $0.id == oldId })
+        #expect(afterUndo.pendingChanges.hasChanges == false)
     }
 
     @Test("Hiding a column persists into the active tab's column layout")
@@ -524,6 +568,7 @@ struct MainContentCoordinatorTabSwitchTests {
             columns: ["id", "total"],
             primaryKeyColumns: ["id"],
             databaseType: .mysql,
+            generatedColumns: [],
             triggerReload: false
         )
         coordinator.changeManager.recordCellChange(
@@ -846,6 +891,7 @@ struct MainContentCoordinatorTabSwitchTests {
             columns: ["id", "name"],
             primaryKeyColumns: ["id"],
             databaseType: .mysql,
+            generatedColumns: [],
             triggerReload: false
         )
         manager.recordCellChange(
@@ -861,7 +907,7 @@ struct MainContentCoordinatorTabSwitchTests {
         let fresh = DataChangeManager()
         #expect(fresh.hasChanges == false)
 
-        fresh.restoreState(from: snapshot, tableName: "users", databaseType: .postgresql)
+        fresh.restoreState(from: snapshot, tableName: "users", databaseType: .postgresql, generatedColumns: [])
 
         #expect(fresh.hasChanges == true)
         #expect(fresh.tableName == "users")

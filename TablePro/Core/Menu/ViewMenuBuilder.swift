@@ -25,10 +25,28 @@ enum ViewMenuBuilder {
                 keyboard: keyboard
             ),
             MenuItemFactory.item(
+                String(localized: "Show Assistant"),
+                action: #selector(MainSplitViewController.toggleAssistant(_:)),
+                shortcut: .toggleAssistant,
+                keyboard: keyboard
+            ),
+            MenuItemFactory.item(
                 String(localized: "Show Connections"),
                 action: #selector(MainSplitViewController.toggleWorkspaceRail(_:)),
                 shortcut: .toggleWorkspaceRail,
                 keyboard: keyboard
+            ),
+            MenuItemFactory.separator,
+            /// The segmented control in the toolbar was the only route to either of these, so a
+            /// window whose toolbar was narrow, hidden or customized could not switch what the
+            /// sidebar lists. The HIG asks that every toolbar item also be a menu-bar command.
+            MenuItemFactory.item(
+                String(localized: "Show Tables"),
+                action: #selector(MainSplitViewController.showTablesSidebarTab(_:))
+            ),
+            MenuItemFactory.item(
+                String(localized: "Show Favorites"),
+                action: #selector(MainSplitViewController.showFavoritesSidebarTab(_:))
             ),
             MenuItemFactory.separator,
             sidebarLayoutSubmenu(),

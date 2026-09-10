@@ -25,6 +25,14 @@ import SwiftUI
 ///   the window rather than to the toolbar.
 @MainActor
 internal final class ToolbarSwitcherPresenter {
+    /// Which chooser is up, so a second press of the same command closes it while the other
+    /// command replaces it.
+    internal enum Subject: Equatable {
+        case connection
+        case container(ContainerSwitchTarget?)
+    }
+
+    private var presentedSubject: Subject?
     private var popover: NSPopover?
     /// The window's one floating panel, passed in rather than built here. `MainContentCoordinator`
     /// already owns a `QuickSwitcherPanelController` for Open Quickly, and a second one would give a
@@ -44,19 +52,27 @@ internal final class ToolbarSwitcherPresenter {
     /// `anchoredTo` is an identifier rather than an item because the item has to be resolved at
     /// presentation time: the toolbar rebuilds, and an item the user removed is simply absent.
     ///
-    /// Invoking the command while the switcher is up closes it, matching `showQuickSwitcher()` and
-    /// the toggle the toolbar button used to give for free. Without it a second press would tear the
-    /// surface down and rebuild it with empty `@State`, losing whatever the user had typed.
+    /// Invoking the same command while its switcher is up closes it, matching `showQuickSwitcher()`
+    /// and the toggle the toolbar button used to give for free. Without it a second press would
+    /// tear the surface down and rebuild it with empty `@State`, losing whatever the user had
+    /// typed.
+    ///
+    /// `subject` is what makes "the same command" answerable. One presenter serves the connection
+    /// chooser and the container chooser, so an identity check on presentation alone would make
+    /// either command close the other rather than replace it.
     internal func present(
         from window: NSWindow?,
         anchoredTo identifier: NSToolbarItem.Identifier,
+        subject: Subject,
         contentSize: NSSize,
         @ViewBuilder content: (_ dismiss: @escaping () -> Void) -> some View
     ) {
-        guard !isPresenting else {
+        if isPresenting {
+            let wasShowing = presentedSubject
             dismiss()
-            return
+            guard wasShowing != subject else { return }
         }
+        presentedSubject = subject
 
         if let item = Self.anchor(in: window, identifier) {
             /// `.transient`, not `PopoverPresenter`'s `.semitransient` default: a semitransient
@@ -94,6 +110,7 @@ internal final class ToolbarSwitcherPresenter {
     }
 
     internal func dismiss() {
+        presentedSubject = nil
         popover?.performClose(nil)
         forgetPopover()
         panelController.dismiss()
@@ -117,6 +134,37 @@ internal final class ToolbarSwitcherPresenter {
         _ identifier: NSToolbarItem.Identifier
     ) -> NSToolbarItem? {
         guard let toolbar = window?.toolbar, toolbar.isVisible else { return nil }
-        return toolbar.items.first { $0.itemIdentifier == identifier }
+        return anchor(identifier, in: toolbar.items, visible: toolbar.visibleItems ?? [])
+    }
+
+    /// The anchor for an identifier that may name a subitem of a group rather than an item the
+    /// toolbar carries directly.
+    ///
+    /// The connection and the container are two subitems of one centred native group, and anchoring
+    /// both choosers to the group put each of them on the seam between the two capsules rather than
+    /// under the one it belongs to. Measured on a 1200pt window: the group's midpoint is 600.0, the
+    /// Connection capsule's is 543.2 and the Container capsule's is 671.8, and a popover anchored to
+    /// the group lands at 600.0 for both. A subitem does resolve as an anchor and lands on its own
+    /// capsule to within a point, even though `NSToolbar.items` lists groups only and a native
+    /// group's subitems carry no `view`.
+    ///
+    /// It resolves only while the group is on screen. Once AppKit clips the group into the overflow
+    /// menu its subitems have no view and `NSPopover.show(relativeTo:)` raises
+    /// `NSInvalidArgumentException` ("view has no window"), which Swift cannot catch; measured, that
+    /// is exactly the width at which `visibleItems` stops naming the group. The group keeps working
+    /// there, because AppKit presents a clipped item from another affordance in the window itself,
+    /// so an overflowed group is the fallback rather than the floating panel.
+    internal static func anchor(
+        _ identifier: NSToolbarItem.Identifier,
+        in items: [NSToolbarItem],
+        visible: [NSToolbarItem]
+    ) -> NSToolbarItem? {
+        if let item = items.first(where: { $0.itemIdentifier == identifier }) { return item }
+        let groups = items.compactMap { $0 as? NSToolbarItemGroup }
+        guard let group = groups.first(where: { group in
+            group.subitems.contains { $0.itemIdentifier == identifier }
+        }) else { return nil }
+        guard visible.contains(where: { $0.itemIdentifier == group.itemIdentifier }) else { return group }
+        return group.subitems.first { $0.itemIdentifier == identifier }
     }
 }

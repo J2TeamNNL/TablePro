@@ -45,6 +45,15 @@ protocol DatabaseDriver: AnyObject, Sendable {
     /// Apply query execution timeout (seconds, 0 = no limit)
     func applyQueryTimeout(_ seconds: Int) async throws
 
+    /// What the command that hands this connection's held resource back should be called, or nil
+    /// when the driver holds nothing it can give up. A per-connection answer, not a per-engine one.
+    var releasableResourceCommandTitle: String? { get }
+
+    /// Hands that resource back now, keeping the session alive. A result that did not release is
+    /// a refusal rather than a failure, and carries the reason: re-acquiring the resource would
+    /// not restore what the session is currently holding.
+    func releaseIdleResource() async throws -> PluginResourceRelease
+
     func resolveQueryCompletionProfile(
         databaseTypeId: String,
         base: QueryCompletionProfile
@@ -69,6 +78,13 @@ protocol DatabaseDriver: AnyObject, Sendable {
     ///   - parameters: Optional parameter list; nil means no parameter binding
     /// - Returns: Query result with `isTruncated` set when the cap clipped rows
     func executeUserQuery(query: String, rowCap: Int?, parameters: [Any?]?) async throws -> QueryResult
+
+    /// Run a read that stops once `rowCap` rows are known to be exceeded, rather than fetching the
+    /// whole result and discarding the tail. Returns nil when the driver cannot bound its own fetch.
+    ///
+    /// Call this only for a statement already classified as a read. Bounding means abandoning the
+    /// rest of the fetch, which for some drivers cancels the statement on the server.
+    func executeBoundedQuery(query: String, rowCap: Int) async throws -> QueryResult?
 
     // MARK: - Schema Operations
 
@@ -103,6 +119,7 @@ protocol DatabaseDriver: AnyObject, Sendable {
 
     /// Fetch triggers for a specific table
     func fetchTriggers(table: String) async throws -> [TriggerInfo]
+    func fetchCheckConstraints(table: String) async throws -> [CheckConstraintInfo]
 
     /// Trigger editing hooks (optional — nil when unsupported)
     func createTriggerTemplate(table: String) -> String?
@@ -138,6 +155,10 @@ protocol DatabaseDriver: AnyObject, Sendable {
     /// Fetch the DDL (CREATE TABLE statement) for a specific table
     func fetchTableDDL(table: String) async throws -> String
 
+    /// The CREATE INDEX statements this table needs that `fetchTableDDL` does not already declare.
+    /// Empty on an engine whose CREATE TABLE carries them inline. Default returns empty.
+    func fetchIndexDDL(table: String) async throws -> [String]
+
     /// Fetch dependent type definitions (e.g., PostgreSQL enum types) for a table.
     /// Returns array of (typeName, labels) pairs. Default returns empty.
     func fetchDependentTypes(forTable table: String) async throws -> [(name: String, labels: [String])]
@@ -171,6 +192,17 @@ protocol DatabaseDriver: AnyObject, Sendable {
     /// `identity` is the driver's own key for finding it again.
     func fetchRoutineDDL(_ routine: RoutineInfo) async throws -> String
 
+    /// Fetch every named type the user created in the given schema, or the current schema if nil.
+    func fetchUserDefinedTypes(schema: String?) async throws -> [UserDefinedTypeInfo]
+
+    /// Read one type again, definition and labels included. The type must be one this driver
+    /// listed, because its `identity` is the driver's own key for finding it again.
+    func fetchUserDefinedType(_ type: UserDefinedTypeInfo) async throws -> UserDefinedTypeInfo
+
+    func createTypeTemplate(schema: String?) -> String?
+    func generateAddEnumLabelSQL(type: UserDefinedTypeInfo, label: String, placement: EnumLabelPlacement?) -> String?
+    func generateRenameEnumLabelSQL(type: UserDefinedTypeInfo, from oldLabel: String, to newLabel: String) -> String?
+
     /// Fetch every trigger in the given schema, across all its tables.
     func fetchAllTriggers(schema: String?) async throws -> [TriggerInfo]
 
@@ -191,6 +223,12 @@ protocol DatabaseDriver: AnyObject, Sendable {
     func dropDatabase(name: String) async throws
 
     func dropSchema(name: String) async throws
+
+    func renameTable(name: String, schema: String?, to newName: String, objectType: String) async throws
+
+    func renameDatabase(name: String, to newName: String) async throws
+
+    func renameSchema(name: String, to newName: String) async throws
 
     func fetchSessionContexts() async throws -> [PluginSessionContext]?
 
@@ -287,6 +325,10 @@ extension DatabaseDriver {
         try await connect()
     }
 
+    func executeBoundedQuery(query: String, rowCap: Int) async throws -> QueryResult? { nil }
+
+    func fetchIndexDDL(table: String) async throws -> [String] { [] }
+
     func resolveQueryCompletionProfile(
         databaseTypeId: String,
         base: QueryCompletionProfile
@@ -327,6 +369,8 @@ extension DatabaseDriver {
 
     func fetchTriggers(table: String) async throws -> [TriggerInfo] { [] }
 
+    func fetchCheckConstraints(table: String) async throws -> [CheckConstraintInfo] { [] }
+
     func createTriggerTemplate(table: String) -> String? { nil }
     func fetchTriggerDefinition(name: String, table: String) async throws -> String? { nil }
     func generateDropTriggerSQL(name: String, table: String) -> String? { nil }
@@ -336,6 +380,10 @@ extension DatabaseDriver {
     func ping() async throws {
         _ = try await execute(query: "SELECT 1")
     }
+
+    var releasableResourceCommandTitle: String? { nil }
+
+    func releaseIdleResource() async throws -> PluginResourceRelease { .nothingToRelease }
 
     func testConnection() async throws -> Bool {
         try await connect()
@@ -351,6 +399,18 @@ extension DatabaseDriver {
     func dropSchema(name: String) async throws {
         throw NSError(domain: "DatabaseDriver", code: -1,
                       userInfo: [NSLocalizedDescriptionKey: "Drop schema is not supported by this driver"])
+    }
+
+    func renameTable(name: String, schema: String?, to newName: String, objectType: String) async throws {
+        throw PluginDriverUnsupportedOperation.renameTable
+    }
+
+    func renameDatabase(name: String, to newName: String) async throws {
+        throw PluginDriverUnsupportedOperation.renameDatabase
+    }
+
+    func renameSchema(name: String, to newName: String) async throws {
+        throw PluginDriverUnsupportedOperation.renameSchema
     }
 
     func createDatabaseFormSpec() async throws -> CreateDatabaseFormSpec? { nil }
@@ -507,6 +567,25 @@ extension DatabaseDriver {
         throw PluginObjectSourceError.unsupported(routine.name)
     }
 
+    func fetchUserDefinedTypes(schema: String?) async throws -> [UserDefinedTypeInfo] { [] }
+
+    func fetchUserDefinedType(_ type: UserDefinedTypeInfo) async throws -> UserDefinedTypeInfo {
+        guard let definition = type.definition, !definition.isEmpty else {
+            throw PluginObjectSourceError.unsupported(type.name)
+        }
+        return type
+    }
+
+    func createTypeTemplate(schema: String?) -> String? { nil }
+
+    func generateAddEnumLabelSQL(type: UserDefinedTypeInfo, label: String, placement: EnumLabelPlacement?) -> String? {
+        nil
+    }
+
+    func generateRenameEnumLabelSQL(type: UserDefinedTypeInfo, from oldLabel: String, to newLabel: String) -> String? {
+        nil
+    }
+
     func fetchAllTriggers(schema: String?) async throws -> [TriggerInfo] { [] }
 
     func fetchTriggerDDL(_ trigger: TriggerInfo) async throws -> String {
@@ -572,6 +651,7 @@ enum DatabaseDriverFactory {
             additionalFields["enableCleartextPlugin"] = "true"
         }
         additionalFields["queryTimeoutSeconds"] = String(AppSettingsManager.shared.general.queryTimeoutSeconds)
+        additionalFields["connectionId"] = connection.id.uuidString
         let config = DriverConnectionConfig(
             host: connection.host,
             port: connection.port,

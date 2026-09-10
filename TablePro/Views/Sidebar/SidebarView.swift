@@ -11,13 +11,14 @@ import TableProPluginKit
 struct SidebarView: View {
     @State private var viewModel: SidebarViewModel
     @State private var settingsManager = AppSettingsManager.shared
+    @State private var showsSchemaProgress = false
 
     private var schemaService: SchemaService { SchemaService.shared }
 
     var sidebarState: SharedSidebarState
     var windowState: WindowSidebarState
-    @Binding var pendingTruncates: Set<String>
-    @Binding var pendingDeletes: Set<String>
+    @Binding var pendingTruncates: Set<DatabaseTreeTableRef>
+    @Binding var pendingDeletes: Set<DatabaseTreeTableRef>
 
     var connectionId: UUID
     private weak var coordinator: MainContentCoordinator?
@@ -32,6 +33,10 @@ struct SidebarView: View {
 
     private var triggers: [TriggerInfo] {
         schemaService.triggers(for: connectionId)
+    }
+
+    private var userDefinedTypes: [UserDefinedTypeInfo] {
+        schemaService.userDefinedTypes(for: connectionId)
     }
 
     private var hasAnyMatch: Bool {
@@ -65,9 +70,9 @@ struct SidebarView: View {
     init(
         sidebarState: SharedSidebarState,
         windowState: WindowSidebarState,
-        pendingTruncates: Binding<Set<String>>,
-        pendingDeletes: Binding<Set<String>>,
-        tableOperationOptions: Binding<[String: TableOperationOptions]>,
+        pendingTruncates: Binding<Set<DatabaseTreeTableRef>>,
+        pendingDeletes: Binding<Set<DatabaseTreeTableRef>>,
+        tableOperationOptions: Binding<[DatabaseTreeTableRef: TableOperationOptions]>,
         databaseType: DatabaseType,
         connectionId: UUID,
         coordinator: MainContentCoordinator? = nil
@@ -123,10 +128,6 @@ struct SidebarView: View {
         }
         .onAppear {
             coordinator?.sidebarViewModel = viewModel
-            if let driver = DatabaseManager.shared.driver(for: connectionId),
-               coordinator?.toolbarState.databaseVersion == nil {
-                coordinator?.toolbarState.databaseVersion = driver.serverVersion
-            }
         }
         .onChange(of: viewModel.showOperationDialog) { _, isPresented in
             guard isPresented else { return }
@@ -143,7 +144,7 @@ struct SidebarView: View {
         }
         let prompt = TableOperationPrompt(
             operationType: operationType,
-            tableName: firstTable,
+            tableName: firstTable.table.name,
             tableCount: viewModel.pendingOperationTables.count,
             cascadeSupported: PluginManager.shared.supportsCascadeDrop(for: viewModel.databaseType),
             foreignKeyDisableSupported: PluginManager.shared.supportsForeignKeyDisable(for: viewModel.databaseType)
@@ -217,44 +218,72 @@ struct SidebarView: View {
 
     @ViewBuilder
     private var hierarchicalContent: some View {
-        switch schemaService.state(for: connectionId) {
-        case .idle, .loading:
-            loadingState
-        case .failed(let message):
-            errorState(message: message)
-        case .loaded:
-            SidebarTreeView(
-                connectionId: connectionId,
-                viewModel: viewModel,
-                windowState: windowState,
-                sidebarState: sidebarState,
-                pendingTruncates: $pendingTruncates,
-                pendingDeletes: $pendingDeletes,
-                coordinator: coordinator
-            )
+        let presentation = SidebarObjectListPresentation.resolveDeferringEmptyStates(
+            state: schemaService.state(for: connectionId),
+            hasOutlastedGrace: showsSchemaProgress
+        )
+        Group {
+            switch presentation {
+            case .preparing:
+                Color.clear
+            case .failed(let message):
+                errorState(message: message)
+            case .loading:
+                loadingState
+            case .noMatch, .empty, .list:
+                SidebarTreeView(
+                    connectionId: connectionId,
+                    viewModel: viewModel,
+                    windowState: windowState,
+                    sidebarState: sidebarState,
+                    pendingTruncates: $pendingTruncates,
+                    pendingDeletes: $pendingDeletes,
+                    coordinator: coordinator
+                )
+            }
         }
+        .loadingRevealGate(
+            isActive: presentation == .preparing || presentation == .loading,
+            isRevealed: $showsSchemaProgress
+        )
     }
 
-    @ViewBuilder
-    private var flatContent: some View {
-        switch SidebarObjectListPresentation.resolve(
+    private var objectListPresentation: SidebarObjectListPresentation {
+        SidebarObjectListPresentation.resolve(
             state: schemaService.state(for: connectionId),
             hasActiveFilter: !viewModel.filterQuery.isEmpty,
             hasAnyMatch: hasAnyMatch,
-            hasRoutines: !routines.isEmpty,
-            hasTriggers: !triggers.isEmpty
-        ) {
-        case .loading:
-            loadingState
-        case .failed(let message):
-            errorState(message: message)
-        case .noMatch:
-            noMatchState
-        case .empty:
-            emptyState
-        case .list:
-            tableList
+            hasSideObjects: !routines.isEmpty || !triggers.isEmpty || !userDefinedTypes.isEmpty,
+            hasOutlastedGrace: showsSchemaProgress
+        )
+    }
+
+    /// Asked above the switch rather than inside its loading branch, so which of the two the
+    /// column renders stays a decision of the pure resolver that already owns every other one,
+    /// and is tested there rather than buried in a view.
+    @ViewBuilder
+    private var flatContent: some View {
+        let presentation = objectListPresentation
+        Group {
+            switch presentation {
+            case .preparing:
+                Color.clear
+            case .loading:
+                loadingState
+            case .failed(let message):
+                errorState(message: message)
+            case .noMatch:
+                noMatchState
+            case .empty:
+                emptyState
+            case .list:
+                tableList
+            }
         }
+        .loadingRevealGate(
+            isActive: presentation == .preparing || presentation == .loading,
+            isRevealed: $showsSchemaProgress
+        )
     }
 
     private var loadingState: some View {
@@ -338,6 +367,7 @@ struct SidebarView: View {
         case .table:   return viewModel.filteredTables(of: kind, from: tables).count
         case .routine: return viewModel.filteredRoutines(of: kind, from: routines).count
         case .trigger: return viewModel.filteredTriggers(from: triggers).count
+        case .type:    return viewModel.filteredUserTypes(from: userDefinedTypes).count
         }
     }
 }

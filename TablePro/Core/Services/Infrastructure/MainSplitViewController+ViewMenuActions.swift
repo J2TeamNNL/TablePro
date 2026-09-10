@@ -10,18 +10,33 @@ extension MainSplitViewController {
         toggleWorkspaceRail()
     }
 
+    /// Switching which connection the window shows is the window's own business, so it acts on the
+    /// registry directly the way `toggleWorkspaceRail(_:)` already does. Routing it through the
+    /// selected connection's `commandActions` made it a no-op exactly when it was needed: that
+    /// connection losing its session is what leaves the others unreachable.
     @objc func showPreviousWorkspace(_ sender: Any?) {
-        commandActions?.showPreviousWorkspace()
+        activateWorkspace(offsetBy: -1)
     }
 
     @objc func showNextWorkspace(_ sender: Any?) {
-        commandActions?.showNextWorkspace()
+        activateWorkspace(offsetBy: 1)
     }
 
     @objc func setResultView(_ sender: Any?) {
         guard let raw = (sender as? NSMenuItem)?.representedObject as? String,
               let mode = ResultsViewMode(rawValue: raw) else { return }
         commandActions?.setResultsViewMode(mode)
+    }
+
+    /// The sidebar belongs to the window, so these act on it directly rather than through the
+    /// selected connection's actions, matching `toggleWorkspaceRail(_:)`. They reveal rather than
+    /// toggle: Show Tables invoked while tables are showing has to leave them showing.
+    @objc func showTablesSidebarTab(_ sender: Any?) {
+        revealSidebarTab(.tables)
+    }
+
+    @objc func showFavoritesSidebarTab(_ sender: Any?) {
+        revealSidebarTab(.favorites)
     }
 
     @objc func useFlatSidebarLayout(_ sender: Any?) {

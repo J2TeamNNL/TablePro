@@ -46,13 +46,31 @@ struct MainWindowToolbarInspectorPlacementTests {
         #expect(MainWindowToolbar.defaultItemIdentifiers.last == MainWindowToolbar.inspector)
     }
 
-    @Test("A flexible space anchors the inspector toggle to the window edge")
+    /// One flexible space, immediately after the separator, is what pushes the whole trailing group
+    /// to the window edge. Everything after it is a pane toggle; a second flexible space in there
+    /// would split the group and let the items drift apart as the pane opens.
+    @Test("A flexible space anchors the trailing toggles to the window edge")
     func flexibleSpaceSeparatesTheTrackingSeparatorFromTheToggle() throws {
         let identifiers = MainWindowToolbar.defaultItemIdentifiers
         let separatorIndex = try #require(identifiers.firstIndex(of: .inspectorTrackingSeparator))
         let toggleIndex = try #require(identifiers.firstIndex(of: MainWindowToolbar.inspector))
         #expect(separatorIndex < toggleIndex)
-        #expect(Array(identifiers[(separatorIndex + 1) ..< toggleIndex]) == [.flexibleSpace])
+        #expect(identifiers[separatorIndex + 1] == .flexibleSpace)
+
+        let trailingGroup = Array(identifiers[(separatorIndex + 2) ..< toggleIndex])
+        #expect(!trailingGroup.contains(.flexibleSpace))
+        #expect(trailingGroup.allSatisfy { $0 == MainWindowToolbar.assistant })
+    }
+
+    /// The assistant shares the trailing edge with the inspector, because the two of them drive one
+    /// pane.
+    @Test("The assistant toggle sits beside the inspector toggle")
+    func assistantSitsBesideTheInspectorToggle() throws {
+        let identifiers = MainWindowToolbar.defaultItemIdentifiers
+        let assistantIndex = try #require(identifiers.firstIndex(of: MainWindowToolbar.assistant))
+        let toggleIndex = try #require(identifiers.firstIndex(of: MainWindowToolbar.inspector))
+        #expect(assistantIndex + 1 == toggleIndex)
+        #expect(MainWindowToolbar.allowedItemIdentifiers.contains(MainWindowToolbar.assistant))
     }
 
     /// Ahead of the separator the toggle lands in the content section, which measured wrong in both
@@ -225,62 +243,15 @@ struct MainWindowToolbarCustomizationTests {
         #expect(owner.sidebarGroup === live)
     }
 
-    /// The identifier is the autosave name. Changing it silently discards every user's arrangement,
-    /// which is what the v1 to v2 move already cost once.
+    /// The identifier is the autosave name, and changing it discards every user's arrangement. It
+    /// moved to v3 with the rewrite that dropped the hosted status item, because a stored v2 list
+    /// names identifiers the delegate no longer vends and would leave those users the crowded
+    /// toolbar the rewrite exists to fix. It moved to v4 for the throughput readout, whose
+    /// identifier a stored v3 arrangement does not name, so a reader who had customized the toolbar
+    /// would never see it. It is not free, so it does not move again without the same
+    /// justification.
     @Test("The toolbar identifier is stable")
     func identifierIsStable() {
-        #expect(MainWindowToolbar.toolbarIdentifier == "com.TablePro.main.toolbar.v2")
-    }
-}
-
-@MainActor
-struct MainWindowToolbarHostedSizingTests {
-    private static let hostedIdentifiers: [NSToolbarItem.Identifier] = [
-        MainWindowToolbar.connectionGroup,
-        MainWindowToolbar.principal,
-    ]
-
-    private func vendHostedItems() -> MainWindowToolbar {
-        let owner = MainWindowToolbar()
-        for identifier in Self.hostedIdentifiers {
-            _ = owner.toolbar(
-                owner.managedToolbar,
-                itemForItemIdentifier: identifier,
-                willBeInsertedIntoToolbar: true
-            )
-        }
-        return owner
-    }
-
-    /// AppKit measures a view-backed item when it is inserted and never reads that size again, so
-    /// the hosting view has to resize itself. Under `.intrinsicContentSize` it does not, and the
-    /// leading group kept the width of the connection the window had switched away from until the
-    /// user clicked the toolbar.
-    @Test("Hosted toolbar items size themselves from the preferred content size")
-    func hostedItemsSizeFromPreferredContentSize() throws {
-        let owner = vendHostedItems()
-        for identifier in Self.hostedIdentifiers {
-            let controller = try #require(owner.hostingControllers[identifier])
-            #expect(controller.sizingOptions == .preferredContentSize, "\(identifier.rawValue)")
-        }
-    }
-
-    /// Measured on macOS 27: `[.minSize, .intrinsicContentSize, .maxSize]` shrinks the hosted
-    /// content but leaves AppKit's item container at the old width, drawing the new content
-    /// centred inside the old box. That is the artifact this suite exists to keep out.
-    @Test("Hosted toolbar items never size from the intrinsic content size")
-    func hostedItemsNeverSizeFromIntrinsicContentSize() throws {
-        let owner = vendHostedItems()
-        for identifier in Self.hostedIdentifiers {
-            let controller = try #require(owner.hostingControllers[identifier])
-            #expect(!controller.sizingOptions.contains(.intrinsicContentSize), "\(identifier.rawValue)")
-        }
-    }
-
-    /// Both hosted items are built through the same two helpers, so the contract belongs to the
-    /// helpers rather than to either call site.
-    @Test("Every hosted item shares one sizing contract")
-    func hostedItemsShareOneSizingContract() {
-        #expect(MainWindowToolbar.hostedItemSizingOptions == .preferredContentSize)
+        #expect(MainWindowToolbar.toolbarIdentifier == "com.TablePro.main.toolbar.v4")
     }
 }

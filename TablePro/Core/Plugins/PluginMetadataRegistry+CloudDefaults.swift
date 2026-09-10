@@ -20,7 +20,6 @@ extension PluginMetadataRegistry {
                 brandColorHex: "#4053D6",
                 queryLanguageName: "PartiQL", editorLanguage: .sql,
                 connectionMode: .apiOnly, supportsDatabaseSwitching: false,
-                supportsColumnReorder: false,
                 capabilities: PluginMetadataSnapshot.CapabilityFlags(
                     supportsSchemaSwitching: false,
                     supportsImport: false,
@@ -167,7 +166,6 @@ extension PluginMetadataRegistry {
                 brandColorHex: "#4285F4",
                 queryLanguageName: "SQL", editorLanguage: .sql,
                 connectionMode: .apiOnly, supportsDatabaseSwitching: false,
-                supportsColumnReorder: false,
                 capabilities: PluginMetadataSnapshot.CapabilityFlags(
                     supportsSchemaSwitching: true,
                     supportsImport: false,
@@ -359,7 +357,6 @@ extension PluginMetadataRegistry {
                 brandColorHex: "#29B5E8",
                 queryLanguageName: "SQL", editorLanguage: .sql,
                 connectionMode: .apiOnly, supportsDatabaseSwitching: true,
-                supportsColumnReorder: false,
                 capabilities: PluginMetadataSnapshot.CapabilityFlags(
                     supportsSchemaSwitching: true,
                     supportsImport: true,
@@ -485,6 +482,7 @@ extension PluginMetadataRegistry {
                         booleanLiteralStyle: .truefalse,
                         likeEscapeStyle: .explicit,
                         paginationStyle: .limit,
+                        requiresBackslashEscaping: true,
                         caseSensitivityStyle: .ilikeOperator
                     ),
                     statementCompletions: [

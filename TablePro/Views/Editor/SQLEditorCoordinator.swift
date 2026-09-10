@@ -247,10 +247,10 @@ final class SQLEditorCoordinator: TextViewCoordinator, TextViewDelegate {
         vimCursorManager?.updatePosition()
         statementRunController.refreshHighlight(in: controller)
 
-        // When the find panel navigates to a match, it changes the selection
-        // but the editor is not first responder. Scroll to the match manually
-        // because CodeEditTextView's scrollSelectionToVisible() fails for
-        // off-screen matches (TextSelection.boundingRect is .zero until drawn).
+        // A find match is centred rather than nudged just far enough into view, so the next and previous matches
+        // land in the same place instead of hugging whichever edge they came from. The editor's own
+        // `scrollSelectionToVisible` deliberately scrolls the minimum distance, which is right when the user is
+        // extending a selection and wrong when they are stepping through matches.
         guard !isEditorFirstResponder else { return }
         guard let range = newPositions.first?.range, range.location != NSNotFound else { return }
 
@@ -314,6 +314,7 @@ final class SQLEditorCoordinator: TextViewCoordinator, TextViewDelegate {
 
     private func installStatementRunControls(controller: TextViewController) {
         statementRunController.dialect = SqlDialect.from(databaseTypeId: (databaseType ?? .mysql).rawValue)
+        statementRunController.statementModel = QueryStatementModel.forDatabaseType(databaseType ?? .mysql)
         statementRunController.isHighlightEnabled = AppSettingsManager.shared.editor.highlightCurrentStatement
         statementRunController.onRun = { [weak self] sql, offset in
             self?.onRunStatement?(sql, offset) ?? false
@@ -349,7 +350,11 @@ final class SQLEditorCoordinator: TextViewCoordinator, TextViewDelegate {
     @discardableResult
     func jumpToStatement(_ anchor: StatementAnchor) -> Bool {
         guard let controller, let textView = controller.textView else { return false }
-        guard let range = anchor.resolve(in: textView.string, dialect: statementRunController.dialect) else {
+        guard let range = anchor.resolve(
+            in: textView.string,
+            model: statementRunController.statementModel,
+            dialect: statementRunController.dialect
+        ) else {
             return false
         }
         controller.moveCursor(to: range.location)

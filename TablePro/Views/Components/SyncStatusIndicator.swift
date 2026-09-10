@@ -126,7 +126,7 @@ struct SyncStatusIndicator: View {
         case .disabled(.licenseUnverified):
             Task { await LicenseManager.shared.revalidate() }
         default:
-            WindowOpener.shared.openSettings(tab: .account)
+            WindowOpener.shared.openSettings(tab: .sync)
         }
     }
 }

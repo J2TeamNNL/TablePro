@@ -21,17 +21,10 @@ struct TableProMobileApp: App {
     var body: some Scene {
         WindowGroup {
             ZStack {
-                Group {
-                    if appState.hasCompletedOnboarding {
-                        ConnectionListView()
-                            .environment(appState)
-                    } else {
-                        OnboardingView()
-                            .environment(appState)
-                    }
-                }
-                .blur(radius: lockState.isLocked ? 20 : 0)
-                .allowsHitTesting(!lockState.isLocked)
+                SceneRootView(connectionManager: appState.connectionManager)
+                    .environment(appState)
+                    .blur(radius: lockState.isLocked ? 20 : 0)
+                    .allowsHitTesting(!lockState.isLocked)
 
                 if lockState.isLocked {
                     LockScreenView()
@@ -77,6 +70,7 @@ struct TableProMobileApp: App {
             lockState.handleScenePhase(phase)
             switch phase {
             case .active:
+                Task { await appState.queryActivities.reapOrphans() }
                 appState.backgroundRelease.cancelPreparation()
                 MemoryPressureMonitor.shared.start()
                 appState.retryLoadIfFailed()
@@ -105,7 +99,12 @@ struct TableProMobileApp: App {
                 heartbeatTask?.cancel()
                 heartbeatTask = nil
                 heartbeatService = nil
-                Task { await appState.backgroundRelease.releaseForSuspension() }
+                Task {
+                    let released = await appState.backgroundRelease.releaseForSuspension()
+                    for connectionId in released {
+                        await appState.queryActivities.endEverything(forConnection: connectionId, outcome: .interrupted)
+                    }
+                }
                 scheduleBackgroundSync()
             default:
                 break

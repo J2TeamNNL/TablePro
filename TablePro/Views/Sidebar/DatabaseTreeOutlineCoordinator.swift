@@ -10,7 +10,7 @@ import SwiftUI
 import TableProPluginKit
 
 @MainActor
-final class DatabaseTreeOutlineCoordinator: NSObject {
+final class DatabaseTreeOutlineCoordinator: NSObject, NSTextFieldDelegate {
     internal weak var outlineView: NSOutlineView?
     internal let service = DatabaseTreeMetadataService.shared
     private static let cellIdentifier = NSUserInterfaceItemIdentifier("DatabaseTreeCell")
@@ -27,8 +27,8 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
     private var isConnected = false
     internal var activeDatabase: String?
     internal var activeSchema: String?
-    private var pendingTruncates: Set<String> = []
-    private var pendingDeletes: Set<String> = []
+    private var pendingTruncates: Set<DatabaseTreeTableRef> = []
+    private var pendingDeletes: Set<DatabaseTreeTableRef> = []
     internal var showRecentTables = true
     private var rowSize: SidebarRowSize = .medium
 
@@ -38,11 +38,14 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
     /// Whether a routine row shows its signature depends on the other rows in its own section, so
     /// the label is decided where the section is built and looked up here when the row draws.
     internal var routineDisplayLabels: [String: String] = [:]
+
+    /// A rename in progress, held as identity only. See `DatabaseTreeOutlineCoordinator+Rename`.
+    internal var renameSession: DatabaseTreeRenameSession?
     private var cachedRowContext: DatabaseTreeRowContext?
     private var cachedRowActions: DatabaseTreeRowActions?
     private var lastSelection: Set<DatabaseTreeTableRef> = []
     private var lastSelectedNodeIds: [String] = []
-    private var publishedTables: Set<TableInfo> = []
+    private var publishedTables: Set<DatabaseTreeTableRef> = []
     private var publishedSelectionDatabase: String?
     private var isModelSelectionAdoptionPending = false
     private var openSelectionDepth = 0
@@ -61,6 +64,7 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
     private var favoriteTables: Set<FavoriteTablesStorage.FavoriteEntry> = []
     private var favoriteDatabases: Set<FavoriteDatabaseEntry> = []
     private let favoritesObservers = OSAllocatedUnfairLock<[any NSObjectProtocol]>(uncheckedState: [])
+    private var observedAppearance = DatabaseTreeOutlineCoordinator.objectListAppearance()
 
     init(
         favoriteTablesStorage: FavoriteTablesStorage = .shared,
@@ -104,6 +108,47 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
             }
         }
         favoritesObservers.withLockUnchecked { $0.append(databaseObserver) }
+        observeObjectListAppearance()
+    }
+
+    /// The rows repaint from the setting rather than from the command that wrote it, so the same
+    /// change arrives whether it came from the View Options control in the filter row, the
+    /// empty-area menu, or Settings. Toggling Show Object Icons in Settings used to repaint
+    /// nothing, because only the contextual menu's own handler called `refreshVisibleRows`.
+    ///
+    /// Re-arms itself, because `withObservationTracking` fires once per registration.
+    ///
+    /// The macro registers access on the stored `general` property rather than on the two fields
+    /// read inside it, so this wakes on every `GeneralSettings` write, the query timeout and the
+    /// sync write-back included. `refreshVisibleRows` reconfigures every row of every open window,
+    /// so the two values are compared before it runs.
+    private func observeObjectListAppearance() {
+        withObservationTracking {
+            _ = AppSettingsManager.shared.general
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                let appearance = Self.objectListAppearance()
+                if appearance != self.observedAppearance {
+                    self.observedAppearance = appearance
+                    self.refreshVisibleRows()
+                }
+                self.observeObjectListAppearance()
+            }
+        }
+    }
+
+    private static func objectListAppearance() -> ObjectListAppearance {
+        let settings = AppSettingsManager.shared.general
+        return ObjectListAppearance(
+            showsIcons: settings.showObjectIcons,
+            showsComments: settings.showObjectComments
+        )
+    }
+
+    internal struct ObjectListAppearance: Equatable {
+        internal let showsIcons: Bool
+        internal let showsComments: Bool
     }
 
     deinit {
@@ -211,17 +256,19 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
                 _ = service.tablesLoadState(connectionId: connectionId, database: metadata.name, schema: nil)
                 _ = service.routinesLoadState(connectionId: connectionId, database: metadata.name, schema: nil)
                 _ = service.triggersLoadState(connectionId: connectionId, database: metadata.name, schema: nil)
+                _ = service.typesLoadState(connectionId: connectionId, database: metadata.name, schema: nil)
             case .schema(let database, let schema):
                 _ = service.tablesLoadState(connectionId: connectionId, database: database, schema: schema)
                 _ = service.routinesLoadState(connectionId: connectionId, database: database, schema: schema)
                 _ = service.triggersLoadState(connectionId: connectionId, database: database, schema: schema)
+                _ = service.typesLoadState(connectionId: connectionId, database: database, schema: schema)
             case .hierarchicalSchemaSection(let schema):
                 _ = schemaService.schemaState(for: connectionId, schema: schema)
             case .table(let ref) where ref.table.type == .partitionedTable:
                 _ = service.partitionsLoadState(
                     connectionId: connectionId, database: ref.database ?? "", schema: ref.schema, table: ref.table.name
                 )
-            case .recentSection, .recentTable, .table, .routine, .trigger, .status,
+            case .recentSection, .recentTable, .table, .routine, .trigger, .userType, .status,
                  .objectKindSection, .containerObjectKindSection,
                  .redisKeysSection, .redisNode:
                 break
@@ -239,6 +286,7 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
         outlineView.reloadData()
         applyDesiredExpansion()
         syncSelectionToModel()
+        restoreRenameAfterReload()
         isReloading = false
         beginObserving()
     }
@@ -368,9 +416,15 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
         publishedTables = selectedTables
         publishedSelectionDatabase = selectionDatabase
 
+        /// Matched on the object and scoped to the database on screen, in that order, rather than
+        /// on the whole reference. The model holds the row the user picked, database included, but
+        /// browsing elsewhere is meant to move the highlight onto that database's copy of the same
+        /// object; comparing references pins it to the database it was picked in and leaves the
+        /// tree with nothing selected the moment the browse cursor moves.
+        let selectedObjects = Set(selectedTables.map(\.table))
         var nodes: [DatabaseTreeNode] = []
         for node in nodeCache.values {
-            guard case .table(let ref) = node.kind, selectedTables.contains(ref.table) else { continue }
+            guard case .table(let ref) = node.kind, selectedObjects.contains(ref.table) else { continue }
             guard selectionDatabase == nil || ref.database == selectionDatabase else { continue }
             nodes.append(node)
         }
@@ -378,7 +432,7 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
         lastSelection = Set(DatabaseTreeSelection.tableRefs(of: nodes))
         /// Still pending while a selected table has no row in the database being browsed: the row is
         /// usually one that has not been built yet, and the next sync adopts it.
-        isModelSelectionAdoptionPending = Set(lastSelection.map(\.table)) != selectedTables
+        isModelSelectionAdoptionPending = Set(lastSelection.map(\.table)) != selectedObjects
     }
 
     private var modelSelectionDatabase: String? {
@@ -423,7 +477,7 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
     private func publishSelection() {
         guard let windowState else { return }
         let nodes = selectedNodes()
-        let tables = DatabaseTreeSelection.tableInfos(of: nodes)
+        let tables = Set(DatabaseTreeSelection.tableRefs(of: nodes))
         publishedTables = tables
         publishedSelectionDatabase = modelSelectionDatabase
         isModelSelectionAdoptionPending = false
@@ -536,6 +590,7 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
         switch kind {
         case .procedure, .function: Task { await mainCoordinator.refreshRoutines() }
         case .trigger: Task { await mainCoordinator.refreshTriggers() }
+        case .type: Task { await mainCoordinator.refreshUserDefinedTypes() }
         case .table, .view, .materializedView, .foreignTable: Task { await mainCoordinator.refreshTables() }
         }
     }
@@ -558,6 +613,12 @@ final class DatabaseTreeOutlineCoordinator: NSObject {
                 )
             case .trigger:
                 await service.refreshTriggerObjects(
+                    connectionId: connectionId,
+                    database: group.database,
+                    schema: group.schema
+                )
+            case .type:
+                await service.refreshUserDefinedTypeObjects(
                     connectionId: connectionId,
                     database: group.database,
                     schema: group.schema
@@ -638,6 +699,42 @@ extension DatabaseTreeOutlineCoordinator: NSOutlineViewDataSource {
 
     func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
         (item as? DatabaseTreeNode)?.isExpandable ?? false
+    }
+}
+
+extension DatabaseTreeOutlineCoordinator {
+    // MARK: - NSTextFieldDelegate
+
+    /// The rename editor's callbacks. They live here rather than in the rename extension because
+    /// they are `@objc` and an extension cannot supply them for the conformance.
+    internal func controlTextDidChange(_ obj: Notification) {
+        guard let field = obj.object as? NSTextField else { return }
+        renameSession?.pendingName = field.stringValue
+    }
+
+    /// The click-away path, which commits the way Finder and the Xcode navigator do.
+    internal func controlTextDidEndEditing(_ obj: Notification) {
+        guard renameSession != nil else { return }
+        endRename(commit: true)
+    }
+
+    internal func control(
+        _ control: NSControl,
+        textView: NSTextView,
+        doCommandBy selector: Selector
+    ) -> Bool {
+        if selector == #selector(NSResponder.insertNewline(_:)) {
+            endRename(commit: true)
+            return true
+        }
+        if selector == #selector(NSResponder.cancelOperation(_:)) {
+            /// `abortEditing` discards the edit without posting `controlTextDidEndEditing`, so the
+            /// cancel does not immediately arrive back as a commit.
+            (control as? NSTextField)?.abortEditing()
+            endRename(commit: false)
+            return true
+        }
+        return false
     }
 }
 

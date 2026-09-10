@@ -69,8 +69,15 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
     var displayIDs: [RowID]? { valueFilteredIDs }
     private(set) var columnDisplayFormats: [ValueDisplayFormat?] = []
     private(set) var currentFindMatch: FindMatch?
-    private let displayCache = RowDisplayCache()
+    /// Owned by whoever outlives this coordinator when there is one, so a remount reuses the text it
+    /// already formatted instead of formatting the whole result again. A grid with no owner keeps
+    /// its own, which is all a structure or create-table grid ever needs. (#2424)
+    private(set) var displayState = DataGridDisplayState()
+    var displayCache: RowDisplayCache { displayState.cache }
+    var pendingScrollAnchorRow: Int?
+    var pendingColumnJump: PendingColumnJump?
     weak var delegate: (any DataGridViewDelegate)?
+    var rowReorder: DataGridRowReorder = .disabled
     weak var activeFKPreviewPopover: NSPopover?
     weak var activeCellEditorPopover: NSPopover?
     weak var activePoppedOutEditor: JSONViewerWindowController?
@@ -79,7 +86,7 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
     var activeFKPreviewColumnIndex: Int?
     var dropdownColumns: Set<Int>?
     var typePickerColumns: Set<Int>?
-    var customDropdownOptions: [Int: [String]]?
+    var customDropdownOptions: [Int: [GridMenuOption]]?
     var connectionId: UUID?
     var databaseType: DatabaseType?
     var tableName: String?
@@ -93,7 +100,25 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
     private(set) var identitySchema: ColumnIdentitySchema = .empty
     var currentSortState = SortState()
 
+    /// The direction a first click on an unsorted column produces.
+    ///
+    /// `SortableHeaderView` and `DataGridColumnPool` are shared with the Structure, Create Table and
+    /// Inspector grids, which list columns rather than rows and have nothing to do with a Data Grid
+    /// setting, so the grid says whether the preference is its own.
+    var appliesRowSortPreferences: Bool = false
+
+    var firstClickSortDirection: SortDirection {
+        guard appliesRowSortPreferences else { return .ascending }
+        return AppSettingsManager.shared.dataGrid.defaultSortDirection
+    }
+
     private var columnIndexByDataIndex: [Int: Int] = [:]
+    /// Display position to data index, rebuilt lazily. `presentedDataColumns` reads it; a drag and
+    /// the cell-range fill both ask per event and per row, and deriving it walks every attached
+    /// column, so it is not a lookup to repeat. See `DataGridView+ColumnDisplayOrder`.
+    var cachedPresentedDataColumns: [Int]?
+    /// The reverse of `cachedPresentedDataColumns`, invalidated with it.
+    var cachedDisplayPositionByDataColumn: [Int: Int]?
     private static let selectionCacheLogger = Logger(subsystem: "com.TablePro", category: "DataGrid.ColumnIndexCache")
 
     func tableColumnIndex(for dataIndex: Int) -> Int? {
@@ -113,7 +138,33 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
         storedValueFilterState = state
     }
 
+    /// Takes over the formatted text and viewport anchor the owner kept while no grid was mounted.
+    ///
+    /// The owner hands back a fresh state whenever the inputs that decide the text have moved, so
+    /// there is nothing to validate here.
+    func adoptDisplayState(_ state: DataGridDisplayState) {
+        guard state !== displayState else { return }
+        displayState = state
+        pendingScrollAnchorRow = state.firstVisibleRow
+        /// Both directions, because either side can be the one that knows. A fresh coordinator
+        /// takes the schema and formats the state carries, so its first update does not report them
+        /// as a change and clear the text. A state handed over while the grid stays mounted carries
+        /// neither, and the writers that would fill them are change-gated and will not fire, so it
+        /// takes them from here instead and the next remount still restores.
+        if let schema = state.identitySchema {
+            identitySchema = schema
+        } else {
+            state.identitySchema = identitySchema
+        }
+        if let formats = state.displayFormats {
+            columnDisplayFormats = formats
+        } else {
+            state.displayFormats = columnDisplayFormats
+        }
+    }
+
     func invalidateColumnIndexCache() {
+        invalidatePresentedColumnCache()
         guard !columnIndexByDataIndex.isEmpty else { return }
         Self.selectionCacheLogger.debug("invalidate column index cache (had \(self.columnIndexByDataIndex.count))")
         columnIndexByDataIndex.removeAll()
@@ -161,12 +212,6 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
         return columnPool.previousPresentedColumnIndex(before: index, in: tableView)
     }
 
-    /// The single way to reach a column, for Find, cell navigation and the inline editor alike.
-    func scrollColumnToVisible(tableColumnIndex index: Int) {
-        guard let tableView, index >= 0, index < tableView.numberOfColumns else { return }
-        tableView.scrollColumnToVisible(index)
-    }
-
     /// The columns the user is looking at, which is every presented column and not merely the
     /// mounted ones. Copy, find and size-all all read this, so narrowing it to the window would
     /// silently drop the columns off screen from a copied row or a search.
@@ -210,13 +255,27 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
         schemaName = configuration.schemaName
         primaryKeyColumns = configuration.primaryKeyColumns
         tabType = configuration.tabType
+        appliesRowSortPreferences = configuration.appliesRowSortPreferences
     }
 
+    /// A grid with no table behind it keeps a saved column order only while its columns are still the
+    /// ones that order was saved for.
+    ///
+    /// A query result's columns are authored by the SELECT list and their order is meaningful, so an
+    /// order saved for a different set must not be replayed over it: `computeTargetOrder` appends
+    /// every column the saved order does not name, which landed a newly written column at the far
+    /// right instead of where it was typed (#1565). Dropping the order outright answered that and
+    /// also threw away orders the columns had never moved under, so a reorder was captured, persisted
+    /// and then silently undone on the next update.
     func savedColumnLayout(binding: ColumnLayoutState) -> ColumnLayoutState? {
         guard tabType == .table else {
-            guard !binding.columnWidths.isEmpty || binding.columnContentWidths?.isEmpty == false else { return nil }
             var layout = binding
-            layout.columnOrder = nil
+            if let order = layout.columnOrder, !canRestoreColumnOrder(order) {
+                layout.columnOrder = nil
+            }
+            guard !layout.columnWidths.isEmpty
+                || layout.columnContentWidths?.isEmpty == false
+                || layout.columnOrder?.isEmpty == false else { return nil }
             return layout
         }
 
@@ -229,6 +288,15 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
             return nil
         }
         return binding
+    }
+
+    /// A saved order is a list of names, and a name identifies a column only while the names are
+    /// unique. `SELECT a.id, b.id` gives two columns called `id`, and `ColumnIdentitySchema` resolves
+    /// a duplicate name to its last slot, so replaying such an order swaps the two columns.
+    private func canRestoreColumnOrder(_ order: [String]) -> Bool {
+        let columns = identitySchema.columnNames
+        let names = Set(columns)
+        return names.count == columns.count && Set(order) == names
     }
 
     /// A saved width is the width the column had, accessory or not. Nothing here re-derives it from
@@ -417,6 +485,7 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
         for row in rows {
             (tableView.rowView(atRow: row, makeIfNecessary: false) as? DataGridRowView)?.redrawCells()
         }
+        repaintRowGutter()
     }
 
     /// Repaints one drawn cell, which is what a mounted cell got from `setNeedsDisplay` on itself.
@@ -432,6 +501,7 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
 
     var settingsCancellable: AnyCancellable?
     var themeCancellable: AnyCancellable?
+    var systemTimeZoneCancellable: AnyCancellable?
     private var accessibilityActivationObserver: (any NSObjectProtocol)?
     private var accessibilityMountedRows = NSRange(location: 0, length: 0)
     private var lastDataGridSettings: DataGridSettings
@@ -449,6 +519,20 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
     /// to widen these, because nobody chose their width.
     var unownedRestoredColumnNames: Set<String> = []
     var isApplyingProgrammaticRowSelection = false
+    /// Called on the way out with what this grid had selected, so an owner can keep it.
+    var onSelectionTeardown: (@MainActor (Set<Int>, GridSelection) -> Void)?
+    /// Whether the owner's stored selection has been put back yet. A restore is one-shot per mount:
+    /// after it, the reader's own gestures are the only thing that moves the selection.
+    var hasRestoredSelection = false
+    weak var rowGutter: DataGridRowGutterView?
+    weak var rowGutterHeader: DataGridRowGutterHeaderView?
+    /// The last value `publishRowSelection()` wrote, or nil before it has written one. `nil` has to
+    /// mean "nothing published yet" rather than "empty", or a tab restoring an empty selection would
+    /// be mistaken for one this coordinator produced and never reach the table view.
+    private(set) var lastPublishedRowSelection: Set<Int>?
+    /// What `NSTableView.selectedRowIndexes` last reported, which is what `resolvedFocus` compares
+    /// against. The binding cannot serve, because it carries the cell selection's rows too.
+    var lastTableViewRowSelection: Set<Int> = []
     var isRebuildingColumns: Bool = false
     var hasUnpersistedColumnLayoutChanges = false
     var shouldRecalculateAutomaticColumnWidths = false
@@ -459,11 +543,11 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
     var pendingColumnLayoutPersistence: PendingColumnLayoutPersistence?
     var columnLayoutPersistenceGeneration = 0
     var lastUpdateSnapshot: DataGridUpdateSnapshot?
-    private var prewarmTask: Task<Void, Never>?
-    private var prewarmResumeTask: Task<Void, Never>?
-    private var scrollObservers: [NSObjectProtocol] = []
-    private static let prewarmFrameBudget: Duration = .milliseconds(2)
-    private static let prewarmResumeDelay: Duration = .milliseconds(300)
+    var prewarmTask: Task<Void, Never>?
+    var prewarmResumeTask: Task<Void, Never>?
+    var scrollObservers: [NSObjectProtocol] = []
+    static let prewarmFrameBudget: Duration = .milliseconds(2)
+    static let prewarmResumeDelay: Duration = .milliseconds(300)
 
     static let rowViewIdentifier = NSUserInterfaceItemIdentifier("TableRowView")
     let visualIndex = RowVisualIndex()
@@ -490,6 +574,7 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
         updateCache()
 
         observeThemeChanges()
+        observeSystemTimeZoneChanges()
         observeAccessibilityActivation()
 
         settingsCancellable = AppEvents.shared.dataGridSettingsChanged
@@ -516,13 +601,7 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
             || previous.enableSmartValueDetection != settings.enableSmartValueDetection
 
         if dataChanged {
-            invalidateDisplayCache()
-            let visibleRect = tableView.visibleRect
-            let visibleRange = tableView.rows(in: visibleRect)
-            if visibleRange.length > 0 {
-                repaintRows(IndexSet(integersIn: visibleRange.location..<(visibleRange.location + visibleRange.length)))
-            }
-            startBackgroundPrewarm()
+            reformatDisplayedText()
         }
     }
 
@@ -531,6 +610,11 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.reloadVisibleRowsAndStates()
+                /// The row-number font is a theme value and it decides the column's width, which
+                /// the pinned gutter mirrors. Nothing re-measured it on a theme change before, so
+                /// the width was already going stale here.
+                self?.resizeRowNumberColumnForCurrentRange()
+                self?.repaintRowGutter()
             }
     }
 
@@ -549,6 +633,19 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
             }
         }
     }
+
+    /// Registered for the life of the coordinator, so it has to come off when the grid goes.
+    ///
+    /// `NotificationCenter` retains a block observer's closure, and a coordinator is built fresh on
+    /// every mount, so an entry left behind at teardown is never fired again and never reclaimed.
+    /// The closure captures `self` weakly, so this leaks the registration rather than the grid.
+    func detachAccessibilityActivationObserver() {
+        guard let accessibilityActivationObserver else { return }
+        NotificationCenter.default.removeObserver(accessibilityActivationObserver)
+        self.accessibilityActivationObserver = nil
+    }
+
+    var hasAccessibilityActivationObserver: Bool { accessibilityActivationObserver != nil }
 
     /// Whether this row is one an assistive client can be reading right now.
     ///
@@ -585,16 +682,16 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
         prewarmResumeTask = nil
         detachScrollObservers()
         selectionController.clear()
+        pendingColumnJump = nil
         overlayEditor?.dismiss(commit: false)
         overlayViewer?.dismiss()
         settingsCancellable?.cancel()
         settingsCancellable = nil
         themeCancellable?.cancel()
         themeCancellable = nil
-        if let accessibilityActivationObserver {
-            NotificationCenter.default.removeObserver(accessibilityActivationObserver)
-        }
-        accessibilityActivationObserver = nil
+        systemTimeZoneCancellable?.cancel()
+        systemTimeZoneCancellable = nil
+        detachAccessibilityActivationObserver()
         visualIndex.clear()
         displayCache.removeAll()
         columnDisplayFormats = []
@@ -638,6 +735,7 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
               !column.isHidden else { return }
         let maxRowNumber = paginationOffsetProvider() + cachedRowCount
         DataGridView.sizeRowNumberColumn(column, forMaxRowNumber: maxRowNumber)
+        synchronizeRowGutter()
     }
 
     func applyInsertedRows(_ indices: IndexSet) {
@@ -675,9 +773,10 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
 
     /// Drops the row selection before a wholesale replacement.
     ///
-    /// `reloadData()` leaves `selectedRowIndexes` alone when the new result happens to have as
-    /// many rows as the old one, so without this the grid keeps highlighting positions that now
-    /// hold different rows, and every consumer of the selection reads those stale positions.
+    /// `reloadData()` does clear `selectedRowIndexes` on its own, measured, whatever the new row
+    /// count is. What it does not do is tell anyone: it fires no `tableViewSelectionDidChange`, so
+    /// every mirror of the selection would go on reporting positions the table view no longer holds.
+    /// Deselecting here is what publishes the change.
     func clearRowSelection() {
         guard let tableView, !tableView.selectedRowIndexes.isEmpty else { return }
         tableView.deselectAll(nil)
@@ -740,6 +839,33 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
         isApplyingProgrammaticRowSelection = true
         tableView.selectRowIndexes(indexes, byExtendingSelection: false)
         isApplyingProgrammaticRowSelection = false
+    }
+
+    /// Publishes the rows every command already acts on, so the readouts name the same set.
+    ///
+    /// The cell selection's rows win, because a cell drag is how most multi-row work starts and
+    /// Delete, Copy and the row menu have always read it through `currentRowSelection()`. The
+    /// binding did not: it copied `NSTableView.selectedRowIndexes`, which `mouseDown` pins to the
+    /// single anchor row for the whole of a drag, so a drag over six rows reported one selected row
+    /// and deleted six.
+    ///
+    /// The row half is passed in rather than read back off the binding, which is the copy this
+    /// writes; reading it here would make the derivation circular and no row selection would ever
+    /// reach it. `lastPublishedRowSelection` is what lets `syncSelection` tell a value published
+    /// here from one the app set from outside.
+    func publishRowSelection(rowSelection: Set<Int>) {
+        let resolved = selectionController.isEmpty
+            ? rowSelection
+            : Set(selectionController.selection.affectedRows)
+        lastPublishedRowSelection = resolved
+        guard selectedRowIndices != resolved else { return }
+        selectedRowIndices = resolved
+    }
+
+    /// The cell selection moved and the row selection did not, so the row half comes off the table
+    /// view. A coordinator with no table view has only the binding to fall back on.
+    func publishRowSelection() {
+        publishRowSelection(rowSelection: tableView.map { Set($0.selectedRowIndexes) } ?? selectedRowIndices)
     }
 
     func displayRow(at displayIndex: Int) -> Row? {
@@ -812,6 +938,7 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
     private func applyDisplayFormats(_ formats: [ValueDisplayFormat?]) -> Bool {
         let remappedValueFilters = remapValueFilters(from: columnDisplayFormats, to: formats)
         columnDisplayFormats = formats
+        displayState.displayFormats = formats
         displayCache.removeAll()
         delegate?.dataGridDisplayFormatChanged()
         return remappedValueFilters
@@ -890,105 +1017,7 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
         startBackgroundPrewarm()
     }
 
-    func preWarmDisplayCache(upTo rowCount: Int) {
-        let tableRows = tableRowsProvider()
-        let displayCount = displayIDs?.count ?? tableRows.count
-        let count = min(rowCount, displayCount)
-        guard count > 0 else { return }
-        for displayIndex in 0..<count {
-            cacheDisplayRow(at: displayIndex, in: tableRows)
-        }
-    }
-
-    /// Fills displayCache off the scroll hot path so viewFor:row: stays a cache hit.
-    func startBackgroundPrewarm() {
-        prewarmResumeTask?.cancel()
-        prewarmResumeTask = nil
-        prewarmTask?.cancel()
-        prewarmTask = Task { @MainActor [weak self] in
-            await self?.runBackgroundPrewarm()
-        }
-    }
-
-    /// Pauses prewarm during live scroll; resumes after a debounce so rapid scrolls do not restart it repeatedly.
-    func attachScrollObservers(scrollView: NSScrollView) {
-        detachScrollObservers()
-        let start = NotificationCenter.default.addObserver(
-            forName: NSScrollView.willStartLiveScrollNotification,
-            object: scrollView,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.pausePrewarmForScroll()
-            }
-        }
-        let end = NotificationCenter.default.addObserver(
-            forName: NSScrollView.didEndLiveScrollNotification,
-            object: scrollView,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.schedulePrewarmResume()
-            }
-        }
-        /// The clip view rather than the scroll view's live-scroll pair, because it is the only one
-        /// that also reports a programmatic scroll: `scrollRowToVisible`, which is how VoiceOver
-        /// reaches a row that is not on screen.
-        scrollView.contentView.postsBoundsChangedNotifications = true
-        let bounds = NotificationCenter.default.addObserver(
-            forName: NSView.boundsDidChangeNotification,
-            object: scrollView.contentView,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.remountAccessibilityCells()
-            }
-        }
-        scrollObservers = [start, end, bounds]
-    }
-
-    private func detachScrollObservers() {
-        for observer in scrollObservers {
-            NotificationCenter.default.removeObserver(observer)
-        }
-        scrollObservers.removeAll()
-    }
-
-    private func pausePrewarmForScroll() {
-        prewarmResumeTask?.cancel()
-        prewarmResumeTask = nil
-        prewarmTask?.cancel()
-        prewarmTask = nil
-    }
-
-    private func schedulePrewarmResume() {
-        prewarmResumeTask?.cancel()
-        prewarmResumeTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: Self.prewarmResumeDelay)
-            guard !Task.isCancelled, let self else { return }
-            self.startBackgroundPrewarm()
-        }
-    }
-
-    private func runBackgroundPrewarm() async {
-        var nextIndex = 0
-        while !Task.isCancelled {
-            let tableRows = tableRowsProvider()
-            let displayCount = displayIDs?.count ?? tableRows.count
-            guard nextIndex < displayCount else { return }
-
-            let deadline = ContinuousClock.now.advanced(by: Self.prewarmFrameBudget)
-            while nextIndex < displayCount {
-                if Task.isCancelled { return }
-                cacheDisplayRow(at: nextIndex, in: tableRows)
-                nextIndex += 1
-                if ContinuousClock.now >= deadline { break }
-            }
-            await Task.yield()
-        }
-    }
-
-    private func cacheDisplayRow(at displayIndex: Int, in tableRows: TableRows) {
+    func cacheDisplayRow(at displayIndex: Int, in tableRows: TableRows) {
         guard let row = displayRow(at: displayIndex, in: tableRows) else { return }
         guard displayCache.box(forID: row.id) == nil else { return }
 
@@ -1151,7 +1180,10 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
             isColumnSearchable: { column in
                 guard visible?.contains(column) ?? true else { return false }
                 guard column < columnTypes.count else { return true }
-                return FindMatcher.isSearchable(columnTypes[column])
+                return FindMatcher.isSearchable(
+                    columnTypes[column],
+                    displayFormat: column < columnDisplayFormats.count ? columnDisplayFormats[column] : nil
+                )
             },
             cellText: { [weak self] displayIndex, column in
                 guard let self,
@@ -1159,15 +1191,32 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
                       column < row.values.count
                 else { return nil }
                 let rawValue = row.values[column]
-                guard rawValue.asText != nil else { return nil }
+                let columnType = column < columnTypes.count ? columnTypes[column] : nil
+                guard findSearches(rawValue, column: column, columnType: columnType) else { return nil }
                 return displayValue(
                     forID: row.id,
                     column: column,
                     rawValue: rawValue,
-                    columnType: column < columnTypes.count ? columnTypes[column] : nil
+                    columnType: columnType
                 )
             }
         )
+    }
+
+    /// A binary cell is searched only where its column's format actually turned those bytes into
+    /// characters. The format is chosen per column and the fallback to hex happens per value, so a
+    /// column of readable text can still hold one cell whose hex Find must not match.
+    private func findSearches(_ value: PluginCellValue, column: Int, columnType: ColumnType?) -> Bool {
+        switch value {
+        case .null:
+            return false
+        case .text:
+            return true
+        case .bytes(let data):
+            guard let format = column < columnDisplayFormats.count ? columnDisplayFormats[column] : nil,
+                  format.isApplicable(to: columnType, databaseType: databaseType) else { return false }
+            return ValueDisplayFormatter.apply(data, format: format, columnType: columnType) != nil
+        }
     }
 
     func applyFindMatch(_ match: FindMatch?) {
@@ -1198,6 +1247,17 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
         tableView.selectRowIndexes(IndexSet(integer: displayRow), byExtendingSelection: false)
         scrollColumnToVisible(tableColumnIndex: displayCol)
         beginCellEdit(row: displayRow, tableColumnIndex: displayCol)
+    }
+
+    /// Where the caret goes on a row the user just made. Column 0 is where the row starts, not
+    /// necessarily where it can be typed into: a table whose first column the server owns, such as
+    /// an identity or a stored generated column, refuses the edit and opens nothing at all, which
+    /// reads as Add Row having done nothing. Falls back to column 0 so a row with no editable
+    /// column at all is still selected and scrolled to.
+    func beginEditingFirstEditableColumn(displayRow: Int) {
+        let columnCount = tableRowsProvider().columns.count
+        let column = (0..<columnCount).first { canStartInlineEdit(row: displayRow, columnIndex: $0) } ?? 0
+        beginEditing(displayRow: displayRow, column: column)
     }
 
     func refreshCellPresentations() {
@@ -1265,9 +1325,19 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
 
         guard schemaChanged else { return false }
         identitySchema = nextSchema
+        displayState.identitySchema = nextSchema
         displayCache.removeAll()
         invalidateColumnIndexCache()
         return true
+    }
+
+    /// Whether this column's cells take typed text and offer a list beside it, which is what an
+    /// editable combo box is. Read by the accessibility cell, so a menu a pointer can reach has a
+    /// role a screen reader can reach too.
+    func presentsComboBoxCell(columnIndex: Int) -> Bool {
+        guard isEditable else { return false }
+        return dropdownColumns?.contains(columnIndex) == true
+            || typePickerColumns?.contains(columnIndex) == true
     }
 
     func columnPresentation(

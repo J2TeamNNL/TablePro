@@ -182,55 +182,50 @@ final class SyncCoordinator {
     /// because the favorite store is an actor and must be read asynchronously.
     private func markSQLFavoritesDirty() async {
         let favorites = await services.sqlFavoriteManager.fetchFavorites()
-        for favorite in favorites {
-            changeTracker.markDirty(.favorite, id: favorite.id.uuidString)
-        }
+        changeTracker.markDirty(.favorite, ids: favorites.map { $0.id.uuidString })
+
         let folders = await services.sqlFavoriteManager.fetchFolders()
-        for folder in folders {
-            changeTracker.markDirty(.favoriteFolder, id: folder.id.uuidString)
-        }
+        changeTracker.markDirty(.favoriteFolder, ids: folders.map { $0.id.uuidString })
     }
 
-    /// Marks all existing local data as dirty so it will be pushed on the next sync.
-    /// Called when sync is first enabled to upload existing connections/groups/tags/settings.
+    /// Marks every synced record dirty so the first sync after enabling pushes the lot.
+    ///
+    /// Every type is marked as one batch. Marking record by record posted a change notification per
+    /// record, and the observer cancels the in-flight sync and awaits it before scheduling the next,
+    /// so an account with a few hundred saved column layouts built a chain of hundreds of tasks each
+    /// waiting on its predecessor and the app stopped responding to the switch that started it.
     private func markAllLocalDataDirty() {
         let connections = services.connectionStorage.loadConnections()
-        for connection in connections where !connection.localOnly {
-            changeTracker.markDirty(.connection, id: connection.id.uuidString)
-        }
+        changeTracker.markDirty(
+            .connection,
+            ids: connections.filter { !$0.localOnly }.map { $0.id.uuidString }
+        )
 
         let groups = services.groupStorage.loadGroups()
-        for group in groups {
-            changeTracker.markDirty(.group, id: group.id.uuidString)
-        }
+        changeTracker.markDirty(.group, ids: groups.map { $0.id.uuidString })
 
         let tags = services.tagStorage.loadTags()
-        for tag in tags {
-            changeTracker.markDirty(.tag, id: tag.id.uuidString)
-        }
+        changeTracker.markDirty(.tag, ids: tags.map { $0.id.uuidString })
 
         let sshProfiles = services.sshProfileStorage.loadProfiles()
-        for profile in sshProfiles {
-            changeTracker.markDirty(.sshProfile, id: profile.id.uuidString)
-        }
+        changeTracker.markDirty(.sshProfile, ids: sshProfiles.map { $0.id.uuidString })
 
         let favoriteTables = services.favoriteTablesStorage.loadFavorites()
-        for entry in favoriteTables {
-            changeTracker.markDirty(.tableFavorite, id: FavoriteTablesStorage.syncId(for: entry))
-        }
+        changeTracker.markDirty(
+            .tableFavorite,
+            ids: favoriteTables.map { FavoriteTablesStorage.syncId(for: $0) }
+        )
 
         let favoriteDatabases = services.favoriteDatabasesStorage.loadFavorites()
-        for entry in favoriteDatabases {
-            changeTracker.markDirty(.favoriteDatabase, id: FavoriteDatabasesStorage.syncId(for: entry))
-        }
+        changeTracker.markDirty(
+            .favoriteDatabase,
+            ids: favoriteDatabases.map { FavoriteDatabasesStorage.syncId(for: $0) }
+        )
 
-        for category in AppSettingsCategory.synced + [CustomSlashCommandStorage.syncCategory] {
-            changeTracker.markDirty(.settings, id: category)
-        }
-
-        for storageKey in FileColumnLayoutPersister.shared.customizedStorageKeys() {
-            changeTracker.markDirty(.settings, id: FileColumnLayoutPersister.syncCategory(for: storageKey))
-        }
+        let settingsCategories = AppSettingsCategory.synced + [CustomSlashCommandStorage.syncCategory]
+        let columnLayoutCategories = FileColumnLayoutPersister.shared.customizedStorageKeys()
+            .map { FileColumnLayoutPersister.syncCategory(for: $0) }
+        changeTracker.markDirty(.settings, ids: settingsCategories + columnLayoutCategories)
 
         let summary = [
             "connections=\(connections.count)",
@@ -396,19 +391,20 @@ final class SyncCoordinator {
 
         guard !recordsToSave.isEmpty || !uniqueDeletions.isEmpty else { return }
 
+        let identities = SyncRecordMapper.identities(for: pushedLocalIds(), in: zoneID)
         let outcome = try await engine.push(records: recordsToSave, deletions: uniqueDeletions)
 
         recordCache.store(Array(outcome.savedRecords.values))
         recordCache.remove(Array(outcome.deletedRecordIDs))
 
         for recordID in outcome.savedRecords.keys {
-            guard let parsed = SyncRecordMapper.parse(recordName: recordID.recordName) else { continue }
-            changeTracker.clearDirty(parsed.type, id: parsed.id)
+            guard let identity = identities[recordID] else { continue }
+            changeTracker.clearDirty(identity.type, id: identity.id)
         }
 
         for recordID in outcome.deletedRecordIDs {
-            guard let parsed = SyncRecordMapper.parse(recordName: recordID.recordName) else { continue }
-            metadataStorage.removeTombstone(parsed.id, type: parsed.type)
+            guard let identity = identities[recordID] else { continue }
+            metadataStorage.removeTombstone(identity.id, type: identity.type)
         }
 
         let savedCount = outcome.savedRecords.count
@@ -420,6 +416,20 @@ final class SyncCoordinator {
 
         guard let firstFailure = outcome.failures.values.first else { return }
         throw SyncError.pushRejected(count: outcome.failures.count, detail: firstFailure.message)
+    }
+
+    /// Every local identifier this push can have sent. `SyncChangeTracker` is not isolated to this
+    /// actor, so the sets can move under an await; a record whose identifier is missing from the
+    /// snapshot is left dirty and pushed again rather than cleared against the wrong entry.
+    private func pushedLocalIds() -> [SyncRecordType: Set<String>] {
+        var localIds: [SyncRecordType: Set<String>] = [:]
+        for type in SyncRecordType.allCases {
+            let ids = changeTracker.dirtyRecords(for: type)
+                .union(metadataStorage.tombstones(for: type).map(\.id))
+            guard !ids.isEmpty else { continue }
+            localIds[type] = ids
+        }
+        return localIds
     }
 
     // MARK: - Pull
@@ -451,11 +461,21 @@ final class SyncCoordinator {
     }
 
     private func applyPullResult(_ result: PullResult) {
+        let persisted = applyRemoteChanges(result)
+
+        /// The token and the cache are the record of what this device holds, so neither is
+        /// committed over a batch a store refused. Saving the token first acknowledged records that
+        /// were never written and the server never sent them again, and the cached record then
+        /// stood in as the merge base for an edit that had no local base at all. Not saving it
+        /// means the next pull replays the batch, which every apply here is written to survive.
+        guard persisted else {
+            Self.logger.error("Pull not acknowledged: a store refused to persist part of the batch")
+            return
+        }
+
         if let newToken = result.newToken {
             metadataStorage.saveToken(newToken)
         }
-
-        applyRemoteChanges(result)
 
         recordCache.store(result.changedRecords)
         recordCache.remove(result.deletedRecordIDs)
@@ -468,7 +488,10 @@ final class SyncCoordinator {
     // Performance: storage reads here (loadSync, loadConnections, loadGroups, etc.) run on
     // @MainActor and can block the UI on large sync batches. Consider moving to Task.detached
     // for large payloads.
-    private func applyRemoteChanges(_ result: PullResult) {
+    /// Reports whether every record that can say so was persisted. A pull that answers false must
+    /// not commit its token: the batch has to arrive again.
+    @discardableResult
+    private func applyRemoteChanges(_ result: PullResult) -> Bool {
         let settings = services.appSettingsStorage.loadSync()
 
         services.connectionStorage.invalidateCache()
@@ -480,6 +503,7 @@ final class SyncCoordinator {
 
         var actualConnectionChanges = false
         var groupsOrTagsChanged = false
+        var persistenceFailed = false
 
         let connectionTombstoneIds = Set(metadataStorage.tombstones(for: .connection).map(\.id))
         let groupTombstoneIds = Set(metadataStorage.tombstones(for: .group).map(\.id))
@@ -495,16 +519,22 @@ final class SyncCoordinator {
         for record in result.changedRecords {
             switch record.recordType {
             case SyncRecordType.connection.rawValue where settings.syncConnections:
-                if applyRemoteConnection(record, tombstoneIds: connectionTombstoneIds) {
-                    actualConnectionChanges = true
+                switch applyRemoteConnection(record, tombstoneIds: connectionTombstoneIds) {
+                case .applied: actualConnectionChanges = true
+                case .failed: persistenceFailed = true
+                case .skipped: break
                 }
             case SyncRecordType.group.rawValue where settings.syncGroupsAndTags:
-                if applyRemoteGroup(record, tombstoneIds: groupTombstoneIds) {
-                    groupsOrTagsChanged = true
+                switch applyRemoteGroup(record, tombstoneIds: groupTombstoneIds) {
+                case .applied: groupsOrTagsChanged = true
+                case .failed: persistenceFailed = true
+                case .skipped: break
                 }
             case SyncRecordType.tag.rawValue where settings.syncGroupsAndTags:
-                if applyRemoteTag(record, tombstoneIds: tagTombstoneIds) {
-                    groupsOrTagsChanged = true
+                switch applyRemoteTag(record, tombstoneIds: tagTombstoneIds) {
+                case .applied: groupsOrTagsChanged = true
+                case .failed: persistenceFailed = true
+                case .skipped: break
                 }
             case SyncRecordType.sshProfile.rawValue where settings.syncSSHProfiles:
                 applyRemoteSSHProfile(record, tombstoneIds: sshTombstoneIds)
@@ -622,9 +652,18 @@ final class SyncCoordinator {
             }
         }
 
+        /// After the batch, never per record: a pull carries no dependency order, so a legal
+        /// hierarchy change spread over two records passes through a state that reads as a cycle
+        /// until both have landed.
+        if groupsOrTagsChanged {
+            services.groupStorage.repairHierarchy()
+        }
+
         if actualConnectionChanges || groupsOrTagsChanged {
             services.appEvents.connectionUpdated.send(nil)
         }
+
+        return !persistenceFailed
     }
 
     @discardableResult
@@ -650,17 +689,17 @@ final class SyncCoordinator {
         }
     }
 
-    private func applyRemoteConnection(_ record: CKRecord, tombstoneIds: Set<String>) -> Bool {
+    private func applyRemoteConnection(_ record: CKRecord, tombstoneIds: Set<String>) -> RemoteApplyOutcome {
         let remoteConnection: DatabaseConnection
         do {
             remoteConnection = try SyncRecordMapper.toConnection(record)
         } catch {
             Self.logger.error("Skipping remote connection \(record.recordID.recordName, privacy: .public): \(error.localizedDescription, privacy: .public)")
-            return false
+            return .skipped
         }
 
         if tombstoneIds.contains(remoteConnection.id.uuidString) {
-            return false
+            return .skipped
         }
 
         var connections = services.connectionStorage.loadConnections()
@@ -671,7 +710,7 @@ final class SyncCoordinator {
                     into: record,
                     localConnection: connections[index]
                 ) else {
-                    return false
+                    return .skipped
                 }
                 incoming = reconciled
             }
@@ -684,39 +723,24 @@ final class SyncCoordinator {
         }
         guard services.connectionStorage.saveConnections(connections) else {
             Self.logger.error("Failed to apply remote connection update: persistence error for \(remoteConnection.id, privacy: .public)")
-            return false
+            return .failed
         }
-        return true
+        return .applied
+    }
+
+    private func applyRemoteGroup(_ record: CKRecord, tombstoneIds: Set<String>) -> RemoteApplyOutcome {
+        guard let remoteGroup = SyncRecordMapper.toGroup(record) else { return .skipped }
+        if tombstoneIds.contains(remoteGroup.id.uuidString) { return .skipped }
+
+        return services.groupStorage.applyRemoteGroup(remoteGroup)
     }
 
     @discardableResult
-    private func applyRemoteGroup(_ record: CKRecord, tombstoneIds: Set<String>) -> Bool {
-        guard let remoteGroup = SyncRecordMapper.toGroup(record) else { return false }
-        if tombstoneIds.contains(remoteGroup.id.uuidString) { return false }
+    private func applyRemoteTag(_ record: CKRecord, tombstoneIds: Set<String>) -> RemoteApplyOutcome {
+        guard let remoteTag = SyncRecordMapper.toTag(record) else { return .skipped }
+        if tombstoneIds.contains(remoteTag.id.uuidString) { return .skipped }
 
-        var groups = services.groupStorage.loadGroups()
-        if let index = groups.firstIndex(where: { $0.id == remoteGroup.id }) {
-            groups[index] = remoteGroup
-        } else {
-            groups.append(remoteGroup)
-        }
-        services.groupStorage.saveGroups(groups)
-        return true
-    }
-
-    @discardableResult
-    private func applyRemoteTag(_ record: CKRecord, tombstoneIds: Set<String>) -> Bool {
-        guard let remoteTag = SyncRecordMapper.toTag(record) else { return false }
-        if tombstoneIds.contains(remoteTag.id.uuidString) { return false }
-
-        var tags = services.tagStorage.loadTags()
-        if let index = tags.firstIndex(where: { $0.id == remoteTag.id }) {
-            tags[index] = remoteTag
-        } else {
-            tags.append(remoteTag)
-        }
-        services.tagStorage.saveTags(tags)
-        return true
+        return services.tagStorage.applyRemoteTag(remoteTag)
     }
 
     private func applyRemoteSSHProfile(_ record: CKRecord, tombstoneIds: Set<String>) {

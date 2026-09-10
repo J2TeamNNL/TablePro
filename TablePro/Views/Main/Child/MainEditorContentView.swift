@@ -459,11 +459,11 @@ struct MainEditorContentView: View {
                         isExecuting: coordinator.tabExecution.isExecuting(tab.id),
                         onExplain: { variant in coordinator.runExplain(variant: variant) },
                         onAIExplain: { text in
-                            coordinator.showAIChatPanel()
+                            coordinator.showAssistant()
                             coordinator.aiViewModel?.handleExplainSelection(text)
                         },
                         onAIOptimize: { text in
-                            coordinator.showAIChatPanel()
+                            coordinator.showAssistant()
                             coordinator.aiViewModel?.handleOptimizeSelection(text)
                         },
                         onSaveAsFavorite: { text in
@@ -651,6 +651,7 @@ struct MainEditorContentView: View {
                     connection: connection,
                     databaseName: scope?.database ?? "",
                     schemaName: scope?.schema,
+                    isViewObject: tab.tableContext.isView,
                     toolbarState: coordinator.toolbarState,
                     coordinator: coordinator,
                     selectionState: selectionState,
@@ -759,13 +760,17 @@ struct MainEditorContentView: View {
                                     &+ resolvedRows.rows.count,
                                 onSearchAllRows: { coordinator.findCoordinator.escalateToAllRows() }
                             )
+                            /// Per tab, like the grid below it. The field text lives in the view's
+                            /// own `@State`, seeded once from `onAppear`, and the grid's find tint
+                            /// lives on a coordinator that `.id(tabId)` rebuilds from nothing. With
+                            /// find open on both tabs this view kept its identity across a switch,
+                            /// so neither was re-seeded: the field showed the other tab's term next
+                            /// to this tab's match count, and the grid came back untinted. (#2667)
+                            .id(tab.id)
                             Divider()
                         }
 
-                        if tab.tabType == .query && !resolvedRows.columns.isEmpty
-                            && resolvedRows.rows.isEmpty && tab.execution.lastExecutedAt != nil
-                            && !coordinator.tabExecution.isExecuting(tab.id) && !tab.filterState.hasAppliedFilters
-                        {
+                        if showsEmptyResultView(tab: tab, rows: resolvedRows) {
                             emptyResultView(executionTime: tab.display.activeResultSet?.executionTime ?? tab.execution.executionTime)
                         } else {
                             dataGridView(tab: tab)
@@ -840,6 +845,14 @@ struct MainEditorContentView: View {
         )
     }
 
+    /// A query that came back with columns and no rows shows this instead of a grid, so anything
+    /// that offers a jump into the grid reads the same condition.
+    private func showsEmptyResultView(tab: QueryTab, rows: TableRows) -> Bool {
+        tab.tabType == .query && !rows.columns.isEmpty
+            && rows.rows.isEmpty && tab.execution.lastExecutedAt != nil
+            && !coordinator.tabExecution.isExecuting(tab.id) && !tab.filterState.hasAppliedFilters
+    }
+
     private func emptyResultView(executionTime: TimeInterval?) -> some View {
         let description: String? = executionTime.map { String(format: "%.3fs", $0) }
         return ContentUnavailableView {
@@ -883,6 +896,7 @@ struct MainEditorContentView: View {
                 tabType: tab.tabType,
                 showRowNumbers: AppSettingsManager.shared.dataGrid.showRowNumbers,
                 hiddenColumns: tab.columnLayout.hiddenColumns,
+                appliesRowSortPreferences: true,
                 editRefusalMessage: refusal?.message
             ),
             displayFormats: coordinator.displayFormats(for: tab),
@@ -893,7 +907,13 @@ struct MainEditorContentView: View {
             ),
             sortState: sortStateBinding(for: tab),
             columnLayout: columnLayoutBinding(for: tab),
-            valueFilter: valueFilterBinding(for: tab)
+            valueFilter: valueFilterBinding(for: tab),
+            displayState: coordinator.displayState(for: tab),
+            restoredRowSelection: tab.selectedRowIndices,
+            restoredCellSelection: tab.cellSelection,
+            onSelectionTeardown: { [coordinator] rows, cells in
+                coordinator.storeGridSelectionOnTeardown(rows: rows, cells: cells, forTab: tabId)
+            }
         )
         .id(tabId)
         .frame(maxHeight: .infinity, alignment: .top)
@@ -954,11 +974,12 @@ struct MainEditorContentView: View {
     private func statusBar(tab: QueryTab) -> some View {
         let resolvedRows = resolvedTableRows(for: tab)
         let structureFooter = coordinator.structureSessions[tab.id]?.footer ?? StructureFooterCapability()
+        let isExecuting = coordinator.tabExecution.isBusy(tab.id)
         let snapshot = StatusBarSnapshot(
             tab: tab,
             tableRows: resolvedRows,
             displayRowCount: coordinator.displayIDs(forTab: tab.id)?.count,
-            isFetching: coordinator.tabExecution.isExecuting(tab.id),
+            isFetching: isExecuting,
             hasStructureActions: structureFooter.isActive
         )
         return ResultStatusBar(
@@ -971,11 +992,15 @@ struct MainEditorContentView: View {
             filterState: tab.filterState,
             columnState: StatusBarColumnState(
                 hidden: tab.columnLayout.hiddenColumns,
-                all: coordinator.columnsForVisibilityPicker(for: tab, resultColumns: resolvedRows.columns),
+                columns: coordinator.columnCatalog(for: tab, resultRows: resolvedRows),
                 onToggle: { coordinator.toggleColumnVisibility($0) },
                 onShowAll: { coordinator.showAllColumns() },
                 onHideAll: { coordinator.hideAllColumns($0) },
-                onReset: { coordinator.resetColumns() }
+                onReset: { coordinator.resetColumns() },
+                onJumpToColumn: tab.display.resultsViewMode == .data && !tab.display.isResultsCollapsed
+                    && !showsEmptyResultView(tab: tab, rows: resolvedRows)
+                    ? { coordinator.showColumnJump(seededWith: $0) }
+                    : nil
             ),
             paginationCallbacks: PaginationCallbacks(
                 onFirst: onFirstPage,
@@ -988,6 +1013,13 @@ struct MainEditorContentView: View {
                 onRequestExactCount: { coordinator.paginationCoordinator.requestExactRowCount() }
             ),
             structureFooter: structureFooter,
+            execution: ExecutionReadout(
+                tabId: tab.id,
+                execution: coordinator.tabExecution,
+                lastTiming: coordinator.toolbarState.queryTiming(forTab: tab.id),
+                onCancel: { coordinator.cancelCurrentQuery() }
+            ),
+            isRefreshingSchema: SchemaService.shared.isRefreshing(connectionId: connectionId),
             viewMode: resultsViewModeBinding(for: tab),
             onToggleFilters: { coordinator.toggleFilterPanel() },
             onFetchAll: { coordinator.fetchAllRows() },

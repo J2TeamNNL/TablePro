@@ -19,11 +19,18 @@ struct MenuValidationContext: Equatable {
     var isReadOnly = false
     var canUseTableResultCommands = false
     var canUseGridFindCommands = false
+    /// Jump to Column reads the mounted data grid, so it needs one on screen with columns to list.
+    var canJumpToColumn = false
     /// Save As writes the selected tab's SQL, so it needs a query tab and not merely a connection.
     var isQueryTab = false
     /// Export Results exports the selected tab's rows, so an empty grid has nothing to offer.
     var hasResultRows = false
     var isCurrentTabEditable = false
+    /// Add Row and Duplicate Row stage `DEFAULT` for every column the server fills in, which only
+    /// the table's own schema names. Until it lands, the result set's own metadata reports far less,
+    /// and an identity column would be staged as NULL that the server refuses.
+    var isCurrentTabSchemaResolved = false
+    var canRestorePreviousValues = false
     var isQueryExecuting = false
     var hasQueryText = false
     var hasPendingChanges = false
@@ -33,6 +40,9 @@ struct MenuValidationContext: Equatable {
     /// grid's selection specifically, not the structure grid's.
     var hasDataGridRowSelection = false
     var hasTableSelection = false
+    /// Whether every selected object is one the engine can truncate. Separate from
+    /// `hasTableSelection` because a view is a perfectly good selection and a hopeless truncate.
+    var canTruncateSelectedTables = false
     /// Whether the window-level `paste:` fallback would actually paste. AppKit hands a disabled
     /// item its key equivalent regardless, so an item enabled over a handler that returns at its
     /// first guard swallows Command+V with no feedback.
@@ -48,9 +58,16 @@ struct MenuValidationContext: Equatable {
     var canSaveAsFavorite = false
     var canSwitchSidebarLayout = false
     var canToggleWorkspaceRail = false
+    /// Whether the connection's driver is holding an operating-system resource it can hand back
+    /// without ending the session. Only the embedded engines that lock their database file answer
+    /// yes, so the command is absent for every server-backed connection rather than present and
+    /// disabled: a command that can never apply to a connection is not a command it is missing.
+    var canReleaseFileLock = false
     var canShowTableStructure = false
     var canEditViewDefinition = false
     var canCreateDatabase = false
+    var canCopyObjects = false
+    var canDuplicateDatabase = false
     var hasMaintenanceOperations = false
     var canUndo = false
     var canRedo = false
@@ -60,9 +77,11 @@ struct MenuValidationContext: Equatable {
     var supportsContainerSwitching = false
     var supportsBackup = false
     var supportsRestore = false
+    var supportsServerSideExport = false
     var supportsServerDashboard = false
     var supportsUserManagement = false
     var supportsSchemaSwitching = false
+    var hasSessionContexts = false
     var canFilterDatabases = false
     var canFavoriteActiveDatabase = false
     var hasDatabaseFilter = false
@@ -82,11 +101,9 @@ extension MainSplitViewController: NSMenuItemValidation {
     /// itself, so `hasEditorForFind` only ever decides the unfocused fallback.
     static func isEnabled(_ selector: Selector, context: MenuValidationContext) -> Bool {
         switch selector {
-        case #selector(openSQLFile(_:)),
-             #selector(exportTables(_:)),
+        case #selector(exportTables(_:)),
              #selector(refreshDatabase(_:)),
              #selector(openQuickSwitcher(_:)),
-             #selector(switchConnection(_:)),
              #selector(toggleQueryHistory(_:)),
              #selector(toggleResults(_:)),
              #selector(showPreviousResult(_:)),
@@ -117,6 +134,11 @@ extension MainSplitViewController: NSMenuItemValidation {
             return context.isConnected
         case #selector(closeConnection(_:)):
             return context.hasSelectedWorkspace
+        /// Not `isConnected`, unlike the rest of the Database menu. The switcher lists the app's
+        /// open connections and the user's saved ones, needs nothing from the session, and is the
+        /// command that leaves a connection that has stopped working.
+        case #selector(switchConnection(_:)):
+            return context.hasSelectedWorkspace
         case #selector(selectNextEditorTab(_:)), #selector(selectPreviousEditorTab(_:)):
             return context.isConnected
 
@@ -133,15 +155,23 @@ extension MainSplitViewController: NSMenuItemValidation {
             return context.isConnected && context.supportsBackup
         case #selector(restoreDatabase(_:)):
             return context.isConnected && context.supportsRestore && !context.isReadOnly
+        case #selector(serverSideExport(_:)):
+            /// The server does the writing, so this is a write on the connection and a read-only
+            /// Safe Mode has to stop it the same way Restore is stopped.
+            return context.isConnected && context.supportsServerSideExport && !context.isReadOnly
 
         case #selector(executeQuery(_:)),
              #selector(executeAllStatements(_:)),
              #selector(executeQueryWithoutLimit(_:)),
              #selector(explainQuery(_:)),
-             #selector(formatQuery(_:)),
-             #selector(explainQueryWithAI(_:)),
-             #selector(optimizeQueryWithAI(_:)):
+             #selector(formatQuery(_:)):
             return context.isConnected && context.hasQueryText
+        /// Both hand their statement to the assistant, which will not open with the feature off.
+        /// They validated on the query alone, so with AI off the item stayed enabled, the shortcut
+        /// fired and nothing happened at all: no pane, no alert, nothing.
+        case #selector(explainQueryWithAI(_:)),
+             #selector(optimizeQueryWithAI(_:)):
+            return context.isConnected && context.hasQueryText && AppSettingsManager.shared.ai.enabled
         case #selector(toggleFold(_:)), #selector(foldAll(_:)), #selector(unfoldAll(_:)):
             return context.hasEditorForFind
         case #selector(goToPreviousStatement(_:)), #selector(goToNextStatement(_:)):
@@ -157,12 +187,17 @@ extension MainSplitViewController: NSMenuItemValidation {
 
         case #selector(addRow(_:)), #selector(duplicateRow(_:)):
             return context.isConnected && context.isCurrentTabEditable && !context.isReadOnly
+                && context.isCurrentTabSchemaResolved
+        case #selector(restorePreviousValues(_:)):
+            return context.isConnected && context.canRestorePreviousValues && !context.isReadOnly
         case #selector(truncateTable(_:)):
-            return context.isConnected && context.hasTableSelection && !context.isReadOnly
+            return context.isConnected && context.canTruncateSelectedTables && !context.isReadOnly
         case #selector(performFind(_:)):
             return context.hasEditorForFind || (context.isConnected && context.canUseGridFindCommands)
         case #selector(findNext(_:)), #selector(findPrevious(_:)):
             return context.hasEditorForFind || context.hasActiveGridFind
+        case #selector(jumpToColumn(_:)):
+            return context.isConnected && context.canJumpToColumn
         case #selector(undo(_:)):
             return context.canUndo
         case #selector(redo(_:)):
@@ -183,6 +218,10 @@ extension MainSplitViewController: NSMenuItemValidation {
             return context.isConnected && !context.isReadOnly
         case #selector(createNewDatabase(_:)):
             return context.canCreateDatabase
+        case #selector(copyObjectsToDatabase(_:)):
+            return context.canCopyObjects
+        case #selector(duplicateCurrentDatabase(_:)):
+            return context.canDuplicateDatabase
         case #selector(showTableStructure(_:)):
             return context.isConnected && context.canShowTableStructure
         case #selector(editViewDefinition(_:)):
@@ -199,6 +238,14 @@ extension MainSplitViewController: NSMenuItemValidation {
             return context.isConnected && context.canFilterDatabases && context.hasDatabaseFilter
         case #selector(openContainerSwitcher(_:)):
             return context.isConnected && context.supportsContainerSwitching
+        case #selector(openSchemaSwitcher(_:)):
+            return context.isConnected && context.supportsSchemaSwitching
+        case #selector(setSafeModeLevel(_:)):
+            return context.isConnected
+        case #selector(releaseFileLock(_:)):
+            return context.isConnected && context.canReleaseFileLock
+        case #selector(switchSessionContext(_:)):
+            return context.isConnected && context.hasSessionContexts
         case #selector(showServerDashboard(_:)):
             return context.isConnected && context.supportsServerDashboard
         case #selector(showUsersAndRoles(_:)):
@@ -216,6 +263,8 @@ extension MainSplitViewController: NSMenuItemValidation {
             return context.isConnected && context.canNavigateForward
         case #selector(useFlatSidebarLayout(_:)), #selector(useTreeSidebarLayout(_:)):
             return context.canSwitchSidebarLayout
+        case #selector(showTablesSidebarTab(_:)), #selector(showFavoritesSidebarTab(_:)):
+            return context.isConnected
         case #selector(toggleWorkspaceRail(_:)),
              #selector(showPreviousWorkspace(_:)),
              #selector(showNextWorkspace(_:)):
@@ -226,9 +275,15 @@ extension MainSplitViewController: NSMenuItemValidation {
         }
     }
 
+    /// The workspace-rail facts come from the window in both branches. They are true of the window,
+    /// not of the connection it happens to be showing, and reading them off a connection that has
+    /// no coordinator left disabled the only menu route to the window's other connections.
     var menuValidationContext: MenuValidationContext {
         guard let actions = commandActions else {
-            return MenuValidationContext(hasSelectedWorkspace: workspaces.selectedConnectionId != nil)
+            return MenuValidationContext(
+                hasSelectedWorkspace: workspaces.selectedConnectionId != nil,
+                canToggleWorkspaceRail: canToggleWorkspaceRail
+            )
         }
         return MenuValidationContext(
             hasSelectedWorkspace: workspaces.selectedConnectionId != nil,
@@ -236,9 +291,12 @@ extension MainSplitViewController: NSMenuItemValidation {
             isReadOnly: actions.isReadOnly,
             canUseTableResultCommands: actions.canUseTableResultCommands,
             canUseGridFindCommands: actions.canUseGridFindCommands,
+            canJumpToColumn: actions.canJumpToColumn,
             isQueryTab: actions.isQueryTab,
             hasResultRows: actions.hasResultRows,
             isCurrentTabEditable: actions.isCurrentTabEditable,
+            isCurrentTabSchemaResolved: actions.isCurrentTabSchemaResolved,
+            canRestorePreviousValues: actions.canRestorePreviousValues,
             isQueryExecuting: actions.isQueryExecuting,
             hasQueryText: actions.hasQueryText,
             hasPendingChanges: actions.hasPendingChanges,
@@ -246,6 +304,7 @@ extension MainSplitViewController: NSMenuItemValidation {
             hasRowSelection: actions.hasRowSelection,
             hasDataGridRowSelection: actions.hasDataGridRowSelection,
             hasTableSelection: actions.hasTableSelection,
+            canTruncateSelectedTables: actions.canTruncateSelectedTables,
             canPasteRows: actions.canPasteRows,
             canCloseOtherTabs: actions.canCloseOtherTabs,
             canCloseTabsForOtherDatabases: actions.canCloseTabsForOtherDatabases,
@@ -255,10 +314,13 @@ extension MainSplitViewController: NSMenuItemValidation {
             canNavigateForward: actions.canNavigateForward,
             canSaveAsFavorite: actions.canSaveAsFavorite,
             canSwitchSidebarLayout: actions.canSwitchSidebarLayout,
-            canToggleWorkspaceRail: actions.canToggleWorkspaceRail,
+            canToggleWorkspaceRail: canToggleWorkspaceRail,
+            canReleaseFileLock: canReleaseFileLock,
             canShowTableStructure: actions.canShowTableStructure,
             canEditViewDefinition: actions.canEditViewDefinition,
             canCreateDatabase: actions.canCreateDatabase,
+            canCopyObjects: actions.canCopyObjects,
+            canDuplicateDatabase: actions.canDuplicateDatabase,
             hasMaintenanceOperations: !actions.maintenanceOperations.isEmpty,
             canUndo: actions.canUndo,
             canRedo: actions.canRedo,
@@ -268,9 +330,11 @@ extension MainSplitViewController: NSMenuItemValidation {
             supportsContainerSwitching: actions.supportsContainerSwitching,
             supportsBackup: actions.supportsBackup,
             supportsRestore: actions.supportsRestore,
+            supportsServerSideExport: actions.supportsServerSideExport,
             supportsServerDashboard: actions.supportsServerDashboard,
             supportsUserManagement: actions.supportsUserManagement,
             supportsSchemaSwitching: actions.supportsSchemaSwitching,
+            hasSessionContexts: actions.hasSessionContexts,
             canFilterDatabases: actions.canFilterDatabases,
             canFavoriteActiveDatabase: actions.canFavoriteActiveDatabase,
             hasDatabaseFilter: actions.hasDatabaseFilter
@@ -280,8 +344,16 @@ extension MainSplitViewController: NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         applyDynamicTitle(to: menuItem)
         guard let action = menuItem.action else { return false }
-        if action == #selector(toggleSidebar(_:)) || action == #selector(toggleInspector(_:)) {
-            return currentPane == .content
+        /// AppKit asks this method for the View menu and `validateUserInterfaceItem` for everything
+        /// else, so a rule that lives in only one of them holds for only half the routes to the
+        /// command. The sidebar is the window's and stands in every phase; the two trailing
+        /// surfaces need a session to open and none to close.
+        if action == #selector(toggleSidebar(_:)) { return true }
+        if action == #selector(toggleInspector(_:)) { return canToggleTrailingPane }
+        /// The assistant is the one surface a setting can take away, so its command goes with it
+        /// rather than staying enabled over a pane that would refuse to open.
+        if action == #selector(toggleAssistant(_:)) {
+            return isAssistantVisible || (currentPane == .content && AppSettingsManager.shared.ai.enabled)
         }
         if action == #selector(setResultView(_:)) { return canShowResultView(menuItem) }
         if action == #selector(requestDisconnect) { return canDisconnect }
@@ -300,6 +372,8 @@ extension MainSplitViewController: NSMenuItemValidation {
             setTitle(isSidebarCollapsed ? "Show Sidebar" : "Hide Sidebar", on: menuItem)
         case #selector(toggleInspector(_:)):
             setTitle(isInspectorVisible ? "Hide Inspector" : "Show Inspector", on: menuItem)
+        case #selector(toggleAssistant(_:)):
+            setTitle(isAssistantVisible ? "Hide Assistant" : "Show Assistant", on: menuItem)
         case #selector(toggleWorkspaceRail(_:)):
             setTitle(isWorkspaceRailEnabled ? "Hide Connections" : "Show Connections", on: menuItem)
         case #selector(undo(_:)):
@@ -328,12 +402,25 @@ extension MainSplitViewController: NSMenuItemValidation {
                 commandActions?.openContainerSwitcherTitle ?? String(localized: "Open Database…"),
                 on: menuItem
             )
+        /// The driver names this one, because what it gives back differs: DuckDB's file lock is
+        /// not a server's connection slot. The fallback is what the disabled item reads as for
+        /// every connection that holds nothing.
+        case #selector(releaseFileLock(_:)):
+            setResolvedTitle(
+                ConnectionFileLockAction.commandTitle(connectionId: workspaces.selectedConnectionId)
+                    ?? String(localized: "Release File Lock"),
+                on: menuItem
+            )
         case #selector(setResultView(_:)):
             setState(isCurrentResultView(menuItem) ? .on : .off, on: menuItem)
         case #selector(useFlatSidebarLayout(_:)):
             setState(commandActions?.sidebarLayout == .flat ? .on : .off, on: menuItem)
         case #selector(useTreeSidebarLayout(_:)):
             setState(commandActions?.sidebarLayout == .tree ? .on : .off, on: menuItem)
+        case #selector(showTablesSidebarTab(_:)):
+            setState(selectedSidebarTab == .tables ? .on : .off, on: menuItem)
+        case #selector(showFavoritesSidebarTab(_:)):
+            setState(selectedSidebarTab == .favorites ? .on : .off, on: menuItem)
         default:
             return
         }

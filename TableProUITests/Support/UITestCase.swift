@@ -142,7 +142,15 @@ internal class UITestCase: XCTestCase {
     /// under the outline rather than stopping at the first. Together they cost seconds per
     /// iteration once the window holds a loaded grid, so the timeout expires against the query
     /// instead of against the app, and the failure reads as a launch that never finished.
-    internal func waitForSampleDatabaseWindow(in app: XCUIApplication, timeout: TimeInterval = 30) -> Bool {
+    /// The timeout is contention headroom, not a guess at how long opening takes. Three UI shards
+    /// share a runner with the unit job and both arch builds, and the tests that miss the window
+    /// are different on every run: this release's tag build lost `testTheBannerCanBeDismissed`,
+    /// `testSwitchConnectionOpensWithTheToolbarHidden` and
+    /// `testToggleFoldRunsWithTheCursorInsideAStatement`, and earlier runs lost an unrelated set.
+    /// A suite that reports a launch failure because a sibling shard had the CPU is measuring the
+    /// runner. Locally the wait settles in about two seconds, so the extra ceiling costs nothing
+    /// on a machine that is not starved.
+    internal func waitForSampleDatabaseWindow(in app: XCUIApplication, timeout: TimeInterval = 90) -> Bool {
         let firstObject = app.children(matching: .window).firstMatch
             .descendants(matching: .outline).firstMatch
             .descendants(matching: .staticText).firstMatch
@@ -172,6 +180,72 @@ internal class UITestCase: XCTestCase {
     /// click, because animating a pane into place is what AppKit does.
     internal func waitUntilHittable(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
         waitForPredicate(timeout: timeout) { element.exists && element.isHittable }
+    }
+
+    /// Switches the result to its Structure editor, through **View > Result View > Structure**
+    /// rather than the `Structure` segment of the results status bar.
+    ///
+    /// The segment cannot be clicked on the runner. Its screen is 1024x768, and a window that
+    /// wide cannot hold the sidebar, the detail pane at its minimum width and the row inspector
+    /// at once: the detail pane keeps its minimum and is drawn under the sidebar, taking the
+    /// leading half of the status bar with it. XCUITest still reports the segment as existing and
+    /// hittable, because its accessibility frame is where the layout says it is, so the click is
+    /// posted at (314, 691) and lands on the sidebar. Nothing fails there. The result stays on
+    /// Data, and the suite's next assertion reads the data grid as though it were the structure
+    /// grid, or waits out its timeout for a structure tab picker that was never going to appear.
+    /// (Run 33734073855, where the element tree captured the mode picker still reporting
+    /// `Data` selected after the click.)
+    ///
+    /// The menu item carries no geometry, so it is reachable whatever the window is doing.
+    /// Nothing probes for it first: XCUITest resolves a menu item by opening its parent, and a
+    /// probe that resolves it leaves that menu open, so the click's own traversal then fails with
+    /// "open menu during menu traversal" and waits out a ten second watchdog. Waiting on the menu
+    /// bar costs nothing and waiting for the tab picker afterwards is what makes the switch
+    /// observed rather than assumed.
+    internal func showStructure(in app: XCUIApplication, window: XCUIElement) {
+        let menuBar = app.menuBars.firstMatch
+        XCTAssertTrue(menuBar.waitToExist(timeout: 20), "The app must publish its menu bar")
+        menuBar.menuItems["Structure"].click()
+        XCTAssertTrue(
+            window.radioGroups["structure-tab-picker"].firstMatch.waitToExist(timeout: 30),
+            "The structure editor must open on the Structure result view"
+        )
+    }
+
+    /// A point inside the data grid that an overlapping pane cannot steal.
+    ///
+    /// A coordinate is the only way to click a row at all: the grid's columns are siblings of its
+    /// rows and later in the tree, so XCUITest reads every row and every cell as obscured and
+    /// refuses to click either. The grid's leading edge is not safe to measure from, though. On
+    /// the runner the detail pane is drawn under the sidebar, so a point 80pt in from that edge
+    /// lands on the object browser and a right-click raises its menu rather than the grid's.
+    /// Starting from whichever edge is further right keeps the point on the grid at any width.
+    internal func gridPoint(in grid: XCUIElement, of window: XCUIElement, dy: CGFloat) -> XCUICoordinate {
+        let clearOfBrowser = window.outlines.firstMatch.frame.maxX + 40 - grid.frame.minX
+        return grid.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: max(80, clearOfBrowser), dy: dy))
+    }
+
+    /// The preconditions a click taken off the grid actually has, which existence does not give.
+    ///
+    /// The grid enters the tree when its table view is mounted, which is before the query behind it
+    /// has returned. A click posted then lands on empty grid and selects nothing, and nothing fails
+    /// there: the suite goes on to wait out its own timeout for whatever the selection was supposed
+    /// to produce, and reports that as the missing thing. A grid that exists is also not laid out
+    /// yet, and a coordinate taken off an empty frame resolves to `(inf, inf)`, which posts at no
+    /// display at all and takes the runner down instead of failing.
+    ///
+    /// The question has to stop at the first row. `allElementsBoundByIndex` resolves the whole set,
+    /// and asking the grid for its rows is what activates `DataGridCellAccessibilityView`, so the
+    /// table view then prepares every row of the page and mounts a cell view for each: fine on
+    /// Album's 347 rows, and past XCUITest's own query budget on the `Track` table the sample opens
+    /// by default, where it fails the suite with "Timed out while evaluating UI query" rather than
+    /// with an assertion. `firstMatch` is what stops the traversal early.
+    internal func waitForClickableRows(in grid: XCUIElement, timeout: TimeInterval = 30) -> Bool {
+        let firstRow = grid.tableRows.firstMatch
+        return waitForPredicate(timeout: timeout) {
+            grid.frame.width > 0 && grid.frame.height > 0 && firstRow.exists
+        }
     }
 
     /// The object browser draws its rows as hosted cells, so a row's name arrives as the static
@@ -207,6 +281,25 @@ internal class UITestCase: XCTestCase {
     /// waits for a state that cannot arrive. Clicking through a coordinate reaches them.
     internal func clickAtCenter(_ element: XCUIElement) {
         element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+    }
+
+    /// An item of the contextual menu a right-click just raised, picked out from the menu bar's
+    /// copy of the same title.
+    ///
+    /// A closed menu bar submenu is still in the accessibility tree, so an app-rooted
+    /// `menuItems[title]` matches **Database > Copy To…** as readily as the menu under the pointer
+    /// and then refuses to click either. Hittability is what separates them: only the open menu's
+    /// items can be clicked.
+    ///
+    /// Scoping by container does not work here, measured: `app.children(matching: .menu)` is empty
+    /// while a contextual menu is up, so a query built on it silently answers no. That is why this
+    /// takes a title the menu bar also has and narrows it, rather than asking a container what it
+    /// holds. **A negative assertion cannot be written this way at all**: an absent contextual
+    /// item is indistinguishable from a present-but-unhittable menu bar one. Assert the absence in
+    /// a unit test over the menu-building code instead.
+    internal func contextMenuItem(_ title: String, in app: XCUIApplication) -> XCUIElement {
+        let matches = app.menuItems.matching(NSPredicate(format: "title == %@", title))
+        return matches.allElementsBoundByIndex.first { $0.isHittable } ?? matches.firstMatch
     }
 
     /// The app removes its own defaults domain as it terminates, which is the only point that

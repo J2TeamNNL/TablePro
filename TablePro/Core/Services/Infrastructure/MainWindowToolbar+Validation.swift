@@ -14,6 +14,7 @@ extension MainWindowToolbar: NSToolbarItemValidation {
         let connected: Bool
         let isTableTab: Bool
         let canAddRow: Bool
+        let canRestorePreviousValues: Bool
         let hasPendingChanges: Bool
         let hasDataPendingChanges: Bool
         let blocksAllWrites: Bool
@@ -43,12 +44,24 @@ extension MainWindowToolbar: NSToolbarItemValidation {
         switch itemIdentifier {
         case Self.connection, Self.history:
             return true
+        case Self.assistant:
+            /// The View menu command already gates on the window showing content. Without the same
+            /// gate here the button stays live over a disconnected session and uncollapses the
+            /// assistant beside a connection that cannot answer.
+            return context.connected && AppSettingsManager.shared.ai.enabled
         case Self.database:
             return context.connected && !context.fileBased && context.supportsContainerSwitching
+        case Self.safeMode:
+            /// Safe mode is what stands between a stray keystroke and a live table, so the control
+            /// that sets it answers for as long as the session does. A window with no session has
+            /// nothing to protect and nothing to write it to.
+            return context.connected
         case Self.refresh, Self.quickSwitcher, Self.newTab, Self.exportTables, Self.sidebarToggle:
             return context.connected
         case Self.addRow:
             return context.connected && context.canAddRow
+        case Self.restorePreviousValues:
+            return context.connected && context.canRestorePreviousValues
         case Self.navigateBack:
             return context.connected && context.canNavigateBack
         case Self.navigateForward:
@@ -74,6 +87,7 @@ extension MainWindowToolbar: NSToolbarItemValidation {
             connected: Self.hasLiveSession(state.connectionState),
             isTableTab: state.isTableTab,
             canAddRow: coordinator?.canAddRow ?? false,
+            canRestorePreviousValues: coordinator?.canRewindSelectedTab ?? false,
             hasPendingChanges: state.hasPendingChanges,
             hasDataPendingChanges: state.hasDataPendingChanges,
             blocksAllWrites: state.safeModeLevel.blocksAllWrites,
@@ -86,7 +100,22 @@ extension MainWindowToolbar: NSToolbarItemValidation {
         )
     }
 
+    /// Switch Connection is the window's, so it answers before a subject is required. Every other
+    /// item here needs the coordinator that presents it, and enabling one of those without a
+    /// subject would leave a live-looking button that does nothing, so no subject still disables
+    /// the rest of the toolbar.
+    ///
+    /// The sidebar item is not an exception, however window-owned the sidebar itself now is: it is
+    /// the Tables/Favorites segmented control, `sidebarSegmentChanged` reaches
+    /// `coordinator?.splitViewController`, and the tab it selects is per-connection state that a
+    /// window with no session has nowhere to write. Show/Hide Sidebar is the command that answers
+    /// in every phase, and it lives in the View menu and on the divider rather than here.
+    static func isWindowScoped(_ itemIdentifier: NSToolbarItem.Identifier) -> Bool {
+        itemIdentifier == Self.connection
+    }
+
     func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
+        if Self.isWindowScoped(item.itemIdentifier) { return true }
         guard let context = validationContext() else { return false }
         return Self.isEnabled(itemIdentifier: item.itemIdentifier, context: context)
     }
@@ -101,6 +130,7 @@ extension MainWindowToolbar: NSToolbarItemValidation {
 extension MainWindowToolbar: NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         guard let itemIdentifier = itemIdentifier(forMenuFormAction: menuItem.action) else { return true }
+        if Self.isWindowScoped(itemIdentifier) { return true }
         guard let context = validationContext() else { return false }
         return Self.isEnabled(itemIdentifier: itemIdentifier, context: context)
     }

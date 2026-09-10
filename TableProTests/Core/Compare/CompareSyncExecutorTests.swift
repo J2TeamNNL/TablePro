@@ -52,27 +52,9 @@ private final class RecordingDriver: PluginDatabaseDriver, @unchecked Sendable {
     }
 }
 
-private struct AlwaysAllowGate: ExecutionGate {
-    func authorize(_ request: OperationRequest) async -> OperationDecision {
-        .authorized(OperationReceipt(
-            connectionId: request.connectionId,
-            kind: request.kind,
-            effectiveWrite: true,
-            grantedAt: Date(),
-            token: UUID()
-        ))
-    }
-}
-
-private struct AlwaysDenyGate: ExecutionGate {
-    func authorize(_ request: OperationRequest) async -> OperationDecision {
-        .denied(reason: "Read-Only connection")
-    }
-}
-
 final class CompareSyncExecutorTests: XCTestCase {
-    private func endpoint() -> CompareSyncEndpoint {
-        CompareSyncEndpoint(
+    private func endpoint() -> DatabaseEndpoint {
+        DatabaseEndpoint(
             scope: DatabaseScope(connectionId: UUID(), database: "app", schema: nil),
             connectionName: "staging",
             databaseType: .mysql,
@@ -339,9 +321,9 @@ final class CompareSyncEligibilityTests: XCTestCase {
     }
 }
 
-final class CompareSyncEndpointTests: XCTestCase {
-    private func endpoint(_ level: SafeModeLevel) -> CompareSyncEndpoint {
-        CompareSyncEndpoint(
+final class DatabaseEndpointSafeModeTests: XCTestCase {
+    private func endpoint(_ level: SafeModeLevel) -> DatabaseEndpoint {
+        DatabaseEndpoint(
             scope: DatabaseScope(connectionId: UUID(), database: "prod", schema: nil),
             connectionName: "prod",
             databaseType: .postgresql,

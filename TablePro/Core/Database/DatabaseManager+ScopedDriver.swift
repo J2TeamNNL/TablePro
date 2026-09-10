@@ -26,6 +26,16 @@ extension DatabaseManager {
         return canPool(session) ? .pooled : .sessionDriver
     }
 
+    /// A structure, trigger or enum edit is the app's own DDL with its own BEGIN and COMMIT, so
+    /// it must not share a connection with the user: on the session driver its BEGIN joins
+    /// whatever transaction a query tab left open, and its COMMIT or ROLLBACK then takes that
+    /// tab's uncommitted work with it. It runs on a pooled connection wherever one reaches the
+    /// same database, which is the metadata route, and on the session driver only where nothing
+    /// else can.
+    func schemaChangeRoute(for scope: DatabaseScope) -> ScopedDriverRoute {
+        metadataRoute(for: scope)
+    }
+
     /// SQL the user owns stays on the session driver, which holds their transaction,
     /// their temp tables and the handle Stop cancels. The pool is the fallback only for
     /// engines that cannot change database on a live connection, where the alternative
@@ -164,11 +174,26 @@ extension DatabaseManager {
         }
     }
 
+    /// Whether the connection is running work that must not be interrupted, whatever its age.
+    internal func holdsProtectedWrite(_ connectionId: UUID) -> Bool {
+        (runningDrivers[connectionId] ?? [:]).values.contains { $0.policy == .protectedWrite }
+    }
+
     private func withPinnedSessionDriver<T: Sendable>(
         scope: DatabaseScope,
         _ body: @Sendable @escaping (DatabaseDriver) async throws -> T
     ) async throws -> T {
-        try await sessionDriverGate.withExclusiveAccess(scope.connectionId) {
+        /// Outside the gate on purpose. A verification that has to reconnect runs the whole
+        /// reconnect, which restores the schema and the database on the new driver, and doing that
+        /// while holding the gate would deadlock the very thing waiting to be pinned.
+        await verifyBeforeUse(scope.connectionId)
+        /// A check that failed and could not recover left the driver installed and disconnected,
+        /// so the presence of a driver below is not enough. Refusing here is the point of checking
+        /// at all: without it the user's own work runs on a handle the app already knows is dead.
+        guard isUsable(scope.connectionId) else {
+            throw DatabaseError.notConnected
+        }
+        return try await sessionDriverGate.withExclusiveAccess(scope.connectionId) {
             try await trackOperation(sessionId: scope.connectionId) {
                 try Task.checkCancellation()
                 guard let driver = driver(for: scope.connectionId) else {

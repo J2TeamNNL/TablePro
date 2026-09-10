@@ -15,9 +15,11 @@ internal enum TrackedOperationKind: String, CaseIterable, Sendable {
     case schemaChange
     case dataImport
     case dataExport
+    case objectCopy
     case backup
     case fetchAll
     case mcpQuery
+    case scriptQuery
 }
 
 /// What a completion can be attributed to, which is also what a click can focus. A tab-owned

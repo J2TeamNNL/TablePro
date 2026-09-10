@@ -6,28 +6,6 @@
 import SwiftUI
 import TableProPluginKit
 
-/// `database` is nil when the connection browses no database, which is the normal state for
-/// an engine that has none. It stays optional all the way from `browsingDatabase` so it can be
-/// compared against the equally optional active database: an empty string here read as "some
-/// database called nothing", never equal to nil, and fired a database switch on every click.
-struct DatabaseTreeTableRef: Hashable, Identifiable {
-    let database: String?
-    let schema: String?
-    let table: TableInfo
-
-    var id: String {
-        "\(database ?? "")|\(schema ?? "")|\(table.id)"
-    }
-
-    static func == (lhs: DatabaseTreeTableRef, rhs: DatabaseTreeTableRef) -> Bool {
-        lhs.id == rhs.id
-    }
-
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
-    }
-}
-
 struct DatabaseTreeRoutineRef: Identifiable, Equatable {
     let database: String?
     let schema: String?
@@ -56,6 +34,20 @@ struct DatabaseTreeTriggerRef: Identifiable, Equatable {
     }
 }
 
+struct DatabaseTreeUserTypeRef: Identifiable, Equatable {
+    let database: String?
+    let schema: String?
+    let type: UserDefinedTypeInfo
+
+    var id: String {
+        "\(database ?? "")|\(schema ?? "")|\(type.id)"
+    }
+
+    var objectRef: DatabaseObjectRef {
+        DatabaseObjectRef(userType: type, database: database ?? "")
+    }
+}
+
 struct DatabaseTreeView: View {
     @Bindable private var treeService = DatabaseTreeMetadataService.shared
 
@@ -63,12 +55,13 @@ struct DatabaseTreeView: View {
     let databaseType: DatabaseType
     let viewModel: SidebarViewModel
     let windowState: WindowSidebarState
-    @Binding var pendingTruncates: Set<String>
-    @Binding var pendingDeletes: Set<String>
+    @Binding var pendingTruncates: Set<DatabaseTreeTableRef>
+    @Binding var pendingDeletes: Set<DatabaseTreeTableRef>
     let coordinator: MainContentCoordinator?
     let sidebarState: SharedSidebarState
 
     @State private var settingsManager = AppSettingsManager.shared
+    @State private var showsDatabaseProgress = false
 
     private var activeDatabase: String? {
         let name = coordinator?.toolbarState.currentDatabase ?? ""
@@ -100,6 +93,15 @@ struct DatabaseTreeView: View {
             && filteredDatabases.isEmpty
     }
 
+    private var isLoadingDatabases: Bool {
+        switch treeService.databaseListState(for: connectionId) {
+        case .idle, .loading:
+            return true
+        case .loaded, .failed:
+            return false
+        }
+    }
+
     var body: some View {
         Group {
             switch treeService.databaseListState(for: connectionId) {
@@ -115,9 +117,14 @@ struct DatabaseTreeView: View {
                     outline
                 }
             case .idle, .loading:
-                loadingState
+                if showsDatabaseProgress {
+                    loadingState
+                } else {
+                    Color.clear
+                }
             }
         }
+        .loadingRevealGate(isActive: isLoadingDatabases, isRevealed: $showsDatabaseProgress)
         .task(id: isConnected) {
             await treeService.loadDatabases(connectionId: connectionId, databaseType: databaseType)
         }

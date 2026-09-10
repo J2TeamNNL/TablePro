@@ -5,6 +5,7 @@
 //  The display formats and the display order the data grid shows, resolved without the grid.
 //
 
+import AppKit
 import Foundation
 import TableProPluginKit
 
@@ -30,7 +31,111 @@ struct DisplayOrderCacheEntry {
     }
 }
 
+/// A tab's formatted-cell text, kept across the grid remounts a tab switch causes, plus the inputs
+/// that decided it.
+struct DisplayStateCacheEntry {
+    let identity: DataGridDisplayIdentity
+    let state: DataGridDisplayState
+    var lastUsed: Int
+}
+
 extension MainContentCoordinator {
+    /// The formatted text and viewport anchor for a tab's result, kept here because the grid that
+    /// derives them is destroyed and rebuilt on every tab switch.
+    ///
+    /// A stale entry is replaced rather than repaired: the cache is keyed by row id, row ids are
+    /// positional, and a new page reuses the ids of the one before it, so anything that can change
+    /// what a position holds has to be part of the identity. It keys on `bufferEpoch` rather than
+    /// `dataRevision` for exactly that reason: an in-place edit keeps every row id, and the grid
+    /// already drops the one row it touched, so replacing the whole entry there would re-format the
+    /// page after every keystroke that commits. (#2424)
+    func displayState(for tab: QueryTab) -> DataGridDisplayState {
+        let settings = AppSettingsManager.shared.dataGrid
+        let tableRows = tabSessionRegistry.existingTableRows(for: tab.id)
+        let identity = DataGridDisplayIdentity(
+            bufferEpoch: tabSessionRegistry.session(for: tab.id)?.bufferEpoch ?? 0,
+            resultSetId: tab.display.activeResultSetId,
+            columns: tableRows?.columns ?? [],
+            columnTypes: tableRows?.columnTypes ?? [],
+            displayFormats: displayFormats(for: tab),
+            dateFormat: settings.dateFormat,
+            nullDisplay: settings.nullDisplay,
+            smartValueDetection: settings.enableSmartValueDetection,
+            systemTimeZoneGeneration: DateFormattingService.shared.systemTimeZoneGeneration
+        )
+
+        displayStateClock &+= 1
+        if let cached = displayStateCache[tab.id], cached.identity == identity {
+            displayStateCache[tab.id]?.lastUsed = displayStateClock
+            return cached.state
+        }
+        let state = DataGridDisplayState()
+        displayStateCache[tab.id] = DisplayStateCacheEntry(
+            identity: identity,
+            state: state,
+            lastUsed: displayStateClock
+        )
+        pruneDisplayStateCache()
+        return state
+    }
+
+    /// Each entry holds a whole result's formatted text, budgeted at 64 MB by `RowDisplayCache`, so
+    /// the tabs the user is actually moving between keep theirs and the rest give it back. The
+    /// budget is the one inactive row data already uses, so the two do not disagree about how many
+    /// background tabs are worth keeping.
+    private func pruneDisplayStateCache() {
+        let budget = MemoryPressureAdvisor.budgetForInactiveTabs() + 1
+        guard displayStateCache.count > budget else { return }
+        let ordered = displayStateCache.sorted { $0.value.lastUsed > $1.value.lastUsed }
+        for entry in ordered.dropFirst(budget) {
+            displayStateCache.removeValue(forKey: entry.key)
+        }
+    }
+
+    /// Keeps a grid's selection on its tab, so returning to the tab does not start with nothing
+    /// selected.
+    ///
+    /// `handleTabChange` has always restored `selectedRowIndices` on the way in, but nothing ever
+    /// wrote it: outside a paste, its only writers set it to empty, so every switch back replayed an
+    /// empty set over the reader's selection. This is the missing half, and it is driven by the
+    /// grid's own teardown rather than by the tab switch, because the grid is also destroyed when
+    /// the tab changes result mode, which is not a tab switch at all. (#2667)
+    /// The check is made before `mutate`, not inside it. An `inout` access to an array element runs
+    /// the array's setter whether or not the block writes anything, so guarding inside would still
+    /// invalidate every observer of `tabs` on the way out of a grid that had nothing selected.
+    func storeGridSelection(rows: Set<Int>, cells: GridSelection, forTab tabId: UUID) {
+        guard let tab = tabManager.tabs.first(where: { $0.id == tabId }),
+              tab.selectedRowIndices != rows || tab.cellSelection != cells else { return }
+        tabManager.mutate(tabId: tabId) { tab in
+            tab.selectedRowIndices = rows
+            tab.cellSelection = cells
+        }
+    }
+
+    /// The grid's own teardown, which is authoritative only while its tab is still the selected one.
+    ///
+    /// A result-mode switch destroys the grid without changing tabs, and there the table view still
+    /// holds what the reader selected. A tab switch does not: `handleTabChange` repoints the shared
+    /// `GridSelectionState` at the incoming tab while the outgoing grid is still mounted and bound to
+    /// it, so `syncSelection` clears the outgoing table view on the way out and the teardown reads an
+    /// empty selection (measured). That case is captured in `handleTabChange` instead, before the
+    /// repoint. (#2667)
+    func storeGridSelectionOnTeardown(rows: Set<Int>, cells: GridSelection, forTab tabId: UUID) {
+        guard tabManager.selectedTabId == tabId else { return }
+        storeGridSelection(rows: rows, cells: cells, forTab: tabId)
+    }
+
+    /// What the mounted data grid has selected right now.
+    ///
+    /// Only ever one grid is mounted, so this needs no tab argument; callers decide which tab the
+    /// answer belongs to. `handleTabChange` reads it for the tab it is leaving, which is still the
+    /// mounted one at the point it runs.
+    func mountedGridSelection() -> (rows: Set<Int>, cells: GridSelection)? {
+        guard let grid = dataTabDelegate?.tableViewCoordinator,
+              let tableView = grid.tableView else { return nil }
+        return (Set(tableView.selectedRowIndexes), grid.selectionController.selection)
+    }
+
     /// The rows the grid is displaying, in display order, or nil when that is the storage order.
     ///
     /// Resolved from the tab rather than from the mounted grid. SwiftUI destroys an

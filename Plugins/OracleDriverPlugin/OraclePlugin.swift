@@ -15,6 +15,8 @@ final class OraclePlugin: NSObject, TableProPlugin, DriverPlugin, PluginDiagnost
     static let capabilities: [PluginCapability] = [.databaseDriver]
 
     static let databaseTypeId = "Oracle"
+
+    static let supportsRenameTable = true
     static let databaseDisplayName = "Oracle"
     static let iconName = "oracle-icon"
     static let defaultPort = 1_521
@@ -417,21 +419,31 @@ final class OraclePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
     // MARK: - Streaming
 
+    func executeBoundedQuery(query: String, rowCap: Int) async throws -> PluginQueryResult? {
+        try await boundedQueryFromStream(query: query, rowCap: rowCap)
+    }
+
     func streamRows(query: String) -> AsyncThrowingStream<PluginStreamElement, Error> {
         guard let core else {
             return AsyncThrowingStream { $0.finish(throwing: OraclePluginError(core: .notConnected)) }
         }
 
-        return AsyncThrowingStream(bufferingPolicy: .unbounded) { continuation in
+        return PluginRowStream.make { continuation, abort in
             let streamTask = Task {
+                /// The core read runs in its own unstructured task, which the outer one cannot
+                /// cancel: a plain `Task {}` inherits context but is not a child. Cancelling it
+                /// explicitly on abort is what stops oracle-nio, whose own loop already checks
+                /// cancellation once it is reachable.
                 let coreStream = AsyncThrowingStream<OracleStreamElement, Error> { coreContinuation in
-                    Task {
+                    let coreTask = Task {
                         do {
                             try await core.streamQuery(query, continuation: coreContinuation)
                         } catch {
                             coreContinuation.finish(throwing: error)
                         }
                     }
+                    abort.onAbort { coreTask.cancel() }
+                    coreContinuation.onTermination = { @Sendable _ in coreTask.cancel() }
                 }
                 do {
                     for try await element in coreStream {
@@ -452,9 +464,7 @@ final class OraclePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
                     continuation.finish(throwing: error)
                 }
             }
-            continuation.onTermination = { @Sendable _ in
-                streamTask.cancel()
-            }
+            abort.onAbort { streamTask.cancel() }
         }
     }
 
@@ -503,6 +513,16 @@ final class OraclePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
                 type: "BTREE"
             )
         }.sorted { $0.name < $1.name }
+    }
+
+    func fetchIndexDDL(table: String, schema: String?) async throws -> [String] {
+        let owner = effectiveSchema(schema)
+        let result = try await rawQuery(OracleIndexStatements.query(schema: owner, table: table))
+        return OracleIndexStatements.render(
+            rows: result.rows.map { row in row.map { $0.stringValue } },
+            schema: owner,
+            table: table,
+            quote: quoteIdentifier)
     }
 
     func fetchForeignKeys(table: String, schema: String?) async throws -> [PluginForeignKeyInfo] {
@@ -692,7 +712,14 @@ final class OraclePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         // which corrupts OracleNIO's connection state machine.
         let sql = "SELECT TEXT_VC FROM ALL_VIEWS WHERE VIEW_NAME = '\(escapedView)' AND OWNER = '\(escaped)'"
         let result = try await execute(query: sql)
-        return result.rows.first?.first?.asText ?? ""
+        guard let body = result.rows.first?.first?.asText,
+              !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw OraclePluginError(core: .queryFailed(
+                String(format: String(localized: "Oracle returned no definition for view '%@'."), view)))
+        }
+        /// `TEXT_VC` is the view's `SELECT` and nothing else, so it needs the header a dump replays.
+        /// Written bare it made the restore run a query and create no view.
+        return "CREATE OR REPLACE VIEW \(quoteIdentifier(effectiveSchema(schema))).\(quoteIdentifier(view)) AS\n\(body)"
     }
 
     func fetchTableMetadata(table: String, schema: String?) async throws -> PluginTableMetadata {
@@ -1001,7 +1028,7 @@ final class OraclePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         if typeChanged || nullabilityChanged || defaultChanged {
             var def = "\(colName) \(newColumn.dataType.uppercased())"
             if let defaultValue = newColumn.defaultValue {
-                def += " DEFAULT \(oracleDefaultValue(defaultValue))"
+                def += " DEFAULT \(defaultValue)"
             } else if defaultChanged {
                 def += " DEFAULT NULL"
             }
@@ -1022,6 +1049,48 @@ final class OraclePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
     func generateDropColumnSQL(table: String, columnName: String) -> String? {
         "ALTER TABLE \(oracleQualifiedTable(table)) DROP COLUMN \(quoteIdentifier(columnName))"
+    }
+
+    /// Oracle has no positional clause, but making a column invisible and visible again moves it to
+    /// the end of the visible order, so any order is reachable by appending the right suffix.
+    ///
+    /// Measured against Oracle Free 23: the cycle works on the primary key, on an identity column
+    /// and on a virtual column; the rows, the default, the NOT NULL, the comment, the identity
+    /// sequence, the constraints, the indexes and the foreign keys pointing at the table all
+    /// survive it, and no data is read or written. Needs 12.1, where invisible columns arrived; an
+    /// older server rejects the statement and the error is reported as it is.
+    ///
+    /// The two halves of a cycle are separate statements because Oracle commits each DDL on its
+    /// own, so a column is invisible for the width of one statement. Cycling one column at a time
+    /// keeps that window as small as it can be.
+    func generateColumnReorderPlan(
+        table: String,
+        schema: String?,
+        columns: [PluginColumnDefinition],
+        desiredOrder: [String]
+    ) async throws -> PluginColumnReorderPlan? {
+        let qt = oracleQualifiedTable(table)
+        let currentOrder = try await fetchColumns(table: table, schema: schema).map(\.name)
+        let cycled = PluginColumnReorderPlanner.appendCycle(from: currentOrder, to: desiredOrder)
+        let statements = cycled.flatMap { column -> [String] in
+            let quoted = quoteIdentifier(column)
+            return [
+                "ALTER TABLE \(qt) MODIFY (\(quoted) INVISIBLE)",
+                "ALTER TABLE \(qt) MODIFY (\(quoted) VISIBLE)"
+            ]
+        }
+        guard !statements.isEmpty else { return nil }
+
+        /// Oracle commits each DDL statement on its own, so there is no transaction to roll back:
+        /// a cycle whose `VISIBLE` half fails, on a dropped connection or a server error, leaves
+        /// that column hidden for good. Every cycled column gets a compensating `VISIBLE` that the
+        /// executor runs on any mid-plan failure, which is idempotent on a column that is already
+        /// visible and puts back the one that is not.
+        return PluginColumnReorderPlan(
+            statements: statements,
+            compensation: cycled.map { "ALTER TABLE \(qt) MODIFY (\(quoteIdentifier($0)) VISIBLE)" },
+            cost: .metadataOnly
+        )
     }
 
     func generateAddIndexSQL(table: String, index: PluginIndexDefinition) -> String? {
@@ -1050,7 +1119,7 @@ final class OraclePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     private func oracleColumnDefinition(_ col: PluginColumnDefinition, inlinePK: Bool) -> String {
         var def = "\(quoteIdentifier(col.name)) \(col.dataType.uppercased())"
         if let defaultValue = col.defaultValue {
-            def += " DEFAULT \(oracleDefaultValue(defaultValue))"
+            def += " DEFAULT \(defaultValue)"
         }
         if !col.isNullable {
             def += " NOT NULL"
@@ -1059,16 +1128,6 @@ final class OraclePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
             def += " PRIMARY KEY"
         }
         return def
-    }
-
-    private func oracleDefaultValue(_ value: String) -> String {
-        let upper = value.uppercased()
-        if upper == "NULL" || upper == "SYSDATE" || upper == "SYSTIMESTAMP"
-            || upper == "SYS_GUID()" || upper == "USER"
-            || value.hasPrefix("'") || Int64(value) != nil || Double(value) != nil {
-            return value
-        }
-        return "'\(escapeStringLiteral(value))'"
     }
 
     private func oracleIndexDefinition(_ index: PluginIndexDefinition, qualifiedTable: String) -> String {
@@ -1086,7 +1145,11 @@ final class OraclePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         } else {
             refTable = quoteIdentifier(fk.referencedTable)
         }
-        var def = "CONSTRAINT \(quoteIdentifier(fk.name)) FOREIGN KEY (\(cols)) REFERENCES \(refTable) (\(refCols))"
+        let constraint = fk.name.isEmpty ? "" : "CONSTRAINT \(quoteIdentifier(fk.name)) "
+        var def = "\(constraint)FOREIGN KEY (\(cols)) REFERENCES \(refTable)"
+        if !refCols.isEmpty {
+            def += " (\(refCols))"
+        }
         if fk.onDelete != "NO ACTION" {
             def += " ON DELETE \(fk.onDelete)"
         }

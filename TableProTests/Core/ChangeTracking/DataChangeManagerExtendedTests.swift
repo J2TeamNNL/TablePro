@@ -26,7 +26,8 @@ struct DataChangeManagerExtendedTests {
             tableName: "test_table",
             columns: columns,
             primaryKeyColumns: [pk].compactMap { $0 },
-            databaseType: .mysql
+            databaseType: .mysql,
+            generatedColumns: []
         )
         return manager
     }
@@ -257,7 +258,7 @@ struct DataChangeManagerExtendedTests {
         let state = manager.saveState()
         manager.clearChanges()
         #expect(!manager.hasChanges)
-        manager.restoreState(from: state, tableName: "test_table", databaseType: .mysql)
+        manager.restoreState(from: state, tableName: "test_table", databaseType: .mysql, generatedColumns: [])
         #expect(manager.hasChanges)
     }
 
@@ -267,7 +268,7 @@ struct DataChangeManagerExtendedTests {
         manager.recordRowDeletion(rowIndex: 2, originalRow: ["3", "Charlie", "c@test.com"])
         let state = manager.saveState()
         manager.clearChanges()
-        manager.restoreState(from: state, tableName: "test_table", databaseType: .mysql)
+        manager.restoreState(from: state, tableName: "test_table", databaseType: .mysql, generatedColumns: [])
         #expect(manager.isRowDeleted(2))
     }
 
@@ -280,7 +281,7 @@ struct DataChangeManagerExtendedTests {
         )
         let state = manager.saveState()
         manager.clearChanges()
-        manager.restoreState(from: state, tableName: "test_table", databaseType: .mysql)
+        manager.restoreState(from: state, tableName: "test_table", databaseType: .mysql, generatedColumns: [])
         #expect(manager.isCellModified(rowIndex: 0, columnIndex: 1))
     }
 
@@ -293,7 +294,7 @@ struct DataChangeManagerExtendedTests {
         )
         let state = manager.saveState()
         manager.clearChanges()
-        manager.restoreState(from: state, tableName: "test_table", databaseType: .mysql)
+        manager.restoreState(from: state, tableName: "test_table", databaseType: .mysql, generatedColumns: [])
         manager.recordCellChange(
             rowIndex: 0, columnIndex: 2, columnName: "email",
             oldValue: "a@test.com", newValue: "b@test.com"
@@ -306,7 +307,7 @@ struct DataChangeManagerExtendedTests {
     func emptyStateRoundTrip() {
         let manager = makeManager()
         let state = manager.saveState()
-        manager.restoreState(from: state, tableName: "test_table", databaseType: .mysql)
+        manager.restoreState(from: state, tableName: "test_table", databaseType: .mysql, generatedColumns: [])
         #expect(!manager.hasChanges)
         #expect(manager.changes.isEmpty)
     }
@@ -340,7 +341,7 @@ struct DataChangeManagerExtendedTests {
         #expect(!manager.isCellModified(rowIndex: 0, columnIndex: 1))
     }
 
-    @Test("discardChanges preserves undo/redo stacks unlike clearChanges")
+    @Test("only clearChangesAndUndoHistory drops the undo stack")
     func discardChangesPreservesUndoRedoUnlikeClearChanges() {
         // discardChanges preserves undo/redo
         let manager1 = makeManager()
@@ -353,7 +354,10 @@ struct DataChangeManagerExtendedTests {
         manager1.discardChanges()
         #expect(manager1.canRedo)
 
-        // clearChanges clears undo/redo
+        /// `clearChanges` drops the pending edits and leaves the undo stack standing, exactly as
+        /// `discardChanges` does. Clearing the history is a separate call,
+        /// `clearChangesAndUndoHistory`, and that distinction is the point: this case asserted that
+        /// `clearChanges` wiped undo, which would make the two indistinguishable.
         let manager2 = makeManager()
         manager2.recordCellChange(
             rowIndex: 0, columnIndex: 1, columnName: "name",
@@ -362,6 +366,9 @@ struct DataChangeManagerExtendedTests {
         manager2.undoManagerProvider?()?.undo()
         #expect(manager2.canRedo)
         manager2.clearChanges()
+        #expect(manager2.canRedo)
+
+        manager2.clearChangesAndUndoHistory()
         #expect(!manager2.canUndo)
         #expect(!manager2.canRedo)
     }
@@ -589,7 +596,9 @@ struct DataChangeManagerExtendedTests {
         )
         manager.undoManagerProvider?()?.undo()
         let state = manager.saveState()
-        #expect(state.insertedRowData[0]?[1] == nil)
+        /// `.null`, not a Swift nil. An inserted row holds an explicit SQL NULL for a cell with no
+        /// value, so undoing an edit restores `.null` rather than removing the entry.
+        #expect(state.insertedRowData[0]?[1] == .null)
     }
 
     @Test("Edit multiple cells in same row all tracked")
@@ -707,6 +716,7 @@ struct DataChangeManagerExtendedTests {
             columns: ["a", "b"],
             primaryKeyColumns: ["a"],
             databaseType: .mysql,
+            generatedColumns: [],
             triggerReload: false
         )
         #expect(manager.reloadVersion == before)

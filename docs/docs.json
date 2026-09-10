@@ -127,9 +127,11 @@
               "connections/urls",
               "connections/ssh-tunneling",
               "connections/ssh-profiles",
+              "connections/remote-database-files",
               "connections/cloudflare-tunnel",
               "connections/cloud-sql-proxy",
               "connections/socks-proxy",
+              "connections/tunnel-command",
               "connections/aws-iam",
               "connections/ssl",
               "features/connection-sharing",
@@ -155,6 +157,7 @@
               "databases/elasticsearch",
               "databases/etcd",
               "databases/bigquery",
+              "databases/kafka",
               "databases/libsql",
               "databases/mariadb",
               "databases/mssql",
@@ -169,7 +172,8 @@
               "databases/surrealdb",
               "databases/teradata",
               "databases/tidb",
-              "databases/trino"
+              "databases/trino",
+              "databases/typesense"
             ]
           },
           {
@@ -204,6 +208,7 @@
             "pages": [
               "features/table-structure",
               "features/routines-triggers",
+              "features/user-defined-types",
               "features/table-operations",
               "features/er-diagram",
               "features/explain-visualization",
@@ -216,6 +221,7 @@
             "icon": "arrow-right-arrow-left",
             "pages": [
               "features/import-export",
+              "features/copy-objects",
               "features/backup-restore",
               "features/compare-sync"
             ]
@@ -294,6 +300,7 @@
             "group": "Drive the app",
             "pages": [
               "external-api/url-scheme",
+              "external-api/applescript",
               "external-api/connection-import",
               "external-api/terminal",
               "external-api/raycast",

@@ -3,7 +3,7 @@ title: Settings
 description: Every settings tab, its controls, and their defaults
 ---
 
-The settings window is app-wide: a value on any of these ten tabs holds for every connection you open. `Cmd+,` opens it; what belongs to one connection is in that connection's form instead.
+The settings window is app-wide: a value on any of these eleven tabs holds for every connection you open. `Cmd+,` opens it; what belongs to one connection is in that connection's form instead.
 
 <Frame caption="The settings window">
   <img className="block dark:hidden" src="/images/settings-window.png" alt="Settings window" />
@@ -20,7 +20,8 @@ The settings window is app-wide: a value on any of these ten tabs holds for ever
   <Card title="AI" icon="sparkles" href="/features/ai-assistant">Providers, inline suggestions, context, slash commands.</Card>
   <Card title="Integrations" icon="network-wired" href="/features/mcp">MCP server, tokens, clients, activity.</Card>
   <Card title="Plugins" icon="puzzle-piece" href="/features/plugins">Manage drivers, exporters, and themes.</Card>
-  <Card title="Account" icon="user" href="/features/licensing">License, iCloud sync, linked folders.</Card>
+  <Card title="Sync" icon="arrows-rotate" href="/features/icloud-sync">iCloud sync and what it carries.</Card>
+  <Card title="License" icon="key" href="/features/licensing">Activation, devices, team.</Card>
 </CardGroup>
 
 ## Stock values
@@ -32,12 +33,14 @@ What a fresh install ships with, so one glance down this column says what you ch
 | General | Language | System |
 | General | When TablePro starts | Reopen Last Session |
 | General | Enable preview tabs | On |
+| General | When tabs stop fitting | Scroll them |
 | General | Show connections | On |
 | General | Show recent tables | Off |
 | General | Show object icons | On |
 | General | Show object comments | On |
 | General | Row size | Match System |
 | General | Default layout for new connections | List |
+| General | Check connections | Every 30 seconds |
 | General | Query timeout | 60 seconds |
 | General | Automatically check for updates | On |
 | General | Share anonymous usage data | On |
@@ -64,6 +67,7 @@ What a fresh install ships with, so one glance down this column says what you ch
 | Data | Auto-show inspector on row select | Off |
 | Data | Smart value detection | On |
 | Data | Default row sort | No sorting (engine order) |
+| Data | Sort direction | Ascending |
 | Data | Default page size | 1,000 rows |
 | Data | Count rows if estimate less than | 100,000 |
 | Data | Truncate query results | On |
@@ -72,6 +76,7 @@ What a fresh install ships with, so one glance down this column says what you ch
 | Data | Maximum history entries | 10,000 |
 | Data | Keep history entries for | 90 days |
 | Data | Auto cleanup | On |
+| Data | Keep saved changes for restoring | On |
 | Notifications | Notify when long-running work finishes | On |
 | Notifications | Only after | 20 seconds |
 | Notifications | Every operation kind | On |
@@ -92,10 +97,11 @@ What a fresh install ships with, so one glance down this column says what you ch
 | Integrations | Query timeout | 30 seconds |
 | Integrations | Log MCP queries in history | On |
 | Integrations | Require authentication | On |
-| Account | iCloud Sync | Off |
-| Account | Passwords (keychain sync) | Off |
+| Integrations | Approval | Ask Once for Each Connection |
+| Sync | Sync this Mac with iCloud | Off |
+| Sync | Passwords (keychain sync) | Off |
 
-Two tabs are not in the table. Stock keyboard chords are on [Keyboard Shortcuts](/features/keyboard-shortcuts), and the Plugins tab holds no values of its own.
+Three tabs are not in the table. Stock keyboard chords are on [Keyboard Shortcuts](/features/keyboard-shortcuts), and neither the Plugins nor the License tab holds a value of its own.
 
 ## Where settings live
 

@@ -3,7 +3,7 @@ title: SSH Tunneling
 description: Route database connections through an SSH tunnel to reach servers in private networks
 ---
 
-The database **Host** on the General pane is resolved from the SSH server, not from your Mac. A database on the SSH server itself is therefore `localhost`, not the server's public name, and a database elsewhere on the private network is whatever the SSH server calls it (an RDS endpoint, for instance).
+The database **Host** on the General section is resolved from the SSH server, not from your Mac. A database on the SSH server itself is therefore `localhost`, not the server's public name, and a database elsewhere on the private network is whatever the SSH server calls it (an RDS endpoint, for instance).
 
 ```mermaid
 flowchart LR
@@ -14,7 +14,7 @@ flowchart LR
 
 <Steps>
   <Step title="Turn the tunnel on">
-    In the connection form, open the **SSH Tunnel** pane and switch on **Enable SSH Tunnel**. A connection uses one transport at a time; if a Cloudflare tunnel, Cloud SQL Auth Proxy, or SOCKS proxy is already on, the pane offers a button to switch it off.
+    In the connection form, open the **Network** tab and set **Connect via** to **SSH Tunnel**. A connection uses one transport, so choosing this one switches off whichever was selected before.
   </Step>
   <Step title="Name the SSH server">
     Fill in **SSH Host**, **SSH Port** (22 by default), and **SSH User**. With `~/.ssh/config` entries present, a **Config Host** picker appears above the host field instead.
@@ -26,18 +26,18 @@ flowchart LR
     Back on **General**, `localhost` reaches a database on the SSH server itself. One on a unix socket needs [Socket Path](#forwarding-to-a-unix-socket) instead.
   </Step>
   <Step title="Click Test Connection">
-    A wrong host or a blocked forward names the real reason instead of timing out. [Troubleshooting](#troubleshooting) has the three the SSH side reports.
+    A wrong host, a blocked forward, or an agent nothing answered on names the real reason instead of timing out. [Troubleshooting](#troubleshooting) has the messages the SSH side reports.
   </Step>
 </Steps>
 
-To share one SSH config across connections, save it with **Save Current as Profile…** or pick an existing one from the **Profile** picker; see [SSH Profiles](/connections/ssh-profiles). To fill the whole pane from a string instead, paste a `scheme+ssh://` URL into the [Import from URL…](/connections/urls#ssh-tunnel-format) sheet.
+To share one SSH config across connections, save it with **Save Current as Profile…** or pick an existing one from the **Profile** picker; see [SSH Profiles](/connections/ssh-profiles). To fill the fields from a string instead, paste a `scheme+ssh://` URL into the [Import from URL…](/connections/urls#ssh-tunnel-format) sheet.
 
 <Frame caption="Reusing a saved SSH profile">
-  <img className="block dark:hidden" src="/images/ssh-tunnel-config.png" alt="SSH Tunnel pane with a saved profile selected" />
-  <img className="hidden dark:block" src="/images/ssh-tunnel-config-dark.png" alt="SSH Tunnel pane with a saved profile selected" />
+  <img className="block dark:hidden" src="/images/ssh-tunnel-config.png" alt="Network section with SSH Tunnel selected and a saved profile in the Profile picker" />
+  <img className="hidden dark:block" src="/images/ssh-tunnel-config-dark.png" alt="Network section with SSH Tunnel selected and a saved profile in the Profile picker" />
 </Frame>
 
-There is no **SSH Tunnel** pane on SQLite, PGlite, libSQL, Beancount, BigQuery, Cloudflare D1, DynamoDB, Elasticsearch, or Snowflake: each is reached over a local file, a loopback socket, or a vendor HTTP API.
+**SSH Tunnel** is not offered on SQLite, PGlite, libSQL, Beancount, BigQuery, Cloudflare D1, DynamoDB, Elasticsearch, Typesense, or Snowflake: each is reached over a local file, a loopback socket, or a vendor HTTP API.
 
 ## Authentication methods
 
@@ -45,7 +45,7 @@ There is no **SSH Tunnel** pane on SQLite, PGlite, libSQL, Beancount, BigQuery, 
 |---|---|
 | **Password** | The SSH password. Prefer a key on anything production |
 | **Private Key** | **Key File**, with **Browse** to pick one, and **Passphrase** if the key is encrypted. Leaving **Key File** empty auto-detects from `~/.ssh/config` and the default key locations |
-| **SSH Agent** | **Agent Socket**: **SSH_AUTH_SOCK**, **1Password** (its socket at `~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock`), or **Custom Path** for Secretive or your own `ssh-agent`. Signing stays in the agent; the key is never read |
+| **SSH Agent** | **Agent Socket**: **SSH_AUTH_SOCK** for the `ssh-agent` macOS runs, **1Password** for its socket at `~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock`, or **Custom Path** for Secretive or your own. **Identity File** takes a `.pub` and offers that key ahead of the others; empty offers every key the agent holds. Signing stays in the agent; the key is never read, and no key file is tried if the agent refuses |
 | **Keyboard Interactive** | The SSH password, sent through SSH's challenge-response. Use it when the server rejects plain password auth, common with PAM |
 | **None** | Nothing, for a server that authenticates the connection itself such as a [Tailscale SSH](https://tailscale.com/kb/1193/tailscale-ssh) host. A server that does want credentials fails the connect with a message naming the other methods |
 
@@ -65,12 +65,29 @@ If a trusted server's key later changes, an **SSH Host Key Changed** alert lists
 
 ## Using ~/.ssh/config
 
-Pick an alias from the **Config Host** picker and `HostName`, `User`, `Port`, `IdentityFile`, `IdentityAgent`, and `ProxyJump` are resolved from the config at connect time. Anything typed into the form overrides the file, which is re-read whenever it or an `Include`d file changes.
+Pick an alias from the **Config Host** picker and `HostName`, `User`, `Port`, `IdentityFile`, `IdentitiesOnly`, `IdentityAgent`, and `ProxyJump` are resolved from the config at connect time. Anything typed into the form overrides the file, which is re-read whenever it or an `Include`d file changes.
+
+`IdentityFile` picks which agent key is offered, not only which key file is read, and a `.pub` is enough. That is how a 1Password or Secretive key gets pinned to a host. `IdentitiesOnly yes` then drops every agent key the config did not name, which is what keeps a thirty-key agent inside a server's `MaxAuthTries`.
 
 <Frame caption="Picking a host from ~/.ssh/config">
   <img className="block dark:hidden" src="/images/ssh-config-hosts.png" alt="Config Host picker" />
   <img className="hidden dark:block" src="/images/ssh-config-hosts-dark.png" alt="Config Host picker" />
 </Frame>
+
+### Tokens
+
+Each keyword takes the tokens `ssh_config(5)` gives it, and no others. `Hostname %h` is the common one: it names the host the connection already asked for, which is what makes a catch-all `Host *.*` block work.
+
+| Keyword | Tokens |
+|---------|--------|
+| `Hostname` | `%%` `%h` |
+| `ProxyJump` | `%%` `%h` `%n` `%p` `%r` |
+| `IdentityFile`, `IdentityAgent`, `Match exec` | `%%` `%C` `%d` `%h` `%i` `%j` `%k` `%L` `%l` `%n` `%p` `%r` `%u` |
+| `Include` | `%%` `%d` `%i` `%L` `%l` `%u` |
+
+`%h` is the host after any `HostName` substitution and `%n` the one the connection named; `%p`, `%r` and `%j` are the port, remote user and jump host in effect; `%d` and `%u` are your home directory and username; `%C` hashes `%l%h%p%r%j`, the way `ControlPath` does. `${VAR}` reads an environment variable in the same places, and a leading `~` or `~user` expands in any keyword naming a file.
+
+A token a keyword does not take stops the connection and names both, rather than reaching the server as literal text. `Include` is the one narrowing: the file is read once for every connection, before any host is known, so a token naming the target is skipped with a note in Console.
 
 ## Jump hosts
 
@@ -88,7 +105,7 @@ With the list left empty and an SSH host that matches a config entry carrying `P
 
 ## Forwarding to a unix socket
 
-Some servers listen on a unix socket with no TCP port open at all, a PostgreSQL box set up for `local` connections in `pg_hba.conf` being the usual case. Fill in **Socket Path** on the General pane and the forward targets that socket, the same thing `ssh -L 5434:/var/run/postgresql/.s.PGSQL.5432 server` does by hand. **Host** and **Port** are ignored while a socket path is set. Jump hosts still apply: the hops reach the SSH server, and the socket opens from there.
+Some servers listen on a unix socket with no TCP port open at all, a PostgreSQL box set up for `local` connections in `pg_hba.conf` being the usual case. Fill in **Socket Path** under **SSH Tunnel** and the forward targets that socket, the same thing `ssh -L 5434:/var/run/postgresql/.s.PGSQL.5432 server` does by hand. **Host** and **Port** are ignored while a socket path is set. Jump hosts still apply: the hops reach the SSH server, and the socket opens from there.
 
 Point at the socket file, not the directory holding it:
 
@@ -108,6 +125,10 @@ A keep-alive goes out every 30 seconds. When one fails the session drops to conn
 
 If tunnels keep dropping on an idle network, the keep-alive is not the missing piece: check the server's `ClientAliveInterval` and the idle timeouts on any firewall or load balancer in between.
 
+## What the tunnel is carrying
+
+The rate sits beside the connection name in the middle of the toolbar. For the totals, press `Ctrl+Cmd+C` and read the footer under the connection list: bytes received and sent since the tunnel opened. A rebuilt tunnel starts again from zero. See [transport activity](/connections#switch-connections-and-databases).
+
 ## Troubleshooting
 
 ### "The SSH server could not reach …"
@@ -121,6 +142,34 @@ The destination took the connection and never answered, which usually means a fi
 ### "The SSH server would not forward the socket …"
 
 The socket path does not exist on the server, or `sshd_config` sets `AllowStreamLocalForwarding no`. That is a separate setting from `AllowTcpForwarding`.
+
+### "No SSH agent answered on the socket from …"
+
+Nothing is listening where that socket points, and the message names which of the three set it: **Agent Socket** under **SSH Tunnel**, an `IdentityAgent` line for the host in `~/.ssh/config`, or `SSH_AUTH_SOCK`. Change it in the place the message names.
+
+`SSH_AUTH_SOCK` is the one that catches people out. An app launched from Finder gets it from launchd, which means the `ssh-agent` macOS runs, whatever a shell profile exports. 1Password and Secretive are reached by naming their own socket: switch **Agent Socket** to **1Password**, or to **Custom Path**.
+
+A jump host has no **Agent Socket** field of its own, so its agent comes from `IdentityAgent` or `SSH_AUTH_SOCK`.
+
+### "The SSH agent from … holds no keys."
+
+The agent answered and offered nothing. 1Password serves keys only while it is running and unlocked, and Secretive only while its agent is loaded; unlock it and add the key there. `ssh-add` loads keys into the `SSH_AUTH_SOCK` agent alone, so it is the fix only when that is the socket in the message.
+
+### "The SSH agent from … holds no key matching the identity file set for this host. …"
+
+The agent has keys, and none of them is the one `IdentityFile` or **Identity File** names. List what that agent holds with `SSH_AUTH_SOCK=<the socket the message names> ssh-add -L`, since a bare `ssh-add` reads the shell's `SSH_AUTH_SOCK` rather than the socket TablePro used. Point the setting at a key in that list, or clear it to go back to offering every key.
+
+### "No public key could be read from the identity file set for this host, …"
+
+`IdentityFile` or **Identity File** names a path, and neither it, its `.pub` sidecar, nor its `-cert.pub` parses as an OpenSSH public key. Check the path, and run `ssh-keygen -l -f <path>` to confirm the file itself. `ssh-keygen -y -f <private key> > <private key>.pub` writes the sidecar when only the private key exists.
+
+### "SSH agent did not authenticate. …"
+
+The agent offered keys and the server accepted none of them. Check the public key is in `~/.ssh/authorized_keys` on the server for the **SSH User** you filled in, and that the key you expect is in the agent rather than only on disk.
+
+### "The SSH server closed the connection while the agent's keys were being offered. …"
+
+The server reached `MaxAuthTries`, 6 by default, before a key it accepts came up. Count that agent's keys with `SSH_AUTH_SOCK=<the socket in **Agent Socket**> ssh-add -L`: past six, the right one may never be offered. Name it with `IdentityFile` and `IdentitiesOnly yes` for the host in `~/.ssh/config`, or fill in **Identity File** on the connection.
 
 ### The tunnel connects and the database refuses the login
 
