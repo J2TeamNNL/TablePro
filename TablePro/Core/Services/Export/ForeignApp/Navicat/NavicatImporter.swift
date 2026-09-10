@@ -189,6 +189,7 @@ private extension NavicatImporter {
         switch raw.uppercased() {
         case "MYSQL": return "MySQL"
         case "MARIADB": return "MariaDB"
+        case "TIDB": return "TiDB"
         case "POSTGRESQL": return "PostgreSQL"
         case "ORACLE": return "Oracle"
         case "SQLITE": return "SQLite"
@@ -201,6 +202,7 @@ private extension NavicatImporter {
     static func defaultPort(for type: String) -> Int {
         switch type {
         case "MySQL", "MariaDB": return 3_306
+        case "TiDB": return 4_000
         case "PostgreSQL": return 5_432
         case "Oracle": return 1_521
         case "SQL Server": return 1_433

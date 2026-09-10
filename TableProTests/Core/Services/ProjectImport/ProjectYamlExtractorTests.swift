@@ -170,6 +170,29 @@ struct DockerComposeExtractorTests {
         #expect(candidate?.parsedURL.port == 3307)
     }
 
+    @Test("TiDB and Databend images map to their own types and ports")
+    func testTiDBAndDatabendImages() {
+        let tidb = extract("""
+        services:
+          tidb:
+            image: pingcap/tidb:latest
+            ports:
+              - "4001:4000"
+        """).first
+        #expect(tidb?.parsedURL.type == .tidb)
+        #expect(tidb?.parsedURL.port == 4_001)
+
+        let databend = extract("""
+        services:
+          warehouse:
+            image: datafuselabs/databend:latest
+            ports:
+              - "3308:3307"
+        """).first
+        #expect(databend?.parsedURL.type == .databend)
+        #expect(databend?.parsedURL.port == 3_308)
+    }
+
     @Test("Interpolation uses the adjacent dotenv file")
     func testInterpolationFromDotenv() {
         let contents = """

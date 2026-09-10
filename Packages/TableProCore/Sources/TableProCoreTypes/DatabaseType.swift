@@ -11,6 +11,8 @@ public struct DatabaseType: Hashable, Codable, Sendable, RawRepresentable {
 
     public static let mysql = DatabaseType(rawValue: "MySQL")
     public static let mariadb = DatabaseType(rawValue: "MariaDB")
+    public static let tidb = DatabaseType(rawValue: "TiDB")
+    public static let databend = DatabaseType(rawValue: "Databend")
     public static let postgresql = DatabaseType(rawValue: "PostgreSQL")
     public static let sqlite = DatabaseType(rawValue: "SQLite")
     public static let redis = DatabaseType(rawValue: "Redis")
@@ -48,6 +50,8 @@ public struct DatabaseType: Hashable, Codable, Sendable, RawRepresentable {
         switch self {
         case .mysql: return "mysql-icon"
         case .mariadb: return "mariadb-icon"
+        case .tidb: return "tidb-icon"
+        case .databend: return "databend-icon"
         case .postgresql: return "postgresql-icon"
         case .redshift: return "redshift-icon"
         case .sqlite: return "sqlite-icon"
@@ -75,7 +79,7 @@ public struct DatabaseType: Hashable, Codable, Sendable, RawRepresentable {
 
     public var pluginTypeId: String {
         switch self {
-        case .mariadb: return DatabaseType.mysql.rawValue
+        case .mariadb, .tidb, .databend: return DatabaseType.mysql.rawValue
         case .redshift: return DatabaseType.postgresql.rawValue
         default: return rawValue
         }

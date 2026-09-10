@@ -8,6 +8,8 @@ struct DatabaseTypeTests {
     func staticConstants() {
         #expect(DatabaseType.mysql.rawValue == "MySQL")
         #expect(DatabaseType.mariadb.rawValue == "MariaDB")
+        #expect(DatabaseType.tidb.rawValue == "TiDB")
+        #expect(DatabaseType.databend.rawValue == "Databend")
         #expect(DatabaseType.postgresql.rawValue == "PostgreSQL")
         #expect(DatabaseType.sqlite.rawValue == "SQLite")
         #expect(DatabaseType.redis.rawValue == "Redis")
@@ -24,6 +26,8 @@ struct DatabaseTypeTests {
     func pluginTypeIdMapping() {
         #expect(DatabaseType.mysql.pluginTypeId == "MySQL")
         #expect(DatabaseType.mariadb.pluginTypeId == "MySQL")
+        #expect(DatabaseType.tidb.pluginTypeId == "MySQL")
+        #expect(DatabaseType.databend.pluginTypeId == "MySQL")
         #expect(DatabaseType.postgresql.pluginTypeId == "PostgreSQL")
         #expect(DatabaseType.redshift.pluginTypeId == "PostgreSQL")
         #expect(DatabaseType.sqlite.pluginTypeId == "SQLite")
@@ -79,6 +83,8 @@ struct DatabaseTypeTests {
         #expect(DatabaseType.cockroachdb.rawValue == "CockroachDB")
         #expect(DatabaseType.scylladb.rawValue == "ScyllaDB")
         #expect(DatabaseType.turso.rawValue == "Turso")
+        #expect(DatabaseType.tidb.rawValue == "TiDB")
+        #expect(DatabaseType.databend.rawValue == "Databend")
     }
 
     @Test("Desktop-recognized constants stay out of the built-in allKnownTypes list")
@@ -86,6 +92,8 @@ struct DatabaseTypeTests {
         #expect(!DatabaseType.allKnownTypes.contains(.cockroachdb))
         #expect(!DatabaseType.allKnownTypes.contains(.scylladb))
         #expect(!DatabaseType.allKnownTypes.contains(.turso))
+        #expect(!DatabaseType.allKnownTypes.contains(.tidb))
+        #expect(!DatabaseType.allKnownTypes.contains(.databend))
     }
 
     @Test("Decodes a persisted connection type string")

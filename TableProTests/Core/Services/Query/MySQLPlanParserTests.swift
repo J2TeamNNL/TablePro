@@ -203,7 +203,7 @@ struct MySQLPlanParserTests {
 
     @Test("MySQL and MariaDB resolve to the composite parser")
     func registryUsesCompositeParser() {
-        for databaseType in [DatabaseType.mysql, .mariadb] {
+        for databaseType in [DatabaseType.mysql, .mariadb, .tidb] {
             let format = ExplainFormatResolver.resolve(declared: .plainText, databaseType: databaseType)
             #expect(ExplainPlanParserRegistry.parser(for: format) is MySQLPlanParser)
         }

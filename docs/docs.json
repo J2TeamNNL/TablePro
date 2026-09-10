@@ -150,6 +150,7 @@
               "databases/cloudflare-d1",
               "databases/cockroachdb",
               "databases/dameng",
+              "databases/databend",
               "databases/duckdb",
               "databases/elasticsearch",
               "databases/etcd",
@@ -167,6 +168,7 @@
               "databases/sqlite",
               "databases/surrealdb",
               "databases/teradata",
+              "databases/tidb",
               "databases/trino"
             ]
           },

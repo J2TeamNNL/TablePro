@@ -1,0 +1,37 @@
+---
+title: Databend
+description: Connect to Databend and Databend Cloud through the MySQL protocol handler
+---
+
+The MySQL handler is port **3307**. Port 8000 is HTTP SQL, not this handler. Pick **Databend** so the form starts on 3307, then fill host, user, and password the same way as [MySQL](/databases/mysql).
+
+## Connection settings
+
+| Field | Default | Notes |
+|-------|---------|-------|
+| **Host** | `localhost` | Community server or Databend Cloud warehouse endpoint |
+| **Port** | `3307` | Cloud deployments sometimes publish 3306 instead |
+| **Database** | empty | Optional. The server default database is usually `default` |
+| **SSL Mode** | Preferred | Use **Required** on Databend Cloud |
+
+Fill in the form and click **Save & Connect**.
+
+## Connection URL
+
+```text
+databend://root:password@host:3307/default
+```
+
+See [Connection URL Reference](/connections/urls).
+
+## What differs from MySQL
+
+- The sidebar hides `system`, `information_schema`, and `INFORMATION_SCHEMA`. `default` stays visible.
+- No foreign keys, triggers, or stored routines. Those panes stay off.
+- Table options such as `ENGINE=InnoDB` do not apply. Create tables with Databend syntax in the editor.
+- Cloud SQL Auth Proxy is not offered. Reach a private warehouse through an [SSH tunnel](/connections/ssh-tunneling).
+
+## Related
+
+- [MySQL](/databases/mysql), for connection fields, SSL/TLS, and troubleshooting
+- [SSH Tunneling](/connections/ssh-tunneling)

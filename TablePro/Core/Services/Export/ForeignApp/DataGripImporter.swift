@@ -369,6 +369,8 @@ struct DataGripImporter: ForeignAppImporter {
         switch token {
         case "mysql": return "MySQL"
         case "mariadb": return "MariaDB"
+        case "tidb": return "TiDB"
+        case "databend": return "Databend"
         case "postgresql", "postgres": return "PostgreSQL"
         case "sqlite": return "SQLite"
         case "sqlserver", "mssql", "jtds": return "SQL Server"
@@ -389,6 +391,8 @@ struct DataGripImporter: ForeignAppImporter {
         switch subprotocol.lowercased() {
         case "mysql": return "MySQL"
         case "mariadb": return "MariaDB"
+        case "tidb": return "TiDB"
+        case "databend": return "Databend"
         case "postgresql": return "PostgreSQL"
         case "sqlite": return "SQLite"
         case "sqlserver", "jtds": return "SQL Server"
@@ -406,6 +410,8 @@ struct DataGripImporter: ForeignAppImporter {
     private func defaultPort(for type: String) -> Int {
         switch type {
         case "MySQL", "MariaDB": return 3_306
+        case "TiDB": return 4_000
+        case "Databend": return 3_307
         case "PostgreSQL", "CockroachDB", "Redshift": return 5_432
         case "MongoDB": return 27_017
         case "Redis": return 6_379

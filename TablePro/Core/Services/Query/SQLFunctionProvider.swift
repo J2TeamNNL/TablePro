@@ -9,7 +9,8 @@ internal enum SQLFunctionProvider {
     }
 
     static func functions(for databaseType: DatabaseType) -> [SQLFunction] {
-        if databaseType == .mysql || databaseType == .mariadb {
+        if databaseType == .mysql || databaseType == .mariadb
+            || databaseType == .tidb || databaseType == .databend {
             return [
                 SQLFunction(label: "NOW()", expression: "NOW()"),
                 SQLFunction(label: "CURRENT_TIMESTAMP()", expression: "CURRENT_TIMESTAMP()"),

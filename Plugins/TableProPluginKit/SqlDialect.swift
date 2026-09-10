@@ -10,7 +10,7 @@ public enum SqlDialect: String, Sendable, CaseIterable {
         switch databaseTypeId {
         case "PostgreSQL", "Redshift", "Greenplum", "AlloyDB", "Citus", "CockroachDB":
             return .postgres
-        case "MySQL", "MariaDB":
+        case "MySQL", "MariaDB", "TiDB", "Databend":
             return .mysql
         case "SQLite", "libSQL", "Turso", "DuckDB", "Cloudflare D1":
             return .sqlite

@@ -235,6 +235,8 @@ struct DBeaverImporterTests {
             ("redis", "Redis"),
             ("clickhouse", "ClickHouse"),
             ("mariadb", "MariaDB"),
+            ("tidb", "TiDB"),
+            ("databend", "Databend"),
             ("cassandra", "Cassandra")
         ]
 

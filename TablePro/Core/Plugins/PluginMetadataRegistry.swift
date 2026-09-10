@@ -633,6 +633,121 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                     defaultUnixSocketPath: "/var/run/mysqld/mysqld.sock"
                 )
             )),
+            ("TiDB", PluginMetadataSnapshot(
+                displayName: "TiDB", iconName: "tidb-icon", defaultPort: 4_000,
+                requiresAuthentication: true, supportsForeignKeys: true, supportsSchemaEditing: true,
+                isDownloadable: false, primaryUrlScheme: "tidb", parameterStyle: .questionMark,
+                navigationModel: .standard, explainVariants: [], pathFieldRole: .database,
+                supportsHealthMonitor: true, urlSchemes: ["tidb"],
+                postConnectActions: [.selectDatabaseFromLastSession],
+                brandColorHex: "#DE1A2D",
+                queryLanguageName: "SQL", editorLanguage: .sql,
+                connectionMode: .network, supportsDatabaseSwitching: true,
+                supportsColumnReorder: true,
+                capabilities: PluginMetadataSnapshot.CapabilityFlags(
+                    supportsSchemaSwitching: false,
+                    supportsImport: true,
+                    supportsExport: true,
+                    supportsSSH: true,
+                    supportsSSL: true,
+                    supportsCascadeDrop: false,
+                    supportsForeignKeyDisable: true,
+                    supportsReadOnlyMode: true,
+                    supportsQueryProgress: false,
+                    requiresReconnectForDatabaseSwitch: false,
+                    supportsDropDatabase: true,
+                    supportsRenameColumn: true,
+                    supportsTriggers: false,
+                    supportsTriggerEditing: false,
+                    supportsRoutines: false,
+                    supportsDatabaseTriggerBrowse: false,
+                    defaultSSLMode: .preferred
+                ),
+                schema: PluginMetadataSnapshot.SchemaInfo(
+                    defaultSchemaName: "public",
+                    defaultGroupName: "main",
+                    tableEntityName: "Tables",
+                    containerEntityName: "Database",
+                    defaultPrimaryKeyColumn: nil,
+                    immutableColumns: [],
+                    systemDatabaseNames: [
+                        "information_schema", "mysql", "performance_schema", "metrics_schema", "sys"
+                    ],
+                    systemSchemaNames: [],
+                    fileExtensions: [],
+                    databaseGroupingStrategy: .byDatabase,
+                    structureColumnFields: [
+                        .name, .type, .nullable, .defaultValue, .onUpdate, .autoIncrement,
+                        .comment, .charset, .collation
+                    ]
+                ),
+                editor: PluginMetadataSnapshot.EditorConfig(
+                    sqlDialect: mysqlDialect,
+                    statementCompletions: [],
+                    columnTypesByCategory: mysqlColumnTypes
+                ),
+                connection: PluginMetadataSnapshot.ConnectionConfig(
+                    additionalConnectionFields: [],
+                    category: .relational,
+                    tagline: String(localized: "Distributed HTAP, MySQL protocol")
+                )
+            )),
+            ("Databend", PluginMetadataSnapshot(
+                displayName: "Databend", iconName: "databend-icon", defaultPort: 3_307,
+                requiresAuthentication: true, supportsForeignKeys: false, supportsSchemaEditing: true,
+                isDownloadable: false, primaryUrlScheme: "databend", parameterStyle: .questionMark,
+                navigationModel: .standard, explainVariants: [], pathFieldRole: .database,
+                supportsHealthMonitor: true, urlSchemes: ["databend"],
+                postConnectActions: [.selectDatabaseFromLastSession],
+                brandColorHex: "#0170FE",
+                queryLanguageName: "SQL", editorLanguage: .sql,
+                connectionMode: .network, supportsDatabaseSwitching: true,
+                supportsColumnReorder: true,
+                capabilities: PluginMetadataSnapshot.CapabilityFlags(
+                    supportsSchemaSwitching: false,
+                    supportsImport: true,
+                    supportsExport: true,
+                    supportsSSH: true,
+                    supportsSSL: true,
+                    supportsCascadeDrop: false,
+                    supportsForeignKeyDisable: false,
+                    supportsReadOnlyMode: true,
+                    supportsQueryProgress: false,
+                    requiresReconnectForDatabaseSwitch: false,
+                    supportsDropDatabase: true,
+                    supportsRenameColumn: true,
+                    supportsTriggers: false,
+                    supportsTriggerEditing: false,
+                    supportsRoutines: false,
+                    supportsDatabaseTriggerBrowse: false,
+                    defaultSSLMode: .preferred
+                ),
+                schema: PluginMetadataSnapshot.SchemaInfo(
+                    defaultSchemaName: "public",
+                    defaultGroupName: "main",
+                    tableEntityName: "Tables",
+                    containerEntityName: "Database",
+                    defaultPrimaryKeyColumn: nil,
+                    immutableColumns: [],
+                    systemDatabaseNames: ["system", "information_schema", "INFORMATION_SCHEMA"],
+                    systemSchemaNames: [],
+                    fileExtensions: [],
+                    databaseGroupingStrategy: .byDatabase,
+                    structureColumnFields: [
+                        .name, .type, .nullable, .defaultValue, .comment
+                    ]
+                ),
+                editor: PluginMetadataSnapshot.EditorConfig(
+                    sqlDialect: mysqlDialect,
+                    statementCompletions: [],
+                    columnTypesByCategory: mysqlColumnTypes
+                ),
+                connection: PluginMetadataSnapshot.ConnectionConfig(
+                    additionalConnectionFields: [],
+                    category: .analytical,
+                    tagline: String(localized: "Cloud warehouse over the MySQL protocol")
+                )
+            )),
             ("PostgreSQL", PluginMetadataSnapshot(
                 displayName: "PostgreSQL", iconName: "postgresql-icon", defaultPort: 5_432,
                 requiresAuthentication: true, supportsForeignKeys: true, supportsSchemaEditing: true,
@@ -930,6 +1045,8 @@ final class PluginMetadataRegistry: @unchecked Sendable {
         }
 
         reverseTypeIndex["MariaDB"] = "MySQL"
+        reverseTypeIndex["TiDB"] = "MySQL"
+        reverseTypeIndex["Databend"] = "MySQL"
         reverseTypeIndex["Redshift"] = "PostgreSQL"
         reverseTypeIndex["CockroachDB"] = "PostgreSQL"
         reverseTypeIndex["PGlite"] = "PostgreSQL"
@@ -1209,9 +1326,9 @@ final class PluginMetadataRegistry: @unchecked Sendable {
     /// Keyed by `databaseTypeId`. Stale plugins from the registry inherit these on registration.
     static func fallbackCategory(forTypeId typeId: String) -> DatabaseCategory {
         switch typeId {
-        case "MySQL", "MariaDB", "PostgreSQL", "SQLite", "Oracle", "MSSQL":
+        case "MySQL", "MariaDB", "TiDB", "PostgreSQL", "SQLite", "Oracle", "MSSQL":
             return .relational
-        case "Redshift", "ClickHouse", "DuckDB", "BigQuery":
+        case "Redshift", "ClickHouse", "DuckDB", "BigQuery", "Databend":
             return .analytical
         case "MongoDB", "Elasticsearch", "SurrealDB":
             return .document
@@ -1232,6 +1349,8 @@ final class PluginMetadataRegistry: @unchecked Sendable {
         switch typeId {
         case "MySQL":          return String(localized: "Most popular open-source SQL database")
         case "MariaDB":        return String(localized: "Open-source fork of MySQL")
+        case "TiDB":           return String(localized: "Distributed HTAP, MySQL protocol")
+        case "Databend":       return String(localized: "Cloud warehouse over the MySQL protocol")
         case "PostgreSQL":     return String(localized: "Advanced object-relational SQL")
         case "Redshift":       return String(localized: "Amazon's columnar warehouse on Postgres")
         case "SQLite":         return String(localized: "Embedded zero-config SQL database")

@@ -52,6 +52,24 @@ struct DatabaseURLSchemeTests {
         #expect(parsed.type == .mariadb)
     }
 
+    @Test("TiDB scheme parses successfully")
+    func tidbScheme() {
+        let result = ConnectionURLParser.parse("tidb://user:pass@localhost:4000/test")
+        guard case .success(let parsed) = result else {
+            Issue.record("Expected success"); return
+        }
+        #expect(parsed.type == .tidb)
+    }
+
+    @Test("Databend scheme parses successfully")
+    func databendScheme() {
+        let result = ConnectionURLParser.parse("databend://root:pass@localhost:3307/default")
+        guard case .success(let parsed) = result else {
+            Issue.record("Expected success"); return
+        }
+        #expect(parsed.type == .databend)
+    }
+
     @Test("SQLite scheme parses successfully")
     func sqliteScheme() {
         let result = ConnectionURLParser.parse("sqlite:///path/to/database.db")
@@ -175,6 +193,26 @@ struct DatabaseURLSchemeTests {
         #expect(parsed.type == .mariadb)
         #expect(parsed.sshHost == "sshhost")
         #expect(parsed.sshUsername == "sshuser")
+    }
+
+    @Test("TiDB+SSH scheme parses successfully")
+    func tidbSshScheme() {
+        let result = ConnectionURLParser.parse("tidb+ssh://sshuser@sshhost:22/dbuser:dbpass@dbhost/dbname")
+        guard case .success(let parsed) = result else {
+            Issue.record("Expected success"); return
+        }
+        #expect(parsed.type == .tidb)
+        #expect(parsed.sshHost == "sshhost")
+    }
+
+    @Test("Databend+SSH scheme parses successfully")
+    func databendSshScheme() {
+        let result = ConnectionURLParser.parse("databend+ssh://sshuser@sshhost:22/dbuser:dbpass@dbhost/dbname")
+        guard case .success(let parsed) = result else {
+            Issue.record("Expected success"); return
+        }
+        #expect(parsed.type == .databend)
+        #expect(parsed.sshHost == "sshhost")
     }
 
     // MARK: - Unsupported Schemes

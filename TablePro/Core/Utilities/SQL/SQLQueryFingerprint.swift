@@ -160,6 +160,7 @@ enum SQLQueryFingerprint {
     /// two different tables into one row.
     private static func treatsDoubleQuoteAsString(_ databaseType: DatabaseType) -> Bool {
         databaseType == .mysql || databaseType == .mariadb
+            || databaseType == .tidb || databaseType == .databend
     }
 
     private static func appendLiteral(to parts: inout [Part], previousWasLiteral: inout Bool) {

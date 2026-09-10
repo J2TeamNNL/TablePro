@@ -263,6 +263,10 @@ struct ConnectionURLParser {
             return .mysql
         case "mariadb":
             return .mariadb
+        case "tidb":
+            return .tidb
+        case "databend":
+            return .databend
         case "sqlite":
             return .sqlite
         case "mongodb", "mongodb+srv":

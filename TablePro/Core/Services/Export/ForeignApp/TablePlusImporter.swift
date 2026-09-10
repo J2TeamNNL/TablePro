@@ -314,6 +314,8 @@ struct TablePlusImporter: ForeignAppImporter {
         case "MSSQL": return "SQL Server"
         case "Redshift": return "Redshift"
         case "MariaDB": return "MariaDB"
+        case "TiDB": return "TiDB"
+        case "Databend": return "Databend"
         case "CockroachDB": return "CockroachDB"
         default: return driver
         }
@@ -322,6 +324,8 @@ struct TablePlusImporter: ForeignAppImporter {
     private func defaultPort(for dbType: String) -> Int {
         switch dbType {
         case "MySQL", "MariaDB": return 3_306
+        case "TiDB": return 4_000
+        case "Databend": return 3_307
         case "PostgreSQL", "Redshift": return 5_432
         case "CockroachDB": return 26_257
         case "MongoDB": return 27_017

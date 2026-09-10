@@ -131,6 +131,8 @@ struct BeekeeperStudioImporter: ForeignAppImporter {
         switch raw.lowercased() {
         case "mysql": return "MySQL"
         case "mariadb": return "MariaDB"
+        case "tidb": return "TiDB"
+        case "databend": return "Databend"
         case "postgresql", "postgres": return "PostgreSQL"
         case "redshift": return "Redshift"
         case "cockroachdb": return "CockroachDB"
@@ -151,6 +153,8 @@ struct BeekeeperStudioImporter: ForeignAppImporter {
     private static func defaultPort(for type: String) -> Int {
         switch type {
         case "MySQL", "MariaDB": return 3_306
+        case "TiDB": return 4_000
+        case "Databend": return 3_307
         case "PostgreSQL", "Redshift": return 5_432
         case "CockroachDB": return 26_257
         case "SQL Server": return 1_433

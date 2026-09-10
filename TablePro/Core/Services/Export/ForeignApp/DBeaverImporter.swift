@@ -397,6 +397,8 @@ struct DBeaverImporter: ForeignAppImporter {
         case "redis": return "Redis"
         case "clickhouse": return "ClickHouse"
         case "mariadb": return "MariaDB"
+        case "tidb": return "TiDB"
+        case "databend": return "Databend"
         case "cassandra": return "Cassandra"
         default: return provider
         }
@@ -405,6 +407,8 @@ struct DBeaverImporter: ForeignAppImporter {
     private func defaultPort(for dbType: String) -> Int {
         switch dbType {
         case "MySQL", "MariaDB": return 3_306
+        case "TiDB": return 4_000
+        case "Databend": return 3_307
         case "PostgreSQL": return 5_432
         case "MongoDB": return 27_017
         case "Redis": return 6_379

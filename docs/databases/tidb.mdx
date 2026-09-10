@@ -1,0 +1,38 @@
+---
+title: TiDB
+description: Connect to TiDB and TiDB Cloud through the bundled MySQL driver on port 4000
+---
+
+Pick **TiDB** so the form starts on the SQL port, not PD or TiKV. Host, user, password, an optional database, SSL Mode **Preferred**, and SSH if the cluster is not public all match [MySQL](/databases/mysql).
+
+## Connection settings
+
+| Field | Default | Notes |
+|-------|---------|-------|
+| **Host** | `localhost` | The TiDB SQL port, not the PD or TiKV port |
+| **Port** | `4000` | TiDB Cloud uses 4000 as well |
+| **Database** | empty | Optional. Leave it empty to browse every database |
+| **SSL Mode** | Preferred | Use **Required** on TiDB Cloud |
+
+Fill in the form and click **Save & Connect**.
+
+## Connection URL
+
+```text
+tidb://user:password@host:4000/database
+```
+
+See [Connection URL Reference](/connections/urls).
+
+## What differs from MySQL
+
+- The sidebar hides `information_schema`, `mysql`, `performance_schema`, `metrics_schema`, and `sys`.
+- Triggers and stored routines are not listed. TiDB does not run them.
+- Foreign keys appear in the structure tab. Enforcement depends on the cluster version.
+- Cloud SQL Auth Proxy is not offered. Reach a private cluster through an [SSH tunnel](/connections/ssh-tunneling).
+
+## Related
+
+- [MySQL](/databases/mysql), for connection fields, SSL/TLS, and troubleshooting
+- [MariaDB](/databases/mariadb)
+- [SSH Tunneling](/connections/ssh-tunneling)

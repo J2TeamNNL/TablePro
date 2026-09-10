@@ -15,7 +15,7 @@ import TableProPluginKit
 final class MySQLPlugin: NSObject, TableProPlugin, DriverPlugin {
     static let pluginName = "MySQL Driver"
     static let pluginVersion = "1.0.0"
-    static let pluginDescription = "MySQL/MariaDB support via libmariadb"
+    static let pluginDescription = "MySQL, MariaDB, TiDB, and Databend support via libmariadb"
     static let capabilities: [PluginCapability] = [.databaseDriver]
 
     static let databaseTypeId = "MySQL"
@@ -24,7 +24,7 @@ final class MySQLPlugin: NSObject, TableProPlugin, DriverPlugin {
     static let defaultPort = 3306
     static let additionalConnectionFields: [ConnectionField] =
         AWSAuthFields.standard() + [AWSAuthFields.rdsEndpointField()]
-    static let additionalDatabaseTypeIds: [String] = ["MariaDB"]
+    static let additionalDatabaseTypeIds: [String] = ["MariaDB", "TiDB", "Databend"]
 
     // MARK: - UI/Capability Metadata
 

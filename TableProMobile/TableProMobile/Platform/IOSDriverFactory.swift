@@ -33,7 +33,7 @@ nonisolated final class IOSDriverFactory: DriverFactory {
                 ? nil
                 : bookmarkStore.bookmark(for: connection.id)
             return DuckDBDriver(path: connection.database, bookmark: bookmark)
-        case .mysql, .mariadb:
+        case .mysql, .mariadb, .tidb, .databend:
             return MySQLDriver(
                 host: connection.host,
                 port: connection.port,
@@ -74,6 +74,6 @@ nonisolated final class IOSDriverFactory: DriverFactory {
     }
 
     func supportedTypes() -> [DatabaseType] {
-        [.sqlite, .duckdb, .mysql, .mariadb, .postgresql, .redshift, .redis, .mssql, .oracle]
+        [.sqlite, .duckdb, .mysql, .mariadb, .tidb, .databend, .postgresql, .redshift, .redis, .mssql, .oracle]
     }
 }

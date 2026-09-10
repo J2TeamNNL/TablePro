@@ -5,6 +5,8 @@ enum DatabaseTypeStyle {
         switch type {
         case "MySQL": return "mysql-icon"
         case "MariaDB": return "mariadb-icon"
+        case "TiDB": return "tidb-icon"
+        case "Databend": return "databend-icon"
         case "PostgreSQL": return "postgresql-icon"
         case "Redshift": return "redshift-icon"
         case "SQLite": return "sqlite-icon"

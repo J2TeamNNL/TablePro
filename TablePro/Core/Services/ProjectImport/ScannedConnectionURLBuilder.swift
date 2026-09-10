@@ -16,6 +16,8 @@ enum ScannedConnectionURLBuilder {
         "trilogy": "mysql",
         "mysql-connector": "mysql",
         "mysqlgis": "mysql",
+        "tidb": "tidb",
+        "databend": "databend",
         "sqlite3": "sqlite",
         "spatialite": "sqlite",
         "sqlsrv": "mssql",

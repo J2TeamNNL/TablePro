@@ -7,7 +7,7 @@ import TableProQuery
 nonisolated enum SQLBuilder {
     static func quoteIdentifier(_ name: String, for type: DatabaseType) -> String {
         switch type {
-        case .mysql, .mariadb:
+        case .mysql, .mariadb, .tidb, .databend:
             return "`\(name.replacingOccurrences(of: "`", with: "``"))`"
         case .postgresql, .redshift:
             return "\"\(name.replacingOccurrences(of: "\"", with: "\"\""))\""
@@ -241,7 +241,7 @@ nonisolated enum SQLBuilder {
             let quotedCol = quoteIdentifier(col.name, for: type)
             let castExpr: String
             switch type {
-            case .mysql, .mariadb:
+            case .mysql, .mariadb, .tidb, .databend:
                 castExpr = "CAST(\(quotedCol) AS CHAR)"
             case .postgresql, .redshift:
                 castExpr = "CAST(\(quotedCol) AS TEXT)"
@@ -300,7 +300,7 @@ nonisolated enum SQLBuilder {
     /// without an arm.
     private static func dialectDescriptor(for type: DatabaseType) -> SQLDialectDescriptor {
         switch type {
-        case .mysql, .mariadb:
+        case .mysql, .mariadb, .tidb, .databend:
             return SQLDialectDescriptor(
                 identifierQuote: "`",
                 keywords: [],

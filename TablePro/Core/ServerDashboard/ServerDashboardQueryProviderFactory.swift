@@ -10,7 +10,7 @@ enum ServerDashboardQueryProviderFactory {
         switch databaseType {
         case .postgresql, .redshift, .cockroachdb:
             return PostgreSQLDashboardProvider()
-        case .mysql, .mariadb:
+        case .mysql, .mariadb, .tidb:
             return MySQLDashboardProvider()
         case .mssql:
             return MSSQLDashboardProvider()
