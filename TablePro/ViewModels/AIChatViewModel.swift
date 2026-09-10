@@ -336,6 +336,17 @@ final class AIChatViewModel {
         attachedContext = []
     }
 
+    func discardUnregisteredSession() {
+        cancelStream()
+        resetProviderConversation()
+        releaseDerivedContext()
+        releaseUnsentAttachments()
+        messages = []
+        activeConversationID = nil
+        connection = nil
+        clearError()
+    }
+
     func handleFixError(query: String, error: String) {
         startNewConversation()
         let databaseType = connection?.type ?? .mysql

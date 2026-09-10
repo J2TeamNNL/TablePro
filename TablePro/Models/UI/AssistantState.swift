@@ -62,7 +62,7 @@ import Foundation
         if let connectionId {
             registry.stopSessions(for: connectionId)
         } else {
-            activatedViewModel?.clearSessionData()
+            activatedViewModel?.discardUnregisteredSession()
         }
         activatedViewModel = nil
         isActivated = false
