@@ -170,6 +170,10 @@ internal extension MainSplitViewController {
                     if case .unavailable(let reason) = pane { return reason }
                     return nil
                 }(),
+                onPrimaryAction: { [weak self] in
+                    guard case .unavailable(let reason) = pane else { return }
+                    self?.performUnavailablePrimaryAction(reason, for: workspace.connectionId)
+                },
                 onRetry: { [weak self] in self?.reconnectWorkspace(workspace.connectionId) },
                 onCancel: { [weak self] in self?.cancelConnectionAttempt(for: workspace.connectionId) }
             )
@@ -193,6 +197,7 @@ internal extension MainSplitViewController {
                     onPrimaryAction: { [weak self] in
                         self?.performUnavailablePrimaryAction(reason, for: workspace.connectionId)
                     },
+                    onRetry: { [weak self] in self?.reconnectWorkspace(workspace.connectionId) },
                     onManageConnections: { [weak self] in self?.openConnectionList() }
                 )
             } else {

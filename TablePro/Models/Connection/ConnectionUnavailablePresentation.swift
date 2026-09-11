@@ -23,7 +23,7 @@ internal enum ConnectionUnavailablePresentation {
             return String(format: String(localized: "Not connected to %@"), connectionName)
         case .disconnected, .disconnectedByUser:
             return String(format: String(localized: "Disconnected from %@"), connectionName)
-        case .failed, .pluginMissing:
+        case .failed, .actionRequired:
             return String(format: String(localized: "Could not connect to %@"), connectionName)
         }
     }
@@ -35,7 +35,7 @@ internal enum ConnectionUnavailablePresentation {
         case .disconnected(let info):
             guard let info else { return [String(localized: "The connection was closed.")] }
             return lines(from: info)
-        case .failed(let info), .pluginMissing(let info):
+        case .failed(let info), .actionRequired(let info, _):
             return lines(from: info)
         }
     }
@@ -46,7 +46,7 @@ internal enum ConnectionUnavailablePresentation {
             return nil
         case .disconnected(let info):
             return info
-        case .failed(let info), .pluginMissing(let info):
+        case .failed(let info), .actionRequired(let info, _):
             return info
         }
     }
@@ -59,9 +59,14 @@ internal enum ConnectionUnavailablePresentation {
             return String(localized: "Reconnect")
         case .failed:
             return String(localized: "Try Again")
-        case .pluginMissing:
-            return String(localized: "Install Plugin…")
+        case .actionRequired(_, let action):
+            return action.title
         }
+    }
+
+    internal static func offersRetry(reason: ConnectionUnavailableReason) -> Bool {
+        guard case .actionRequired(_, let action) = reason else { return false }
+        return action.offersRetry
     }
 
     internal static func lines(from info: ConnectionFailureInfo) -> [String] {

@@ -31,17 +31,19 @@ internal struct WelcomeAgentPanel: View {
     }
 
     internal var body: some View {
-        VStack(spacing: 0) {
-            if !sessions.isEmpty {
-                Divider()
-                sessionList
+        if !sessions.isEmpty || selectedConnection != nil {
+            VStack(spacing: 0) {
+                if !sessions.isEmpty {
+                    Divider()
+                    sessionList
+                }
+                if let selectedConnection {
+                    Divider()
+                    composer(selectedConnection)
+                }
             }
-            if let selectedConnection {
-                Divider()
-                composer(selectedConnection)
-            }
+            .background(.bar)
         }
-        .background(.bar)
     }
 
     private func composer(_ connection: DatabaseConnection) -> some View {

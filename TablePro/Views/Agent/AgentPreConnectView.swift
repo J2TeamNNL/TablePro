@@ -9,8 +9,8 @@ import SwiftUI
 ///
 /// A prompt typed at the welcome window has to survive a connect that takes seconds and a connect
 /// that fails, so it is visible here rather than held somewhere the user cannot see. The failure is
-/// inline with **Try Again**, never an alert: the HIG rules alerts out at startup, and N restored
-/// connections would mean N modals.
+/// inline with the same recovery action the browse window offers, never an alert: the HIG rules
+/// alerts out at startup, and N restored connections would mean N modals.
 ///
 /// The transcript and the composer are the same ones the connected panel uses, `AIChatMessageView`
 /// and `ChatComposerView`. A second renderer here drew every turn as one unstyled paragraph and a
@@ -22,6 +22,7 @@ internal struct AgentPreConnectView: View {
     internal let connection: DatabaseConnection
     internal let session: AgentSession
     internal let failure: ConnectionUnavailableReason?
+    internal let onPrimaryAction: () -> Void
     internal let onRetry: () -> Void
     internal let onCancel: () -> Void
 
@@ -94,10 +95,14 @@ internal struct AgentPreConnectView: View {
             HStack(spacing: 8) {
                 Button(
                     ConnectionUnavailablePresentation.primaryActionTitle(reason: reason),
-                    action: onRetry
+                    action: onPrimaryAction
                 )
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
+                if ConnectionUnavailablePresentation.offersRetry(reason: reason) {
+                    Button(String(localized: "Try Again"), action: onRetry)
+                        .controlSize(.small)
+                }
                 Spacer()
             }
         }

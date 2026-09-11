@@ -21,7 +21,7 @@ struct ConnectionWindowPaneResolverTests {
         .disconnected(nil),
         .disconnectedByUser,
         .failed(failure),
-        .pluginMissing(failure)
+        .actionRequired(failure, .installPlugin)
     ]
 
     private static let everyPane: [ConnectionWindowPane] =
@@ -251,7 +251,7 @@ struct ConnectionWindowPaneResolverTests {
             .cancelled,
             .disconnected(nil),
             .failed(Self.failure),
-            .pluginMissing(Self.failure)
+            .actionRequired(Self.failure, .installPlugin)
         ]
 
         for reason in reasons {
@@ -337,7 +337,7 @@ struct ConnectionWindowPaneResolverTests {
             .unavailable(.cancelled),
             .unavailable(.disconnected(nil)),
             .unavailable(.failed(Self.failure)),
-            .unavailable(.pluginMissing(Self.failure))
+            .unavailable(.actionRequired(Self.failure, .installPlugin))
         ]
 
         for phase in phases {

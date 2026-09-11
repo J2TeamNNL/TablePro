@@ -229,7 +229,7 @@ internal final class MainSplitViewController: NSSplitViewController, TrailingPan
             session: ConnectionSessionSnapshot(
                 exists: resolvedSession != nil,
                 hasDriver: resolvedSession?.driver != nil,
-                disconnectInfo: DatabaseManager.shared.disconnectReason(for: connectionId),
+                endReason: DatabaseManager.shared.disconnectReason(for: connectionId),
                 liveness: resolvedSession?.liveness ?? .live
             ),
             ownsAttempt: false
@@ -420,6 +420,7 @@ internal final class MainSplitViewController: NSSplitViewController, TrailingPan
             guard changedId == nil || changedId == connectionId else { continue }
             guard let record = stored.first(where: { $0.id == connectionId })
                 ?? DatabaseManager.shared.activeSessions[connectionId]?.connection else { continue }
+            let previousType = workspace.payloadConnection?.type
             workspace.payloadConnection = record
             /// The chat session authorizes against its own copy of the record: its AI policy is
             /// what `startStreaming` checks, and its Safe Mode level is the fallback the approval
@@ -431,6 +432,13 @@ internal final class MainSplitViewController: NSSplitViewController, TrailingPan
                 owned.viewModel.connection = record
             }
             workspace.sessionState?.toolbarState.update(from: record)
+            let settled = ConnectionWindowPhaseMachine.onConnectionRecordChanged(
+                phase: workspace.phase,
+                databaseTypeChanged: previousType != record.type
+            )
+            if settled != workspace.phase {
+                transition(to: settled, for: connectionId)
+            }
             /// The one repaint the render key cannot decide, so the only one that skips it. Deleting
             /// a connection whose session is still open purges the per-connection registries the
             /// panes hold without changing the record they were built from, and a pane left holding
@@ -498,7 +506,7 @@ internal final class MainSplitViewController: NSSplitViewController, TrailingPan
         let snapshot = ConnectionSessionSnapshot(
             exists: session != nil,
             hasDriver: session?.driver != nil,
-            disconnectInfo: DatabaseManager.shared.disconnectReason(for: sid),
+            endReason: DatabaseManager.shared.disconnectReason(for: sid),
             wasDisconnectedByUser: DatabaseManager.shared.wasDisconnectedByUser(sid),
             liveness: session?.liveness ?? .live
         )
@@ -888,6 +896,7 @@ internal final class MainSplitViewController: NSSplitViewController, TrailingPan
                 onPrimaryAction: { [weak self] in
                     self?.performUnavailablePrimaryAction(reason, for: workspace.connectionId)
                 },
+                onRetry: { [weak self] in self?.reconnectWorkspace(workspace.connectionId) },
                 onManageConnections: { [weak self] in self?.openConnectionList() }
             )
         } else if pane == .content,

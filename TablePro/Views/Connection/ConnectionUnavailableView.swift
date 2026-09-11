@@ -9,6 +9,7 @@ internal struct ConnectionUnavailableView: View {
     internal let connection: DatabaseConnection
     internal let reason: ConnectionUnavailableReason
     internal let onPrimaryAction: () -> Void
+    internal let onRetry: () -> Void
     internal let onManageConnections: () -> Void
 
     internal var body: some View {
@@ -33,10 +34,16 @@ internal struct ConnectionUnavailableView: View {
         } actions: {
             HStack(spacing: 12) {
                 Button(action: onPrimaryAction) {
-                    Text(primaryActionTitle)
+                    Text(Self.primaryActionTitle(for: reason))
                         .frame(minWidth: 80)
                 }
                 .keyboardShortcut(.defaultAction)
+
+                if Self.offersRetry(for: reason) {
+                    Button(action: onRetry) {
+                        Text(String(localized: "Try Again"))
+                    }
+                }
 
                 Button(action: onManageConnections) {
                     Text(String(localized: "Manage Connections…"))
@@ -70,8 +77,8 @@ internal struct ConnectionUnavailableView: View {
         case .failed:
             Image(systemName: "exclamationmark.triangle")
                 .symbolRenderingMode(.hierarchical)
-        case .pluginMissing:
-            Image(systemName: "puzzlepiece.extension")
+        case .actionRequired(_, let action):
+            Image(systemName: action.symbolName)
                 .symbolRenderingMode(.hierarchical)
         }
     }
@@ -98,7 +105,11 @@ internal struct ConnectionUnavailableView: View {
             .joined(separator: "\n")
     }
 
-    private var primaryActionTitle: String {
+    internal static func primaryActionTitle(for reason: ConnectionUnavailableReason) -> String {
         ConnectionUnavailablePresentation.primaryActionTitle(reason: reason)
+    }
+
+    internal static func offersRetry(for reason: ConnectionUnavailableReason) -> Bool {
+        ConnectionUnavailablePresentation.offersRetry(reason: reason)
     }
 }
