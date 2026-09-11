@@ -662,7 +662,7 @@ extension QueryExecutionCoordinator {
                     countsAutomatically: countsAutomatically
                 )
                 guard case let .exactCount(filtered) = plan else { return (plan, nil, scope) }
-                let buffer = parent.tabSessionRegistry.tableRows(for: tabId)
+                let queryColumns = parent.queryColumns(for: tab)
                 let filters = filtered ? tab.filterState.appliedFilters : []
                 let logicMode = tab.filterState.filterLogicMode
                 let sql = parent.queryBuilder.buildFilteredCountQuery(
@@ -670,8 +670,8 @@ extension QueryExecutionCoordinator {
                     schemaName: tab.tableContext.schemaName,
                     filters: filters,
                     logicMode: logicMode,
-                    columns: buffer.columns,
-                    columnTypes: buffer.columnTypes
+                    columns: queryColumns.columns,
+                    columnTypes: queryColumns.columnTypes
                 )
                 return (plan, ExactCountInput(sql: sql, filters: filters, logicMode: logicMode), scope)
             }
