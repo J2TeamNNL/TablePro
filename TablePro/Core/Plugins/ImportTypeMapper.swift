@@ -11,7 +11,7 @@ enum ImportTypeMapper {
         switch databaseType {
         case .postgresql, .redshift, .cockroachdb:
             return postgresType(type)
-        case .mysql, .mariadb, .tidb:
+        case .mysql, .mariadb, .tidb, .oceanbase:
             return mysqlType(type)
         case .sqlite:
             return sqliteType(type)

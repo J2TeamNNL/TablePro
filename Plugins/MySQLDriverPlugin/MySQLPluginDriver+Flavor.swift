@@ -28,7 +28,14 @@ extension MySQLFlavorMismatchError: PluginDriverError {
 
 extension MySQLPluginDriver {
     static func initialFlavor(for config: DriverConnectionConfig) -> MySQLServerFlavor {
-        config.additionalFields["driverVariant"] == MySQLServerFlavor.databendVariant ? .databend : .mysql
+        switch config.additionalFields["driverVariant"] {
+        case MySQLServerFlavor.databendVariant:
+            return .databend
+        case MySQLServerFlavor.oceanbaseVariant:
+            return .oceanbase(version: nil)
+        default:
+            return .mysql
+        }
     }
 
     func resolveFlavor(on connection: MariaDBPluginConnection, variant: String?) async throws -> MySQLServerFlavor {
@@ -48,6 +55,21 @@ extension MySQLPluginDriver {
             throw MySQLFlavorMismatchError(kind: .databendNeedsItsOwnType)
         }
 
+        if variant == MySQLServerFlavor.oceanbaseVariant {
+            if MySQLFlavorResolution.needsOceanBaseProbe(banner: banner, variant: variant) {
+                if let comment = await firstValue(of: MySQLFlavorResolution.oceanbaseProbe, on: connection),
+                   let version = MySQLServerFlavor.oceanbaseVersion(fromBanner: comment) {
+                    return .oceanbase(version: version)
+                }
+                return .oceanbase(version: nil)
+            }
+            return bannerFlavor.isOceanBase ? bannerFlavor : .oceanbase(version: nil)
+        }
+
+        if bannerFlavor.isOceanBase {
+            return bannerFlavor
+        }
+
         guard MySQLFlavorResolution.needsTiDBVersionProbe(banner: banner, variant: variant) else {
             return bannerFlavor
         }
@@ -59,7 +81,7 @@ extension MySQLPluginDriver {
     }
 
     func killTarget(for flavor: MySQLServerFlavor, on connection: MariaDBPluginConnection) async -> MySQLKillTarget {
-        guard flavor.isTiDB || flavor.isDatabend else { return .threadId }
+        guard flavor.isTiDB || flavor.isDatabend || flavor.isOceanBase else { return .threadId }
         let identifier = await firstValue(of: MySQLFlavorResolution.connectionIdentifierProbe, on: connection)
         return flavor.killTarget(connectionIdentifier: identifier)
     }

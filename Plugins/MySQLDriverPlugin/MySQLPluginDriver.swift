@@ -60,6 +60,8 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     /// connection between `requireConnection` returning and the query reaching the server.
     private var activeOperations = 0
 
+    private var oceanbaseHiddenPrimaryKeys: [String: [String]] = [:]
+
     internal static let logger = Logger(subsystem: "com.TablePro", category: "MySQLPluginDriver")
 
     var currentSchema: String? { nil }
@@ -216,6 +218,7 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         guard let parameters else {
             return try await executeWithReconnect(query: query, isRetry: false, rowCap: cap)
         }
+        let query = await rewriteOceanBaseQueryIfNeeded(query)
         let conn = try await requireConnection()
         defer { endOperation() }
         noteActivity(query)
@@ -242,6 +245,7 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     }
 
     func executeParameterized(query: String, parameters: [PluginCellValue]) async throws -> PluginQueryResult {
+        let query = await rewriteOceanBaseQueryIfNeeded(query)
         let conn = try await requireConnection()
         defer { endOperation() }
         noteActivity(query)
@@ -279,6 +283,7 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         countsAsActivity: Bool = true
     ) async throws -> PluginQueryResult {
         let startTime = Date()
+        let query = await rewriteOceanBaseQueryIfNeeded(query)
 
         let conn = try await requireConnection()
         defer { endOperation() }
@@ -507,7 +512,7 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         let result = try await execute(query: "SHOW FULL COLUMNS FROM \(quoteIdentifier(table))")
         let generationExpressions = try await fetchGenerationExpressions(table: table)
 
-        return result.rows.compactMap { row in
+        let columns = result.rows.compactMap { row -> PluginColumnInfo? in
             guard let name = row[safe: 0]?.asText,
                   let dataType = row[safe: 1]?.asText
             else { return nil }
@@ -549,6 +554,8 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
                 generationKind: mysqlGenerationKind(extra: extra)
             )
         }
+        guard flavor.isOceanBase else { return columns }
+        return try await attachingOceanBaseHiddenPrimaryKeys(to: columns, table: table)
     }
 
     private func fetchGenerationExpressions(table: String) async throws -> [String: String] {
@@ -685,7 +692,10 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
             allColumns[tableName, default: []].append(column)
         }
 
-        return allColumns
+        guard flavor.isOceanBase else { return allColumns }
+        let indexes = try await fetchAllIndexes(schema: schema)
+        let primaryByTable = indexes.mapValues { $0.first(where: \.isPrimary)?.columns ?? [] }
+        return attachingOceanBaseHiddenPrimaryKeys(to: allColumns, primaryColumnsByTable: primaryByTable)
     }
 
     func fetchIndexes(table: String, schema: String?) async throws -> [PluginIndexInfo] {
@@ -1249,6 +1259,14 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     }
 
     // MARK: - Private Helpers
+
+    func cachedOceanBaseHiddenPrimaryKeys(for table: String) -> [String]? {
+        sessionLock.withLock { oceanbaseHiddenPrimaryKeys[table] }
+    }
+
+    func rememberOceanBaseHiddenPrimaryKeys(_ columns: [String], for table: String) {
+        sessionLock.withLock { oceanbaseHiddenPrimaryKeys[table] = columns }
+    }
 
     private func extractTableName(from query: String) -> String? {
         guard let regex = Self.tableNameRegex,

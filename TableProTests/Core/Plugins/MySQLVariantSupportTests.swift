@@ -29,11 +29,29 @@ struct MySQLVariantSupportTests {
         #expect(ExplainFormatResolver.resolve(declared: .plainText, databaseType: DatabaseType(rawValue: typeId)) == .plainText)
     }
 
+    @Test("OceanBase keeps a plain EXPLAIN and does not take FORMAT=JSON")
+    func oceanbaseExplainStaysPlain() throws {
+        let registry = PluginMetadataRegistry.shared
+        registry.registerVariant(pluginSnapshot: try Self.mysqlPluginSnapshot(), forTypeId: "OceanBase", primaryTypeId: "MySQL")
+        let variants = try #require(registry.snapshot(forRegisteredTypeId: "OceanBase")).explainVariants
+        #expect(variants.map(\.sqlPrefix) == ["EXPLAIN"])
+        #expect(variants.allSatisfy { $0.format == .plainText })
+    }
+
     @Test("TiDB keeps its type list without the spatial group once the MySQL plugin registers")
     func tidbColumnTypesSurviveRegistration() throws {
         let registry = PluginMetadataRegistry.shared
         registry.registerVariant(pluginSnapshot: try Self.mysqlPluginSnapshot(), forTypeId: "TiDB", primaryTypeId: "MySQL")
         let types = try #require(registry.snapshot(forRegisteredTypeId: "TiDB")).editor.columnTypesByCategory
+        #expect(types["Spatial"] == nil)
+        #expect(types["JSON"] == ["JSON"])
+    }
+
+    @Test("OceanBase keeps its type list without the spatial group once the MySQL plugin registers")
+    func oceanbaseColumnTypesSurviveRegistration() throws {
+        let registry = PluginMetadataRegistry.shared
+        registry.registerVariant(pluginSnapshot: try Self.mysqlPluginSnapshot(), forTypeId: "OceanBase", primaryTypeId: "MySQL")
+        let types = try #require(registry.snapshot(forRegisteredTypeId: "OceanBase")).editor.columnTypesByCategory
         #expect(types["Spatial"] == nil)
         #expect(types["JSON"] == ["JSON"])
     }
@@ -66,6 +84,7 @@ struct MySQLVariantSupportTests {
     @Test("TiDB hides the connection limit it ignores; the others keep it")
     func principalConnectionLimit() {
         #expect(!PluginManager.shared.supportsPrincipalConnectionLimit(for: .tidb))
+        #expect(!PluginManager.shared.supportsPrincipalConnectionLimit(for: .oceanbase))
         #expect(PluginManager.shared.supportsPrincipalConnectionLimit(for: .mysql))
         #expect(PluginManager.shared.supportsPrincipalConnectionLimit(for: .mariadb))
     }
@@ -75,6 +94,7 @@ struct MySQLVariantSupportTests {
         #expect(PluginManager.shared.rowMatchExcludedTypePrefixes(for: .databend).contains("VARIANT"))
         #expect(PluginManager.shared.rowMatchExcludedTypePrefixes(for: .mysql).isEmpty)
         #expect(PluginManager.shared.rowMatchExcludedTypePrefixes(for: .tidb).isEmpty)
+        #expect(PluginManager.shared.rowMatchExcludedTypePrefixes(for: .oceanbase).isEmpty)
     }
 
     @Test("The inspector's function menu offers only what each engine has")
@@ -82,6 +102,8 @@ struct MySQLVariantSupportTests {
         let tidb = SQLFunctionProvider.functions(for: .tidb).map(\.expression)
         #expect(tidb.contains("CURDATE()"))
         #expect(tidb.contains("UTC_TIMESTAMP()"))
+        let oceanbase = SQLFunctionProvider.functions(for: .oceanbase).map(\.expression)
+        #expect(oceanbase.contains("CURDATE()"))
         let databend = SQLFunctionProvider.functions(for: .databend).map(\.expression)
         #expect(databend == ["NOW()", "CURRENT_TIMESTAMP()", "UUID()"])
     }
@@ -97,6 +119,7 @@ struct MySQLVariantSupportTests {
     @Test("Databend lexes as the generic dialect, TiDB as MySQL")
     func lexicalDialects() {
         #expect(SqlDialect.from(databaseTypeId: "TiDB") == .mysql)
+        #expect(SqlDialect.from(databaseTypeId: "OceanBase") == .mysql)
         #expect(SqlDialect.from(databaseTypeId: "Databend") == .generic)
     }
 
@@ -109,7 +132,9 @@ struct MySQLVariantSupportTests {
     @Test("TiDB copies as the MySQL type family; Databend does not")
     func typeFamilies() {
         #expect(SQLTypeFamily.of(.tidb) == .mysql)
+        #expect(SQLTypeFamily.of(.oceanbase) == .mysql)
         #expect(!SQLTypeFamily.needsTranslation(from: .mysql, to: .tidb))
+        #expect(!SQLTypeFamily.needsTranslation(from: .mysql, to: .oceanbase))
         #expect(SQLTypeFamily.of(.databend) != .mysql)
     }
 
@@ -118,12 +143,20 @@ struct MySQLVariantSupportTests {
         #expect(ColumnDefaultVocabulary.options(for: .tidb) == ColumnDefaultVocabulary.options(for: .mysql))
     }
 
+    @Test("OceanBase treats the hidden primary key columns as immutable")
+    func oceanbaseImmutableHiddenKeys() {
+        #expect(PluginManager.shared.immutableColumns(for: .oceanbase) == ["__pk_increment", "__pk_cluster_column"])
+        #expect(PluginManager.shared.immutableColumns(for: .mysql).isEmpty)
+    }
+
     @Test("Neither variant gets a Server Dashboard or a native backup")
     func dashboardAndBackup() {
         #expect(ServerDashboardQueryProviderFactory.provider(for: .tidb) == nil)
         #expect(ServerDashboardQueryProviderFactory.provider(for: .databend) == nil)
+        #expect(ServerDashboardQueryProviderFactory.provider(for: .oceanbase) == nil)
         #expect(!NativeDumpRegistry.supports(.tidb))
         #expect(!NativeDumpRegistry.supports(.databend))
+        #expect(!NativeDumpRegistry.supports(.oceanbase))
     }
 
     @Test("TiDB compares with TiDB, not with MySQL or MariaDB")
@@ -132,14 +165,21 @@ struct MySQLVariantSupportTests {
         #expect(!CompareSyncEngineFamily.canGenerateStructureScript(from: .mysql, to: .tidb))
         #expect(!CompareSyncEngineFamily.canGenerateStructureScript(from: .tidb, to: .mariadb))
         #expect(!CompareSyncEngineFamily.canGenerateStructureScript(from: .mysql, to: .databend))
+        #expect(CompareSyncEngineFamily.canGenerateStructureScript(from: .oceanbase, to: .oceanbase))
+        #expect(!CompareSyncEngineFamily.canGenerateStructureScript(from: .mysql, to: .oceanbase))
+        #expect(!CompareSyncEngineFamily.canGenerateStructureScript(from: .oceanbase, to: .mariadb))
     }
 
-    @Test("URLs: tidb:// opens TiDB, databend:// is refused")
+    @Test("URLs: tidb:// opens TiDB, oceanbase:// opens OceanBase, databend:// is refused")
     func urlSchemes() {
         guard case .success(let tidb) = ConnectionURLParser.parse("tidb://root@host:4000/test") else {
             Issue.record("Expected tidb:// to parse"); return
         }
         #expect(tidb.type == .tidb)
+        guard case .success(let oceanbase) = ConnectionURLParser.parse("oceanbase://root%40sys@host:2881/test") else {
+            Issue.record("Expected oceanbase:// to parse"); return
+        }
+        #expect(oceanbase.type == .oceanbase)
         guard case .failure = ConnectionURLParser.parse("databend://root:pw@host:8000/default") else {
             Issue.record("Expected databend:// to be refused"); return
         }

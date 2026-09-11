@@ -33,14 +33,19 @@ internal enum MySQLServerFlavor: Equatable, Sendable {
     case mariadb
     case tidb(version: MySQLEngineVersion?)
     case databend
+    case oceanbase(version: MySQLEngineVersion?)
 
     static let tidbVariant = "TiDB"
     static let databendVariant = "Databend"
+    static let oceanbaseVariant = "OceanBase"
 
     static func fromBanner(_ banner: String?) -> MySQLServerFlavor {
         guard let banner else { return .mysql }
         if let version = tidbVersion(fromBanner: banner) {
             return .tidb(version: version)
+        }
+        if banner.range(of: "oceanbase", options: .caseInsensitive) != nil {
+            return .oceanbase(version: oceanbaseVersion(fromBanner: banner))
         }
         if isDatabendBanner(banner) {
             return .databend
@@ -63,6 +68,18 @@ internal enum MySQLServerFlavor: Equatable, Sendable {
         banner.range(of: #"^\d+\.\d+\.\d+-v\d+\.\d+\.\d+-"#, options: .regularExpression) != nil
     }
 
+    static func oceanbaseVersion(fromBanner banner: String) -> MySQLEngineVersion? {
+        guard banner.range(of: "oceanbase", options: .caseInsensitive) != nil else { return nil }
+        if let marker = banner.range(of: "OceanBase_CE-v", options: .caseInsensitive)
+            ?? banner.range(of: "OceanBase-v", options: .caseInsensitive) {
+            return MySQLEngineVersion(parsing: banner[marker.upperBound...])
+        }
+        guard let name = banner.range(of: "OceanBase", options: .caseInsensitive) else { return nil }
+        var rest = banner[name.upperBound...]
+        rest = rest.drop(while: { $0.isLetter || $0 == "_" || $0 == "-" || $0.isWhitespace })
+        return MySQLEngineVersion(parsing: rest)
+    }
+
     var isMariaDB: Bool { self == .mariadb }
 
     var isTiDB: Bool {
@@ -72,8 +89,18 @@ internal enum MySQLServerFlavor: Equatable, Sendable {
 
     var isDatabend: Bool { self == .databend }
 
+    var isOceanBase: Bool {
+        guard case .oceanbase = self else { return false }
+        return true
+    }
+
     var tidbVersion: MySQLEngineVersion? {
         guard case .tidb(let version) = self else { return nil }
+        return version
+    }
+
+    var oceanbaseVersion: MySQLEngineVersion? {
+        guard case .oceanbase(let version) = self else { return nil }
         return version
     }
 
@@ -85,6 +112,8 @@ internal enum MySQLServerFlavor: Equatable, Sendable {
             return ["INFORMATION_SCHEMA", "METRICS_SCHEMA", "PERFORMANCE_SCHEMA", "mysql", "sys"]
         case .databend:
             return ["information_schema", "system"]
+        case .oceanbase:
+            return ["information_schema", "mysql", "oceanbase"]
         }
     }
 
@@ -92,7 +121,7 @@ internal enum MySQLServerFlavor: Equatable, Sendable {
         switch self {
         case .mysql, .mariadb:
             return ["OPTIMIZE TABLE", "ANALYZE TABLE", "CHECK TABLE", "REPAIR TABLE"]
-        case .tidb, .databend:
+        case .tidb, .databend, .oceanbase:
             return ["ANALYZE TABLE"]
         }
     }
@@ -114,7 +143,7 @@ internal enum MySQLServerFlavor: Equatable, Sendable {
             return "SET SESSION max_statement_time = \(seconds)"
         case .databend:
             return "SET max_execute_time_in_seconds = \(seconds)"
-        case .mysql, .tidb:
+        case .mysql, .tidb, .oceanbase:
             return "SET SESSION max_execution_time = \(seconds * 1_000)"
         }
     }
@@ -146,6 +175,9 @@ internal enum MySQLServerFlavor: Equatable, Sendable {
         case .databend:
             guard let session = connectionIdentifier, !session.isEmpty else { return .threadId }
             return .databendSession(session)
+        case .oceanbase:
+            guard let id = connectionIdentifier.flatMap(UInt64.init) else { return .threadId }
+            return .oceanbaseConnection(id)
         case .mysql, .mariadb:
             return .threadId
         }
@@ -156,6 +188,7 @@ internal enum MySQLKillTarget: Equatable, Sendable {
     case threadId
     case tidbConnection(UInt64)
     case databendSession(String)
+    case oceanbaseConnection(UInt64)
 
     func statement(threadId: UInt) -> String? {
         switch self {
@@ -165,6 +198,8 @@ internal enum MySQLKillTarget: Equatable, Sendable {
             return "KILL TIDB QUERY \(id)"
         case .databendSession(let session):
             return "KILL QUERY '\(mysqlEscapeStringLiteral(session))'"
+        case .oceanbaseConnection(let id):
+            return "KILL QUERY \(id)"
         }
     }
 }
@@ -178,7 +213,12 @@ internal enum MySQLFlavorResolution {
         variant == MySQLServerFlavor.databendVariant && !MySQLServerFlavor.fromBanner(banner).isDatabend
     }
 
+    static func needsOceanBaseProbe(banner: String?, variant: String?) -> Bool {
+        variant == MySQLServerFlavor.oceanbaseVariant && !MySQLServerFlavor.fromBanner(banner).isOceanBase
+    }
+
     static let tidbVersionProbe = "SELECT tidb_version()"
     static let databendProbe = "SELECT value FROM system.settings WHERE name = 'max_result_rows'"
+    static let oceanbaseProbe = "SELECT @@version_comment"
     static let connectionIdentifierProbe = "SELECT CONNECTION_ID()"
 }

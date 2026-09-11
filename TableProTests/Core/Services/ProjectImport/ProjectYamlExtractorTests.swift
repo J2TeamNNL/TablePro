@@ -262,6 +262,22 @@ struct DockerComposeExtractorTests {
         #expect(databend?.parsedURL.database == "default")
     }
 
+    @Test("OceanBase images map to OceanBase on 2881 as root@sys")
+    func testOceanBaseImageAndCredentials() {
+        let oceanbase = extract("""
+        services:
+          ob:
+            image: oceanbase/oceanbase-ce:latest
+            ports:
+              - "2881:2881"
+        """).first
+        #expect(oceanbase?.parsedURL.type == .oceanbase)
+        #expect(oceanbase?.parsedURL.port == nil)
+        #expect(oceanbase?.parsedURL.username == "root@sys")
+        #expect(oceanbase?.parsedURL.password.isEmpty == true)
+        #expect(oceanbase?.parsedURL.database.isEmpty == true)
+    }
+
     @Test("Interpolation uses the adjacent dotenv file")
     func testInterpolationFromDotenv() {
         let contents = """

@@ -34,6 +34,10 @@ extension PluginMetadataRegistry {
         mysqlColumnTypes.filter { $0.key != "Spatial" }
     }
 
+    static func oceanbaseColumnTypes(from mysqlColumnTypes: [String: [String]]) -> [String: [String]] {
+        mysqlColumnTypes.filter { $0.key != "Spatial" }
+    }
+
     static func mysqlVariantDefaults(
         dialect: SQLDialectDescriptor,
         mysqlColumnTypes: [String: [String]],
@@ -162,6 +166,70 @@ extension PluginMetadataRegistry {
                 additionalConnectionFields: [idleReleaseField],
                 category: .analytical,
                 tagline: String(localized: "Cloud data warehouse, built in Rust")
+            )
+        )),
+            ("OceanBase", PluginMetadataSnapshot(
+            displayName: "OceanBase", iconName: "oceanbase-icon", defaultPort: 2_881,
+            requiresAuthentication: true, supportsForeignKeys: true, supportsSchemaEditing: true,
+            isDownloadable: false, primaryUrlScheme: "oceanbase", parameterStyle: .questionMark,
+            navigationModel: .standard, explainVariants: [
+                ExplainVariant(id: "explain", label: "EXPLAIN", sqlPrefix: "EXPLAIN", format: .plainText)
+            ], pathFieldRole: .database,
+            supportsHealthMonitor: true, urlSchemes: ["oceanbase"], postConnectActions: [.selectDatabaseFromLastSession],
+            brandColorHex: "#006AFF",
+            queryLanguageName: "SQL", editorLanguage: .sql,
+            connectionMode: .network, supportsDatabaseSwitching: true,
+            structureEditing: SchemaEditingSupport(columnReorder: .alter, foreignKeyEdit: .alter),
+            capabilities: PluginMetadataSnapshot.CapabilityFlags(
+                supportsSchemaSwitching: false,
+                supportsImport: true,
+                supportsExport: true,
+                supportsSSH: true,
+                supportsSSL: true,
+                supportsCascadeDrop: false,
+                supportsForeignKeyDisable: false,
+                supportsReadOnlyMode: true,
+                supportsQueryProgress: false,
+                requiresReconnectForDatabaseSwitch: false,
+                supportsDropDatabase: true,
+                supportsRenameTable: true,
+                supportsRenameView: true,
+                supportsRenameColumn: true,
+                supportsTriggers: true,
+                supportsTriggerEditing: false,
+                supportsCheckConstraints: true,
+                supportsCheckConstraintEditing: false,
+                supportsGeneratedColumns: true,
+                supportsRoutines: true,
+                supportsDatabaseTriggerBrowse: true,
+                defaultSSLMode: .preferred,
+                supportsPrincipalConnectionLimit: false
+            ),
+            schema: PluginMetadataSnapshot.SchemaInfo(
+                defaultSchemaName: "public",
+                defaultGroupName: "main",
+                tableEntityName: "Tables",
+                containerEntityName: "Database",
+                defaultPrimaryKeyColumn: nil,
+                immutableColumns: ["__pk_increment", "__pk_cluster_column"],
+                systemDatabaseNames: ["information_schema", "mysql", "oceanbase"],
+                systemSchemaNames: [],
+                fileExtensions: [],
+                databaseGroupingStrategy: .byDatabase,
+                structureColumnFields: [
+                    .name, .type, .nullable, .defaultValue, .generated, .generationExpression,
+                    .onUpdate, .autoIncrement, .comment, .charset, .collation
+                ]
+            ),
+            editor: PluginMetadataSnapshot.EditorConfig(
+                sqlDialect: dialect,
+                statementCompletions: [],
+                columnTypesByCategory: oceanbaseColumnTypes(from: mysqlColumnTypes)
+            ),
+            connection: PluginMetadataSnapshot.ConnectionConfig(
+                additionalConnectionFields: [idleReleaseField],
+                category: .relational,
+                tagline: String(localized: "Distributed HTAP, MySQL-compatible")
             )
         ))
         ]

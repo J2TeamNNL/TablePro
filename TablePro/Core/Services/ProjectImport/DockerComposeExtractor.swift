@@ -79,6 +79,9 @@ enum DockerComposeExtractor {
         if databendRepositories.contains(repositoryPath.suffix(2).joined(separator: "/")) {
             return ServiceDatabase(type: .databend, defaultPort: 3_307)
         }
+        if name.contains("oceanbase") {
+            return ServiceDatabase(type: .oceanbase, defaultPort: 2_881)
+        }
         if name.contains("postgres"), !name.contains("postgrest") {
             return ServiceDatabase(type: .postgresql, defaultPort: 5_432)
         }
@@ -179,6 +182,10 @@ enum DockerComposeExtractor {
             fields.username = variables["QUERY_DEFAULT_USER"] ?? "root"
             fields.password = variables["QUERY_DEFAULT_PASSWORD"] ?? ""
             fields.database = "default"
+        case .oceanbase:
+            fields.username = "root@sys"
+            fields.password = ""
+            fields.database = ""
         case .mariadb, .mysql:
             let prefix = variables["MARIADB_PASSWORD"] != nil || variables["MARIADB_DATABASE"] != nil
                 ? "MARIADB"
