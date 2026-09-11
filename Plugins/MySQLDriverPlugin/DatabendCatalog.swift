@@ -7,6 +7,14 @@ import Foundation
 import TableProPluginKit
 
 internal enum DatabendCatalog {
+    static func quoteIdentifier(_ name: String) -> String {
+        guard name.contains("`") else { return "`\(name)`" }
+        let escaped = name
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\"\"")
+        return "\"\(escaped)\""
+    }
+
     static func columnsQuery(database: String, table: String) -> String {
         """
         SELECT name, data_type, default_kind, default_expression, is_nullable, comment
@@ -92,7 +100,7 @@ internal enum DatabendCatalog {
         """
 
     static func columnDefinitionSQL(_ column: PluginColumnDefinition) -> String {
-        var definition = "\(mysqlQuoteIdentifier(column.name)) \(column.dataType)"
+        var definition = "\(quoteIdentifier(column.name)) \(column.dataType)"
         definition += column.isNullable ? " NULL" : " NOT NULL"
         if let defaultValue = column.defaultValue, !defaultValue.isEmpty {
             definition += " DEFAULT \(defaultValue)"
@@ -107,7 +115,7 @@ internal enum DatabendCatalog {
         guard !definition.columns.isEmpty else { return nil }
         let ifNotExists = definition.ifNotExists ? " IF NOT EXISTS" : ""
         let columns = definition.columns.map { "    \(columnDefinitionSQL($0))" }.joined(separator: ",\n")
-        return "CREATE TABLE\(ifNotExists) \(mysqlQuoteIdentifier(definition.tableName)) (\n\(columns)\n);"
+        return "CREATE TABLE\(ifNotExists) \(quoteIdentifier(definition.tableName)) (\n\(columns)\n);"
     }
 
     static func modifyColumnSQL(
@@ -115,12 +123,12 @@ internal enum DatabendCatalog {
         oldColumn: PluginColumnDefinition,
         newColumn: PluginColumnDefinition
     ) -> String? {
-        let tableName = mysqlQuoteIdentifier(table)
+        let tableName = quoteIdentifier(table)
         var statements: [String] = []
         if oldColumn.name != newColumn.name {
             statements.append(
-                "ALTER TABLE \(tableName) RENAME COLUMN \(mysqlQuoteIdentifier(oldColumn.name)) "
-                    + "TO \(mysqlQuoteIdentifier(newColumn.name))"
+                "ALTER TABLE \(tableName) RENAME COLUMN \(quoteIdentifier(oldColumn.name)) "
+                    + "TO \(quoteIdentifier(newColumn.name))"
             )
         }
         if definitionChanged(from: oldColumn, to: newColumn) {
@@ -130,7 +138,7 @@ internal enum DatabendCatalog {
     }
 
     static func createDatabaseSQL(name: String) -> String {
-        "CREATE DATABASE \(mysqlQuoteIdentifier(name))"
+        "CREATE DATABASE \(quoteIdentifier(name))"
     }
 
     private static func definitionChanged(from old: PluginColumnDefinition, to new: PluginColumnDefinition) -> Bool {

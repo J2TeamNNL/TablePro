@@ -335,7 +335,8 @@ struct PluginMetadataSnapshot: Sendable {
                 fileExtensions: schema.fileExtensions,
                 fileSignatures: schema.fileSignatures,
                 databaseGroupingStrategy: source.schema.databaseGroupingStrategy,
-                structureColumnFields: schema.structureColumnFields
+                structureColumnFields: schema.structureColumnFields,
+                rowMatchExcludedTypePrefixes: schema.rowMatchExcludedTypePrefixes
             ),
             editor: editor, connection: connection
         )

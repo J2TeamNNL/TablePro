@@ -225,8 +225,16 @@ struct SQLStatementGenerator {
                 sql: "INSERT INTO \(qualifiedTableName) () VALUES ()", parameters: []
             )
         default:
-            return nil
+            return defaultKeywordInsertStatement()
         }
+    }
+
+    private func defaultKeywordInsertStatement() -> ParameterizedStatement? {
+        guard databaseType == .databend,
+              let column = columns.first(where: { !generatedColumns.contains($0) }) else { return nil }
+        return ParameterizedStatement(
+            sql: "INSERT INTO \(qualifiedTableName) (\(quoteIdentifierFn(column))) VALUES (DEFAULT)", parameters: []
+        )
     }
 
     func insertStatement(columns insertColumns: [String], values: [PluginCellValue])
@@ -417,9 +425,11 @@ struct SQLStatementGenerator {
             )
         }
 
+        let matchesOneRowPerStatement = primaryKeyColumns.isEmpty && !rowMatchExcludedColumns.isEmpty
         for matches in rowMatches {
             let rowParameterCount = matches.count(where: { $0.boundValue != nil })
-            if !chunk.isEmpty, chunkParameterCount + rowParameterCount > maxBindParameters {
+            if !chunk.isEmpty,
+               matchesOneRowPerStatement || chunkParameterCount + rowParameterCount > maxBindParameters {
                 flush()
                 chunk = []
                 chunkParameterCount = 0

@@ -763,8 +763,10 @@ final class MariaDBPluginConnection: @unchecked Sendable {
             logger.warning("Result set truncated at \(maxRows) rows")
             rows.removeLast(rows.count - outcome.keptRows)
         }
-        if outcome.serverIgnoredLimit, let statement = killStatement(for: mysql) {
-            killQueryOnServer(statement: statement)
+        if outcome.serverIgnoredLimit {
+            if !sessionFlavor.dropsIdleSessionOnKillQuery, let statement = killStatement(for: mysql) {
+                killQueryOnServer(statement: statement)
+            }
             while mysql_fetch_row(resultPtr) != nil {}
         }
 

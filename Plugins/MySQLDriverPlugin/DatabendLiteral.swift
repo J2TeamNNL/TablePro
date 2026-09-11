@@ -145,7 +145,7 @@ internal enum DatabendLiteral {
             case "'":
                 copyQuoted(by: "'", honoursBackslash: true)
             case "\"":
-                copyQuoted(by: "\"", honoursBackslash: false)
+                copyQuoted(by: "\"", honoursBackslash: true)
             case "`":
                 copyQuoted(by: "`", honoursBackslash: false)
             case "?":

@@ -224,6 +224,26 @@ struct DockerComposeExtractorTests {
         }
     }
 
+    @Test("A split deployment's databend-query node is a Databend server; the meta node is not")
+    func testDatabendQueryImage() {
+        let query = extract("""
+        services:
+          query:
+            image: datafuselabs/databend-query:v1.2.881
+            ports:
+              - "3307:3307"
+        """).first
+        #expect(query?.parsedURL.type == .databend)
+        let meta = extract("""
+        services:
+          meta:
+            image: datafuselabs/databend-meta:v1.2.881
+            ports:
+              - "3307:3307"
+        """).first
+        #expect(meta?.parsedURL.type != .databend)
+    }
+
     @Test("Databend reads its own user variables and opens the default database")
     func testDatabendCredentials() {
         let databend = extract("""

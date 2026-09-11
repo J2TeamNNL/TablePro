@@ -47,6 +47,32 @@ struct SQLStatementGeneratorRowMatchTests {
         #expect(statements.map(\.sql) == ["DELETE FROM `t` WHERE (`id` = ? AND `name` = ?)"])
     }
 
+    @Test("When columns are left out, each keyless delete is its own statement so each is counted")
+    func keylessDeletesAreNotBatched() throws {
+        let other: [PluginCellValue] = ["2", "b", "{}", "[]"]
+        let changes = [
+            RowChange(rowIndex: 0, type: .delete, cellChanges: [], originalRow: originalRow),
+            RowChange(rowIndex: 1, type: .delete, cellChanges: [], originalRow: other)
+        ]
+        let statements = try generator(excluding: ["payload", "tags"]).generateAttributedStatements(
+            from: changes, insertedRowData: [:], deletedRowIndices: [0, 1], insertedRowIndices: []
+        )
+        #expect(statements.count == 2)
+        #expect(statements.allSatisfy { $0.rowCount == 1 && !$0.statement.sql.contains(" OR ") })
+    }
+
+    @Test("A Databend row left entirely on defaults names one column with DEFAULT")
+    func databendAllDefaultsInsert() throws {
+        let change = RowChange(rowIndex: 0, type: .insert, cellChanges: [], originalRow: nil)
+        let statements = try generator(excluding: []).generateStatements(
+            from: [change],
+            insertedRowData: [0: [.text("__DEFAULT__"), .text("__DEFAULT__"), .text("__DEFAULT__"), .text("__DEFAULT__")]],
+            deletedRowIndices: [],
+            insertedRowIndices: [0]
+        )
+        #expect(statements.map(\.sql) == ["INSERT INTO `t` (`id`) VALUES (DEFAULT)"])
+    }
+
     @Test("With nothing excluded, every column still identifies the row")
     func noExclusionsKeepsEveryColumn() throws {
         let change = RowChange(rowIndex: 0, type: .delete, cellChanges: [], originalRow: originalRow)

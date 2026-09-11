@@ -21,7 +21,9 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
     internal var cachedPrivilegeCatalog: PluginPrivilegeCatalog?
 
-    private(set) var flavor: MySQLServerFlavor
+    private var _flavor: MySQLServerFlavor
+
+    var flavor: MySQLServerFlavor { sessionLock.withLock { _flavor } }
 
     /// What the session is holding that a reconnect would destroy. Tracked from the statements
     /// that go through the driver, because MySQL will not answer the question: measured on 8.4.11,
@@ -39,7 +41,7 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
     private let idleReleaseTimer = MySQLIdleReleaseTimer()
 
-    /// Guards `footprint`, `appliedQueryTimeoutSeconds`, `isReleased` and `lastActivity`. The
+    /// Guards `_flavor`, `footprint`, `appliedQueryTimeoutSeconds`, `isReleased` and `lastActivity`. The
     /// driver is `@unchecked Sendable` and the idle timer runs on its own task, so the release
     /// decision and a query arriving would otherwise read and write them at the same time.
     private let sessionLock = NSLock()
@@ -87,7 +89,7 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     }
 
     func quoteIdentifier(_ name: String) -> String {
-        mysqlQuoteIdentifier(name)
+        flavor.isDatabend ? DatabendCatalog.quoteIdentifier(name) : mysqlQuoteIdentifier(name)
     }
 
     func escapeStringLiteral(_ value: String) -> String {
@@ -99,7 +101,7 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     init(config: DriverConnectionConfig) {
         self.config = config
         self._activeDatabase = config.database
-        self.flavor = Self.initialFlavor(for: config)
+        self._flavor = Self.initialFlavor(for: config)
     }
 
     /// The timer's task outlives the driver it was started for, so a driver dropped without
@@ -136,8 +138,8 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         conn.adopt(flavor: resolvedFlavor, killTarget: await killTarget(for: resolvedFlavor, on: conn))
         mariadbConnection = conn
         _serverVersion = conn.serverVersion()
-        flavor = resolvedFlavor
         sessionLock.withLock {
+            _flavor = resolvedFlavor
             isReleased = false
             isDisconnected = false
             lastActivity = ContinuousClock.now
@@ -151,8 +153,9 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         mariadbConnection?.disconnect()
         mariadbConnection = nil
         _serverVersion = nil
-        flavor = Self.initialFlavor(for: config)
+        let initialFlavor = Self.initialFlavor(for: config)
         let inFlight = sessionLock.withLock { () -> Task<Void, Error>? in
+            _flavor = initialFlavor
             isReleased = false
             isDisconnected = true
             footprint.reset()
@@ -498,8 +501,7 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
     func fetchColumns(table: String, schema: String?) async throws -> [PluginColumnInfo] {
         guard !flavor.isDatabend else { return try await databendColumns(table: table) }
-        let safeTable = table.replacingOccurrences(of: "`", with: "``")
-        let result = try await execute(query: "SHOW FULL COLUMNS FROM `\(safeTable)`")
+        let result = try await execute(query: "SHOW FULL COLUMNS FROM \(quoteIdentifier(table))")
         let generationExpressions = try await fetchGenerationExpressions(table: table)
 
         return result.rows.compactMap { row in
@@ -572,10 +574,12 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     /// directly. Neither exposes the columns a check touches, so `columns` stays empty rather than
     /// being guessed from the expression.
     func fetchCheckConstraints(table: String, schema: String?) async throws -> [PluginCheckConstraintInfo] {
+        let flavor = self.flavor
         guard !flavor.isDatabend else { return try await databendCheckConstraints(table: table) }
         guard MySQLServerVersion.hasCheckConstraints(banner: _serverVersion, flavor: flavor) else {
             return []
         }
+        guard !flavor.isTiDB else { return try await tidbCheckConstraints(table: table) }
         let database = mysqlEscapeStringLiteral(_activeDatabase)
         let safeTable = mysqlEscapeStringLiteral(table)
         let query: String
@@ -683,8 +687,7 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
     func fetchIndexes(table: String, schema: String?) async throws -> [PluginIndexInfo] {
         guard !flavor.isDatabend else { return [] }
-        let safeTable = table.replacingOccurrences(of: "`", with: "``")
-        let result = try await execute(query: "SHOW INDEX FROM `\(safeTable)`")
+        let result = try await execute(query: "SHOW INDEX FROM \(quoteIdentifier(table))")
 
         let rows = result.rows.compactMap { row -> MySQLIndexRow? in
             guard let indexName = row[safe: 2]?.asText,
@@ -844,8 +847,7 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     }
 
     func fetchTableDDL(table: String, schema: String?) async throws -> String {
-        let safeTable = table.replacingOccurrences(of: "`", with: "``")
-        let result = try await execute(query: "SHOW CREATE TABLE `\(safeTable)`")
+        let result = try await execute(query: "SHOW CREATE TABLE \(quoteIdentifier(table))")
 
         guard let firstRow = result.rows.first,
               let ddl = firstRow[safe: 1]?.asText
@@ -996,24 +998,28 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     }
 
     func dropDatabase(name: String) async throws {
-        let escapedName = name.replacingOccurrences(of: "`", with: "``")
-        _ = try await execute(query: "DROP DATABASE `\(escapedName)`")
+        _ = try await execute(query: "DROP DATABASE \(quoteIdentifier(name))")
     }
 
     /// `RENAME TABLE` rather than `ALTER TABLE ... RENAME TO`, because it is the only form that
     /// takes a view, and both sides are qualified with the same schema so the statement cannot
     /// move the object anywhere.
     func renameTable(name: String, schema: String?, to newName: String, objectType: String) async throws {
-        let old = MySQLObjectQueries.qualifiedIdentifier(schema: schema, name: name)
-        let new = MySQLObjectQueries.qualifiedIdentifier(schema: schema, name: newName)
+        let old = qualifiedIdentifier(schema: schema, name: name)
+        let new = qualifiedIdentifier(schema: schema, name: newName)
         _ = try await execute(query: "RENAME TABLE \(old) TO \(new)")
+    }
+
+    private func qualifiedIdentifier(schema: String?, name: String) -> String {
+        guard flavor.isDatabend else { return MySQLObjectQueries.qualifiedIdentifier(schema: schema, name: name) }
+        guard let schema, !schema.isEmpty else { return quoteIdentifier(name) }
+        return "\(quoteIdentifier(schema)).\(quoteIdentifier(name))"
     }
 
     // MARK: - Database Switching
 
     func switchDatabase(to database: String) async throws {
-        let escaped = database.replacingOccurrences(of: "`", with: "``")
-        _ = try await execute(query: "USE `\(escaped)`")
+        _ = try await execute(query: "USE \(quoteIdentifier(database))")
         _activeDatabase = database
     }
 
@@ -1250,8 +1256,7 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     }
 
     private func fetchColumnNames(for tableName: String) async throws -> [String] {
-        let safeName = tableName.replacingOccurrences(of: "`", with: "``")
-        let result = try await execute(query: "DESCRIBE `\(safeName)`")
+        let result = try await execute(query: "DESCRIBE \(quoteIdentifier(tableName))")
 
         var columns: [String] = []
         for row in result.rows {

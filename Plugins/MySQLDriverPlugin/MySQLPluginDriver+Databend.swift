@@ -41,7 +41,7 @@ extension MySQLPluginDriver {
     }
 
     func databendViewDefinition(view: String) async throws -> String {
-        let result = try await execute(query: "SHOW CREATE TABLE \(mysqlQuoteIdentifier(view))")
+        let result = try await execute(query: "SHOW CREATE TABLE \(quoteIdentifier(view))")
         guard let definition = result.rows.first?[safe: 1]?.asText else {
             throw MariaDBPluginError(code: 0, message: "Failed to fetch definition for view '\(view)'", sqlState: nil)
         }

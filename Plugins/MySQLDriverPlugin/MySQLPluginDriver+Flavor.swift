@@ -64,6 +64,12 @@ extension MySQLPluginDriver {
         return flavor.killTarget(connectionIdentifier: identifier)
     }
 
+    func tidbCheckConstraints(table: String) async throws -> [PluginCheckConstraintInfo] {
+        let result = try await execute(query: "SHOW CREATE TABLE \(quoteIdentifier(table))")
+        guard let createTable = result.rows.first?[safe: 1]?.asText else { return [] }
+        return TiDBCheckConstraints.parse(createTable: createTable)
+    }
+
     private func probeSucceeds(_ statement: String, on connection: MariaDBPluginConnection) async -> Bool {
         do {
             _ = try await connection.executeQuery(statement)

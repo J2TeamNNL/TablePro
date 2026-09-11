@@ -488,6 +488,7 @@ targets:
       - Plugins/MySQLDriverPlugin/DatabendCatalog.swift
       - Plugins/MySQLDriverPlugin/DatabendLiteral.swift
       - Plugins/MySQLDriverPlugin/DatabendResultShape.swift
+      - Plugins/MySQLDriverPlugin/TiDBCheckConstraints.swift
       - Plugins/SQLiteDriverPlugin/SQLiteCheckConstraintParser.swift
       - Plugins/SQLiteDriverPlugin/SQLiteCreateTableDDL.swift
       - Plugins/SQLiteDriverPlugin/SQLiteDefaultValue.swift

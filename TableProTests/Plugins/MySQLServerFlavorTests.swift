@@ -66,6 +66,14 @@ struct MySQLServerFlavorTests {
         #expect(MySQLServerFlavor.mariadb.listsSequencesAsTables)
     }
 
+    @Test("Only TiDB ends an idle session that a KILL QUERY reaches, so a finished read is never killed there")
+    func idleKillDropsOnlyTiDBSessions() {
+        #expect(MySQLServerFlavor.tidb(version: nil).dropsIdleSessionOnKillQuery)
+        #expect(!MySQLServerFlavor.mysql.dropsIdleSessionOnKillQuery)
+        #expect(!MySQLServerFlavor.mariadb.dropsIdleSessionOnKillQuery)
+        #expect(!MySQLServerFlavor.databend.dropsIdleSessionOnKillQuery)
+    }
+
     @Test("Only Databend refuses server-side prepare")
     func serverSidePrepare() {
         #expect(!MySQLServerFlavor.databend.preparesOnServer)

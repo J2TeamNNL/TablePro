@@ -9,6 +9,15 @@ import Testing
 
 @Suite("Databend catalog")
 struct DatabendCatalogTests {
+    @Test("Names are backtick-quoted, and a name holding a backtick switches to double quotes")
+    func identifierQuoting() {
+        #expect(DatabendCatalog.quoteIdentifier("orders") == "`orders`")
+        #expect(DatabendCatalog.quoteIdentifier("b\\s") == "`b\\s`")
+        #expect(DatabendCatalog.quoteIdentifier("t`u") == "\"t`u\"")
+        #expect(DatabendCatalog.quoteIdentifier("t`u\"v") == "\"t`u\"\"v\"")
+        #expect(DatabendCatalog.quoteIdentifier("t`u\\") == "\"t`u\\\\\"")
+    }
+
     @Test("A system.columns row becomes the column, default and comment included")
     func parsesSystemColumnsRow() throws {
         let row: [PluginCellValue] = [.text("label"), .text("VARCHAR"), .text("DEFAULT"), .text("'x'"), .text("YES"), .text("cmt")]

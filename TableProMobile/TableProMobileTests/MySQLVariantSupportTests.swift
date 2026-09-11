@@ -1,9 +1,10 @@
 import Foundation
+@testable import TableProMobile
 import TableProModels
 import Testing
-@testable import TableProMobile
 
 @Suite("MySQL variant support on iOS")
+@MainActor
 struct MySQLVariantSupportTests {
     @Test("TiDB is offered and supported, Databend is neither")
     func offeredTypes() {
@@ -30,7 +31,7 @@ struct MySQLVariantSupportTests {
 
     @Test("TiDB routes to the MySQL driver with its own type")
     func tiDBRoutesToMySQLDriver() throws {
-        let connection = DatabaseConnection(name: "t", type: .tidb, host: "127.0.0.1", port: 4000)
+        let connection = DatabaseConnection(name: "t", type: .tidb, host: "127.0.0.1", port: 4_000)
         let driver = try IOSDriverFactory().createDriver(for: connection, password: nil)
         let mysql = try #require(driver as? MySQLDriver)
         #expect(mysql.databaseType == .tidb)

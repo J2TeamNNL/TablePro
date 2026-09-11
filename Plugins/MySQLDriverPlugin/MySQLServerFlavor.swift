@@ -99,6 +99,8 @@ internal enum MySQLServerFlavor: Equatable, Sendable {
 
     var listsSequencesAsTables: Bool { !isTiDB }
 
+    var dropsIdleSessionOnKillQuery: Bool { isTiDB }
+
     var preparesOnServer: Bool { !isDatabend }
 
     func beginTransactionStatement(mode: PluginTransactionAccessMode) -> String {

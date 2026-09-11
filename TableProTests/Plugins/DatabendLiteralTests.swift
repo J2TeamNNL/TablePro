@@ -56,6 +56,16 @@ struct DatabendLiteralTests {
         #expect(sql == "SELECT * FROM t WHERE name = 'x'' OR ''1''=''1''; DROP TABLE t; --\\\\'")
     }
 
+    @Test("A backslash inside a double-quoted token never exposes a placeholder the server reads as text")
+    func backslashInDoubleQuotesIsConservative() throws {
+        let sql = try DatabendLiteral.inline(
+            "SELECT \"a\\\"?\" AS label FROM numbers(3) WHERE number = ?",
+            parameters: [.text("x\" AS label, 42 AS injected FROM numbers(1) --")]
+        )
+        #expect(sql.hasPrefix("SELECT \"a\\\"?\" AS label"))
+        #expect(sql.hasSuffix("WHERE number = 'x\" AS label, 42 AS injected FROM numbers(1) --'"))
+    }
+
     @Test("A placeholder count that does not match the values is refused")
     func refusesCountMismatch() {
         #expect(throws: DatabendLiteralError.parameterCountMismatch(placeholders: 2, values: 1)) {

@@ -30,7 +30,10 @@ extension QueryExecutionCoordinator {
     }
 
     func parseSchemaMetadata(_ schema: FetchedTableSchema) -> ParsedSchemaMetadata {
-        QueryExecutor.parseSchemaMetadata(schema)
+        QueryExecutor.parseSchemaMetadata(
+            schema,
+            rowMatchExcludedTypePrefixes: PluginManager.shared.rowMatchExcludedTypePrefixes(for: parent.connection.type)
+        )
     }
 
     /// History belongs to the database the tab actually ran on, not to wherever the
@@ -496,10 +499,7 @@ extension QueryExecutionCoordinator {
         tableName: String,
         resultSetId: UUID?
     ) {
-        let parsed = QueryExecutor.parseSchemaMetadata(
-            schema,
-            rowMatchExcludedTypePrefixes: PluginManager.shared.rowMatchExcludedTypePrefixes(for: parent.connection.type)
-        )
+        let parsed = parseSchemaMetadata(schema)
         guard resultStillActive(tabId, resultSetId) else {
             /// The result this was fetched for is still there, the user is just looking at another
             /// one. Dropping the metadata left it with no account of which columns the server owns,

@@ -65,7 +65,10 @@ enum DockerComposeExtractor {
         )
     }
 
-    private static let databendRepositories: Set<String> = ["datafuselabs/databend", "databendlabs/databend"]
+    private static let databendRepositories: Set<String> = [
+        "datafuselabs/databend", "databendlabs/databend",
+        "datafuselabs/databend-query", "databendlabs/databend-query",
+    ]
 
     static func databaseKind(for image: String) -> ServiceDatabase? {
         let name = image.lowercased()
