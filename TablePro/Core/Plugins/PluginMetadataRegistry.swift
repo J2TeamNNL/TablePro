@@ -94,6 +94,8 @@ struct PluginMetadataSnapshot: Sendable {
         /// out of it either fails to load or presents incomplete accounts, which is worse.
         var supportsRemoteDatabaseFile: Bool = false
 
+        var supportsPrincipalConnectionLimit: Bool = true
+
         static let defaults = CapabilityFlags(
             supportsSchemaSwitching: false,
             supportsImport: true,
@@ -135,6 +137,7 @@ struct PluginMetadataSnapshot: Sendable {
         let fileSignatures: [DatabaseFileSignature]
         let databaseGroupingStrategy: GroupingStrategy
         let structureColumnFields: [StructureColumnField]
+        let rowMatchExcludedTypePrefixes: [String]
 
         init(
             defaultSchemaName: String,
@@ -149,7 +152,8 @@ struct PluginMetadataSnapshot: Sendable {
             fileExtensions: [String],
             fileSignatures: [DatabaseFileSignature] = [],
             databaseGroupingStrategy: GroupingStrategy,
-            structureColumnFields: [StructureColumnField]
+            structureColumnFields: [StructureColumnField],
+            rowMatchExcludedTypePrefixes: [String] = []
         ) {
             self.defaultSchemaName = defaultSchemaName
             self.defaultGroupName = defaultGroupName
@@ -164,6 +168,7 @@ struct PluginMetadataSnapshot: Sendable {
             self.fileSignatures = fileSignatures
             self.databaseGroupingStrategy = databaseGroupingStrategy
             self.structureColumnFields = structureColumnFields
+            self.rowMatchExcludedTypePrefixes = rowMatchExcludedTypePrefixes
         }
 
         static let defaults = SchemaInfo(
@@ -330,7 +335,8 @@ struct PluginMetadataSnapshot: Sendable {
                 fileExtensions: schema.fileExtensions,
                 fileSignatures: schema.fileSignatures,
                 databaseGroupingStrategy: source.schema.databaseGroupingStrategy,
-                structureColumnFields: schema.structureColumnFields
+                structureColumnFields: schema.structureColumnFields,
+                rowMatchExcludedTypePrefixes: schema.rowMatchExcludedTypePrefixes
             ),
             editor: editor, connection: connection
         )
@@ -369,6 +375,8 @@ final class PluginMetadataRegistry: @unchecked Sendable {
         }
 
         reverseTypeIndex["MariaDB"] = "MySQL"
+        reverseTypeIndex["TiDB"] = "MySQL"
+        reverseTypeIndex["Databend"] = "MySQL"
         reverseTypeIndex["Redshift"] = "PostgreSQL"
         reverseTypeIndex["CockroachDB"] = "PostgreSQL"
         reverseTypeIndex["PGlite"] = "PostgreSQL"
@@ -618,7 +626,9 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                     .authenticationIsDatabaseScoped ?? false,
                 localFilePathField: existingSnapshot?.capabilities.localFilePathField,
                 supportsRemoteDatabaseFile: existingSnapshot?.capabilities
-                    .supportsRemoteDatabaseFile ?? false
+                    .supportsRemoteDatabaseFile ?? false,
+                supportsPrincipalConnectionLimit: existingSnapshot?.capabilities
+                    .supportsPrincipalConnectionLimit ?? true
             ),
             schema: PluginMetadataSnapshot.SchemaInfo(
                 defaultSchemaName: driverType.defaultSchemaName,
@@ -633,7 +643,8 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                 fileExtensions: driverType.fileExtensions,
                 fileSignatures: existingSnapshot?.schema.fileSignatures ?? [],
                 databaseGroupingStrategy: driverType.databaseGroupingStrategy,
-                structureColumnFields: driverType.structureColumnFields
+                structureColumnFields: driverType.structureColumnFields,
+                rowMatchExcludedTypePrefixes: existingSnapshot?.schema.rowMatchExcludedTypePrefixes ?? []
             ),
             editor: PluginMetadataSnapshot.EditorConfig(
                 sqlDialect: driverType.sqlDialect,

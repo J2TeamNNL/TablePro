@@ -30,7 +30,10 @@ extension QueryExecutionCoordinator {
     }
 
     func parseSchemaMetadata(_ schema: FetchedTableSchema) -> ParsedSchemaMetadata {
-        QueryExecutor.parseSchemaMetadata(schema)
+        QueryExecutor.parseSchemaMetadata(
+            schema,
+            rowMatchExcludedTypePrefixes: PluginManager.shared.rowMatchExcludedTypePrefixes(for: parent.connection.type)
+        )
     }
 
     /// History belongs to the database the tab actually ran on, not to wherever the
@@ -103,6 +106,7 @@ extension QueryExecutionCoordinator {
         var columnComments: [String: String] = [:]
         var columnIdentity: [String: IdentityKind] = [:]
         var generatedColumns: Set<String> = []
+        var rowMatchExcludedColumns: Set<String> = []
         var hasAuthoritativeSchema = false
         var foreignKeysFetched = false
     }
@@ -135,6 +139,7 @@ extension QueryExecutionCoordinator {
             resolved.columnComments = metadata.columnComments
             resolved.columnIdentity = metadata.columnIdentity
             resolved.generatedColumns = metadata.generatedColumns
+            resolved.rowMatchExcludedColumns = metadata.rowMatchExcludedColumns
             resolved.hasAuthoritativeSchema = metadata.isAuthoritative
             resolved.foreignKeysFetched = metadata.columnForeignKeys != nil
             for (col, vals) in metadata.columnEnumValues {
@@ -213,6 +218,7 @@ extension QueryExecutionCoordinator {
             columnComments: resolved.columnComments,
             columnIdentity: resolved.columnIdentity,
             generatedColumns: generatedColumns,
+            rowMatchExcludedColumns: resolved.rowMatchExcludedColumns,
             hasAuthoritativeSchema: resolved.hasAuthoritativeSchema,
             foreignKeysFetched: resolved.foreignKeysFetched
         )
@@ -292,7 +298,8 @@ extension QueryExecutionCoordinator {
                 columns: columns,
                 primaryKeyColumns: resolvedPKs,
                 databaseType: conn.type,
-                generatedColumns: generatedColumns
+                generatedColumns: generatedColumns,
+                rowMatchExcludedColumns: resolved.rowMatchExcludedColumns
             )
         }
 
@@ -492,7 +499,7 @@ extension QueryExecutionCoordinator {
         tableName: String,
         resultSetId: UUID?
     ) {
-        let parsed = QueryExecutor.parseSchemaMetadata(schema)
+        let parsed = parseSchemaMetadata(schema)
         guard resultStillActive(tabId, resultSetId) else {
             /// The result this was fetched for is still there, the user is just looking at another
             /// one. Dropping the metadata left it with no account of which columns the server owns,
@@ -521,6 +528,7 @@ extension QueryExecutionCoordinator {
             columnComments: parsed.columnComments,
             columnIdentity: parsed.columnIdentity,
             generatedColumns: parsed.generatedColumns,
+            rowMatchExcludedColumns: parsed.rowMatchExcludedColumns,
             hasAuthoritativeSchema: parsed.isAuthoritative
         )
         if !parsed.primaryKeyColumns.isEmpty {
@@ -565,6 +573,7 @@ extension QueryExecutionCoordinator {
                 columnComments: parsed.columnComments,
                 columnIdentity: parsed.columnIdentity,
                 generatedColumns: parsed.generatedColumns,
+                rowMatchExcludedColumns: parsed.rowMatchExcludedColumns,
                 hasAuthoritativeSchema: parsed.isAuthoritative
             )
         }
@@ -588,6 +597,7 @@ extension QueryExecutionCoordinator {
 
         if parent.tabManager.selectedTabId == tabId {
             parent.changeManager.setGeneratedColumns(parsed.generatedColumns)
+            parent.changeManager.setRowMatchExcludedColumns(parsed.rowMatchExcludedColumns)
         }
 
         let refreshed = isActiveTab(tabId)
