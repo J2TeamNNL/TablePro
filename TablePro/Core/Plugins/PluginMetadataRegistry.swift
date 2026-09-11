@@ -74,6 +74,8 @@ struct PluginMetadataSnapshot: Sendable {
         var supportsClientKeyPassphrase: Bool = false
         var supportsConnectionPooling: Bool = true
         var authenticationIsDatabaseScoped: Bool = false
+        var pagination: PaginationCapability = .offset
+        var isEngineReadOnly: Bool = false
 
         /// Which connection field carries the path of the local database file this driver opens,
         /// for the types that open one. Nil for every driver that reaches its database over the
@@ -628,6 +630,8 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                 supportsConnectionPooling: existingSnapshot?.capabilities.supportsConnectionPooling ?? true,
                 authenticationIsDatabaseScoped: existingSnapshot?.capabilities
                     .authenticationIsDatabaseScoped ?? false,
+                pagination: existingSnapshot?.capabilities.pagination ?? .offset,
+                isEngineReadOnly: existingSnapshot?.capabilities.isEngineReadOnly ?? false,
                 localFilePathField: existingSnapshot?.capabilities.localFilePathField,
                 supportsRemoteDatabaseFile: existingSnapshot?.capabilities
                     .supportsRemoteDatabaseFile ?? false,

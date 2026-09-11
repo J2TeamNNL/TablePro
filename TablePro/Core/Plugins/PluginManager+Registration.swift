@@ -473,6 +473,15 @@ extension PluginManager {
             .capabilities.supportsReadOnlyMode ?? true
     }
 
+    func paginationCapability(for databaseType: DatabaseType) -> PaginationCapability {
+        PaginationCapability.of(databaseType)
+    }
+
+    func isEngineReadOnly(for databaseType: DatabaseType) -> Bool {
+        PluginMetadataRegistry.shared.snapshot(for: databaseType)?
+            .capabilities.isEngineReadOnly ?? false
+    }
+
     func defaultSchemaName(for databaseType: DatabaseType) -> String {
         PluginMetadataRegistry.shared.snapshot(for: databaseType)?
             .schema.defaultSchemaName ?? "public"

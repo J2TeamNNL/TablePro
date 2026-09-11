@@ -12,6 +12,7 @@ struct TableQueryBuilderImplicitSchemaTests {
             databaseType: databaseType,
             pluginDriver: nil,
             dialect: dialect,
+            pagination: PluginManager.shared.paginationCapability(for: databaseType),
             dialectQuote: quoteIdentifierFromDialect(dialect)
         )
     }
