@@ -272,7 +272,7 @@ struct DockerComposeExtractorTests {
               - "2881:2881"
         """).first
         #expect(oceanbase?.parsedURL.type == .oceanbase)
-        #expect(oceanbase?.parsedURL.port == nil)
+        #expect(oceanbase?.parsedURL.port == 2_881)
         #expect(oceanbase?.parsedURL.username == "root@sys")
         #expect(oceanbase?.parsedURL.password.isEmpty == true)
         #expect(oceanbase?.parsedURL.database.isEmpty == true)
