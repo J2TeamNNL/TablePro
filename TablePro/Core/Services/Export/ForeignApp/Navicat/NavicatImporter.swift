@@ -98,7 +98,7 @@ private extension NavicatImporter {
         return ExportableConnection(
             name: nonEmpty(attr(element, "ConnectionName")) ?? displayName,
             host: isFileBased ? "" : (nonEmpty(attr(element, "Host")) ?? "localhost"),
-            port: isFileBased ? 0 : (Int(attr(element, "Port")) ?? Self.defaultPort(for: type)),
+            port: isFileBased ? 0 : (Int(attr(element, "Port")) ?? ForeignAppDatabaseType.defaultPort(for: type)),
             database: isFileBased ? attr(element, "DatabaseFileName") : attr(element, "Database"),
             username: isFileBased ? "" : attr(element, "UserName"),
             type: type,
@@ -189,25 +189,12 @@ private extension NavicatImporter {
         switch raw.uppercased() {
         case "MYSQL": return "MySQL"
         case "MARIADB": return "MariaDB"
-        case "TIDB": return "TiDB"
         case "POSTGRESQL": return "PostgreSQL"
         case "ORACLE": return "Oracle"
         case "SQLITE": return "SQLite"
         case "SQLSERVER": return "SQL Server"
         case "MONGODB": return "MongoDB"
-        default: return raw
-        }
-    }
-
-    static func defaultPort(for type: String) -> Int {
-        switch type {
-        case "MySQL", "MariaDB": return 3_306
-        case "TiDB": return 4_000
-        case "PostgreSQL": return 5_432
-        case "Oracle": return 1_521
-        case "SQL Server": return 1_433
-        case "MongoDB": return 27_017
-        default: return 0
+        default: return ForeignAppDatabaseType.resolve(raw)
         }
     }
 
