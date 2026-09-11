@@ -36,8 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Beancount connections held at Safe Mode Read-Only. (#2030)
 - MySQL sessions on the server's default `utf8mb4` collation.
 
+### Removed
+
+- Focus Border color in the theme editor.
+
 ### Fixed
 
+- Data grid ignoring the theme's background, text, alternate row, NULL, boolean and row number colors.
 - Garbled non-Latin text saved from iPhone and iPad to MySQL servers that force a Latin 1 session. (#2725)
 - **Encoding** ignored on iPhone and iPad by a MySQL connection synced from the Mac. (#2725)
 - Binary MySQL columns shown as text on iPhone and iPad, and searched with `LIKE`.
