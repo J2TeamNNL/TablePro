@@ -18,10 +18,12 @@ import TableProPluginKit
 
 internal struct SourceObjectSyncBuilder {
     private let targetDriver: any PluginDatabaseDriver
+    private let targetDatabaseType: DatabaseType
     private let classifier = SyncSafetyClassifier()
 
-    internal init(targetDriver: any PluginDatabaseDriver) {
+    internal init(targetDriver: any PluginDatabaseDriver, targetDatabaseType: DatabaseType) {
         self.targetDriver = targetDriver
+        self.targetDatabaseType = targetDatabaseType
     }
 
     internal func build(for result: CompareObjectResult, action: TableSyncAction) -> [SyncStatement] {
@@ -104,9 +106,12 @@ internal struct SourceObjectSyncBuilder {
     }
 
     private func qualified(_ identity: CompareObjectIdentity) -> String {
-        let quotedName = targetDriver.quoteIdentifier(identity.name)
-        guard let schema = identity.schema, !schema.isEmpty else { return quotedName }
-        return "\(targetDriver.quoteIdentifier(schema)).\(quotedName)"
+        SchemaQualifiedName.render(
+            name: identity.name,
+            schema: identity.schema,
+            databaseType: targetDatabaseType,
+            quote: targetDriver.quoteIdentifier
+        )
     }
 
     private func terminated(_ sql: String) -> String {

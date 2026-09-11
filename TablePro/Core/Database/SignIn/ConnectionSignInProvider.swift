@@ -4,6 +4,7 @@ import Foundation
 enum ConnectionSignInKind: String, Equatable, CaseIterable {
     case awsSSO
     case entraID
+    case googleOAuth
 }
 
 /// A driver credential that a person can renew by signing in again.
@@ -26,7 +27,7 @@ struct ConnectionSignInProvider: Sendable {
 }
 
 enum ConnectionSignInRegistry {
-    static let providers: [ConnectionSignInProvider] = [.awsSSO, .entraID]
+    static let providers: [ConnectionSignInProvider] = [.awsSSO, .entraID, .googleOAuth]
 
     /// The provider that recognises this failure, if any. `fields` is the connection's
     /// `additionalFields`.
@@ -35,6 +36,28 @@ enum ConnectionSignInRegistry {
         fields: [String: String]
     ) -> ConnectionSignInProvider? {
         providers.first { $0.claims(error, fields) }
+    }
+
+    @MainActor
+    static func fields(for connection: DatabaseConnection) -> [String: String] {
+        fields(
+            connection.additionalFields,
+            secureFieldIds: PluginManager.shared.secureConnectionFieldIds(for: connection.type),
+            loadSecureField: { ConnectionStorage.shared.loadPluginSecureField(fieldId: $0, for: connection.id) }
+        )
+    }
+
+    static func fields(
+        _ storedFields: [String: String],
+        secureFieldIds: [String],
+        loadSecureField: (String) -> String?
+    ) -> [String: String] {
+        var resolved = storedFields
+        for fieldId in secureFieldIds where resolved[fieldId]?.isEmpty ?? true {
+            guard let value = loadSecureField(fieldId) else { continue }
+            resolved[fieldId] = value
+        }
+        return resolved
     }
 }
 
@@ -67,6 +90,18 @@ extension ConnectionSignInProvider {
         failureTitle: String(localized: "Microsoft Entra ID Sign-In Failed"),
         signIn: { fields, window in
             try await EntraSignInService.signIn(fields: fields, window: window)
+        }
+    )
+
+    static let googleOAuth = ConnectionSignInProvider(
+        kind: .googleOAuth,
+        claims: { error, fields in GoogleSignInService.claims(error, fields: fields) },
+        title: String(localized: "Google Sign-In Required"),
+        message: { _ in String(localized: "Sign in to Google with your browser?") },
+        signedInMessage: String(localized: "Google sign-in finished. Test the connection again."),
+        failureTitle: String(localized: "Google Sign-In Failed"),
+        signIn: { fields, _ in
+            try await GoogleSignInService.signIn(fields: fields)
         }
     )
 }

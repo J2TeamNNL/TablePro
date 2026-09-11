@@ -617,6 +617,41 @@ struct SQLSchemaProviderTests {
         #expect(Set(labels) == ["sales", "hr"])
     }
 
+    @Test("The engine's implicit schema is never suggested as a qualifier")
+    func implicitSchemaIsNotSuggested() async throws {
+        let connection = TestFixtures.makeConnection(type: .spanner)
+        let implicitSchema = try #require(connection.type.implicitSchemaName)
+        let provider = SQLSchemaProvider()
+        await provider.resetForDatabase(
+            "db",
+            tables: [],
+            driver: MockDatabaseDriver(connection: connection),
+            connection: connection
+        )
+        await provider.setNamespaces(schemas: [implicitSchema, "sales"], databases: ["prod"])
+
+        let schemaLabels = await provider.schemaCompletionItems().map(\.label)
+        #expect(schemaLabels == ["sales"])
+        let namespaceLabels = await provider.namespaceCompletionItems().map(\.label)
+        #expect(Set(namespaceLabels) == ["prod", "sales"])
+    }
+
+    @Test("A schema named like another engine's implicit schema is still suggested")
+    func implicitSchemaNameOfAnotherEngineIsKept() async {
+        let connection = TestFixtures.makeConnection(type: .mysql)
+        let provider = SQLSchemaProvider()
+        await provider.resetForDatabase(
+            "db",
+            tables: [],
+            driver: MockDatabaseDriver(connection: connection),
+            connection: connection
+        )
+        await provider.setNamespaces(schemas: ["(default)", "sales"], databases: [])
+
+        let labels = await provider.schemaCompletionItems().map(\.label)
+        #expect(labels == ["(default)", "sales"])
+    }
+
     @Test("tableCompletionItems filters already-loaded tables by schema")
     func tableCompletionItemsFiltersLoadedBySchema() async {
         let driver = MockDatabaseDriver()

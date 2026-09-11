@@ -247,12 +247,16 @@ internal enum ObjectCopySelectQuery {
         table: String,
         schema: String?,
         driver: any PluginDatabaseDriver,
+        databaseType: DatabaseType,
         scope: PluginExportRowScope? = nil
     ) -> String {
         let list = columns.isEmpty
             ? "*"
             : columns.map { driver.quoteIdentifier($0) }.joined(separator: ", ")
-        var query = "SELECT \(list) FROM \(qualified(table, schema, driver))"
+        let source = SchemaQualifiedName.render(
+            name: table, schema: schema, databaseType: databaseType, quote: driver.quoteIdentifier
+        )
+        var query = "SELECT \(list) FROM \(source)"
         /// `sanitizedFilter` rather than `filter`. The text is the user's own SQL against their own
         /// connection, but it is spliced into this statement, and the sanitizer is what keeps it to
         /// the single expression the field is for.
@@ -263,14 +267,5 @@ internal enum ObjectCopySelectQuery {
         /// Through the driver's own injection, because `LIMIT` is not the spelling on SQL Server or
         /// on Oracle before 12c.
         return driver.injectRowLimit(query, limit: rowLimit) ?? "\(query) LIMIT \(rowLimit)"
-    }
-
-    internal static func qualified(
-        _ table: String,
-        _ schema: String?,
-        _ driver: any PluginDatabaseDriver
-    ) -> String {
-        guard let schema, !schema.isEmpty else { return driver.quoteIdentifier(table) }
-        return "\(driver.quoteIdentifier(schema)).\(driver.quoteIdentifier(table))"
     }
 }

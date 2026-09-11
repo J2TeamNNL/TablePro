@@ -1,5 +1,6 @@
 import Foundation
 import TableProPluginKit
+import TableProSpannerCore
 
 final class SpannerPlugin: NSObject, TableProPlugin, DriverPlugin {
     static let pluginName = "Spanner Driver"
@@ -11,9 +12,9 @@ final class SpannerPlugin: NSObject, TableProPlugin, DriverPlugin {
     static let databaseDisplayName = "Google Cloud Spanner"
     static let iconName = "spanner-icon"
     static let defaultPort = 0
-    static let systemSchemaNames: [String] = ["INFORMATION_SCHEMA", "SPANNER_SYS", "information_schema", "pg_catalog"]
+    static let systemSchemaNames: [String] = ["INFORMATION_SCHEMA", "SPANNER_SYS", "information_schema", "spanner_sys", "pg_catalog"]
     static let isDownloadable = true
-    static let defaultSchemaName = ""
+    static let defaultSchemaName = SpannerSchemaName.defaultToken
 
     static let connectionMode: ConnectionMode = .apiOnly
     static let navigationModel: NavigationModel = .standard
@@ -47,7 +48,7 @@ final class SpannerPlugin: NSObject, TableProPlugin, DriverPlugin {
     static let sqlDialect: SQLDialectDescriptor? = SpannerSQLDialect.googleSQL
 
     static let explainVariants: [ExplainVariant] = [
-        ExplainVariant(id: "plan", label: "Plan", sqlPrefix: "EXPLAIN")
+        ExplainVariant(id: "plan", label: "Plan", sqlPrefix: "EXPLAIN", format: .indentedText)
     ]
 
     static let columnTypesByCategory: [String: [String]] = [
@@ -101,7 +102,8 @@ internal enum SpannerConnectionFields {
             fieldType: .dropdown(options: [
                 .init(value: "serviceAccount", label: "Service Account Key"),
                 .init(value: "adc", label: "Application Default Credentials"),
-                .init(value: "oauth", label: "Google Account (OAuth)")
+                .init(value: "oauth", label: "Google Account (OAuth)"),
+                .init(value: "emulator", label: "Emulator (no credentials)")
             ]),
             section: .authentication
         ),
@@ -161,7 +163,7 @@ internal enum SpannerConnectionFields {
         ConnectionField(
             id: "spEndpoint",
             label: String(localized: "REST Endpoint"),
-            placeholder: "http://127.0.0.1:9020",
+            placeholder: "https://spanner.googleapis.com",
             section: .advanced
         )
     ]

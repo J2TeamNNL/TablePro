@@ -114,7 +114,11 @@ enum ForeignKeyLookupService {
     }
 
     nonisolated private static func quotedTable(table: String, schema: String?, driver: DatabaseDriver) -> String {
-        guard let schema, !schema.isEmpty else { return driver.quoteIdentifier(table) }
-        return "\(driver.quoteIdentifier(schema)).\(driver.quoteIdentifier(table))"
+        SchemaQualifiedName.render(
+            name: table,
+            schema: schema,
+            databaseType: driver.connection.type,
+            quote: driver.quoteIdentifier
+        )
     }
 }

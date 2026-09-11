@@ -233,7 +233,7 @@ targets:
       - package: Sparkle
       - package: Yams
       - package: TableProCore
-        products: [TableProAnalytics, TableProImport, TableProNumberFormatting, TableProSyncTransport]
+        products: [TableProAnalytics, TableProGoogleCloud, TableProImport, TableProNumberFormatting, TableProSyncTransport]
     settings:
       base:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -390,12 +390,6 @@ targets:
       - Plugins/BigQueryDriverPlugin/BigQueryQueryBuilder.swift
       - Plugins/BigQueryDriverPlugin/BigQueryStatementGenerator.swift
       - Plugins/BigQueryDriverPlugin/BigQueryTypeMapper.swift
-      - Plugins/SpannerDriverPlugin/SpannerAuth.swift
-      - Plugins/SpannerDriverPlugin/SpannerConnection.swift
-      - Plugins/SpannerDriverPlugin/SpannerOAuthServer.swift
-      - Plugins/SpannerDriverPlugin/SpannerQueryBuilder.swift
-      - Plugins/SpannerDriverPlugin/SpannerStatementGenerator.swift
-      - Plugins/SpannerDriverPlugin/SpannerTypeMapper.swift
       - Plugins/CSVExportPlugin/CSVEncodingReport.swift
       - Plugins/CSVExportPlugin/CSVExportModels.swift
       - Plugins/CSVExportPlugin/CSVExportOptionsView.swift
@@ -932,6 +926,11 @@ targets:
     templateAttributes:
       folder: SpannerDriverPlugin
       principalClass: SpannerPlugin
+    dependencies:
+      - package: TableProCore
+        product: TableProGoogleCloud
+      - package: TableProCore
+        product: TableProSpannerCore
 
   CassandraDriver:
     templates: [DriverPlugin]

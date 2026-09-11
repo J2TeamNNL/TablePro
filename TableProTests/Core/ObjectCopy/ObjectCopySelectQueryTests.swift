@@ -39,7 +39,8 @@ final class ObjectCopySelectQueryTests: XCTestCase {
     func testColumnsAreNamedAndQuotedInOrder() {
         XCTAssertEqual(
             ObjectCopySelectQuery.build(
-                columns: ["id", "total"], table: "orders", schema: "public", driver: driver
+                columns: ["id", "total"], table: "orders", schema: "public", driver: driver,
+                databaseType: .postgresql
             ),
             "SELECT \"id\", \"total\" FROM \"public\".\"orders\""
         )
@@ -47,15 +48,34 @@ final class ObjectCopySelectQueryTests: XCTestCase {
 
     func testAnUnqualifiedTableKeepsThePlainName() {
         XCTAssertEqual(
-            ObjectCopySelectQuery.build(columns: ["id"], table: "orders", schema: nil, driver: driver),
+            ObjectCopySelectQuery.build(
+                columns: ["id"], table: "orders", schema: nil, driver: driver, databaseType: .postgresql
+            ),
             "SELECT \"id\" FROM \"orders\""
         )
     }
 
     func testAnEmptySchemaIsTreatedAsNoSchema() {
         XCTAssertEqual(
-            ObjectCopySelectQuery.build(columns: ["id"], table: "orders", schema: "", driver: driver),
+            ObjectCopySelectQuery.build(
+                columns: ["id"], table: "orders", schema: "", driver: driver, databaseType: .postgresql
+            ),
             "SELECT \"id\" FROM \"orders\""
+        )
+    }
+
+    func testTheEngineImplicitSchemaIsLeftUnqualified() {
+        XCTAssertEqual(
+            ObjectCopySelectQuery.build(
+                columns: ["id"], table: "orders", schema: "(default)", driver: driver, databaseType: .spanner
+            ),
+            "SELECT \"id\" FROM \"orders\""
+        )
+        XCTAssertEqual(
+            ObjectCopySelectQuery.build(
+                columns: ["id"], table: "orders", schema: "sales", driver: driver, databaseType: .spanner
+            ),
+            "SELECT \"id\" FROM \"sales\".\"orders\""
         )
     }
 
@@ -63,7 +83,9 @@ final class ObjectCopySelectQueryTests: XCTestCase {
     /// a `SELECT  FROM`.
     func testNoColumnsFallsBackToStar() {
         XCTAssertEqual(
-            ObjectCopySelectQuery.build(columns: [], table: "orders", schema: nil, driver: driver),
+            ObjectCopySelectQuery.build(
+                columns: [], table: "orders", schema: nil, driver: driver, databaseType: .postgresql
+            ),
             "SELECT * FROM \"orders\""
         )
     }
@@ -73,7 +95,7 @@ final class ObjectCopySelectQueryTests: XCTestCase {
     func testAFilterBecomesAWhereClause() {
         XCTAssertEqual(
             ObjectCopySelectQuery.build(
-                columns: ["id"], table: "orders", schema: nil, driver: driver,
+                columns: ["id"], table: "orders", schema: nil, driver: driver, databaseType: .postgresql,
                 scope: PluginExportRowScope(filter: "total > 10")
             ),
             "SELECT \"id\" FROM \"orders\" WHERE total > 10"
@@ -85,7 +107,7 @@ final class ObjectCopySelectQueryTests: XCTestCase {
     func testARowLimitGoesThroughTheDriver() {
         XCTAssertEqual(
             ObjectCopySelectQuery.build(
-                columns: ["id"], table: "orders", schema: nil, driver: driver,
+                columns: ["id"], table: "orders", schema: nil, driver: driver, databaseType: .postgresql,
                 scope: PluginExportRowScope(filter: "total > 10", rowLimit: 50)
             ),
             "SELECT \"id\" FROM \"orders\" WHERE total > 10 LIMIT 50"
@@ -97,7 +119,7 @@ final class ObjectCopySelectQueryTests: XCTestCase {
     func testAFilterCarryingASecondStatementIsRefused() {
         XCTAssertEqual(
             ObjectCopySelectQuery.build(
-                columns: ["id"], table: "orders", schema: nil, driver: driver,
+                columns: ["id"], table: "orders", schema: nil, driver: driver, databaseType: .postgresql,
                 scope: PluginExportRowScope(filter: "1=1; DROP TABLE orders")
             ),
             "SELECT \"id\" FROM \"orders\""
@@ -107,7 +129,7 @@ final class ObjectCopySelectQueryTests: XCTestCase {
     func testATrailingSemicolonIsATypingHabitRatherThanARefusal() {
         XCTAssertEqual(
             ObjectCopySelectQuery.build(
-                columns: ["id"], table: "orders", schema: nil, driver: driver,
+                columns: ["id"], table: "orders", schema: nil, driver: driver, databaseType: .postgresql,
                 scope: PluginExportRowScope(filter: "total > 10;")
             ),
             "SELECT \"id\" FROM \"orders\" WHERE total > 10"

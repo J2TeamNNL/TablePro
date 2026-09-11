@@ -113,7 +113,7 @@ WHERE mood <> 'ha|       -- 'happy'
 
 On multi-schema engines, schemas complete in FROM and `public.users` resolves in FROM, JOIN, UPDATE, INSERT INTO and CREATE INDEX.
 
-Where the hierarchy is database, schema, table (Snowflake, BigQuery, Spanner), every segment completes and a schema you have not opened in the sidebar is fetched on demand:
+Where the hierarchy is database, schema, table (Snowflake, BigQuery), every segment completes and a schema you have not opened in the sidebar is fetched on demand:
 
 ```sql
 SELECT * FROM ANALYTICS_|                      -- databases

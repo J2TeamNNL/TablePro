@@ -629,7 +629,7 @@ extension QueryExecutionCoordinator {
             guard let self else { return }
             guard !parent.isTearingDown else { return }
 
-            let prepared: (plan: RowCountPlan, sql: String?, scope: DatabaseScope?) = await MainActor.run {
+            let prepared: (plan: RowCountPlan, count: ExactCountInput?, scope: DatabaseScope?) = await MainActor.run {
                 guard let tab = parent.tabManager.tabs.first(where: { $0.id == tabId }) else {
                     return (.skip, nil, nil)
                 }
@@ -642,20 +642,22 @@ extension QueryExecutionCoordinator {
                 )
                 guard case let .exactCount(filtered) = plan else { return (plan, nil, scope) }
                 let buffer = parent.tabSessionRegistry.tableRows(for: tabId)
+                let filters = filtered ? tab.filterState.appliedFilters : []
+                let logicMode = tab.filterState.filterLogicMode
                 let sql = parent.queryBuilder.buildFilteredCountQuery(
                     tableName: tableName,
                     schemaName: tab.tableContext.schemaName,
-                    filters: filtered ? tab.filterState.appliedFilters : [],
-                    logicMode: tab.filterState.filterLogicMode,
+                    filters: filters,
+                    logicMode: logicMode,
                     columns: buffer.columns,
                     columnTypes: buffer.columnTypes
                 )
-                return (plan, sql, scope)
+                return (plan, ExactCountInput(sql: sql, filters: filters, logicMode: logicMode), scope)
             }
 
             let outcome = await Self.rowCountOutcome(
                 plan: prepared.plan,
-                sql: prepared.sql,
+                count: prepared.count,
                 scope: prepared.scope,
                 tableName: tableName
             )
@@ -682,7 +684,7 @@ extension QueryExecutionCoordinator {
     /// `isCountPending`, rather than an early return per plan that leaves it set.
     private static func rowCountOutcome(
         plan: RowCountPlan,
-        sql: String?,
+        count exactCount: ExactCountInput?,
         scope: DatabaseScope?,
         tableName: String
     ) async -> RowCountOutcome? {
@@ -704,12 +706,16 @@ extension QueryExecutionCoordinator {
             }) else { return .clear }
             return .count(count, isApproximate: false)
         case .exactCount:
-            guard let sql else { return nil }
+            guard let exactCount, let sql = exactCount.sql else { return nil }
             do {
                 let count = try await DatabaseManager.shared.withMetadataDriver(scope: scope, workload: .bulk) { driver in
-                    let result = try await driver.execute(query: sql)
-                    guard let countStr = result.rows.first?.first?.asText else { return Int?.none }
-                    return Int(countStr)
+                    try await ExactRowCounter.count(
+                        on: driver,
+                        table: tableName,
+                        filters: exactCount.filters,
+                        logicMode: exactCount.logicMode,
+                        countSQL: sql
+                    )
                 }
                 return count.map { RowCountOutcome.count($0, isApproximate: false) }
             } catch {
@@ -785,6 +791,12 @@ extension QueryExecutionCoordinator {
             )
         )
     }
+}
+
+internal struct ExactCountInput: Sendable {
+    internal let sql: String?
+    internal let filters: [TableFilter]
+    internal let logicMode: FilterLogicMode
 }
 
 enum RowCountPlan: Equatable {

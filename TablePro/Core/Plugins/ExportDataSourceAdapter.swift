@@ -20,10 +20,12 @@ final class ExportDataSourceAdapter: PluginExportDataSource, @unchecked Sendable
     /// construction, on the main actor, because the registry lives there and this is asked for from
     /// the export plugin's own thread.
     let supportsCascadeDrop: Bool
+    private let implicitSchemaName: String?
 
     init(driver: DatabaseDriver, databaseType: DatabaseType) {
-        self.supportsCascadeDrop = PluginMetadataRegistry.shared
-            .snapshot(for: databaseType)?.capabilities.supportsCascadeDrop ?? false
+        let snapshot = PluginMetadataRegistry.shared.snapshot(for: databaseType)
+        self.supportsCascadeDrop = snapshot?.capabilities.supportsCascadeDrop ?? false
+        self.implicitSchemaName = snapshot?.schema.implicitSchemaName
         self.driver = driver
         self.dbType = databaseType
         self.databaseTypeId = databaseType.rawValue
@@ -291,21 +293,26 @@ final class ExportDataSourceAdapter: PluginExportDataSource, @unchecked Sendable
 
     /// The export tree names every group after a schema on a schema-aware engine and after a
     /// database everywhere else, so only a schema-aware driver can read that name as its
-    /// schema. An empty name means the table sits in the driver's own container.
+    /// schema. An empty name means the engine's implicit schema where it has one, and the
+    /// driver's own container everywhere else.
     func exportSchema(for databaseName: String) -> String? {
         guard let pluginDriver else { return nil }
-        guard pluginDriver.supportsSchemas, !databaseName.isEmpty else { return pluginDriver.currentSchema }
+        guard pluginDriver.supportsSchemas else { return pluginDriver.currentSchema }
+        guard !databaseName.isEmpty else { return implicitSchemaName ?? pluginDriver.currentSchema }
         return databaseName
     }
 
+    func pluginDatabaseName(for databaseName: String) -> String {
+        SchemaQualifiedName.explicitSchema(databaseName, implicitSchemaName: implicitSchemaName) ?? ""
+    }
+
     private func qualifiedTableRef(table: String, databaseName: String) -> String {
-        if databaseName.isEmpty {
-            return driver.quoteIdentifier(table)
-        } else {
-            let quotedDb = driver.quoteIdentifier(databaseName)
-            let quotedTable = driver.quoteIdentifier(table)
-            return "\(quotedDb).\(quotedTable)"
-        }
+        SchemaQualifiedName.render(
+            name: table,
+            schema: databaseName,
+            implicitSchemaName: implicitSchemaName,
+            quote: driver.quoteIdentifier
+        )
     }
 
     private func mapToPluginResult(_ result: QueryResult) -> PluginQueryResult {

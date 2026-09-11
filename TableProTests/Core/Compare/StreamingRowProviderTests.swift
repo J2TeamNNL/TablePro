@@ -136,7 +136,8 @@ final class KeyOrderedQueryTests: XCTestCase {
 
     func testQuerySelectsRequestedColumnsOrderedByKey() {
         let sql = KeyOrderedQuery.build(
-            table: "users", schema: nil, columns: ["id", "name"], keyColumns: ["id"], driver: Quoting()
+            table: "users", schema: nil, columns: ["id", "name"], keyColumns: ["id"], driver: Quoting(),
+            databaseType: .postgresql
         )
 
         XCTAssertEqual(sql, "SELECT \"id\", \"name\" FROM \"users\" ORDER BY \"id\"")
@@ -144,7 +145,8 @@ final class KeyOrderedQueryTests: XCTestCase {
 
     func testCompositeKeyOrdersByEveryKeyColumn() {
         let sql = KeyOrderedQuery.build(
-            table: "t", schema: nil, columns: ["a"], keyColumns: ["tenant", "id"], driver: Quoting()
+            table: "t", schema: nil, columns: ["a"], keyColumns: ["tenant", "id"], driver: Quoting(),
+            databaseType: .postgresql
         )
 
         XCTAssertTrue(sql.hasSuffix("ORDER BY \"tenant\", \"id\""), sql)
@@ -152,9 +154,19 @@ final class KeyOrderedQueryTests: XCTestCase {
 
     func testSchemaIsQualifiedAndQuoted() {
         let sql = KeyOrderedQuery.build(
-            table: "users", schema: "app", columns: ["id"], keyColumns: ["id"], driver: Quoting()
+            table: "users", schema: "app", columns: ["id"], keyColumns: ["id"], driver: Quoting(),
+            databaseType: .postgresql
         )
 
         XCTAssertTrue(sql.contains("FROM \"app\".\"users\""), sql)
+    }
+
+    func testTheEngineImplicitSchemaIsLeftUnqualified() {
+        let sql = KeyOrderedQuery.build(
+            table: "users", schema: "(default)", columns: ["id"], keyColumns: ["id"], driver: Quoting(),
+            databaseType: .spanner
+        )
+
+        XCTAssertEqual(sql, "SELECT \"id\" FROM \"users\" ORDER BY \"id\"")
     }
 }

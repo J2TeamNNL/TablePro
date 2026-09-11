@@ -19414,6 +19414,9 @@
         }
       }
     },
+    "Application default credentials not found. Run gcloud auth application-default login." : {
+
+    },
     "Applied" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -25172,6 +25175,9 @@
           }
         }
       }
+    },
+    "Can't reach Google's sign-in service: %@" : {
+
     },
     "Cancel" : {
       "localizations" : {
@@ -43965,6 +43971,9 @@
         }
       }
     },
+    "Credentials of type %@ are not supported." : {
+
+    },
     "Critical" : {
       "localizations" : {
         "ko" : {
@@ -58271,6 +58280,9 @@
         }
       }
     },
+    "Enter the OAuth client ID and client secret for this connection, then sign in again." : {
+
+    },
     "Enter the passphrase for SSH key \"%@\":" : {
       "localizations" : {
         "ko" : {
@@ -71246,6 +71258,9 @@
         }
       }
     },
+    "Google Cloud globally distributed SQL" : {
+
+    },
     "Google Cloud serverless data warehouse" : {
       "localizations" : {
         "ko" : {
@@ -71279,6 +71294,45 @@
           }
         }
       }
+    },
+    "Google did not return a refresh token. Remove TablePro's access in your Google Account settings, then sign in again." : {
+
+    },
+    "Google no longer accepts these credentials. Sign in again, or renew the key or the gcloud login." : {
+
+    },
+    "Google rejected the OAuth client ID or secret." : {
+
+    },
+    "Google rejected the token request (%@)." : {
+
+    },
+    "Google rejected the token request (HTTP %lld)." : {
+
+    },
+    "Google returned a token response that can't be read." : {
+
+    },
+    "Google Sign-In Failed" : {
+
+    },
+    "Google sign-in finished. Test the connection again." : {
+
+    },
+    "Google Sign-In Required" : {
+
+    },
+    "Google sign-in returned an unexpected response. Try again." : {
+
+    },
+    "Google sign-in timed out. Try again." : {
+
+    },
+    "Google sign-in was cancelled." : {
+
+    },
+    "Google sign-in was denied: %@" : {
+
     },
     "Got Slower" : {
       "localizations" : {
@@ -78557,6 +78611,9 @@
           }
         }
       }
+    },
+    "Instance ID" : {
+
     },
     "Integer" : {
       "localizations" : {
@@ -103205,6 +103262,9 @@
         }
       }
     },
+    "OAuth Refresh Token" : {
+
+    },
     "OAuth Token" : {
       "localizations" : {
         "ko" : {
@@ -109940,6 +110000,9 @@
           }
         }
       }
+    },
+    "Paste the whole service account JSON key or its file path, not the private key alone." : {
+
     },
     "Paste your CREATE TABLE statement below:" : {
       "extractionState" : "stale",
@@ -124441,6 +124504,9 @@
           }
         }
       }
+    },
+    "REST Endpoint" : {
+
     },
     "Restart Claude Desktop" : {
       "localizations" : {
@@ -139396,6 +139462,9 @@
         }
       }
     },
+    "Sign in to Google with your browser?" : {
+
+    },
     "Sign in to iCloud in System Settings to enable sync." : {
       "localizations" : {
         "ko" : {
@@ -139701,6 +139770,9 @@
           }
         }
       }
+    },
+    "Sign in with your Google account to use this connection." : {
+
     },
     "Sign Out" : {
       "localizations" : {
@@ -140183,6 +140255,9 @@
           }
         }
       }
+    },
+    "Signing the service account token failed." : {
+
     },
     "Signs in to Cloudflare Access once and caches the token, so connecting doesn't open a browser." : {
       "localizations" : {
@@ -154746,6 +154821,15 @@
         }
       }
     },
+    "The credentials file can't be read." : {
+
+    },
+    "The credentials file has no %@ field." : {
+
+    },
+    "The credentials point at %@, which is not a Google endpoint." : {
+
+    },
     "The Cursor CLI is not installed." : {
       "localizations" : {
         "ko" : {
@@ -157525,6 +157609,12 @@
 
     },
     "The server wrote %1$@ to %2$@." : {
+
+    },
+    "The service account key is not valid JSON." : {
+
+    },
+    "The service account private key can't be read." : {
 
     },
     "The session forwards to this connection's host and port from the target instance, so the target is the bastion rather than the database." : {

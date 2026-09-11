@@ -382,7 +382,9 @@ internal struct CompareRunner {
             }
             var statements = try SchemaSyncScriptBuilder(targetDriver: plugin)
                 .build(operations: tableOperations, foreignKeysByTable: foreignKeys)
-            let sourceBuilder = SourceObjectSyncBuilder(targetDriver: plugin)
+            let sourceBuilder = SourceObjectSyncBuilder(
+                targetDriver: plugin, targetDatabaseType: driver.connection.type
+            )
             for entry in sourceDefined {
                 statements += sourceBuilder.build(for: entry.result, action: entry.action)
             }

@@ -135,6 +135,7 @@ struct PluginMetadataSnapshot: Sendable {
         let fileSignatures: [DatabaseFileSignature]
         let databaseGroupingStrategy: GroupingStrategy
         let structureColumnFields: [StructureColumnField]
+        let implicitSchemaName: String?
 
         init(
             defaultSchemaName: String,
@@ -149,8 +150,10 @@ struct PluginMetadataSnapshot: Sendable {
             fileExtensions: [String],
             fileSignatures: [DatabaseFileSignature] = [],
             databaseGroupingStrategy: GroupingStrategy,
-            structureColumnFields: [StructureColumnField]
+            structureColumnFields: [StructureColumnField],
+            implicitSchemaName: String? = nil
         ) {
+            self.implicitSchemaName = implicitSchemaName
             self.defaultSchemaName = defaultSchemaName
             self.defaultGroupName = defaultGroupName
             self.tableEntityName = tableEntityName
@@ -330,7 +333,8 @@ struct PluginMetadataSnapshot: Sendable {
                 fileExtensions: schema.fileExtensions,
                 fileSignatures: schema.fileSignatures,
                 databaseGroupingStrategy: source.schema.databaseGroupingStrategy,
-                structureColumnFields: schema.structureColumnFields
+                structureColumnFields: schema.structureColumnFields,
+                implicitSchemaName: source.schema.implicitSchemaName
             ),
             editor: editor, connection: connection
         )
@@ -633,7 +637,8 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                 fileExtensions: driverType.fileExtensions,
                 fileSignatures: existingSnapshot?.schema.fileSignatures ?? [],
                 databaseGroupingStrategy: driverType.databaseGroupingStrategy,
-                structureColumnFields: driverType.structureColumnFields
+                structureColumnFields: driverType.structureColumnFields,
+                implicitSchemaName: existingSnapshot?.schema.implicitSchemaName
             ),
             editor: PluginMetadataSnapshot.EditorConfig(
                 sqlDialect: driverType.sqlDialect,

@@ -53,10 +53,7 @@ struct TableQueryBuilder {
     // MARK: - Query Building
 
     private func qualifiedTable(_ tableName: String, schema: String?) -> String {
-        if let schema {
-            return "\(quote(schema)).\(quote(tableName))"
-        }
-        return quote(tableName)
+        SchemaQualifiedName.render(name: tableName, schema: schema, databaseType: databaseType, quote: quote)
     }
 
     func buildBaseQuery(

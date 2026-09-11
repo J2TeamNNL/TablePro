@@ -50,6 +50,23 @@ struct PluginMetadataSnapshotCopyTests {
         }
     }
 
+    @Test("Every copying helper carries the implicit schema across")
+    func copyingHelpersPreserveImplicitSchema() throws {
+        let original = try #require(PluginMetadataRegistry.shared.snapshot(for: .spanner))
+
+        let copies: [(String, PluginMetadataSnapshot)] = [
+            ("withIconName", original.withIconName("other-icon")),
+            ("withExplainVariants", original.withExplainVariants([])),
+            ("withBranding", original.withBranding(from: original)),
+            ("withIsDownloadable", original.withIsDownloadable(!original.isDownloadable)),
+            ("withSwitchRouting", original.withSwitchRouting(from: original))
+        ]
+
+        for (name, copy) in copies {
+            #expect(copy.schema.implicitSchemaName == "(default)", "\(name) reset the implicit schema")
+        }
+    }
+
     /// An engine whose `ALTER TABLE` can add a constraint says so, and is not pushed through a
     /// rebuild it does not need.
     @Test("An engine with the statements is curated as altering, not rebuilding")

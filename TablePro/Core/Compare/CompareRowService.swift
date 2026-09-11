@@ -137,11 +137,11 @@ internal struct CompareRowService {
                 }
                 let sourceQuery = KeyOrderedQuery.build(
                     table: table, schema: sourceSchema, columns: readColumns,
-                    keyColumns: keyColumns, driver: sourcePlugin
+                    keyColumns: keyColumns, driver: sourcePlugin, databaseType: source.databaseType
                 )
                 let targetQuery = KeyOrderedQuery.build(
                     table: table, schema: targetSchema, columns: readColumns,
-                    keyColumns: keyColumns, driver: targetPlugin
+                    keyColumns: keyColumns, driver: targetPlugin, databaseType: target.databaseType
                 )
                 let sourceProvider = StreamingRowProvider(
                     stream: sourcePlugin.streamRows(query: sourceQuery), columns: readColumns

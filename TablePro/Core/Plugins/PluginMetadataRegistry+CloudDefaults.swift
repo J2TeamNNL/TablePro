@@ -349,7 +349,7 @@ extension PluginMetadataRegistry {
                 requiresAuthentication: true, supportsForeignKeys: true, supportsSchemaEditing: false,
                 isDownloadable: true, primaryUrlScheme: "", parameterStyle: .questionMark,
                 navigationModel: .standard, explainVariants: [
-                    ExplainVariant(id: "plan", label: "Plan", sqlPrefix: "EXPLAIN")
+                    ExplainVariant(id: "plan", label: "Plan", sqlPrefix: "EXPLAIN", format: .indentedText)
                 ],
                 pathFieldRole: .database,
                 supportsHealthMonitor: true, urlSchemes: [],
@@ -371,7 +371,7 @@ extension PluginMetadataRegistry {
                     supportsDropDatabase: false
                 ),
                 schema: PluginMetadataSnapshot.SchemaInfo(
-                    defaultSchemaName: "",
+                    defaultSchemaName: "(default)",
                     defaultGroupName: "default",
                     tableEntityName: "Tables",
                     containerEntityName: "Schema",
@@ -379,11 +379,12 @@ extension PluginMetadataRegistry {
                     immutableColumns: [],
                     systemDatabaseNames: [],
                     systemSchemaNames: [
-                        "INFORMATION_SCHEMA", "SPANNER_SYS", "information_schema", "pg_catalog"
+                        "INFORMATION_SCHEMA", "SPANNER_SYS", "information_schema", "spanner_sys", "pg_catalog"
                     ],
                     fileExtensions: [],
                     databaseGroupingStrategy: .hierarchicalSchema,
-                    structureColumnFields: [.name, .type, .nullable, .defaultValue]
+                    structureColumnFields: [.name, .type, .nullable, .defaultValue],
+                    implicitSchemaName: "(default)"
                 ),
                 editor: PluginMetadataSnapshot.EditorConfig(
                     sqlDialect: SQLDialectDescriptor(
@@ -460,7 +461,8 @@ extension PluginMetadataRegistry {
                             fieldType: .dropdown(options: [
                                 .init(value: "serviceAccount", label: "Service Account Key"),
                                 .init(value: "adc", label: "Application Default Credentials"),
-                                .init(value: "oauth", label: "Google Account (OAuth)")
+                                .init(value: "oauth", label: "Google Account (OAuth)"),
+                                .init(value: "emulator", label: "Emulator (no credentials)")
                             ]),
                             section: .authentication
                         ),
@@ -511,9 +513,16 @@ extension PluginMetadataRegistry {
                             visibleWhen: FieldVisibilityRule(fieldId: "spAuthMethod", values: ["oauth"])
                         ),
                         ConnectionField(
+                            id: "spOAuthRefreshToken",
+                            label: String(localized: "OAuth Refresh Token"),
+                            fieldType: .secure,
+                            section: .authentication,
+                            visibleWhen: FieldVisibilityRule(fieldId: "spAuthMethod", values: ["oauth"])
+                        ),
+                        ConnectionField(
                             id: "spEndpoint",
                             label: String(localized: "REST Endpoint"),
-                            placeholder: "http://127.0.0.1:9020",
+                            placeholder: "https://spanner.googleapis.com",
                             section: .advanced
                         )
                     ],

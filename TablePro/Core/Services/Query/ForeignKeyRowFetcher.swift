@@ -41,12 +41,12 @@ enum ForeignKeyRowFetcher {
             throw FetchFailure.noConnection
         }
 
-        let quotedTable: String
-        if let schema = reference.referencedSchema, !schema.isEmpty {
-            quotedTable = "\(driver.quoteIdentifier(schema)).\(driver.quoteIdentifier(reference.referencedTable))"
-        } else {
-            quotedTable = driver.quoteIdentifier(reference.referencedTable)
-        }
+        let quotedTable = SchemaQualifiedName.render(
+            name: reference.referencedTable,
+            schema: reference.referencedSchema,
+            databaseType: databaseType,
+            quote: driver.quoteIdentifier
+        )
 
         let query = ForeignKeyPreviewQuery.singleRow(
             quotedTable: quotedTable,

@@ -54,7 +54,7 @@ struct SQLStatementGenerator {
         quoteIdentifier: ((String) -> String)? = nil
     ) throws {
         self.tableName = tableName
-        self.schemaName = schemaName?.isEmpty == true ? nil : schemaName
+        self.schemaName = SchemaQualifiedName.explicitSchema(schemaName, databaseType: databaseType)
         self.columns = columns
         self.primaryKeyColumns = primaryKeyColumns
         self.generatedColumns = generatedColumns
@@ -70,8 +70,9 @@ struct SQLStatementGenerator {
 
     /// The table as every statement spells it.
     var qualifiedTableName: String {
-        guard let schemaName else { return quoteIdentifierFn(tableName) }
-        return "\(quoteIdentifierFn(schemaName)).\(quoteIdentifierFn(tableName))"
+        SchemaQualifiedName.render(
+            name: tableName, schema: schemaName, databaseType: databaseType, quote: quoteIdentifierFn
+        )
     }
 
     private static func defaultParameterStyle(for databaseType: DatabaseType) -> ParameterStyle {

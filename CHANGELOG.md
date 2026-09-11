@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Editor jumping sideways on each keystroke in a long line while scrolled horizontally.
 - Cursor left off screen after pasting a long line.
 - Line number column keeping a stale width after the line count drops below 1,000 or the font size changes.
+- `ARRAY<BOOL>` columns opening a checkbox editor, and `BYTES` columns editable as text.
 
 ## [0.73.0] - 2026-09-09
 

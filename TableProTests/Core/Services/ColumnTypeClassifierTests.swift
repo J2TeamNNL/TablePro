@@ -990,4 +990,39 @@ struct ColumnTypeClassifierTests {
             #expect(classifier.classify(rawTypeName: "[]").arrayElement == nil)
         }
     }
+
+    @Suite("GoogleSQL Composite and Bytes Types")
+    struct GoogleSQLTypes {
+        private let classifier = ColumnTypeClassifier()
+
+        @Test("Angle-bracket ARRAY and STRUCT types classify as JSON whatever they hold")
+        func angleBracketCompositesAreJson() {
+            for raw in ["ARRAY<BOOL>", "ARRAY<STRING(MAX)>", "STRUCT<a INT64, b BOOL>", "array<int64>"] {
+                #expect(classifier.classify(rawTypeName: raw) == .json(rawType: raw), "\(raw)")
+            }
+        }
+
+        @Test("BYTES classifies as binary with or without a length")
+        func bytesIsBlob() {
+            for raw in ["BYTES", "BYTES(16)", "BYTES(MAX)"] {
+                #expect(classifier.classify(rawTypeName: raw) == .blob(rawType: raw), "\(raw)")
+            }
+        }
+
+        @Test("Lowercase bytes from a schemaless SurrealDB column stays text")
+        func lowercaseBytesStaysText() {
+            for raw in ["bytes", "Bytes", "bytes(16)"] {
+                #expect(classifier.classify(rawTypeName: raw) == .text(rawType: raw), "\(raw)")
+            }
+        }
+
+        @Test("Neighbouring types keep their existing classification")
+        func neighbouringTypesUnchanged() {
+            #expect(classifier.classify(rawTypeName: "BOOL") == .boolean(rawType: "BOOL"))
+            #expect(classifier.classify(rawTypeName: "BOOLEAN") == .boolean(rawType: "BOOLEAN"))
+            #expect(classifier.classify(rawTypeName: "ARRAY") == .json(rawType: "ARRAY"))
+            #expect(classifier.classify(rawTypeName: "Array(String)") == .json(rawType: "Array(String)"))
+            #expect(classifier.classify(rawTypeName: "boolean[]").arrayElement == .boolean(rawType: "boolean"))
+        }
+    }
 }
