@@ -40,7 +40,9 @@ public enum WeaviateJSON {
                 return number.boolValue ? "true" : "false"
             }
             return number.stringValue
-        case let object as [String: Any], let object as [Any]:
+        case let object as [String: Any]:
+            return (try? text(object)) ?? nil
+        case let object as [Any]:
             return (try? text(object)) ?? nil
         default:
             return String(describing: value as Any)

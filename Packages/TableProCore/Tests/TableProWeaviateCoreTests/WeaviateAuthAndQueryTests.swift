@@ -166,4 +166,14 @@ struct WeaviateSchemaTests {
         #expect(columns.first?.isPrimaryKey == true)
         #expect(WeaviateSchema.immutableColumns == ["uuid", "vector"])
     }
+
+    @Test("Object and array properties display as JSON")
+    func displayTextEncodesCollections() {
+        #expect(WeaviateJSON.displayText(["title": "Hello"]) == "{\"title\":\"Hello\"}")
+        let vector = WeaviateJSON.displayText([0.1, 0.2])
+        #expect(vector?.hasPrefix("[") == true)
+        #expect(vector?.hasSuffix("]") == true)
+        #expect(WeaviateJSON.displayText(true) == "true")
+        #expect(WeaviateJSON.displayText(NSNull()) == nil)
+    }
 }
