@@ -90,7 +90,7 @@ struct WeaviateConnectionFieldsTests {
         for method in ["none", "apiKey"] {
             var connection = DatabaseConnection(name: "Weaviate", type: .weaviate)
             connection.additionalFields = [WeaviateFieldID.authMethod: method]
-            #expect(PluginManager.shared.hidesPassword(for: connection), method)
+            #expect(PluginManager.shared.hidesPassword(for: connection), "\(method)")
         }
     }
 }

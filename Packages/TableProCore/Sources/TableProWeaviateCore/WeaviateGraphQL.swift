@@ -173,10 +173,9 @@ public enum WeaviateConsoleParser {
         guard ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"].contains(method) else {
             return nil
         }
-        var path = String(parts[1])
-        if !path.hasPrefix("/") {
-            path = "/" + path
-        }
+        let rawPath = String(parts[1])
+        guard rawPath.hasPrefix("/") else { return nil }
+        var path = rawPath
         if !path.hasPrefix("/v1") && path != "/" {
             if path.hasPrefix("/objects") || path.hasPrefix("/schema") || path.hasPrefix("/graphql")
                 || path.hasPrefix("/meta") {

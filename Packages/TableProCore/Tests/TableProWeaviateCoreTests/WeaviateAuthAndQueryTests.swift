@@ -164,6 +164,8 @@ struct WeaviateGraphQLTests {
     @Test("A SQL delete is not a console request")
     func sqlIsNotConsole() {
         #expect(WeaviateConsoleParser.parse("DELETE FROM Article") == nil)
+        #expect(WeaviateConsoleParser.parse("UPDATE Article SET title = 'x'") == nil)
+        #expect(WeaviateConsoleParser.parse("GET schema") == nil)
     }
 }
 
