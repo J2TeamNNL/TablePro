@@ -6,7 +6,7 @@
 import Foundation
 import TableProPluginKit
 
-internal struct MySQLEngineVersion: Comparable, Sendable {
+nonisolated internal struct MySQLEngineVersion: Comparable, Sendable {
     let major: Int
     let minor: Int
     let patch: Int
@@ -28,7 +28,7 @@ internal struct MySQLEngineVersion: Comparable, Sendable {
     }
 }
 
-internal enum MySQLServerFlavor: Equatable, Sendable {
+nonisolated internal enum MySQLServerFlavor: Equatable, Sendable {
     case mysql
     case mariadb
     case tidb(version: MySQLEngineVersion?)
@@ -166,45 +166,9 @@ internal enum MySQLServerFlavor: Equatable, Sendable {
         guard isDatabend else { return errno == 1_317 }
         return errno == 1_105 && message.contains("AbortedQuery")
     }
-
-    func killTarget(connectionIdentifier: String?) -> MySQLKillTarget {
-        switch self {
-        case .tidb:
-            guard let id = connectionIdentifier.flatMap(UInt64.init) else { return .threadId }
-            return .tidbConnection(id)
-        case .databend:
-            guard let session = connectionIdentifier, !session.isEmpty else { return .threadId }
-            return .databendSession(session)
-        case .oceanbase:
-            guard let id = connectionIdentifier.flatMap(UInt64.init) else { return .threadId }
-            return .oceanbaseConnection(id)
-        case .mysql, .mariadb:
-            return .threadId
-        }
-    }
 }
 
-internal enum MySQLKillTarget: Equatable, Sendable {
-    case threadId
-    case tidbConnection(UInt64)
-    case databendSession(String)
-    case oceanbaseConnection(UInt64)
-
-    func statement(threadId: UInt) -> String? {
-        switch self {
-        case .threadId:
-            return threadId > 0 ? "KILL QUERY \(threadId)" : nil
-        case .tidbConnection(let id):
-            return "KILL TIDB QUERY \(id)"
-        case .databendSession(let session):
-            return "KILL QUERY '\(mysqlEscapeStringLiteral(session))'"
-        case .oceanbaseConnection(let id):
-            return "KILL QUERY \(id)"
-        }
-    }
-}
-
-internal enum MySQLFlavorResolution {
+nonisolated internal enum MySQLFlavorResolution {
     static func needsTiDBVersionProbe(banner: String?, variant: String?) -> Bool {
         variant == MySQLServerFlavor.tidbVariant && !MySQLServerFlavor.fromBanner(banner).isTiDB
     }
