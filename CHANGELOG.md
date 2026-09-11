@@ -67,7 +67,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Linked Folders and Team Library connections ignoring the welcome window search, with no context menu.
 - Dragging a connection in filtered welcome window results snapping back without moving it.
 - Welcome window context menu leaving linked connections out of a mixed selection.
-
 - Idle metadata connections held open for the life of the app, up to six per connection. (#2700)
 - MongoDB connections reading as healthy after the server went away. (#2700)
 - Password prompt raised by a background reconnect, on whichever window was in front. (#2700)
@@ -150,6 +149,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Illegal mix of collations` comparing a column with a user variable on MySQL 8.
 - GEOMETRY values from a parameterized MySQL query shown as raw bytes.
 - Earlier row's text repeated in later rows of a parameterized MySQL query once a value passed 64 KB.
+- Wrong row deleted or updated after an edit took a row out of a column value filter.
 - Garbled non-ASCII text on PostgreSQL databases not encoded in UTF-8 after `RESET ALL` or `DISCARD ALL`.
 - Garbled or double-encoded non-ASCII text on iOS with PostgreSQL databases not encoded in UTF-8.
 - Garbled non-ASCII text when restoring a PostgreSQL SQL export into a database not encoded in UTF-8.
