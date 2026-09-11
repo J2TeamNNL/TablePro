@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 5 MB smaller app bundle.
 - 7 MB smaller DMG download.
 - Connect progress reads as a labelled bar, with a step named only where the app is waiting on something outside itself.
+- BigQuery Google sign-in runs from a **Sign In** prompt, and its refresh token is kept in the keychain.
 
 ### Fixed
 
@@ -44,7 +45,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Editor jumping sideways on each keystroke in a long line while scrolled horizontally.
 - Cursor left off screen after pasting a long line.
 - Line number column keeping a stale width after the line count drops below 1,000 or the font size changes.
+- BigQuery statements broken by an apostrophe or a backslash in a value or filter.
+- BigQuery grid inserts writing `__DEFAULT__` into columns, and saving byte values as NULL.
+- BigQuery grid edits failing with type errors after a reconnect.
+- BigQuery grid edits matching more rows than the edited one when a value started with `{` or `[`.
+- BigQuery filters with starts with, ends with, not contains, between, regex or is empty ignored.
+- BigQuery **No limit** query timeout stopping jobs after 30 seconds.
+- BigQuery Google sign-in opening the browser again on every connect.
+- Crash reading a malformed BigQuery service account key.
 - `ARRAY<BOOL>` columns opening a checkbox editor, and `BYTES` columns editable as text.
+
+### Security
+
+- BigQuery Google sign-in accepting an authorization response without PKCE or a state check.
 
 ## [0.73.0] - 2026-09-09
 

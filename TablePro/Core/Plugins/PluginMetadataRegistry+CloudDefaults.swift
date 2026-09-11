@@ -332,6 +332,13 @@ extension PluginMetadataRegistry {
                             visibleWhen: FieldVisibilityRule(fieldId: "bqAuthMethod", values: ["oauth"])
                         ),
                         ConnectionField(
+                            id: "bqOAuthRefreshToken",
+                            label: String(localized: "OAuth Refresh Token"),
+                            fieldType: .secure,
+                            section: .authentication,
+                            visibleWhen: FieldVisibilityRule(fieldId: "bqAuthMethod", values: ["oauth"])
+                        ),
+                        ConnectionField(
                             id: "bqMaxBytesBilled",
                             label: String(localized: "Max Bytes Billed"),
                             placeholder: "1000000000",

@@ -384,10 +384,11 @@ targets:
       - Plugins/BeancountDriverPlugin/BeancountPluginDriver+Projection.swift
       - Plugins/BeancountDriverPlugin/BeancountPluginDriver+PythonScript.swift
       - Plugins/BeancountDriverPlugin/BeancountPluginDriver.swift
-      - Plugins/BigQueryDriverPlugin/BigQueryAuth.swift
       - Plugins/BigQueryDriverPlugin/BigQueryConnection.swift
-      - Plugins/BigQueryDriverPlugin/BigQueryOAuthServer.swift
+      - Plugins/BigQueryDriverPlugin/BigQueryCredentialFactory.swift
+      - Plugins/BigQueryDriverPlugin/BigQueryError.swift
       - Plugins/BigQueryDriverPlugin/BigQueryQueryBuilder.swift
+      - Plugins/BigQueryDriverPlugin/BigQueryQueryParameters.swift
       - Plugins/BigQueryDriverPlugin/BigQueryStatementGenerator.swift
       - Plugins/BigQueryDriverPlugin/BigQueryTypeMapper.swift
       - Plugins/CSVExportPlugin/CSVEncodingReport.swift
@@ -920,6 +921,9 @@ targets:
     templateAttributes:
       folder: BigQueryDriverPlugin
       principalClass: BigQueryPlugin
+    dependencies:
+      - package: TableProCore
+        product: TableProGoogleCloud
 
   SpannerDriverPlugin:
     templates: [DriverPlugin]

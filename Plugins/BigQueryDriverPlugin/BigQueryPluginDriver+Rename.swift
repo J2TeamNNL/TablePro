@@ -1,18 +1,14 @@
-//
-//  BigQueryPluginDriver+Rename.swift
-//  BigQueryDriverPlugin
-//
-
 import Foundation
 import TableProPluginKit
 
 extension BigQueryPluginDriver {
-    /// The new name is bare and the table stays in its dataset. BigQuery refuses the statement
-    /// while a streaming buffer is active, which is roughly five hours after the last row streamed
-    /// in, and for an external table; both come back as the server's own message.
+    private static let renamableObjectKeywords: Set<String> = ["TABLE", "VIEW", "MATERIALIZED VIEW"]
+
     func renameTable(name: String, schema: String?, to newName: String, objectType: String) async throws {
         let quoted = quoteIdentifier(name)
         let target = schema.map { "\(quoteIdentifier($0)).\(quoted)" } ?? quoted
-        _ = try await execute(query: "ALTER \(objectType) \(target) RENAME TO \(quoteIdentifier(newName))")
+        let requested = objectType.uppercased()
+        let keyword = Self.renamableObjectKeywords.contains(requested) ? requested : "TABLE"
+        _ = try await execute(query: "ALTER \(keyword) \(target) RENAME TO \(quoteIdentifier(newName))")
     }
 }
