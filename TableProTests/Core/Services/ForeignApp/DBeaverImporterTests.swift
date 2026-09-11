@@ -236,7 +236,6 @@ struct DBeaverImporterTests {
             ("clickhouse", "ClickHouse"),
             ("mariadb", "MariaDB"),
             ("tidb", "TiDB"),
-            ("databend", "Databend"),
             ("cassandra", "Cassandra")
         ]
 
@@ -255,6 +254,15 @@ struct DBeaverImporterTests {
         for mapping in providerMappings {
             #expect(typeSet.contains(mapping.1), "Provider \(mapping.0) should map to \(mapping.1)")
         }
+    }
+
+    @Test("DBeaver's TiDB Lakehouse provider is not imported as TiDB")
+    func testImportConnections_tidbLakeIsNotTiDB() throws {
+        try writeDataSources(makeDataSourcesJSON(connections: [
+            "lake": makeConnection(name: "Lake", provider: "tidblake")
+        ]))
+        let result = try importer.importConnections(includePasswords: false)
+        #expect(result.envelope.connections.first?.type != "TiDB")
     }
 
     @Test("importConnections parses port as Int")

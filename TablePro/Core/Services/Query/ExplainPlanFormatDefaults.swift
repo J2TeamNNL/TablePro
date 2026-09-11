@@ -15,7 +15,7 @@ enum ExplainPlanFormatDefaults {
         switch databaseType {
         case .postgresql, .redshift, .pglite:
             return .postgresJson
-        case .mysql, .mariadb, .tidb:
+        case .mysql, .mariadb:
             return .mysqlComposite
         case .sqlite, .cloudflareD1, .libsql, .turso:
             return .sqliteQueryPlan

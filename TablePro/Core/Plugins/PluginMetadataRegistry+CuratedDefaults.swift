@@ -213,7 +213,7 @@ extension PluginMetadataRegistry {
 
         let awsIAMFields = AWSAuthFields.standard() + [AWSAuthFields.rdsEndpointField()]
 
-        /// MySQL and MariaDB only. PostgreSQL shares `awsIAMFields` and must not pick this up:
+        /// The MySQL plugin's types only. PostgreSQL shares `awsIAMFields` and must not pick this up:
         /// its driver holds no releasable resource, so the setting would do nothing.
         let mysqlIdleReleaseField = ConnectionField(
             id: "mysqlIdleReleaseMinutes",
@@ -350,120 +350,6 @@ extension PluginMetadataRegistry {
                     category: .relational,
                     tagline: String(localized: "Open-source fork of MySQL"),
                     defaultUnixSocketPath: "/var/run/mysqld/mysqld.sock"
-                )
-            )),
-            ("TiDB", PluginMetadataSnapshot(
-                displayName: "TiDB", iconName: "tidb-icon", defaultPort: 4_000,
-                requiresAuthentication: true, supportsForeignKeys: true, supportsSchemaEditing: true,
-                isDownloadable: false, primaryUrlScheme: "tidb", parameterStyle: .questionMark,
-                navigationModel: .standard, explainVariants: [], pathFieldRole: .database,
-                supportsHealthMonitor: true, urlSchemes: ["tidb"], postConnectActions: [.selectDatabaseFromLastSession],
-                brandColorHex: "#DE1A2D",
-                queryLanguageName: "SQL", editorLanguage: .sql,
-                connectionMode: .network, supportsDatabaseSwitching: true,
-                structureEditing: SchemaEditingSupport(columnReorder: .alter, foreignKeyEdit: .alter),
-                capabilities: PluginMetadataSnapshot.CapabilityFlags(
-                    supportsSchemaSwitching: false,
-                    supportsImport: true,
-                    supportsExport: true,
-                    supportsSSH: true,
-                    supportsSSL: true,
-                    supportsCascadeDrop: false,
-                    supportsForeignKeyDisable: true,
-                    supportsReadOnlyMode: true,
-                    supportsQueryProgress: false,
-                    requiresReconnectForDatabaseSwitch: false,
-                    supportsDropDatabase: true,
-                    supportsRenameColumn: true,
-                    supportsTriggers: false,
-                    supportsTriggerEditing: false,
-                    supportsRoutines: false,
-                    supportsDatabaseTriggerBrowse: false,
-                    defaultSSLMode: .preferred
-                ),
-                schema: PluginMetadataSnapshot.SchemaInfo(
-                    defaultSchemaName: "public",
-                    defaultGroupName: "main",
-                    tableEntityName: "Tables",
-                    containerEntityName: "Database",
-                    defaultPrimaryKeyColumn: nil,
-                    immutableColumns: [],
-                    systemDatabaseNames: [
-                        "information_schema", "mysql", "performance_schema", "metrics_schema", "sys"
-                    ],
-                    systemSchemaNames: [],
-                    fileExtensions: [],
-                    databaseGroupingStrategy: .byDatabase,
-                    structureColumnFields: [
-                        .name, .type, .nullable, .defaultValue, .generated, .generationExpression,
-                        .onUpdate, .autoIncrement, .comment, .charset, .collation
-                    ]
-                ),
-                editor: PluginMetadataSnapshot.EditorConfig(
-                    sqlDialect: mysqlDialect,
-                    statementCompletions: [],
-                    columnTypesByCategory: mysqlColumnTypes
-                ),
-                connection: PluginMetadataSnapshot.ConnectionConfig(
-                    additionalConnectionFields: [],
-                    category: .relational,
-                    tagline: String(localized: "Distributed HTAP, MySQL protocol")
-                )
-            )),
-            ("Databend", PluginMetadataSnapshot(
-                displayName: "Databend", iconName: "databend-icon", defaultPort: 3_307,
-                requiresAuthentication: true, supportsForeignKeys: false, supportsSchemaEditing: true,
-                isDownloadable: false, primaryUrlScheme: "databend", parameterStyle: .questionMark,
-                navigationModel: .standard, explainVariants: [], pathFieldRole: .database,
-                supportsHealthMonitor: true, urlSchemes: ["databend"],
-                postConnectActions: [.selectDatabaseFromLastSession],
-                brandColorHex: "#0170FE",
-                queryLanguageName: "SQL", editorLanguage: .sql,
-                connectionMode: .network, supportsDatabaseSwitching: true,
-                structureEditing: SchemaEditingSupport(columnReorder: .alter, foreignKeyEdit: .unsupported),
-                capabilities: PluginMetadataSnapshot.CapabilityFlags(
-                    supportsSchemaSwitching: false,
-                    supportsImport: true,
-                    supportsExport: true,
-                    supportsSSH: true,
-                    supportsSSL: true,
-                    supportsCascadeDrop: false,
-                    supportsForeignKeyDisable: false,
-                    supportsReadOnlyMode: true,
-                    supportsQueryProgress: false,
-                    requiresReconnectForDatabaseSwitch: false,
-                    supportsDropDatabase: true,
-                    supportsRenameColumn: true,
-                    supportsTriggers: false,
-                    supportsTriggerEditing: false,
-                    supportsRoutines: false,
-                    supportsDatabaseTriggerBrowse: false,
-                    defaultSSLMode: .preferred
-                ),
-                schema: PluginMetadataSnapshot.SchemaInfo(
-                    defaultSchemaName: "public",
-                    defaultGroupName: "main",
-                    tableEntityName: "Tables",
-                    containerEntityName: "Database",
-                    defaultPrimaryKeyColumn: nil,
-                    immutableColumns: [],
-                    systemDatabaseNames: ["system", "information_schema", "INFORMATION_SCHEMA"],
-                    systemSchemaNames: [],
-                    fileExtensions: [],
-                    databaseGroupingStrategy: .byDatabase,
-                    structureColumnFields: [
-                        .name, .type, .nullable, .defaultValue, .comment
-                    ]
-                ),
-                editor: PluginMetadataSnapshot.EditorConfig(
-                    sqlDialect: mysqlDialect,
-                    statementCompletions: [],
-                    columnTypesByCategory: mysqlColumnTypes
-                ),
-                connection: PluginMetadataSnapshot.ConnectionConfig(
-                    additionalConnectionFields: [],
-                    category: .analytical,
-                    tagline: String(localized: "Cloud warehouse over the MySQL protocol")
                 )
             )),
             ("PostgreSQL", PluginMetadataSnapshot(
@@ -798,6 +684,8 @@ extension PluginMetadataRegistry {
                 )
             ))
         ]
-        return defaults
+        return defaults + mysqlVariantDefaults(
+            dialect: mysqlDialect, mysqlColumnTypes: mysqlColumnTypes, idleReleaseField: mysqlIdleReleaseField
+        )
     }
 }

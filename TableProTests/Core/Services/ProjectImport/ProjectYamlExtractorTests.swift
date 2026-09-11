@@ -193,6 +193,55 @@ struct DockerComposeExtractorTests {
         #expect(databend?.parsedURL.port == 3_308)
     }
 
+    @Test("TiDB connects as root with no password, whatever MYSQL_ variables the service sets")
+    func testTiDBCredentials() {
+        let tidb = extract("""
+        services:
+          tidb:
+            image: registry.example.com/pingcap/tidb:v8.5.1
+            environment:
+              MYSQL_ROOT_PASSWORD: ignored
+              MYSQL_USER: ignored
+            ports:
+              - "4000:4000"
+        """).first
+        #expect(tidb?.parsedURL.type == .tidb)
+        #expect(tidb?.parsedURL.username == "root")
+        #expect(tidb?.parsedURL.password.isEmpty == true)
+    }
+
+    @Test("TiDB's tools are not TiDB servers")
+    func testTiDBToolImagesAreIgnored() {
+        for image in ["pingcap/tidb-lightning", "pingcap/tidb-dashboard", "pingcap/tidb-operator", "pingcap/tidb-binlog"] {
+            let candidate = extract("""
+            services:
+              tool:
+                image: \(image):latest
+                ports:
+                  - "4000:4000"
+            """).first
+            #expect(candidate?.parsedURL.type != .tidb, "\(image)")
+        }
+    }
+
+    @Test("Databend reads its own user variables and opens the default database")
+    func testDatabendCredentials() {
+        let databend = extract("""
+        services:
+          warehouse:
+            image: databendlabs/databend
+            environment:
+              QUERY_DEFAULT_USER: analyst
+              QUERY_DEFAULT_PASSWORD: secret
+            ports:
+              - "3307:3307"
+        """).first
+        #expect(databend?.parsedURL.type == .databend)
+        #expect(databend?.parsedURL.username == "analyst")
+        #expect(databend?.parsedURL.password == "secret")
+        #expect(databend?.parsedURL.database == "default")
+    }
+
     @Test("Interpolation uses the adjacent dotenv file")
     func testInterpolationFromDotenv() {
         let contents = """

@@ -94,6 +94,8 @@ struct PluginMetadataSnapshot: Sendable {
         /// out of it either fails to load or presents incomplete accounts, which is worse.
         var supportsRemoteDatabaseFile: Bool = false
 
+        var supportsPrincipalConnectionLimit: Bool = true
+
         static let defaults = CapabilityFlags(
             supportsSchemaSwitching: false,
             supportsImport: true,
@@ -135,6 +137,7 @@ struct PluginMetadataSnapshot: Sendable {
         let fileSignatures: [DatabaseFileSignature]
         let databaseGroupingStrategy: GroupingStrategy
         let structureColumnFields: [StructureColumnField]
+        let rowMatchExcludedTypePrefixes: [String]
 
         init(
             defaultSchemaName: String,
@@ -149,7 +152,8 @@ struct PluginMetadataSnapshot: Sendable {
             fileExtensions: [String],
             fileSignatures: [DatabaseFileSignature] = [],
             databaseGroupingStrategy: GroupingStrategy,
-            structureColumnFields: [StructureColumnField]
+            structureColumnFields: [StructureColumnField],
+            rowMatchExcludedTypePrefixes: [String] = []
         ) {
             self.defaultSchemaName = defaultSchemaName
             self.defaultGroupName = defaultGroupName
@@ -164,6 +168,7 @@ struct PluginMetadataSnapshot: Sendable {
             self.fileSignatures = fileSignatures
             self.databaseGroupingStrategy = databaseGroupingStrategy
             self.structureColumnFields = structureColumnFields
+            self.rowMatchExcludedTypePrefixes = rowMatchExcludedTypePrefixes
         }
 
         static let defaults = SchemaInfo(
@@ -498,7 +503,7 @@ final class PluginMetadataRegistry: @unchecked Sendable {
     // MARK: - Dynamic Type Registration
 
     /// Registers an alias type ID that maps to a primary type ID.
-    /// Used for multi-type plugins (e.g., MariaDB / TiDB / Databend → MySQL, Redshift → PostgreSQL).
+    /// Used for multi-type plugins (e.g., MariaDB → MySQL, Redshift → PostgreSQL).
     func registerTypeAlias(_ aliasTypeId: String, primaryTypeId: String) {
         lock.lock()
         defer { lock.unlock() }
@@ -620,7 +625,9 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                     .authenticationIsDatabaseScoped ?? false,
                 localFilePathField: existingSnapshot?.capabilities.localFilePathField,
                 supportsRemoteDatabaseFile: existingSnapshot?.capabilities
-                    .supportsRemoteDatabaseFile ?? false
+                    .supportsRemoteDatabaseFile ?? false,
+                supportsPrincipalConnectionLimit: existingSnapshot?.capabilities
+                    .supportsPrincipalConnectionLimit ?? true
             ),
             schema: PluginMetadataSnapshot.SchemaInfo(
                 defaultSchemaName: driverType.defaultSchemaName,
@@ -635,7 +642,8 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                 fileExtensions: driverType.fileExtensions,
                 fileSignatures: existingSnapshot?.schema.fileSignatures ?? [],
                 databaseGroupingStrategy: driverType.databaseGroupingStrategy,
-                structureColumnFields: driverType.structureColumnFields
+                structureColumnFields: driverType.structureColumnFields,
+                rowMatchExcludedTypePrefixes: existingSnapshot?.schema.rowMatchExcludedTypePrefixes ?? []
             ),
             editor: PluginMetadataSnapshot.EditorConfig(
                 sqlDialect: driverType.sqlDialect,
@@ -662,9 +670,9 @@ final class PluginMetadataRegistry: @unchecked Sendable {
     /// Keyed by `databaseTypeId`. Stale plugins from the registry inherit these on registration.
     static func fallbackCategory(forTypeId typeId: String) -> DatabaseCategory {
         switch typeId {
-        case "MySQL", "MariaDB", "TiDB", "PostgreSQL", "SQLite", "Oracle", "MSSQL":
+        case "MySQL", "MariaDB", "PostgreSQL", "SQLite", "Oracle", "MSSQL":
             return .relational
-        case "Redshift", "ClickHouse", "DuckDB", "BigQuery", "Databend":
+        case "Redshift", "ClickHouse", "DuckDB", "BigQuery":
             return .analytical
         case "MongoDB", "Elasticsearch", "SurrealDB", "Typesense":
             return .document
@@ -687,8 +695,6 @@ final class PluginMetadataRegistry: @unchecked Sendable {
         switch typeId {
         case "MySQL":          return String(localized: "Most popular open-source SQL database")
         case "MariaDB":        return String(localized: "Open-source fork of MySQL")
-        case "TiDB":           return String(localized: "Distributed HTAP, MySQL protocol")
-        case "Databend":       return String(localized: "Cloud warehouse over the MySQL protocol")
         case "PostgreSQL":     return String(localized: "Advanced object-relational SQL")
         case "Redshift":       return String(localized: "Amazon's columnar warehouse on Postgres")
         case "SQLite":         return String(localized: "Embedded zero-config SQL database")

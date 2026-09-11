@@ -355,6 +355,40 @@
         }
       }
     },
+    "Cloud data warehouse, built in Rust" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rust로 만든 클라우드 데이터 웨어하우스"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rust ile yazılmış bulut veri ambarı"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kho dữ liệu đám mây viết bằng Rust"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用 Rust 构建的云数据仓库"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以 Rust 打造的雲端資料倉儲"
+          }
+        }
+      }
+    },
     "Compare & Sync With…" : {
       "localizations" : {
         "ko" : {
@@ -453,6 +487,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "連線到你自己的資料庫，或開啟範例資料庫看看。"
+          }
+        }
+      }
+    },
+    "Distributed SQL, MySQL-compatible" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MySQL 호환 분산 SQL"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dağıtık SQL, MySQL uyumlu"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SQL phân tán, tương thích MySQL"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分布式 SQL，兼容 MySQL"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分散式 SQL，相容 MySQL"
           }
         }
       }

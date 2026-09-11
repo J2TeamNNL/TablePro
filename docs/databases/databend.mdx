@@ -1,35 +1,53 @@
 ---
 title: Databend
-description: Connect to Databend and Databend Cloud through the MySQL protocol handler
+description: Connect to Databend and Databend Cloud through Databend's MySQL handler on port 3307
 ---
 
-The MySQL handler is port **3307**. Port 8000 is HTTP SQL, not this handler. Pick **Databend** so the form starts on 3307, then fill host, user, and password the same way as [MySQL](/databases/mysql).
+Only Databend's MySQL handler works here, served by the bundled MySQL driver. Port 8000 is Databend's HTTP API and is not accepted. Choose **Databend** as the connection type: a connection saved as MySQL that reaches a Databend server fails at connect and asks you to switch the type.
+
+## Quick setup
+
+A local server in Docker, with the handler on 3307:
+
+```bash
+docker run -d -p 3307:3307 datafuselabs/databend
+```
+
+Connect as `root` with an empty password and database `default`. Set `QUERY_DEFAULT_USER` and `QUERY_DEFAULT_PASSWORD` on the container to change them.
 
 ## Connection settings
 
 | Field | Default | Notes |
 |-------|---------|-------|
-| **Host** | `localhost` | Community server or Databend Cloud warehouse endpoint |
-| **Port** | `3307` | Cloud deployments sometimes publish 3306 instead |
-| **Database** | empty | Optional. The server default database is usually `default` |
-| **SSL Mode** | Preferred | Use **Required** on Databend Cloud |
+| **Port** | `3307` | The MySQL handler. 8000 is HTTP and does not connect |
+| **Database** | empty | Optional. New servers start with `default` |
+| **SSL Mode** | Preferred | TLS first, plain text if the server refuses |
 
-Fill in the form and click **Save & Connect**.
+Host, user, password, SSH tunnels and `Cmd+K` database switching work as on [MySQL](/databases/mysql). No minimum Databend version is enforced.
+
+## Databend Cloud
+
+The MySQL endpoint of a Databend Cloud warehouse is off by default. Ask Databend support to turn it on, then copy the host and port from the warehouse's **Connect** dialog.
 
 ## Connection URL
 
-```text
-databend://root:password@host:3307/default
-```
+No URL scheme opens a Databend connection. `databend://` is Databend's own HTTP connection string and is rejected. Create the connection in the form.
 
-See [Connection URL Reference](/connections/urls).
+## Editing rows
 
-## What differs from MySQL
+Databend tables have no primary keys, so a row edit or delete matches on every column of the row. ARRAY, MAP, TUPLE, VARIANT, BITMAP, BINARY, GEOMETRY and GEOGRAPHY columns are left out of that match. A save that would change more than one row is refused and rolled back; add a column that tells the rows apart, or run the statement in the editor.
 
-- The sidebar hides `system`, `information_schema`, and `INFORMATION_SCHEMA`. `default` stays visible.
-- No foreign keys, triggers, or stored routines. Those panes stay off.
-- Table options such as `ENGINE=InnoDB` do not apply. Create tables with Databend syntax in the editor.
-- Cloud SQL Auth Proxy is not offered. Reach a private warehouse through an [SSH tunnel](/connections/ssh-tunneling).
+ARRAY, MAP and TUPLE cells cannot be written from text. Change them with an `UPDATE` in the SQL editor.
+
+## Limitations
+
+- The sidebar hides `system` and `information_schema`.
+- No indexes, primary keys or foreign keys. The Structure tab edits columns and CHECK constraints and renames tables, views and columns; column reordering, AUTO_INCREMENT, charset and collation are not offered.
+- No Users & Roles, Server Dashboard, triggers, routines or events. **File > Backup Dump…** stays dimmed.
+- Create Database takes a name only. Table Maintenance offers `ANALYZE TABLE` only.
+- `EXPLAIN` and `EXPLAIN ANALYZE` show the plan as a result table, not as a plan tree.
+- [Compare & Sync](/features/compare-sync) writes no structure script between Databend and MySQL.
+- Not available on iPhone and iPad. A synced Databend connection appears in the list there but does not open.
 
 ## Related
 

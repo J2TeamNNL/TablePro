@@ -24,9 +24,7 @@ internal enum CompareSyncEngineFamily {
 
     private static let compatiblePairKeys: Set<String> = {
         let pairs: [[DatabaseType]] = [
-            [.mysql, .mariadb],
-            [.mysql, .tidb],
-            [.mariadb, .tidb]
+            [.mysql, .mariadb]
         ]
         return Set(pairs.map { $0.map { $0.rawValue }.sorted().joined(separator: "\u{1F}") })
     }()

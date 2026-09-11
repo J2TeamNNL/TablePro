@@ -47,8 +47,9 @@ driver comes from, not what the license covers.
 | [Typesense](/databases/typesense) | 8108 | Plugin |
 | [Turso](/databases/libsql) | API-based | Plugin |
 
-Rows sharing a page share a driver. MariaDB, TiDB and Databend read as MySQL, ScyllaDB as Cassandra,
-and Redshift, CockroachDB and PGlite all speak the PostgreSQL wire protocol.
+Rows sharing a page share a driver. MariaDB reads as MySQL, ScyllaDB as Cassandra, Turso as libSQL,
+and Redshift, CockroachDB and PGlite all speak the PostgreSQL wire protocol. TiDB and Databend
+have pages of their own and run on the bundled MySQL driver.
 
 ## Built-in against plugin
 

@@ -3,18 +3,17 @@ title: TiDB
 description: Connect to TiDB and TiDB Cloud through the bundled MySQL driver on port 4000
 ---
 
-Pick **TiDB** so the form starts on the SQL port, not PD or TiKV. Host, user, password, an optional database, SSL Mode **Preferred**, and SSH if the cluster is not public all match [MySQL](/databases/mysql).
+Point the connection at a TiDB server's SQL port, never at PD or TiKV. The bundled MySQL driver serves it, no minimum TiDB version is enforced, and the form, SSH tunnels, SSL/TLS and `Cmd+K` database switching all work as on [MySQL](/databases/mysql). A connection saved as MySQL that reaches a TiDB server gets the same TiDB handling.
 
 ## Connection settings
 
 | Field | Default | Notes |
 |-------|---------|-------|
-| **Host** | `localhost` | The TiDB SQL port, not the PD or TiKV port |
 | **Port** | `4000` | TiDB Cloud uses 4000 as well |
 | **Database** | empty | Optional. Leave it empty to browse every database |
-| **SSL Mode** | Preferred | Use **Required** on TiDB Cloud |
+| **SSL Mode** | Preferred | TLS first, plain text if the server refuses. Use **Required** on TiDB Cloud |
 
-Fill in the form and click **Save & Connect**.
+The **Release the server connection after** idle setting is available. AWS IAM, Cloud SQL Auth Proxy and Unix socket are not offered; reach a private cluster through an [SSH tunnel](/connections/ssh-tunneling).
 
 ## Connection URL
 
@@ -22,14 +21,27 @@ Fill in the form and click **Save & Connect**.
 tidb://user:password@host:4000/database
 ```
 
-See [Connection URL Reference](/connections/urls).
+`tidb+ssh://` opens it through an SSH tunnel. See [Connection URL Reference](/connections/urls).
 
 ## What differs from MySQL
 
-- The sidebar hides `information_schema`, `mysql`, `performance_schema`, `metrics_schema`, and `sys`.
-- Triggers and stored routines are not listed. TiDB does not run them.
-- Foreign keys appear in the structure tab. Enforcement depends on the cluster version.
-- Cloud SQL Auth Proxy is not offered. Reach a private cluster through an [SSH tunnel](/connections/ssh-tunneling).
+- The sidebar hides `INFORMATION_SCHEMA`, `METRICS_SCHEMA`, `PERFORMANCE_SCHEMA`, `mysql` and `sys`. Sequences are not listed as tables.
+- **Stop** sends `KILL TIDB QUERY` for the connection's own session.
+- `EXPLAIN` and `EXPLAIN ANALYZE` show TiDB's plan as a result table, not as a plan tree.
+- CHECK constraints appear in the Structure tab on TiDB 7.2 and later, when the cluster has `tidb_enable_check_constraint` on. Adding one from the Structure tab is not offered.
+- The type picker has MySQL's types without the Spatial group.
+- Foreign keys can be created, without the `SET DEFAULT` action. Tables and views can be renamed, and virtual generated columns are supported.
+- [Users & Roles](/features/users-roles) works, with no connection limit field.
+- Table Maintenance offers `ANALYZE TABLE` only.
+
+## Limitations
+
+- No triggers, stored routines or events.
+- No Server Dashboard, and **File > Backup Dump…** stays dimmed. Export with [Dumpling](https://docs.pingcap.com/tidb/stable/dumpling-overview) instead.
+- Create Table has no engine, charset or collation pickers.
+- [Compare & Sync](/features/compare-sync) writes no structure script between TiDB and MySQL or MariaDB. TiDB against TiDB works.
+- Pages of an unsorted table can repeat or skip rows on a table spread over several regions. Sort by a column to get stable pages.
+- Behind TiProxy or a load balancer, **Stop** needs Global Kill, which is on by default since TiDB 6.1. Without it, the kill can reach a different TiDB node and the statement keeps running. Connect straight to one TiDB node if you need **Stop** on such a cluster.
 
 ## Related
 

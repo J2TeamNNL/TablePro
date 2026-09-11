@@ -185,7 +185,7 @@ struct CreateTableView: View {
     }
 
     private var showMySQLOptions: Bool {
-        connection.type == .mysql || connection.type == .mariadb || connection.type == .tidb
+        connection.type == .mysql || connection.type == .mariadb
     }
 
     // MARK: - Toolbar

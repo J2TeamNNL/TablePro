@@ -38,7 +38,6 @@ extension DatabaseType {
         .mysql,
         .mariadb,
         .tidb,
-        .databend,
         .postgresql,
         .sqlite,
         .duckdb,

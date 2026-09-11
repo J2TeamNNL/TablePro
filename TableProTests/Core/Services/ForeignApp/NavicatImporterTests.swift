@@ -141,11 +141,11 @@ struct NavicatImporterTests {
     @Test("Maps every known ConnType")
     func mapsKnownConnTypes() throws {
         try writeNCX([
-            conn(type: "MYSQL"), conn(type: "MARIADB"), conn(type: "TIDB"), conn(type: "POSTGRESQL"),
+            conn(type: "MYSQL"), conn(type: "MARIADB"), conn(type: "POSTGRESQL"),
             conn(type: "ORACLE"), conn(type: "SQLITE"), conn(type: "SQLSERVER"), conn(type: "MONGODB")
         ])
         let types = try importer.importConnections(includePasswords: false).envelope.connections.map(\.type)
-        #expect(types == ["MySQL", "MariaDB", "TiDB", "PostgreSQL", "Oracle", "SQLite", "SQL Server", "MongoDB"])
+        #expect(types == ["MySQL", "MariaDB", "PostgreSQL", "Oracle", "SQLite", "SQL Server", "MongoDB"])
     }
 
     @Test("Passes an unknown ConnType through unchanged")

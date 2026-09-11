@@ -237,17 +237,6 @@ struct TablePlusImporterTests {
         }
     }
 
-    @Test("importConnections maps TiDB and Databend drivers")
-    func testImportConnections_mapsTiDBAndDatabend() throws {
-        try writeConnections([
-            makeConnection(name: "TiDB", driver: "TiDB", id: "tidb-1"),
-            makeConnection(name: "Databend", driver: "Databend", id: "databend-1")
-        ])
-        let result = try importer.importConnections(includePasswords: false)
-        #expect(result.envelope.connections[0].type == "TiDB")
-        #expect(result.envelope.connections[1].type == "Databend")
-    }
-
     @Test("importConnections parses SSH config and keeps an explicit key path even when the file is missing")
     func testImportConnections_parsesSSHConfig() throws {
         try writeConnections([

@@ -120,6 +120,15 @@ final class MySQLPlugin: NSObject, TableProPlugin, DriverPlugin {
     static let supportsCheckConstraintEditing = true
     static let supportsGeneratedColumns = true
 
+    static func driverVariant(for databaseTypeId: String) -> String? {
+        switch databaseTypeId {
+        case MySQLServerFlavor.tidbVariant, MySQLServerFlavor.databendVariant:
+            return databaseTypeId
+        default:
+            return nil
+        }
+    }
+
     func createDriver(config: DriverConnectionConfig) -> any PluginDatabaseDriver {
         MySQLPluginDriver(config: config)
     }

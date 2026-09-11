@@ -2,6 +2,8 @@
 //  SQLFunctionProvider.swift
 //  TablePro
 
+import TableProPluginKit
+
 internal enum SQLFunctionProvider {
     internal struct SQLFunction {
         let label: String
@@ -9,8 +11,14 @@ internal enum SQLFunctionProvider {
     }
 
     static func functions(for databaseType: DatabaseType) -> [SQLFunction] {
-        if databaseType == .mysql || databaseType == .mariadb
-            || databaseType == .tidb || databaseType == .databend {
+        if databaseType == .databend {
+            return [
+                SQLFunction(label: "NOW()", expression: "NOW()"),
+                SQLFunction(label: "CURRENT_TIMESTAMP()", expression: "CURRENT_TIMESTAMP()"),
+                SQLFunction(label: "UUID()", expression: "UUID()")
+            ]
+        }
+        if SqlDialect.from(databaseTypeId: databaseType.rawValue) == .mysql {
             return [
                 SQLFunction(label: "NOW()", expression: "NOW()"),
                 SQLFunction(label: "CURRENT_TIMESTAMP()", expression: "CURRENT_TIMESTAMP()"),
@@ -19,7 +27,8 @@ internal enum SQLFunctionProvider {
                 SQLFunction(label: "UTC_TIMESTAMP()", expression: "UTC_TIMESTAMP()"),
                 SQLFunction(label: "UUID()", expression: "UUID()")
             ]
-        } else if databaseType == .postgresql || databaseType == .redshift || databaseType == .cockroachdb {
+        }
+        if databaseType == .postgresql || databaseType == .redshift || databaseType == .cockroachdb {
             return [
                 SQLFunction(label: "now()", expression: "now()"),
                 SQLFunction(label: "CURRENT_TIMESTAMP", expression: "CURRENT_TIMESTAMP"),

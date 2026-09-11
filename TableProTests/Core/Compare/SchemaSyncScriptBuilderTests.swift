@@ -341,11 +341,15 @@ final class CompareSyncEngineFamilyTests: XCTestCase {
         XCTAssertTrue(CompareSyncEngineFamily.canGenerateStructureScript(from: .postgresql, to: .postgresql))
     }
 
-    func testMySqlFamilyIsCompatibleInBothDirections() {
+    func testMySqlAndMariaDbAreCompatibleInBothDirections() {
         XCTAssertTrue(CompareSyncEngineFamily.canGenerateStructureScript(from: .mysql, to: .mariadb))
         XCTAssertTrue(CompareSyncEngineFamily.canGenerateStructureScript(from: .mariadb, to: .mysql))
-        XCTAssertTrue(CompareSyncEngineFamily.canGenerateStructureScript(from: .mysql, to: .tidb))
-        XCTAssertTrue(CompareSyncEngineFamily.canGenerateStructureScript(from: .tidb, to: .mariadb))
+    }
+
+    func testTiDBPairsOnlyWithItself() {
+        XCTAssertTrue(CompareSyncEngineFamily.canGenerateStructureScript(from: .tidb, to: .tidb))
+        XCTAssertFalse(CompareSyncEngineFamily.canGenerateStructureScript(from: .mysql, to: .tidb))
+        XCTAssertFalse(CompareSyncEngineFamily.canGenerateStructureScript(from: .tidb, to: .mariadb))
         XCTAssertFalse(CompareSyncEngineFamily.canGenerateStructureScript(from: .mysql, to: .databend))
     }
 
