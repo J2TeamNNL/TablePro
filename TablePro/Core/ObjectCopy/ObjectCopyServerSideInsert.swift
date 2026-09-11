@@ -50,11 +50,16 @@ internal enum ObjectCopyServerSideInsert {
             database: input.source.database,
             schema: input.sourceSchema,
             table: input.sourceTable,
-            family: SQLTypeFamily.of(input.target.databaseType),
+            databaseType: input.target.databaseType,
             driver: driver
         ) else { return nil }
 
-        let into = ObjectCopySelectQuery.qualified(input.targetTable, input.targetSchema, driver)
+        let into = SchemaQualifiedName.render(
+            name: input.targetTable,
+            schema: input.targetSchema,
+            databaseType: input.target.databaseType,
+            quote: driver.quoteIdentifier
+        )
         let targetList = input.targetColumns.map { driver.quoteIdentifier($0) }.joined(separator: ", ")
         let sourceList = input.sourceColumns.map { driver.quoteIdentifier($0) }.joined(separator: ", ")
         var select = "SELECT \(sourceList) FROM \(from)"
@@ -97,11 +102,14 @@ internal enum ObjectCopyServerSideInsert {
         database: String,
         schema: String?,
         table: String,
-        family: SQLTypeFamily,
+        databaseType: DatabaseType,
         driver: any PluginDatabaseDriver
     ) -> String? {
+        let family = SQLTypeFamily.of(databaseType)
         guard crossesDatabases(family), !database.isEmpty else {
-            return ObjectCopySelectQuery.qualified(table, schema, driver)
+            return SchemaQualifiedName.render(
+                name: table, schema: schema, databaseType: databaseType, quote: driver.quoteIdentifier
+            )
         }
         switch family {
         case .mysql, .clickhouse:

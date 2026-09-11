@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Google Cloud Spanner as a registry plugin over the REST API. (#1226, #2480)
 - TiDB and Databend connection types on the MySQL driver. (#1066, #2514)
 - Empty state in the inspector and the assistant for a connection that is not up.
 - **Check connections** in Settings > General, including Only when I use the connection. (#2700)
@@ -25,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 5 MB smaller app bundle.
 - 7 MB smaller DMG download.
 - Connect progress reads as a labelled bar, with a step named only where the app is waiting on something outside itself.
+- BigQuery Google sign-in runs from a **Sign In** prompt, and its refresh token is kept in the keychain.
 - First launch opening on the welcome window, whose empty list offers the sample database and import from another app.
 - New Connection… and Import on the welcome window, named as in the File menu.
 - Open Project Folder… in File > Import.
@@ -72,6 +74,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cursor left off screen after pasting a long line.
 - Option+Delete and Option+Arrow splitting an emoji or accented letter in the SQL and JSON editors.
 - Line number column keeping a stale width after the line count drops below 1,000 or the font size changes.
+- BigQuery statements broken by an apostrophe or a backslash in a value or filter.
+- BigQuery grid inserts writing `__DEFAULT__` into columns, and saving byte values as NULL.
+- BigQuery grid edits failing with type errors after a reconnect.
+- BigQuery grid edits matching more rows than the edited one when a value started with `{` or `[`.
+- BigQuery filters with starts with, ends with, not contains, between, regex or is empty ignored.
+- BigQuery **No limit** query timeout stopping jobs after 30 seconds.
+- BigQuery Google sign-in opening the browser again on every connect.
+- Crash reading a malformed BigQuery service account key.
+- `ARRAY<BOOL>` columns opening a checkbox editor, and `BYTES` columns editable as text.
 - Line after the data grid's row numbers drawn twice as thick as the other column lines.
 - `#` heading in the data grid darker and dimmer than the headings beside it.
 - Row numbers showing the scrolled columns through them on every other row in dark mode.
@@ -110,6 +121,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Line and paragraph separators (U+2028, U+2029) shown as line breaks the database does not see. (#2717)
 - Stop on Cloudflare D1, libSQL and Trino cancelling a sidebar read instead of the running query.
 - Numeric-looking filter values sent unquoted to text columns when a table first opens or after a foreign key jump.
+
+### Security
+
+- BigQuery Google sign-in accepting an authorization response without PKCE or a state check.
 
 ## [0.73.0] - 2026-09-09
 

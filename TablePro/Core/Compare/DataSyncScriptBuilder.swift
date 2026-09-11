@@ -87,8 +87,9 @@ internal struct DataSyncScriptBuilder {
     }
 
     private func qualified(_ table: String, _ schema: String?) -> String {
-        guard let schema, !schema.isEmpty else { return targetDriver.quoteIdentifier(table) }
-        return "\(targetDriver.quoteIdentifier(schema)).\(targetDriver.quoteIdentifier(table))"
+        SchemaQualifiedName.render(
+            name: table, schema: schema, databaseType: targetDatabaseType, quote: targetDriver.quoteIdentifier
+        )
     }
 
     private func insertStatement(

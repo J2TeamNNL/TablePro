@@ -33,6 +33,11 @@ struct DatabaseTypeTests {
         #expect(DatabaseType.sqlite.defaultPort == 0)
     }
 
+    @Test("Spanner default port is 0")
+    func testSpannerDefaultPort() {
+        #expect(DatabaseType.spanner.defaultPort == 0)
+    }
+
     @Test("MongoDB default port is 27017")
     func testMongoDBDefaultPort() {
         #expect(DatabaseType.mongodb.defaultPort == 27_017)

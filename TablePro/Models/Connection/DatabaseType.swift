@@ -40,6 +40,7 @@ extension DatabaseType {
     static let cloudflareR2SQL = DatabaseType(rawValue: "Cloudflare R2 SQL")
     static let dynamodb = DatabaseType(rawValue: "DynamoDB")
     static let bigQuery = DatabaseType(rawValue: "BigQuery")
+    static let spanner = DatabaseType(rawValue: "Spanner")
     static let libsql = DatabaseType(rawValue: "libSQL")
     static let turso = DatabaseType(rawValue: "Turso")
     static let beancount = DatabaseType(rawValue: "Beancount")

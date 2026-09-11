@@ -87,6 +87,10 @@ extension DatabaseType {
         PluginMetadataRegistry.shared.snapshot(for: self)?.connection.defaultHost
     }
 
+    var implicitSchemaName: String? {
+        PluginMetadataRegistry.shared.snapshot(for: self)?.schema.implicitSchemaName
+    }
+
     var supportsCloudSQLProxy: Bool {
         switch rawValue {
         case "MySQL", "PostgreSQL", "SQL Server":

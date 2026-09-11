@@ -193,7 +193,7 @@ internal extension MainSplitViewController {
         }
         let signedIn = await ConnectionSignInPrompt.offer(
             provider,
-            fields: connection.additionalFields,
+            fields: ConnectionSignInRegistry.fields(for: connection),
             window: view.window
         )
         guard signedIn else { return false }

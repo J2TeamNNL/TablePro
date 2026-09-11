@@ -319,6 +319,20 @@
       "category": "database-driver",
       "homepage": "https://docs.tablepro.app/databases/snowflake"
     },
+    "spanner": {
+      "target": "SpannerDriverPlugin",
+      "bundleName": "SpannerDriverPlugin",
+      "bundleId": "com.TablePro.SpannerDriverPlugin",
+      "bundled": false,
+      "displayName": "Spanner Driver",
+      "summary": "Google Cloud Spanner driver via REST API",
+      "databaseTypeIds": [
+        "Spanner"
+      ],
+      "icon": "spanner-icon",
+      "category": "database-driver",
+      "homepage": "https://docs.tablepro.app/databases/spanner"
+    },
     "sqlimport": {
       "target": "SQLImport",
       "bundleName": "SQLImport",

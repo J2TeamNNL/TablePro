@@ -472,7 +472,7 @@ internal struct ObjectCopyPlanner {
                 if input.copiesData {
                     query = ObjectCopySelectQuery.build(
                         columns: input.columns, table: input.table, schema: input.schema,
-                        driver: plugin, scope: input.scope
+                        driver: plugin, databaseType: driver.connection.type, scope: input.scope
                     )
                     let counted = (try? await plugin.fetchApproximateRowCount(
                         table: input.table, schema: input.schema
@@ -576,7 +576,8 @@ internal struct ObjectCopyPlanner {
                         table: input.snapshot.name,
                         schema: input.targetSchema,
                         builder: builder,
-                        driver: plugin
+                        driver: plugin,
+                        databaseType: driver.connection.type
                     )
                 }
                 if input.writesStructure {
@@ -589,7 +590,8 @@ internal struct ObjectCopyPlanner {
                         table: input.snapshot.name,
                         schema: input.targetSchema,
                         prefersDelete: input.clearsWithDelete,
-                        driver: plugin
+                        driver: plugin,
+                        databaseType: driver.connection.type
                     )
                 }
                 result[input.id] = ddl
@@ -609,27 +611,22 @@ internal struct ObjectCopyPlanner {
         table: String,
         schema: String?,
         builder: SchemaSyncScriptBuilder,
-        driver: any PluginDatabaseDriver
+        driver: any PluginDatabaseDriver,
+        databaseType: DatabaseType
     ) -> [SyncStatement] {
         let generated = (try? builder.build(
             operations: [.dropTable(name: table, schema: schema)], foreignKeysByTable: [:]
         )) ?? []
         guard generated.isEmpty else { return generated }
+        let target = SchemaQualifiedName.render(
+            name: table, schema: schema, databaseType: databaseType, quote: driver.quoteIdentifier
+        )
         return [SyncStatement(
-            sql: "DROP TABLE \(qualified(table, schema, driver));",
+            sql: "DROP TABLE \(target);",
             objectName: table,
             summary: String(format: String(localized: "Drop table %@"), table),
             hazards: SyncSafetyClassifier().hazards(forDropping: table)
         )]
-    }
-
-    nonisolated private static func qualified(
-        _ name: String,
-        _ schema: String?,
-        _ driver: any PluginDatabaseDriver
-    ) -> String {
-        guard let schema, !schema.isEmpty else { return driver.quoteIdentifier(name) }
-        return "\(driver.quoteIdentifier(schema)).\(driver.quoteIdentifier(name))"
     }
 
     /// Points the snapshot's foreign keys at the copy rather than at the original.
@@ -679,9 +676,12 @@ internal struct ObjectCopyPlanner {
         table: String,
         schema: String?,
         prefersDelete: Bool,
-        driver: any PluginDatabaseDriver
+        driver: any PluginDatabaseDriver,
+        databaseType: DatabaseType
     ) -> [SyncStatement] {
-        let qualified = qualified(table, schema, driver)
+        let qualified = SchemaQualifiedName.render(
+            name: table, schema: schema, databaseType: databaseType, quote: driver.quoteIdentifier
+        )
         let truncate = prefersDelete
             ? nil
             : driver.truncateTableStatements(table: table, schema: schema, cascade: false)?.first
@@ -814,7 +814,7 @@ internal struct ObjectCopyPlanner {
             guard let plugin = CompareMetadataService.pluginDriver(from: driver) else {
                 throw ObjectCopyError.refused(Self.noTargetDriver)
             }
-            let builder = SourceObjectSyncBuilder(targetDriver: plugin)
+            let builder = SourceObjectSyncBuilder(targetDriver: plugin, targetDatabaseType: driver.connection.type)
             var statements: [String: (drop: [SyncStatement], create: [SyncStatement])] = [:]
             for input in inputs {
                 let drop = input.drop.map { builder.build(for: $0, action: .drop) } ?? []

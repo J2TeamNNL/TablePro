@@ -189,10 +189,10 @@ struct BigQueryCaseSensitivityTests {
             filters: [
                 PluginQueryFilter(column: "name", op: op, value: value, isCaseSensitive: isCaseSensitive)
             ],
-            logicMode: "AND", sortColumns: [], limit: 10, offset: 0
+            logicMode: "AND", sortColumns: [], limit: 10, offset: 0, columns: ["name"]
         )
         guard let params = BigQueryQueryBuilder.decode(query) else { return "" }
-        return BigQueryQueryBuilder.buildSQL(from: params, projectId: "p", columns: ["name"])
+        return BigQueryQueryBuilder.buildSQL(from: params, projectId: "p")
     }
 
     @Test("Contains ignoring case folds both sides")

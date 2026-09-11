@@ -170,7 +170,7 @@ final class ExportService {
         let pluginTables = objects.map { object in
             PluginExportTable(
                 name: object.name,
-                databaseName: object.databaseName,
+                databaseName: dataSource.pluginDatabaseName(for: object.databaseName),
                 tableType: object.kind.rawValue,
                 optionValues: object.optionValues,
                 schema: dataSource.exportSchema(for: object.databaseName),
@@ -373,12 +373,12 @@ final class ExportService {
     // MARK: - Row Count Fetching
 
     private func qualifiedTableRef(for table: ExportObjectItem, driver: DatabaseDriver) -> String {
-        if table.databaseName.isEmpty {
-            return driver.quoteIdentifier(table.name)
-        }
-        let quotedDb = driver.quoteIdentifier(table.databaseName)
-        let quotedTable = driver.quoteIdentifier(table.name)
-        return "\(quotedDb).\(quotedTable)"
+        SchemaQualifiedName.render(
+            name: table.name,
+            schema: table.databaseName,
+            databaseType: databaseType,
+            quote: driver.quoteIdentifier
+        )
     }
 
     private func fetchTotalRowCount(for tables: [ExportObjectItem], driver: DatabaseDriver) async -> Int {

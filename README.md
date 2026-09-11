@@ -91,6 +91,7 @@ TablePro is the missing fourth: native, multi-database, and open source.
 | Cloudflare D1 | Plugin |
 | DynamoDB | Plugin |
 | BigQuery | Plugin |
+| Spanner | Plugin |
 | libSQL / Turso | Plugin |
 
 Built-in drivers ship with the app. Plugin drivers install on demand from the [plugin registry](https://github.com/TableProApp/plugins).

@@ -44,6 +44,23 @@ private final class MockMongoDBPlugin: NSObject, TableProPlugin, DriverPlugin {
     }
 }
 
+private final class MockSpannerPlugin: NSObject, TableProPlugin, DriverPlugin {
+    static let pluginName = "Mock Spanner"
+    static let pluginVersion = "1.0.0"
+    static let pluginDescription = "Stands in for the registry-distributed Spanner plugin"
+    static let capabilities: [PluginCapability] = [.databaseDriver]
+
+    static let databaseTypeId = "Spanner"
+    static let databaseDisplayName = "Google Cloud Spanner"
+    static let iconName = "spanner-icon"
+    static let defaultPort = 0
+    static let defaultSchemaName = "(default)"
+
+    func createDriver(config: DriverConnectionConfig) -> any PluginDatabaseDriver {
+        fatalError("Not used in tests")
+    }
+}
+
 private final class MockUnknownPlugin: NSObject, TableProPlugin, DriverPlugin {
     static let pluginName = "Mock Unknown"
     static let pluginVersion = "1.0.0"
@@ -95,6 +112,25 @@ struct PluginMetadataRegistryCuratedCapabilityTests {
         #expect(built.capabilities.authenticationIsDatabaseScoped == true)
     }
 
+    @Test("Spanner keeps its implicit schema when its plugin registers")
+    func spannerKeepsItsImplicitSchema() {
+        let registry = PluginMetadataRegistry.shared
+
+        let built = registry.buildMetadataSnapshot(from: MockSpannerPlugin.self)
+
+        #expect(built.schema.implicitSchemaName == "(default)")
+        #expect(built.schema.defaultSchemaName == "(default)")
+    }
+
+    @Test("An engine with a named default schema declares no implicit schema")
+    func duckDBHasNoImplicitSchema() {
+        let registry = PluginMetadataRegistry.shared
+
+        let built = registry.buildMetadataSnapshot(from: MockDuckDBPlugin.self)
+
+        #expect(built.schema.implicitSchemaName == nil)
+    }
+
     @Test("A plugin with no curated entry falls back to the defaults")
     func unknownPluginUsesTheStructDefaults() {
         let registry = PluginMetadataRegistry.shared
@@ -104,5 +140,6 @@ struct PluginMetadataRegistryCuratedCapabilityTests {
 
         #expect(built.capabilities.supportsConnectionPooling == true)
         #expect(built.capabilities.authenticationIsDatabaseScoped == false)
+        #expect(built.schema.implicitSchemaName == nil)
     }
 }

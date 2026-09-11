@@ -139,6 +139,7 @@ struct PluginMetadataSnapshot: Sendable {
         let fileSignatures: [DatabaseFileSignature]
         let databaseGroupingStrategy: GroupingStrategy
         let structureColumnFields: [StructureColumnField]
+        let implicitSchemaName: String?
         let rowMatchExcludedTypePrefixes: [String]
 
         init(
@@ -155,6 +156,7 @@ struct PluginMetadataSnapshot: Sendable {
             fileSignatures: [DatabaseFileSignature] = [],
             databaseGroupingStrategy: GroupingStrategy,
             structureColumnFields: [StructureColumnField],
+            implicitSchemaName: String? = nil,
             rowMatchExcludedTypePrefixes: [String] = []
         ) {
             self.defaultSchemaName = defaultSchemaName
@@ -170,6 +172,7 @@ struct PluginMetadataSnapshot: Sendable {
             self.fileSignatures = fileSignatures
             self.databaseGroupingStrategy = databaseGroupingStrategy
             self.structureColumnFields = structureColumnFields
+            self.implicitSchemaName = implicitSchemaName
             self.rowMatchExcludedTypePrefixes = rowMatchExcludedTypePrefixes
         }
 
@@ -338,6 +341,7 @@ struct PluginMetadataSnapshot: Sendable {
                 fileSignatures: schema.fileSignatures,
                 databaseGroupingStrategy: source.schema.databaseGroupingStrategy,
                 structureColumnFields: schema.structureColumnFields,
+                implicitSchemaName: source.schema.implicitSchemaName,
                 rowMatchExcludedTypePrefixes: schema.rowMatchExcludedTypePrefixes
             ),
             editor: editor, connection: connection
@@ -648,6 +652,7 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                 fileSignatures: existingSnapshot?.schema.fileSignatures ?? [],
                 databaseGroupingStrategy: driverType.databaseGroupingStrategy,
                 structureColumnFields: driverType.structureColumnFields,
+                implicitSchemaName: existingSnapshot?.schema.implicitSchemaName,
                 rowMatchExcludedTypePrefixes: existingSnapshot?.schema.rowMatchExcludedTypePrefixes ?? []
             ),
             editor: PluginMetadataSnapshot.EditorConfig(
@@ -679,6 +684,8 @@ final class PluginMetadataRegistry: @unchecked Sendable {
             return .relational
         case "Redshift", "ClickHouse", "DuckDB", "BigQuery":
             return .analytical
+        case "Spanner":
+            return .relational
         case "MongoDB", "Elasticsearch", "SurrealDB", "Typesense":
             return .document
         case "Redis":
@@ -717,6 +724,7 @@ final class PluginMetadataRegistry: @unchecked Sendable {
         case "libSQL":         return String(localized: "Distributed SQLite by Turso")
         case "DynamoDB":       return String(localized: "AWS managed key-value/document store")
         case "BigQuery":       return String(localized: "Google Cloud serverless data warehouse")
+        case "Spanner":        return String(localized: "Google Cloud globally distributed SQL")
         case "SurrealDB":      return String(localized: "Multi-model database with SurrealQL")
         case "Kafka":          return String(localized: "Event streaming platform")
         case "Typesense":      return String(localized: "Typo-tolerant open-source search engine")

@@ -805,9 +805,9 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
     // MARK: - Private Helpers
 
     private func qualifiedName(_ name: String, schema: String?) -> String {
-        let quoted = pluginDriver.quoteIdentifier(name)
-        guard let schema, !schema.isEmpty else { return quoted }
-        return "\(pluginDriver.quoteIdentifier(schema)).\(quoted)"
+        SchemaQualifiedName.render(
+            name: name, schema: schema, databaseType: connection.type, quote: pluginDriver.quoteIdentifier
+        )
     }
 
     // MARK: - Result Mapping

@@ -12,6 +12,9 @@ import Foundation
 struct ColumnTypeClassifier {
     func classify(rawTypeName: String) -> ColumnType {
         let stripped = stripTrailingAttributes(stripWrappers(rawTypeName))
+        if Self.isAngleBracketCompositeType(stripped) {
+            return .json(rawType: rawTypeName)
+        }
         let (base, params) = extractBaseAndParams(stripped)
 
         if base.hasSuffix("[]") {
@@ -19,6 +22,10 @@ struct ColumnTypeClassifier {
             guard !elementBase.isEmpty else { return .text(rawType: rawTypeName) }
             let elementRaw = params.map { "\(elementBase)(\($0))" } ?? elementBase
             return .array(rawType: rawTypeName, element: classify(rawTypeName: elementRaw))
+        }
+
+        if base == Self.caseSensitiveBytesTypeName {
+            return .blob(rawType: rawTypeName)
         }
 
         let upper = base.uppercased()
@@ -37,6 +44,13 @@ struct ColumnTypeClassifier {
         }
 
         return classifyByPattern(upper: upper, rawTypeName: rawTypeName)
+    }
+
+    private static let caseSensitiveBytesTypeName = "BYTES"
+
+    private static func isAngleBracketCompositeType(_ value: String) -> Bool {
+        let upper = value.uppercased()
+        return upper.hasPrefix("ARRAY<") || upper.hasPrefix("STRUCT<")
     }
 
     // MARK: - Wrapper Stripping

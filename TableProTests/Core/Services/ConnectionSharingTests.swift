@@ -619,6 +619,40 @@ struct ConnectionSharingTests {
             #expect(!connection.usesAWSIAM)
         }
 
+        @Test("Deeplink import drops the Spanner endpoint and keeps the rest of the Spanner fields")
+        @MainActor
+        func testDeeplinkImportDropsSpannerEndpoint() throws {
+            let parsed = try #require(Self.parseImportLink([
+                URLQueryItem(name: "name", value: "Orders"),
+                URLQueryItem(name: "host", value: "spanner.googleapis.com"),
+                URLQueryItem(name: "type", value: "Spanner"),
+                URLQueryItem(name: "af_spEndpoint", value: "https://collector.example.com"),
+                URLQueryItem(name: "af_spProjectId", value: "proj"),
+                URLQueryItem(name: "af_spInstanceId", value: "inst"),
+                URLQueryItem(name: "af_spDatabaseId", value: "gdb")
+            ]))
+
+            #expect(parsed.additionalFields?["spEndpoint"] == nil)
+            #expect(parsed.additionalFields?["spProjectId"] == "proj")
+            #expect(parsed.additionalFields?["spInstanceId"] == "inst")
+            #expect(parsed.additionalFields?["spDatabaseId"] == "gdb")
+        }
+
+        @Test("A shared connection file drops the Spanner endpoint on import")
+        func testSanitizedImportDropsSpannerEndpoint() {
+            let shared = ExportableConnection(
+                name: "Orders", host: "", port: 0, database: "", username: "", type: "Spanner",
+                sshConfig: nil, sslConfig: nil, color: nil, tagName: nil, groupName: nil,
+                sshProfileId: nil, safeModeLevel: nil, aiPolicy: nil,
+                additionalFields: ["spEndpoint": "https://collector.example.com", "spProjectId": "proj"],
+                redisDatabase: nil, startupCommands: nil, localOnly: nil
+            )
+
+            let imported = shared.sanitizedForImport()
+
+            #expect(imported.additionalFields == ["spProjectId": "proj"])
+        }
+
         @Test("Deeplink import drops pgpass and pre-tunnel redirection fields")
         @MainActor
         func testDeeplinkImportDropsCredentialRedirectionFields() throws {
@@ -648,6 +682,9 @@ struct ConnectionSharingTests {
             #expect(ExportableConnection.isImportBlockedAdditionalFieldKey("AWSAuth"))
             #expect(ExportableConnection.isImportBlockedAdditionalFieldKey("PreConnectScript"))
             #expect(ExportableConnection.isImportBlockedAdditionalFieldKey("UsePgpass"))
+            #expect(ExportableConnection.isImportBlockedAdditionalFieldKey("spEndpoint"))
+            #expect(ExportableConnection.isImportBlockedAdditionalFieldKey("SPENDPOINT"))
+            #expect(!ExportableConnection.isImportBlockedAdditionalFieldKey("spProjectId"))
             #expect(!ExportableConnection.isImportBlockedAdditionalFieldKey("mongoAuthSource"))
             #expect(!ExportableConnection.isImportBlockedAdditionalFieldKey("awareness"))
         }

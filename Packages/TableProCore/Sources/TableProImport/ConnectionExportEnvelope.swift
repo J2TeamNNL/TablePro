@@ -212,6 +212,7 @@ public extension ExportableConnection {
         "pretunnelhost",
         "pretunnelport",
         "promptforpassword",
+        "spendpoint",
         "sslclientkeypassphrase",
         "usepgpass",
     ]

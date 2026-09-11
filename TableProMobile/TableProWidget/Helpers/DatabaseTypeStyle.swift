@@ -21,6 +21,7 @@ enum DatabaseTypeStyle {
         case "Cloudflare D1": return "cloudflare-d1-icon"
         case "DynamoDB": return "dynamodb-icon"
         case "BigQuery": return "bigquery-icon"
+        case "Spanner": return "spanner-icon"
         default: return "externaldrive"
         }
     }

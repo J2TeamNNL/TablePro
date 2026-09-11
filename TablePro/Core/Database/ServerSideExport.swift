@@ -96,9 +96,13 @@ enum ServerSideExport {
         case .oracleDirectory(let directory):
             return oracleStatement(request, directory: directory, escape: escapeLiteral)
         case .snowflakeStage(let stage):
-            return snowflakeStatement(request, stage: stage, quote: quoteIdentifier, escape: escapeLiteral)
+            return snowflakeStatement(
+                request, stage: stage, databaseType: databaseType, quote: quoteIdentifier, escape: escapeLiteral
+            )
         case .googleCloudStorage(let uri):
-            return bigQueryStatement(request, uri: uri, quote: quoteIdentifier, escape: escapeLiteral)
+            return bigQueryStatement(
+                request, uri: uri, databaseType: databaseType, quote: quoteIdentifier, escape: escapeLiteral
+            )
         }
     }
 
@@ -155,12 +159,13 @@ enum ServerSideExport {
     private static func snowflakeStatement(
         _ request: Request,
         stage: String,
+        databaseType: DatabaseType,
         quote: (String) -> String,
         escape: (String) -> String
     ) -> String? {
         guard !stage.isEmpty else { return nil }
         let target = stage.hasPrefix("@") ? stage : "@\(stage)"
-        let qualified = qualifiedName(request, quote: quote)
+        let qualified = qualifiedName(request, databaseType: databaseType, quote: quote)
         let fileFormat: String
         switch request.format {
         case .csv: fileFormat = "(TYPE = CSV, COMPRESSION = GZIP, HEADER = TRUE)"
@@ -183,12 +188,13 @@ enum ServerSideExport {
     private static func bigQueryStatement(
         _ request: Request,
         uri: String,
+        databaseType: DatabaseType,
         quote: (String) -> String,
         escape: (String) -> String
     ) -> String? {
         guard uri.hasPrefix("gs://") else { return nil }
         let shardedURI = uri.contains("*") ? uri : "\(uri.hasSuffix("/") ? uri : uri + "/")\(sanitizedFileStem(request.table))-*.\(request.format.rawValue)"
-        let qualified = qualifiedName(request, quote: quote)
+        let qualified = qualifiedName(request, databaseType: databaseType, quote: quote)
         let format = request.format == .json ? "NEWLINE_DELIMITED_JSON" : request.format.rawValue.uppercased()
         return """
             EXPORT DATA OPTIONS (
@@ -201,9 +207,14 @@ enum ServerSideExport {
 
     // MARK: - Helpers
 
-    private static func qualifiedName(_ request: Request, quote: (String) -> String) -> String {
-        guard let schema = request.schema, !schema.isEmpty else { return quote(request.table) }
-        return "\(quote(schema)).\(quote(request.table))"
+    private static func qualifiedName(
+        _ request: Request,
+        databaseType: DatabaseType,
+        quote: (String) -> String
+    ) -> String {
+        SchemaQualifiedName.render(
+            name: request.table, schema: request.schema, databaseType: databaseType, quote: quote
+        )
     }
 
     /// A file stem the server will accept. A table name can hold characters that are legal in an

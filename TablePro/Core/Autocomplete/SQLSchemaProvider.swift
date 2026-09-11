@@ -395,15 +395,22 @@ actor SQLSchemaProvider {
 
     /// Schema names only — suggested after a database-qualified dot (e.g. "ANALYTICS_PROD.").
     func schemaCompletionItems() async -> [SQLCompletionItem] {
-        let schemas = knownSchemas
+        let schemas = qualifiableSchemas
         return await MainActor.run {
             schemas.map { SQLCompletionItem.schemaName($0) }
         }
     }
 
+    private var qualifiableSchemas: [String] {
+        guard let implicitSchemaName = connectionInfo?.type.implicitSchemaName else { return knownSchemas }
+        return knownSchemas.filter {
+            SchemaQualifiedName.explicitSchema($0, implicitSchemaName: implicitSchemaName) != nil
+        }
+    }
+
     /// Databases + schemas — suggested alongside tables in FROM/JOIN contexts.
     func namespaceCompletionItems() async -> [SQLCompletionItem] {
-        let schemas = knownSchemas
+        let schemas = qualifiableSchemas
         let databases = knownDatabases
         return await MainActor.run {
             databases.map { SQLCompletionItem.databaseName($0) }

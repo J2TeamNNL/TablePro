@@ -234,14 +234,9 @@ final class PaginationCoordinator {
         countSQL: String?
     ) async -> Int? {
         try? await DatabaseManager.shared.withMetadataDriver(scope: scope, workload: .bulk) { driver in
-            guard let countSQL else {
-                return try await driver.fetchExactRowCount(
-                    table: tableName, filters: filters, logicMode: logicMode
-                )
-            }
-            let result = try await driver.execute(query: countSQL)
-            guard let countStr = result.rows.first?.first?.asText else { return Int?.none }
-            return Int(countStr)
+            try await ExactRowCounter.count(
+                on: driver, table: tableName, filters: filters, logicMode: logicMode, countSQL: countSQL
+            )
         }
     }
 

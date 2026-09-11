@@ -62,21 +62,20 @@ internal enum KeyOrderedQuery {
         schema: String?,
         columns: [String],
         keyColumns: [String],
-        driver: any PluginDatabaseDriver
+        driver: any PluginDatabaseDriver,
+        databaseType: DatabaseType
     ) -> String {
         let columnList = columns.isEmpty
             ? "*"
             : columns.map { driver.quoteIdentifier($0) }.joined(separator: ", ")
         let orderBy = keyColumns.map { driver.quoteIdentifier($0) }.joined(separator: ", ")
-        var sql = "SELECT \(columnList) FROM \(qualified(table, schema, driver))"
+        let source = SchemaQualifiedName.render(
+            name: table, schema: schema, databaseType: databaseType, quote: driver.quoteIdentifier
+        )
+        var sql = "SELECT \(columnList) FROM \(source)"
         if !orderBy.isEmpty {
             sql += " ORDER BY \(orderBy)"
         }
         return sql
-    }
-
-    private static func qualified(_ table: String, _ schema: String?, _ driver: any PluginDatabaseDriver) -> String {
-        guard let schema, !schema.isEmpty else { return driver.quoteIdentifier(table) }
-        return "\(driver.quoteIdentifier(schema)).\(driver.quoteIdentifier(table))"
     }
 }

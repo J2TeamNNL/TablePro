@@ -68,7 +68,7 @@ final class SourceObjectSyncBuilderTests: XCTestCase {
         _ identity: CompareObjectIdentity,
         driver: any PluginDatabaseDriver
     ) -> String? {
-        SourceObjectSyncBuilder(targetDriver: driver)
+        SourceObjectSyncBuilder(targetDriver: driver, targetDatabaseType: .postgresql)
             .build(for: CompareObjectResult(identity: identity, status: .onlyInTarget), action: .drop)
             .first?.sql
     }

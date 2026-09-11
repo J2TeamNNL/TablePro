@@ -469,6 +469,7 @@ extension FilterSQLGenerator {
     func generatePreviewSQL(
         tableName: String,
         schemaName: String? = nil,
+        implicitSchemaName: String? = nil,
         filters: [TableFilter],
         logicMode: FilterLogicMode = .and,
         limit: Int = 1_000,
@@ -490,12 +491,9 @@ extension FilterSQLGenerator {
             }
         }
 
-        let quotedTable: String
-        if let schemaName, !schemaName.isEmpty {
-            quotedTable = "\(quoteIdentifierFn(schemaName)).\(quoteIdentifierFn(tableName))"
-        } else {
-            quotedTable = quoteIdentifierFn(tableName)
-        }
+        let quotedTable = SchemaQualifiedName.render(
+            name: tableName, schema: schemaName, implicitSchemaName: implicitSchemaName, quote: quoteIdentifierFn
+        )
         var sql = "SELECT * FROM \(quotedTable)"
 
         let whereClause = generateWhereClause(from: filters, logicMode: logicMode)

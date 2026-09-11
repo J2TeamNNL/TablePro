@@ -18,6 +18,7 @@ struct DatabaseTypeTests {
         #expect(DatabaseType.dameng.rawValue == "Dameng")
         #expect(DatabaseType.cloudflareD1.rawValue == "Cloudflare D1")
         #expect(DatabaseType.bigquery.rawValue == "BigQuery")
+        #expect(DatabaseType.spanner.rawValue == "Spanner")
         #expect(DatabaseType.snowflake.rawValue == "Snowflake")
         #expect(DatabaseType.beancount.rawValue == "Beancount")
     }
@@ -58,11 +59,12 @@ struct DatabaseTypeTests {
 
     @Test("allKnownTypes contains all expected types")
     func allKnownTypesComplete() {
-        #expect(DatabaseType.allKnownTypes.count == 27)
+        #expect(DatabaseType.allKnownTypes.count == 28)
         #expect(DatabaseType.allKnownTypes.contains(.mysql))
         #expect(DatabaseType.allKnownTypes.contains(.tidb))
         #expect(DatabaseType.allKnownTypes.contains(.databend))
         #expect(DatabaseType.allKnownTypes.contains(.bigquery))
+        #expect(DatabaseType.allKnownTypes.contains(.spanner))
         #expect(DatabaseType.allKnownTypes.contains(.snowflake))
         #expect(DatabaseType.allKnownTypes.contains(.libsql))
         #expect(DatabaseType.allKnownTypes.contains(.beancount))
