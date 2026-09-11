@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Empty state in the inspector and the assistant for a connection that is not up.
 - **Check connections** in Settings > General, including Only when I use the connection. (#2700)
 - Tips for preview tabs, Open Quickly, and query history.
+- **Enable Plugin**, **Open Plugin Settings** and **Edit Connection…** on a connection whose driver cannot load.
 
 ### Changed
 
@@ -77,6 +78,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Object browser replaced by "No Tables" for a database with procedures but no tables.
 - Procedures, functions and triggers missing from the object browser on Oracle, Snowflake, BigQuery and Dameng.
 - Empty schema list labelled "No Datasets" on Oracle, Snowflake, Dameng and Trino.
+- Connect error blaming a missing plugin for a connection whose database type is not recognized.
+- Connecting silently switching a disabled plugin back on.
+- Plugin install error replaced by "not installed" when connecting.
+- Test Connection doing nothing after installing the plugin it asked for.
+- Connecting removing a plugin that failed to load, and its settings, when no replacement could be downloaded.
+- Disabled plugin's code loaded when a connection looked up its driver.
+- Failed connect from an opened file or URL titled "Disconnected", with Reconnect as its only fix.
+- Connection Failed alert covering the window that already showed the same failure.
 
 ## [0.73.0] - 2026-09-09
 
