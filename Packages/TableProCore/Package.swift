@@ -21,6 +21,8 @@ let package = Package(
         .library(name: "TableProMSSQLCore", targets: ["TableProMSSQLCore"]),
         .library(name: "TableProTeradataCore", targets: ["TableProTeradataCore"]),
         .library(name: "TableProTrinoCore", targets: ["TableProTrinoCore"]),
+        .library(name: "TableProGoogleCloud", targets: ["TableProGoogleCloud"]),
+        .library(name: "TableProSpannerCore", targets: ["TableProSpannerCore"]),
         .library(name: "TableProNumberFormatting", targets: ["TableProNumberFormatting"])
     ],
     targets: [
@@ -89,6 +91,16 @@ let package = Package(
             dependencies: [],
             path: "Sources/TableProTrinoCore"
         ),
+        .target(
+            name: "TableProGoogleCloud",
+            dependencies: [],
+            path: "Sources/TableProGoogleCloud"
+        ),
+        .target(
+            name: "TableProSpannerCore",
+            dependencies: ["TableProGoogleCloud"],
+            path: "Sources/TableProSpannerCore"
+        ),
         .testTarget(
             name: "TableProNumberFormattingTests",
             dependencies: ["TableProNumberFormatting"],
@@ -133,6 +145,16 @@ let package = Package(
             name: "TableProTrinoCoreTests",
             dependencies: ["TableProTrinoCore"],
             path: "Tests/TableProTrinoCoreTests"
+        ),
+        .testTarget(
+            name: "TableProGoogleCloudTests",
+            dependencies: ["TableProGoogleCloud"],
+            path: "Tests/TableProGoogleCloudTests"
+        ),
+        .testTarget(
+            name: "TableProSpannerCoreTests",
+            dependencies: ["TableProSpannerCore", "TableProGoogleCloud"],
+            path: "Tests/TableProSpannerCoreTests"
         ),
         .testTarget(
             name: "TableProSyncTests",
