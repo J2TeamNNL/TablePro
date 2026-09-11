@@ -49,6 +49,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Row numbers keeping the selection's accent colour after the data grid lost focus.
 - Clicks and double-clicks below the last row ignored in the row-number column.
 - Column headings out of line with their columns after moving to a column hidden under the row numbers.
+- Object browser replaced by "No Tables" for a database with procedures but no tables.
+- Procedures, functions and triggers missing from the object browser on Oracle, Snowflake, BigQuery and Dameng.
+- Empty schema list labelled "No Datasets" on Oracle, Snowflake, Dameng and Trino.
 
 ## [0.73.0] - 2026-09-09
 
