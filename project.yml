@@ -407,6 +407,7 @@ targets:
       - Plugins/ClickHouseDriverPlugin/ClickHousePluginDriver+Schema.swift
       - Plugins/ClickHouseDriverPlugin/ClickHousePluginDriver+TableOperations.swift
       - Plugins/ClickHouseDriverPlugin/ClickHouseTableOperations.swift
+      - Plugins/CloudflareR2SQLDriverPlugin/CloudflareR2SQLMetadata.swift
       - Plugins/CassandraDriverPlugin/CassandraIndexStatements.swift
       - Plugins/DamengDriverPlugin/DamengParameterBinder.swift
       - Plugins/DamengDriverPlugin/DamengIndexStatements.swift
@@ -960,6 +961,15 @@ targets:
       folder: CloudflareD1DriverPlugin
       principalClass: CloudflareD1Plugin
 
+  CloudflareR2SQLDriverPlugin:
+    templates: [DriverPlugin]
+    templateAttributes:
+      folder: CloudflareR2SQLDriverPlugin
+      principalClass: CloudflareR2SQLPlugin
+    dependencies:
+      - package: TableProCore
+        product: TableProR2SQLCore
+
   DuckDBDriver:
     templates: [DriverPlugin]
     templateAttributes:
@@ -1218,6 +1228,7 @@ aggregateTargets:
       - CassandraDriver
       - ClickHouseDriver
       - CloudflareD1DriverPlugin
+      - CloudflareR2SQLDriverPlugin
       - DamengDriver
       - DuckDBDriver
       - DynamoDBDriverPlugin

@@ -58,7 +58,7 @@ struct DatabaseTypeTests {
 
     @Test("allKnownTypes contains all expected types")
     func allKnownTypesComplete() {
-        #expect(DatabaseType.allKnownTypes.count == 26)
+        #expect(DatabaseType.allKnownTypes.count == 27)
         #expect(DatabaseType.allKnownTypes.contains(.mysql))
         #expect(DatabaseType.allKnownTypes.contains(.tidb))
         #expect(DatabaseType.allKnownTypes.contains(.databend))
@@ -71,6 +71,7 @@ struct DatabaseTypeTests {
         #expect(DatabaseType.allKnownTypes.contains(.trino))
         #expect(DatabaseType.allKnownTypes.contains(.dameng))
         #expect(DatabaseType.allKnownTypes.contains(.kafka))
+        #expect(DatabaseType.allKnownTypes.contains(.cloudflareR2SQL))
     }
 
     /// The list has no duplicates, which a count alone would not catch: adding a type twice
@@ -79,6 +80,13 @@ struct DatabaseTypeTests {
     func allKnownTypesAreUnique() {
         let raw = DatabaseType.allKnownTypes.map(\.rawValue)
         #expect(Set(raw).count == raw.count)
+    }
+
+    @Test("Cloudflare R2 SQL resolves its icon and plugin type id")
+    func cloudflareR2SQLIdentity() {
+        #expect(DatabaseType.cloudflareR2SQL.rawValue == "Cloudflare R2 SQL")
+        #expect(DatabaseType.cloudflareR2SQL.iconName == "cloudflare-r2-sql-icon")
+        #expect(DatabaseType.cloudflareR2SQL.pluginTypeId == "Cloudflare R2 SQL")
     }
 
     @Test("Hashable conformance")
