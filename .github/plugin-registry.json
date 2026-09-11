@@ -415,6 +415,20 @@
       "category": "database-driver",
       "homepage": "https://docs.tablepro.app/databases/typesense"
     },
+    "weaviate": {
+      "target": "WeaviateDriverPlugin",
+      "bundleName": "WeaviateDriverPlugin",
+      "bundleId": "com.TablePro.WeaviateDriverPlugin",
+      "bundled": false,
+      "displayName": "Weaviate Driver",
+      "summary": "Weaviate driver over the REST API with a GraphQL console",
+      "databaseTypeIds": [
+        "Weaviate"
+      ],
+      "icon": "weaviate-icon",
+      "category": "database-driver",
+      "homepage": "https://docs.tablepro.app/databases/weaviate"
+    },
     "xlsx": {
       "target": "XLSXExport",
       "bundleName": "XLSXExport",

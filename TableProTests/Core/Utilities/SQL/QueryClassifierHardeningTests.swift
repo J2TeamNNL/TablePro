@@ -545,6 +545,19 @@ struct QueryClassifierNonSqlTests {
         )
     }
 
+    @Test("Weaviate GraphQL reads are safe and uuid deletes are destructive")
+    func weaviateTiers() {
+        #expect(!QueryClassifier.isWriteQuery("{ Get { Article { title } } }", databaseType: .weaviate))
+        #expect(!QueryClassifier.isWriteQuery("query { Get { Article { title } } }", databaseType: .weaviate))
+        #expect(!QueryClassifier.isWriteQuery("GET /v1/schema", databaseType: .weaviate))
+        #expect(!QueryClassifier.isWriteQuery("POST /v1/graphql {}", databaseType: .weaviate))
+        #expect(QueryClassifier.isWriteQuery("mutation { delete { Article } }", databaseType: .weaviate))
+        #expect(QueryClassifier.isWriteQuery("POST /v1/objects {}", databaseType: .weaviate))
+        #expect(QueryClassifier.classifyTier("DELETE /v1/objects/abc", databaseType: .weaviate) == .destructive)
+        let search = "WEAVIATE_SEARCH:e30="
+        #expect(!QueryClassifier.isWriteQuery(search, databaseType: .weaviate))
+    }
+
     @Test("Elasticsearch stored scripts are flagged as code execution on both verbs")
     func elasticsearchScriptsAreFlagged() {
         #expect(

@@ -581,6 +581,8 @@ private extension QueryClassifier {
             return elasticsearchClassification(trimmed)
         case .typesense:
             return typesenseClassification(trimmed)
+        case .weaviate:
+            return weaviateClassification(trimmed)
         default:
             return nil
         }
@@ -748,5 +750,42 @@ private extension QueryClassifier {
             return QueryClassification(tier: .destructive, reachesFilesystemOrExecutesCode: touchesUnsafeSurface)
         }
         return QueryClassification(tier: .write, reachesFilesystemOrExecutesCode: touchesUnsafeSurface)
+    }
+
+    static func weaviateClassification(_ trimmed: String) -> QueryClassification {
+        if trimmed.hasPrefix("WEAVIATE_SEARCH:") {
+            return .safe
+        }
+        if trimmed.hasPrefix("WEAVIATE_WRITE:") {
+            let encoded = String(trimmed.dropFirst("WEAVIATE_WRITE:".count))
+            if let data = Data(base64Encoded: encoded),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               (json["method"] as? String)?.uppercased() == "DELETE" {
+                return QueryClassification(tier: .destructive, reachesFilesystemOrExecutesCode: false)
+            }
+            return QueryClassification(tier: .write, reachesFilesystemOrExecutesCode: false)
+        }
+        let lowered = trimmed.lowercased()
+        if lowered.hasPrefix("mutation") {
+            return QueryClassification(tier: .write, reachesFilesystemOrExecutesCode: false)
+        }
+        if trimmed.hasPrefix("{") || lowered.hasPrefix("query") || lowered.hasPrefix("fragment") {
+            return .safe
+        }
+        let (verb, path) = typesenseRequestLine(trimmed)
+        let upperPath = path.uppercased()
+        if verb == "GET" || verb == "HEAD" {
+            return .safe
+        }
+        if verb == "POST", upperPath == "/V1/GRAPHQL" || upperPath.hasPrefix("/V1/GRAPHQL?") {
+            return .safe
+        }
+        if verb == "DELETE" {
+            return QueryClassification(tier: .destructive, reachesFilesystemOrExecutesCode: false)
+        }
+        if verb.isEmpty {
+            return .safe
+        }
+        return QueryClassification(tier: .write, reachesFilesystemOrExecutesCode: false)
     }
 }

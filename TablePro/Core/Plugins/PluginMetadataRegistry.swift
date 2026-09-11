@@ -686,7 +686,7 @@ final class PluginMetadataRegistry: @unchecked Sendable {
             return .analytical
         case "Spanner":
             return .relational
-        case "MongoDB", "Elasticsearch", "SurrealDB", "Typesense":
+        case "MongoDB", "Elasticsearch", "SurrealDB", "Typesense", "Weaviate":
             return .document
         case "Redis":
             return .keyValue
@@ -728,6 +728,7 @@ final class PluginMetadataRegistry: @unchecked Sendable {
         case "SurrealDB":      return String(localized: "Multi-model database with SurrealQL")
         case "Kafka":          return String(localized: "Event streaming platform")
         case "Typesense":      return String(localized: "Typo-tolerant open-source search engine")
+        case "Weaviate":       return String(localized: "Open-source vector database")
         default:               return ""
         }
     }
