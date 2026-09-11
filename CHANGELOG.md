@@ -10,8 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Google Cloud Spanner as a registry plugin over the REST API. (#1226, #2480)
+- TiDB and Databend connection types on the MySQL driver. (#1066, #2514)
 - Empty state in the inspector and the assistant for a connection that is not up.
 - **Check connections** in Settings > General, including Only when I use the connection. (#2700)
+- Tips for preview tabs, Open Quickly, and query history.
+- **Enable Plugin**, **Open Plugin Settings** and **Edit Connection…** on a connection whose driver cannot load.
+- Invisible characters shown in the SQL editor: control characters, zero-width spaces, bidi controls and special spaces. (#2717)
+- **Remove Invisible Characters** in the Query menu. (#2717)
+- **Show invisible characters** in Settings > Editor. (#2717)
+- Warnings in the SQL editor for full-width punctuation, curly quotes and non-ASCII spaces. (#2717)
 
 ### Changed
 
@@ -19,8 +26,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 7 MB smaller DMG download.
 - Connect progress reads as a labelled bar, with a step named only where the app is waiting on something outside itself.
 - BigQuery Google sign-in runs from a **Sign In** prompt, and its refresh token is kept in the keychain.
+- First launch opening on the welcome window, whose empty list offers the sample database and import from another app.
+- New Connection… and Import on the welcome window, named as in the File menu.
+- Open Project Folder… in File > Import.
+- First-launch tour replaced by a one-page welcome sheet, shown again from Help > Getting Started.
 
 ### Fixed
+
+- Stop not ending queries on MySQL and MariaDB servers without TLS.
+- Users & Roles failing, Stop not ending queries and sequences listed as tables on TiDB servers opened as MySQL.
+- Update release notes show all changes for the offered version, with new features before fixes and properly formatted Markdown. The full changelog is also available from Help and Software Update settings.
+- Blank welcome window list when a search matched nothing and a favorite existed.
+- Welcome window reading No Connections while a tag filter hid every connection.
+- Favorited connection inside a group listed twice on the welcome window.
+- Welcome window tag filter stuck on a tag no connection carries any more, hiding every connection.
+- Collapsing every group on the welcome window undone at the next launch.
+- Linked Folders and Team Library connections ignoring the welcome window search, with no context menu.
+- Dragging a connection in filtered welcome window results snapping back without moving it.
+- Welcome window context menu leaving linked connections out of a mixed selection.
 
 - Idle metadata connections held open for the life of the app, up to six per connection. (#2700)
 - MongoDB connections reading as healthy after the server went away. (#2700)
@@ -41,9 +64,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Connecting screen naming the wrong step for the first half second of a connect.
 - Spinner flash in the object browser on Oracle, Snowflake, BigQuery, Trino and Dameng.
 - Start of every line hidden in the SQL editor after a long line was removed. (#2709)
+- Query error underlines on the wrong text or missing after a tab switch or loaded query, with no way to read them.
 - Start of a line hidden under the line numbers after moving to it in a horizontally scrolled editor.
 - Editor jumping sideways on each keystroke in a long line while scrolled horizontally.
 - Cursor left off screen after pasting a long line.
+- Option+Delete and Option+Arrow splitting an emoji or accented letter in the SQL and JSON editors.
 - Line number column keeping a stale width after the line count drops below 1,000 or the font size changes.
 - BigQuery statements broken by an apostrophe or a backslash in a value or filter.
 - BigQuery grid inserts writing `__DEFAULT__` into columns, and saving byte values as NULL.
@@ -54,6 +79,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BigQuery Google sign-in opening the browser again on every connect.
 - Crash reading a malformed BigQuery service account key.
 - `ARRAY<BOOL>` columns opening a checkbox editor, and `BYTES` columns editable as text.
+- Line after the data grid's row numbers drawn twice as thick as the other column lines.
+- `#` heading in the data grid darker and dimmer than the headings beside it.
+- Row numbers showing the scrolled columns through them on every other row in dark mode.
+- Row numbers keeping the selection's accent colour after the data grid lost focus.
+- Clicks and double-clicks below the last row ignored in the row-number column.
+- Column headings out of line with their columns after moving to a column hidden under the row numbers.
+- Data grid row menu instead of the Structure menu when right-clicking a pinned row number on the Structure tab.
+- VoiceOver finding no row over a pinned row number.
+- Column lines showing through the row numbers below the last row.
+- Empty rows below the last row striped brighter than the rows in dark mode.
+- Row numbers keeping their old stripes after turning alternate rows off or changing the row height.
+- SQL Server, CockroachDB, Cloudflare D1, libSQL and Elasticsearch connections imported from TablePlus with a database type that could never connect.
+- DuckDB file connections imported from TablePlus without their file.
+- Connections to an engine TablePro does not support imported silently and checked by default, or dropped from a Beekeeper Studio import.
+- Import preview calling an unrecognized database type "not installed".
+- Imported connections unable to connect when the source app spelled the engine name in a different case.
+- Wrong default port on Redshift and CockroachDB connections imported without one.
+- Object browser replaced by "No Tables" for a database with procedures but no tables.
+- Procedures, functions and triggers missing from the object browser on Oracle, Snowflake, BigQuery and Dameng.
+- Empty schema list labelled "No Datasets" on Oracle, Snowflake, Dameng and Trino.
+- Connect error blaming a missing plugin for a connection whose database type is not recognized.
+- Connecting silently switching a disabled plugin back on.
+- Plugin install error replaced by "not installed" when connecting.
+- Test Connection doing nothing after installing the plugin it asked for.
+- Safe Mode and run buttons misreading statements beside invisible characters, CRLF or MySQL conditional comments.
+- Connecting removing a plugin that failed to load, and its settings, when no replacement could be downloaded.
+- Disabled plugin's code loaded when a connection looked up its driver.
+- Failed connect from an opened file or URL titled "Disconnected", with Reconnect as its only fix.
+- Database error messages hiding invisible characters, such as a backspace quoted back from a query. (#2717)
+- Connection Failed alert covering the window that already showed the same failure.
+- Invisible control characters typed into a query by an input method or a Control-key chord such as Ctrl+Option+H. (#2717)
+- Escape and Tab taken from an input method mid-composition in the SQL editor, and AI suggestions shown during it.
+- Statement with a NUL character running only up to it on SQLite and PostgreSQL, dropping its WHERE clause. (#2717)
+- Vim Replace mode writing an invisible character for Backspace and keypad Enter. (#2717)
+- Option and Control chords editing text in Vim Normal and Visual mode, and Vim's Ctrl commands never running. (#2717)
+- Line and paragraph separators (U+2028, U+2029) shown as line breaks the database does not see. (#2717)
 
 ### Security
 

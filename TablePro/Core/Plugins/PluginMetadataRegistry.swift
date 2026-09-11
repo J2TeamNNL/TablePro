@@ -94,6 +94,8 @@ struct PluginMetadataSnapshot: Sendable {
         /// out of it either fails to load or presents incomplete accounts, which is worse.
         var supportsRemoteDatabaseFile: Bool = false
 
+        var supportsPrincipalConnectionLimit: Bool = true
+
         static let defaults = CapabilityFlags(
             supportsSchemaSwitching: false,
             supportsImport: true,
@@ -136,6 +138,7 @@ struct PluginMetadataSnapshot: Sendable {
         let databaseGroupingStrategy: GroupingStrategy
         let structureColumnFields: [StructureColumnField]
         let implicitSchemaName: String?
+        let rowMatchExcludedTypePrefixes: [String]
 
         init(
             defaultSchemaName: String,
@@ -151,9 +154,9 @@ struct PluginMetadataSnapshot: Sendable {
             fileSignatures: [DatabaseFileSignature] = [],
             databaseGroupingStrategy: GroupingStrategy,
             structureColumnFields: [StructureColumnField],
-            implicitSchemaName: String? = nil
+            implicitSchemaName: String? = nil,
+            rowMatchExcludedTypePrefixes: [String] = []
         ) {
-            self.implicitSchemaName = implicitSchemaName
             self.defaultSchemaName = defaultSchemaName
             self.defaultGroupName = defaultGroupName
             self.tableEntityName = tableEntityName
@@ -167,6 +170,8 @@ struct PluginMetadataSnapshot: Sendable {
             self.fileSignatures = fileSignatures
             self.databaseGroupingStrategy = databaseGroupingStrategy
             self.structureColumnFields = structureColumnFields
+            self.implicitSchemaName = implicitSchemaName
+            self.rowMatchExcludedTypePrefixes = rowMatchExcludedTypePrefixes
         }
 
         static let defaults = SchemaInfo(
@@ -334,7 +339,8 @@ struct PluginMetadataSnapshot: Sendable {
                 fileSignatures: schema.fileSignatures,
                 databaseGroupingStrategy: source.schema.databaseGroupingStrategy,
                 structureColumnFields: schema.structureColumnFields,
-                implicitSchemaName: source.schema.implicitSchemaName
+                implicitSchemaName: source.schema.implicitSchemaName,
+                rowMatchExcludedTypePrefixes: schema.rowMatchExcludedTypePrefixes
             ),
             editor: editor, connection: connection
         )
@@ -373,6 +379,8 @@ final class PluginMetadataRegistry: @unchecked Sendable {
         }
 
         reverseTypeIndex["MariaDB"] = "MySQL"
+        reverseTypeIndex["TiDB"] = "MySQL"
+        reverseTypeIndex["Databend"] = "MySQL"
         reverseTypeIndex["Redshift"] = "PostgreSQL"
         reverseTypeIndex["CockroachDB"] = "PostgreSQL"
         reverseTypeIndex["PGlite"] = "PostgreSQL"
@@ -622,7 +630,9 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                     .authenticationIsDatabaseScoped ?? false,
                 localFilePathField: existingSnapshot?.capabilities.localFilePathField,
                 supportsRemoteDatabaseFile: existingSnapshot?.capabilities
-                    .supportsRemoteDatabaseFile ?? false
+                    .supportsRemoteDatabaseFile ?? false,
+                supportsPrincipalConnectionLimit: existingSnapshot?.capabilities
+                    .supportsPrincipalConnectionLimit ?? true
             ),
             schema: PluginMetadataSnapshot.SchemaInfo(
                 defaultSchemaName: driverType.defaultSchemaName,
@@ -638,7 +648,8 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                 fileSignatures: existingSnapshot?.schema.fileSignatures ?? [],
                 databaseGroupingStrategy: driverType.databaseGroupingStrategy,
                 structureColumnFields: driverType.structureColumnFields,
-                implicitSchemaName: existingSnapshot?.schema.implicitSchemaName
+                implicitSchemaName: existingSnapshot?.schema.implicitSchemaName,
+                rowMatchExcludedTypePrefixes: existingSnapshot?.schema.rowMatchExcludedTypePrefixes ?? []
             ),
             editor: PluginMetadataSnapshot.EditorConfig(
                 sqlDialect: driverType.sqlDialect,
