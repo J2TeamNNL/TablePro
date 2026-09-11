@@ -53,13 +53,11 @@ struct WeaviateConnectionFieldsTests {
         return entry.snapshot.connection.additionalConnectionFields
     }
 
-    @Test("Auth method defaults to none and hides the built-in password and username")
-    func authMethodHidesBuiltInCredentials() throws {
+    @Test("Auth method defaults to none")
+    func authMethodDefaultsToNone() throws {
         let fields = try fields()
         let method = try #require(fields.first { $0.id == WeaviateFieldID.authMethod })
         #expect(method.defaultValue == "none")
-        #expect(method.hidesPassword)
-        #expect(method.hidesUsername)
         guard case .dropdown(let options) = method.fieldType else {
             Issue.record("Expected a dropdown field type")
             return
@@ -67,23 +65,33 @@ struct WeaviateConnectionFieldsTests {
         #expect(options.map(\.value) == ["none", "apiKey"])
     }
 
-    @Test("API key is a secure field gated to API key mode")
-    func apiKeyIsSecureAndModeGated() throws {
+    @Test("The API key replaces both built-in credential rows")
+    func apiKeyReplacesUsernameAndPassword() throws {
         let fields = try fields()
         let apiKey = try #require(fields.first { $0.id == WeaviateFieldID.apiKey })
         #expect(apiKey.isSecure)
-        #expect(apiKey.visibleWhen == FieldVisibilityRule(
-            fieldId: WeaviateFieldID.authMethod,
-            values: ["apiKey"]
-        ))
-    }
-
-    @Test("Password stays hidden for both auth methods")
-    func passwordStaysHidden() throws {
-        let fields = try fields()
+        #expect(!apiKey.isRequired)
+        #expect(apiKey.visibleWhen == nil)
+        #expect(apiKey.hidesPassword)
         #expect(fields.hidesPassword(forValues: [:]))
+        #expect(fields.hidesUsername(forValues: [:]))
         #expect(fields.hidesPassword(forValues: [WeaviateFieldID.authMethod: "none"]))
         #expect(fields.hidesPassword(forValues: [WeaviateFieldID.authMethod: "apiKey"]))
+        #expect(fields.hidesUsername(forValues: [WeaviateFieldID.authMethod: "none"]))
+        #expect(fields.hidesUsername(forValues: [WeaviateFieldID.authMethod: "apiKey"]))
+    }
+
+    @Test("The snapshot hides the built-in password for every auth method")
+    @MainActor
+    func snapshotHidesBuiltInPassword() throws {
+        let defaults = PluginMetadataRegistry.shared.registryPluginDefaults()
+        let snapshot = try #require(defaults.first { $0.typeId == "Weaviate" }).snapshot
+        #expect(snapshot.connection.hidesBuiltInPassword)
+        for method in ["none", "apiKey"] {
+            var connection = DatabaseConnection(name: "Weaviate", type: .weaviate)
+            connection.additionalFields = [WeaviateFieldID.authMethod: method]
+            #expect(PluginManager.shared.hidesPassword(for: connection), method)
+        }
     }
 }
 

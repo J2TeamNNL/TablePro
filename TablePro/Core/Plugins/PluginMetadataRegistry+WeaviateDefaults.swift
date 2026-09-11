@@ -57,6 +57,7 @@ extension PluginMetadataRegistry {
                     additionalConnectionFields: weaviateConnectionFields(),
                     category: .document,
                     tagline: String(localized: "Open-source vector database"),
+                    hidesBuiltInPassword: true,
                     hidesBuiltInDatabase: true
                 )
             )),
@@ -134,18 +135,16 @@ func weaviateConnectionFields() -> [ConnectionField] {
                 .init(value: "none", label: "None"),
                 .init(value: "apiKey", label: "API Key")
             ]),
-            section: .authentication,
-            hidesPassword: true
-        ).withHidesUsername(true),
+            section: .authentication
+        ),
         ConnectionField(
             id: "wvApiKey",
             label: String(localized: "API Key"),
             placeholder: "Weaviate API key",
-            required: true,
             fieldType: .secure,
             section: .authentication,
-            visibleWhen: FieldVisibilityRule(fieldId: "wvAuthMethod", values: ["apiKey"])
-        ),
+            hidesPassword: true
+        ).withHidesUsername(true),
         ConnectionField(
             id: "wvSkipTLSVerify",
             label: String(localized: "Skip TLS Verification"),

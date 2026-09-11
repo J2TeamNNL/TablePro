@@ -27,13 +27,8 @@ public struct WeaviateAuth: Sendable, Equatable {
     }
 
     public var authorizationHeader: String? {
-        switch method {
-        case .none:
-            return nil
-        case .apiKey:
-            guard !apiKey.isEmpty else { return nil }
-            return "Bearer \(apiKey)"
-        }
+        guard !apiKey.isEmpty else { return nil }
+        return "Bearer \(apiKey)"
     }
 }
 

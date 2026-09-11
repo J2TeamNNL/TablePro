@@ -66,47 +66,55 @@ func testClient(
 enum WeaviateFixtures {
     static let articleUUID = "c8f5c3e0-1b2a-4d3e-9f10-111213141516"
 
-    static let schema: [String: Any] = [
-        "classes": [
-            [
-                "class": "Article",
-                "vectorizer": "none",
-                "properties": [
-                    ["name": "title", "dataType": ["text"]],
-                    ["name": "wordCount", "dataType": ["int"]]
+    static var schema: [String: Any] {
+        [
+            "classes": [
+                [
+                    "class": "Article",
+                    "vectorizer": "none",
+                    "properties": [
+                        ["name": "title", "dataType": ["text"]],
+                        ["name": "wordCount", "dataType": ["int"]]
+                    ]
                 ]
             ]
         ]
-    ]
+    }
 
-    static let objects: [String: Any] = [
-        "objects": [
-            [
-                "id": articleUUID,
-                "class": "Article",
-                "properties": ["title": "Hello", "wordCount": 12],
-                "vector": [0.1, 0.2, 0.3]
-            ]
-        ],
-        "totalResults": 1
-    ]
+    static var objects: [String: Any] {
+        [
+            "objects": [
+                [
+                    "id": articleUUID,
+                    "class": "Article",
+                    "properties": ["title": "Hello", "wordCount": 12],
+                    "vector": [0.1, 0.2, 0.3]
+                ]
+            ],
+            "totalResults": 1
+        ]
+    }
 
-    static let graphqlGet: [String: Any] = [
-        "data": [
-            "Get": [
-                "Article": [
-                    [
-                        "title": "Hello",
-                        "wordCount": 12,
-                        "_additional": [
-                            "id": articleUUID,
-                            "vector": [0.1, 0.2]
+    static var graphqlGet: [String: Any] {
+        [
+            "data": [
+                "Get": [
+                    "Article": [
+                        [
+                            "title": "Hello",
+                            "wordCount": 12,
+                            "_additional": [
+                                "id": articleUUID,
+                                "vector": [0.1, 0.2]
+                            ]
                         ]
                     ]
                 ]
             ]
         ]
-    ]
+    }
 
-    static let meta: [String: Any] = ["version": "1.27.0"]
+    static var meta: [String: Any] {
+        ["version": "1.27.0"]
+    }
 }

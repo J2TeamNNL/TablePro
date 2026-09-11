@@ -22,14 +22,14 @@ There is no Database field. One connection reaches one Weaviate instance, and it
 | **Host** | Node hostname. `localhost` for Docker, a Weaviate Cloud hostname for hosted clusters |
 | **Port** | `8080` by default. Weaviate Cloud answers on `443` |
 | **Auth Method** | None, or API Key |
-| **API Key** | Sent as `Authorization: Bearer`. Shown when **Auth Method** is API Key |
+| **API Key** | Sent as `Authorization: Bearer`. Leave empty for anonymous access |
 | **Skip TLS Verification** | Advanced section. Trusts any certificate, even under **Verify CA** or **Verify Identity** |
 
 ## Authentication
 
 | Auth Method | What is sent |
 |-------------|--------------|
-| **None** | Nothing. For a local node with anonymous access |
+| **None** | Nothing, unless **API Key** is filled. For a local node with anonymous access |
 | **API Key** | An `Authorization: Bearer` header. Paste the Weaviate Cloud key, or the key the local node was started with |
 
 Weaviate Cloud requires an API key and HTTPS. Set **SSL Mode** to **Required** (or **Verify Identity** if you have the CA) and **Auth Method** to API Key.

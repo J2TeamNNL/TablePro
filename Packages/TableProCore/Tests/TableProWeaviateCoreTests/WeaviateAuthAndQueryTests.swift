@@ -25,6 +25,20 @@ struct WeaviateAuthTests {
         }
     }
 
+    @Test("A pasted key is sent even when Auth Method is still None")
+    func noneModeSendsAPastedKey() throws {
+        let settings = try WeaviateConnectionSettings.parse(
+            host: "localhost",
+            port: 8_080,
+            usesTLS: false,
+            fields: [
+                WeaviateFieldID.authMethod: "none",
+                WeaviateFieldID.apiKey: "wv-secret"
+            ]
+        )
+        #expect(settings.auth.authorizationHeader == "Bearer wv-secret")
+    }
+
     @Test("None mode does not require a key")
     func noneModeConnects() throws {
         let settings = try WeaviateConnectionSettings.parse(

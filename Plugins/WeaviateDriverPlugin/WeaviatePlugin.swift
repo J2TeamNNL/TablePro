@@ -65,21 +65,16 @@ func weaviateConnectionFields() -> [ConnectionField] {
                 .init(value: WeaviateAuthMethod.none.rawValue, label: "None"),
                 .init(value: WeaviateAuthMethod.apiKey.rawValue, label: "API Key")
             ]),
-            section: .authentication,
-            hidesPassword: true
-        ).withHidesUsername(true),
+            section: .authentication
+        ),
         ConnectionField(
             id: WeaviateFieldID.apiKey,
             label: String(localized: "API Key"),
             placeholder: "Weaviate API key",
-            required: true,
             fieldType: .secure,
             section: .authentication,
-            visibleWhen: FieldVisibilityRule(
-                fieldId: WeaviateFieldID.authMethod,
-                values: [WeaviateAuthMethod.apiKey.rawValue]
-            )
-        ),
+            hidesPassword: true
+        ).withHidesUsername(true),
         ConnectionField(
             id: WeaviateFieldID.skipTLSVerify,
             label: String(localized: "Skip TLS Verification"),
