@@ -348,7 +348,7 @@ public enum WeaviateStatementGenerator {
         var result: [String: Any] = [:]
         for (column, text) in values {
             if WeaviateSchema.immutableColumns.contains(column) { continue }
-            if column.hasPrefix("_") { continue }
+            if column.hasPrefix("\(WeaviateObjectCodec.additionalKey).") { continue }
             if let text {
                 result[column] = WeaviateJSON.parsedValue(text, typeName: types[column] ?? "text")
             } else {

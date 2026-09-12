@@ -173,11 +173,13 @@ extension WeaviatePluginDriver {
             var values: [String: String?] = [:]
             if let row = insertedRowData[change.rowIndex] {
                 for (index, column) in columns.enumerated() where index < row.count {
-                    values[column] = row[index].asText
+                    guard let text = row[index].asText else { continue }
+                    values[column] = text
                 }
             } else {
                 for cell in change.cellChanges {
-                    values[cell.columnName] = cell.newValue.asText
+                    guard let text = cell.newValue.asText else { continue }
+                    values[cell.columnName] = text
                 }
             }
             return WeaviateTrackedChange(

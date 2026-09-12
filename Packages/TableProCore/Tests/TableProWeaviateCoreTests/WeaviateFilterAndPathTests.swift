@@ -462,3 +462,104 @@ struct WeaviateSelectionSetTests {
         #expect(WeaviatePropertyShape.of(properties[1]) == .crossReference(["Category"]))
     }
 }
+
+@Suite("Weaviate value round-trip")
+struct WeaviateParsedValueTests {
+    @Test("Text keeps its own punctuation instead of being parsed as JSON")
+    func textStaysText() {
+        #expect(WeaviateJSON.parsedValue("{\"a\":1}", typeName: "text") as? String == "{\"a\":1}")
+        #expect(WeaviateJSON.parsedValue("[1,2]", typeName: "text") as? String == "[1,2]")
+        #expect(WeaviateJSON.parsedValue("{\"a\":1}", typeName: "string") as? String == "{\"a\":1}")
+        #expect(WeaviateJSON.parsedValue("2024-01-31T00:00:00Z", typeName: "date") as? String == "2024-01-31T00:00:00Z")
+    }
+
+    @Test("A type the grid renders as JSON parses back")
+    func structuredParsesBack() {
+        #expect(WeaviateJSON.parsedValue("[\"a\",\"b\"]", typeName: "text[]") as? [String] == ["a", "b"])
+        #expect(WeaviateJSON.parsedValue("[1,2]", typeName: "int[]") as? [Int] == [1, 2])
+        let object = WeaviateJSON.parsedValue("{\"k\":\"v\"}", typeName: "object") as? [String: Any]
+        #expect(object?["k"] as? String == "v")
+        let geo = WeaviateJSON.parsedValue("{\"latitude\":1}", typeName: "geoCoordinates") as? [String: Any]
+        #expect(geo?["latitude"] as? Int == 1)
+    }
+
+    @Test("A scalar parses to its own type, and an unparsable one stays text")
+    func scalarsParse() {
+        #expect(WeaviateJSON.parsedValue("12", typeName: "int") as? Int == 12)
+        #expect(WeaviateJSON.parsedValue("1.5", typeName: "number") as? Double == 1.5)
+        #expect(WeaviateJSON.parsedValue("true", typeName: "boolean") as? Bool == true)
+        #expect(WeaviateJSON.parsedValue("abc", typeName: "int") as? String == "abc")
+        #expect(WeaviateJSON.parsedValue("yes", typeName: "boolean") as? String == "yes")
+    }
+
+    @Test("A property named with a leading underscore is written, and a synthetic column is not")
+    func underscoreNamedPropertyIsWritten() throws {
+        let batch = WeaviateStatementGenerator.generate(
+            collection: "Event",
+            columns: ["uuid", "_source", "distance"],
+            typeNames: ["uuid", "text", "number"],
+            changes: [
+                WeaviateTrackedChange(
+                    kind: .update,
+                    uuid: "c8f5c3e0-1b2a-4d3e-9f10-111213141516",
+                    values: [:],
+                    cellChanges: [
+                        WeaviateCellChange(column: "_source", newText: "manual"),
+                        WeaviateCellChange(column: "_additional.distance", newText: "0.4")
+                    ]
+                )
+            ]
+        )
+        let body = try #require(batch.requests.first?.body)
+        #expect(body.contains("\"_source\":\"manual\""))
+        #expect(!body.contains("_additional"))
+    }
+}
+
+@Suite("Weaviate console requests")
+struct WeaviateConsoleRequestTests {
+    @Test("A body typed on the request line is kept")
+    func inlineBodySurvives() throws {
+        let request = try #require(
+            WeaviateConsoleParser.parse("POST /v1/objects {\"class\": \"Article\"}")
+        )
+        #expect(request.method == "POST")
+        #expect(request.path == "/v1/objects")
+        #expect(request.body == "{\"class\": \"Article\"}")
+    }
+
+    @Test("A body on the lines below still wins")
+    func multilineBodyWins() throws {
+        let request = try #require(WeaviateConsoleParser.parse("POST /v1/graphql\n{ \"query\": \"x\" }"))
+        #expect(request.body == "{ \"query\": \"x\" }")
+    }
+
+    @Test("Any path is resolved under /v1")
+    func everyPathIsPrefixed() throws {
+        #expect(try #require(WeaviateConsoleParser.parse("GET /nodes")).path == "/v1/nodes")
+        #expect(try #require(WeaviateConsoleParser.parse("POST /batch/objects")).path == "/v1/batch/objects")
+        #expect(try #require(WeaviateConsoleParser.parse("GET /v1/schema")).path == "/v1/schema")
+        #expect(try #require(WeaviateConsoleParser.parse("GET /")).path == "/")
+    }
+
+    @Test("SQL is still not a console request")
+    func sqlIsRefused() {
+        #expect(WeaviateConsoleParser.parse("DELETE FROM Article") == nil)
+        #expect(WeaviateConsoleParser.parse("UPDATE Article SET title = 'x'") == nil)
+    }
+
+    @Test("A browse that is not showing the vector does not ask for it")
+    func vectorIsOptional() throws {
+        let withVector = try WeaviateGraphQL.getQuery(
+            collection: "Article", properties: ["uuid", "title"], limit: 5, offset: 0,
+            sorts: [], filters: [], logicMode: "AND", schema: [:], includeVector: true
+        )
+        let withoutVector = try WeaviateGraphQL.getQuery(
+            collection: "Article", properties: ["uuid", "title"], limit: 5, offset: 0,
+            sorts: [], filters: [], logicMode: "AND", schema: [:], includeVector: false
+        )
+        #expect(withVector.contains("_additional { id vector }"))
+        #expect(withoutVector.contains("_additional { id }"))
+        #expect(!withoutVector.contains("vector"))
+    }
+}

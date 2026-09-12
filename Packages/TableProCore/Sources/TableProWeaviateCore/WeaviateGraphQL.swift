@@ -9,7 +9,8 @@ public enum WeaviateGraphQL {
         sorts: [WeaviateSortSpec],
         filters: [WeaviateFilterSpec],
         logicMode: String,
-        schema: [String: WeaviateProperty]
+        schema: [String: WeaviateProperty],
+        includeVector: Bool = true
     ) throws -> String {
         let types = schema.mapValues(\.dataType)
         let fields = properties
@@ -31,8 +32,9 @@ public enum WeaviateGraphQL {
             args.append("sort: [\(sortArgs.joined(separator: " "))]")
         }
         let argumentList = args.joined(separator: ", ")
+        let additional = includeVector ? "id vector" : "id"
         return """
-        { Get { \(collection)(\(argumentList)) { \(fields) _additional { id vector } } } }
+        { Get { \(collection)(\(argumentList)) { \(fields) _additional { \(additional) } } } }
         """
     }
 
@@ -111,8 +113,10 @@ public enum WeaviateConsoleParser {
         return parseHeader(header, body: rest.isEmpty ? nil : rest)
     }
 
+    /// The whole REST API lives under `/v1`, so any other path is prefixed rather than a hand-listed
+    /// four: `GET /nodes` and `POST /batch/objects` used to reach the base URL and answer 404.
     private static func parseHeader(_ header: String, body: String?) -> WeaviateConsoleRequest? {
-        let parts = header.split(whereSeparator: { $0.isWhitespace })
+        let parts = header.split(maxSplits: 2, omittingEmptySubsequences: true, whereSeparator: \.isWhitespace)
         guard parts.count >= 2 else { return nil }
         let method = String(parts[0]).uppercased()
         guard ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"].contains(method) else {
@@ -121,12 +125,16 @@ public enum WeaviateConsoleParser {
         let rawPath = String(parts[1])
         guard rawPath.hasPrefix("/") else { return nil }
         var path = rawPath
-        if !path.hasPrefix("/v1") && path != "/" {
-            if path.hasPrefix("/objects") || path.hasPrefix("/schema") || path.hasPrefix("/graphql")
-                || path.hasPrefix("/meta") {
-                path = "/v1" + path
-            }
+        if path != "/", path != "/v1", !path.hasPrefix("/v1/"), !path.hasPrefix("/v1?") {
+            path = "/v1" + path
         }
-        return WeaviateConsoleRequest(method: method, path: path, body: body)
+        let inlineBody = parts.count > 2
+            ? String(parts[2]).trimmingCharacters(in: .whitespacesAndNewlines)
+            : ""
+        return WeaviateConsoleRequest(
+            method: method,
+            path: path,
+            body: body ?? (inlineBody.isEmpty ? nil : inlineBody)
+        )
     }
 }

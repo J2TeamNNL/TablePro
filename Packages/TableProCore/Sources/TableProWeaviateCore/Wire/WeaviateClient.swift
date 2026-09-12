@@ -35,8 +35,10 @@ public final class WeaviateClient: @unchecked Sendable {
         }
     }
 
+    /// `/v1/.well-known/ready` is the readiness probe and answers 200 with no key at all, so a
+    /// revoked key would leave the health monitor reporting a session every query then fails on.
     public func ping() async throws {
-        let response = try await send(method: "GET", path: "/v1/.well-known/ready")
+        let response = try await send(method: "GET", path: "/v1/meta")
         try throwIfFailed(response)
     }
 

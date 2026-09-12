@@ -20,7 +20,7 @@ struct WeaviateClientTests {
     @Test("An API key is sent as a Bearer header")
     func apiKeyIsBearer() async throws {
         let transport = FakeWeaviateTransport()
-        transport.respond(method: "GET", path: "/v1/.well-known/ready", status: 200, body: ".")
+        transport.respond(method: "GET", path: "/v1/meta", status: 200, json: WeaviateFixtures.meta)
         let client = testClient(
             transport: transport,
             auth: WeaviateAuth(method: .apiKey, apiKey: "wv-secret")
@@ -31,10 +31,21 @@ struct WeaviateClientTests {
         #expect(transport.requests.first?.headers["Authorization"] == "Bearer wv-secret")
     }
 
+    @Test("A ping asks an endpoint that checks the key")
+    func pingIsAuthenticated() async throws {
+        let transport = FakeWeaviateTransport()
+        transport.respond(method: "GET", path: "/v1/meta", status: 200, json: WeaviateFixtures.meta)
+        let client = testClient(transport: transport)
+
+        try await client.ping()
+
+        #expect(transport.requests.map { $0.url.path } == ["/v1/meta"])
+    }
+
     @Test("Anonymous auth sends no Authorization header")
     func anonymousHasNoAuthorization() async throws {
         let transport = FakeWeaviateTransport()
-        transport.respond(method: "GET", path: "/v1/.well-known/ready", status: 200, body: ".")
+        transport.respond(method: "GET", path: "/v1/meta", status: 200, json: WeaviateFixtures.meta)
         let client = testClient(transport: transport)
 
         try await client.ping()
@@ -81,7 +92,7 @@ struct WeaviateClientTests {
         let transport = FakeWeaviateTransport()
         transport.respond(
             method: "GET",
-            path: "/v1/.well-known/ready",
+            path: "/v1/meta",
             status: 401,
             json: ["error": [["message": "invalid api key"]]]
         )

@@ -41,24 +41,33 @@ public enum WeaviateJSON {
         }
     }
 
+    /// Only a property the grid renders as JSON is parsed back as JSON. Running the parser over
+    /// every type sends a `text` cell holding `{"a":1}` as an object, which Weaviate rejects while
+    /// the grid reports the save.
     public static func parsedValue(_ text: String, typeName: String) -> Any {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let lowered = typeName.lowercased()
-        if lowered == "boolean" || lowered == "bool" {
-            if trimmed.lowercased() == "true" { return true }
-            if trimmed.lowercased() == "false" { return false }
+        let declared = typeName.trimmingCharacters(in: .whitespaces)
+        let isArray = declared.hasSuffix("[]")
+        if !isArray {
+            switch WeaviateValueKind.forDataType(declared) {
+            case .boolean:
+                if trimmed.lowercased() == "true" { return true }
+                if trimmed.lowercased() == "false" { return false }
+                return text
+            case .int:
+                return Int(trimmed) ?? text
+            case .number:
+                return Double(trimmed) ?? text
+            case .text, .uuid, .date:
+                break
+            }
         }
-        if lowered == "int" || lowered == "int[]" || lowered.hasPrefix("int") {
-            if let intVal = Int(trimmed) { return intVal }
-        }
-        if lowered == "number" || lowered == "number[]" {
-            if let doubleVal = Double(trimmed) { return doubleVal }
-        }
-        if let data = trimmed.data(using: .utf8),
-           let parsed = try? JSONSerialization.jsonObject(with: data) {
-            if parsed is [Any] { return parsed }
-            if parsed is [String: Any] { return parsed }
-        }
-        return text
+        let shape = WeaviatePropertyShape.of(WeaviateProperty(name: "", dataType: declared))
+        guard isArray || shape != .scalar else { return text }
+        guard let data = trimmed.data(using: .utf8),
+              let parsed = try? JSONSerialization.jsonObject(with: data),
+              parsed is [Any] || parsed is [String: Any]
+        else { return text }
+        return parsed
     }
 }

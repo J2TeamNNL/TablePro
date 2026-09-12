@@ -96,6 +96,8 @@ A REST line also runs, the way the other search drivers do:
 GET /v1/schema
 ```
 
+A path without `/v1` gets it, so `GET /nodes` reaches `/v1/nodes`. A body goes on the same line as the path or on the lines under it.
+
 ## SSL/TLS
 
 New connections start on **Disabled**, plain HTTP. Every other mode goes over HTTPS. **Preferred** and **Required (skip verify)** accept a self-signed certificate. See [SSL/TLS](/connections/ssl).
@@ -106,6 +108,7 @@ New connections start on **Disabled**, plain HTTP. Every other mode goes over HT
 - gRPC is not used.
 - Cross-references are properties, not foreign keys. There are no routines, triggers, or schema edits from Structure.
 - Multi-tenancy is not exposed. Name a tenant in GraphQL if the collection requires one.
+- Paging stops at row 10,000. Weaviate refuses an offset and limit that add up past `QUERY_MAXIMUM_RESULTS`, which defaults to 10,000.
 - No [SSH tunnel](/connections/ssh-tunneling).
 - The plugin is registry-only. It is not on iPhone or iPad.
 
@@ -114,6 +117,10 @@ New connections start on **Disabled**, plain HTTP. Every other mode goes over HT
 ### Authentication failed: …
 
 The API key was rejected, or the node expects a key and **Auth Method** is None. Weaviate Cloud needs both HTTPS and an API key.
+
+### The connection drops after the API key changes
+
+A revoked or rotated key fails the next health check, because the check reads `/v1/meta` rather than the unauthenticated readiness endpoint. Paste the new key and connect again.
 
 ### Connection failed: …
 

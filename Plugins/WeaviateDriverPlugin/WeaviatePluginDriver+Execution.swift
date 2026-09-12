@@ -46,6 +46,8 @@ extension WeaviatePluginDriver {
             throw WeaviateError.malformedResponse(String(localized: "Invalid browse request."))
         }
         let collection = try await cachedCollection(parsed.collection)
+        let wantsVector = parsed.propertyNames.isEmpty
+            || parsed.propertyNames.contains(WeaviateSchema.vectorColumn)
         let objects: [WeaviateObject]
         if parsed.usesGraphQL {
             let graphql = try WeaviateGraphQL.getQuery(
@@ -56,7 +58,8 @@ extension WeaviatePluginDriver {
                 sorts: parsed.sortableSorts,
                 filters: parsed.filters,
                 logicMode: parsed.logicMode,
-                schema: propertySchema(of: collection)
+                schema: propertySchema(of: collection),
+                includeVector: wantsVector
             )
             let response = try await client.graphql(graphql)
             objects = WeaviateObjectCodec.objects(fromGraphQL: response.json as Any)
@@ -64,7 +67,8 @@ extension WeaviatePluginDriver {
             objects = try await client.objects(
                 collection: parsed.collection,
                 limit: parsed.limit,
-                offset: parsed.offset
+                offset: parsed.offset,
+                includeVector: wantsVector
             )
         }
         return render(objects: objects, collection: collection, columns: parsed.propertyNames, started: started)

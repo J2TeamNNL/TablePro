@@ -766,12 +766,15 @@ private extension QueryClassifier {
         return query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("mutation")
     }
 
+    /// The driver takes a body from the rest of the request line as well as from the lines below
+    /// it, so the gate has to read the same two places.
     static func weaviateConsoleBody(_ trimmed: String) -> String {
-        trimmed
-            .split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
-            .dropFirst()
-            .first
-            .map(String.init) ?? ""
+        let lines = trimmed.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+        let header = lines.first.map(String.init) ?? ""
+        let following = lines.count > 1 ? String(lines[1]) : ""
+        let parts = header.split(maxSplits: 2, omittingEmptySubsequences: true, whereSeparator: \.isWhitespace)
+        let inline = parts.count > 2 ? String(parts[2]) : ""
+        return inline.isEmpty ? following : inline
     }
 
     static func weaviateClassification(_ trimmed: String) -> QueryClassification {
