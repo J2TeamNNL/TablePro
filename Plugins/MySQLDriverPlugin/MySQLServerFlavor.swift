@@ -44,9 +44,6 @@ nonisolated internal enum MySQLServerFlavor: Equatable, Sendable {
         if let version = tidbVersion(fromBanner: banner) {
             return .tidb(version: version)
         }
-        if banner.range(of: "oceanbase", options: .caseInsensitive) != nil {
-            return .oceanbase(version: oceanbaseVersion(fromBanner: banner))
-        }
         if isDatabendBanner(banner) {
             return .databend
         }
@@ -68,15 +65,16 @@ nonisolated internal enum MySQLServerFlavor: Equatable, Sendable {
         banner.range(of: #"^\d+\.\d+\.\d+-v\d+\.\d+\.\d+-"#, options: .regularExpression) != nil
     }
 
-    static func oceanbaseVersion(fromBanner banner: String) -> MySQLEngineVersion? {
-        guard banner.range(of: "oceanbase", options: .caseInsensitive) != nil else { return nil }
-        if let marker = banner.range(of: "OceanBase_CE-v", options: .caseInsensitive)
-            ?? banner.range(of: "OceanBase-v", options: .caseInsensitive) {
-            return MySQLEngineVersion(parsing: banner[marker.upperBound...])
-        }
-        guard let name = banner.range(of: "OceanBase", options: .caseInsensitive) else { return nil }
-        var rest = banner[name.upperBound...]
-        rest = rest.drop(while: { $0.isLetter || $0 == "_" || $0 == "-" || $0.isWhitespace })
+    /// The MySQL handshake banner is OceanBase's `_display_mysql_version`, which is `5.7.25` on a
+    /// direct connection and `5.6.25` through OBProxy: it never names the engine. `@@version_comment`
+    /// is what does, as `OceanBase_CE 4.4.2.1 (r...)` or `OceanBase 3.1.3 (r...)`.
+    static func namesOceanBase(_ versionComment: String) -> Bool {
+        versionComment.range(of: "oceanbase", options: .caseInsensitive) != nil
+    }
+
+    static func oceanbaseVersion(fromVersionComment comment: String) -> MySQLEngineVersion? {
+        guard let name = comment.range(of: "OceanBase", options: .caseInsensitive) else { return nil }
+        let rest = comment[name.upperBound...].drop { $0.isLetter || $0 == "_" || $0 == "-" || $0.isWhitespace }
         return MySQLEngineVersion(parsing: rest)
     }
 
@@ -137,12 +135,21 @@ nonisolated internal enum MySQLServerFlavor: Equatable, Sendable {
         return mode == .readWrite ? "START TRANSACTION READ WRITE" : "START TRANSACTION"
     }
 
+    /// OceanBase enforces `ob_query_timeout` of its own, 10 seconds by default, and
+    /// `max_execution_time` only outranks it while it is above zero. Zero is the setting's "no
+    /// limit", which an export relies on, so it has to lift OceanBase's own limit as well. The
+    /// server clamps the value it accepts there and warns; this is what it clamps to.
+    static let oceanbaseUnlimitedQueryTimeoutMicroseconds = 3_216_672_000_000_000
+
     func queryTimeoutStatement(seconds: Int) -> String {
         switch self {
         case .mariadb:
             return "SET SESSION max_statement_time = \(seconds)"
         case .databend:
             return "SET max_execute_time_in_seconds = \(seconds)"
+        case .oceanbase where seconds <= 0:
+            return "SET SESSION max_execution_time = 0, ob_query_timeout = "
+                + "\(Self.oceanbaseUnlimitedQueryTimeoutMicroseconds)"
         case .mysql, .tidb, .oceanbase:
             return "SET SESSION max_execution_time = \(seconds * 1_000)"
         }
@@ -175,10 +182,6 @@ nonisolated internal enum MySQLFlavorResolution {
 
     static func needsDatabendProbe(banner: String?, variant: String?) -> Bool {
         variant == MySQLServerFlavor.databendVariant && !MySQLServerFlavor.fromBanner(banner).isDatabend
-    }
-
-    static func needsOceanBaseProbe(banner: String?, variant: String?) -> Bool {
-        variant == MySQLServerFlavor.oceanbaseVariant && !MySQLServerFlavor.fromBanner(banner).isOceanBase
     }
 
     static let tidbVersionProbe = "SELECT tidb_version()"

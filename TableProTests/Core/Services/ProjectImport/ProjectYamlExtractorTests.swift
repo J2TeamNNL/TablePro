@@ -278,6 +278,49 @@ struct DockerComposeExtractorTests {
         #expect(oceanbase?.parsedURL.database.isEmpty == true)
     }
 
+    @Test("An OceanBase tenant password names that tenant, and OBProxy is imported on its own port")
+    func testOceanBaseTenantAndProxy() {
+        let candidates = extract("""
+        services:
+          ob:
+            image: oceanbase/oceanbase-ce:4.4.2
+            environment:
+              OB_TENANT_NAME: app
+              OB_TENANT_PASSWORD: tenantpw
+              OB_SYS_PASSWORD: syspw
+              OB_DATABASE: shop
+            ports:
+              - "2881:2881"
+          proxy:
+            image: oceanbase/obproxy-ce:latest
+            ports:
+              - "2883:2883"
+        """)
+        let observer = candidates.first { $0.sourceKey == "services.ob" }
+        #expect(observer?.parsedURL.username == "root@app")
+        #expect(observer?.parsedURL.password == "tenantpw")
+        #expect(observer?.parsedURL.database == "shop")
+        let proxy = candidates.first { $0.sourceKey == "services.proxy" }
+        #expect(proxy?.parsedURL.type == .oceanbase)
+        #expect(proxy?.parsedURL.port == 2_883)
+    }
+
+    @Test("OceanBase images that do not serve SQL are not imported")
+    func testOceanBaseNonDatabaseImages() {
+        let candidates = extract("""
+        services:
+          ocp:
+            image: oceanbase/ocp-ce:latest
+            ports:
+              - "8080:8080"
+          agent:
+            image: oceanbase/obagent:latest
+          miniob:
+            image: oceanbase/miniob:latest
+        """)
+        #expect(candidates.isEmpty)
+    }
+
     @Test("Interpolation uses the adjacent dotenv file")
     func testInterpolationFromDotenv() {
         let contents = """

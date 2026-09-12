@@ -26,18 +26,18 @@ oceanbase://root%40sys:password@host:2881/database
 
 `oceanbase+ssh://` opens it through an SSH tunnel. See [Connection URL Reference](/connections/urls).
 
-## Hidden primary keys
+## Tables without a primary key
 
-A table with no explicit primary key still has one: `__pk_increment`, and on some clusters `__pk_cluster_column`. `SHOW FULL COLUMNS` and a plain `SELECT *` omit those names, so a grid save that matches on visible columns cannot find the row.
+OceanBase keeps a hidden `__pk_increment` column on a table declared without a primary key, but the catalog never reports it and a plain `SELECT *` never returns it, so TablePro edits such a table the way it edits one on [MySQL](/databases/mysql): the `UPDATE` or `DELETE` matches every column of the row, and a save that would touch more than one row is rolled back with a message that identical rows cannot be told apart.
 
-Opening the table projects the hidden key into the result. Stop and parameterized `UPDATE` / `DELETE` then match on it. The column is not editable.
+The connection type decides the sidebar, the type picker, EXPLAIN and Stop. A server reached through a connection saved as **MySQL** is treated as MySQL, because the MySQL handshake reports `5.7.25` and names no engine. Choose **OceanBase** for what this page describes.
 
-A connection saved as **MySQL** that reaches an OceanBase server takes the same path. The sidebar, type picker and EXPLAIN follow the connection type, so choose **OceanBase** for those.
+Opening an OceanBase connection reads `@@version_comment`. A server that does not name OceanBase there is refused, so a mistyped host or port fails at connect instead of part way through a session.
 
 ## What the MySQL driver does not copy
 
 - The sidebar hides `information_schema`, `mysql` and `oceanbase`. User databases such as `test` stay listed.
-- **Stop** sends `KILL QUERY` for `CONNECTION_ID()`, which is wider than the 32-bit handshake thread id.
+- **Stop** sends `KILL QUERY` for the session's own id, as on MySQL.
 - `EXPLAIN` is plain text. `EXPLAIN FORMAT=JSON` is not offered.
 - The type picker has MySQL's types without the Spatial group.
 - [Users & Roles](/features/users-roles) has no connection limit field.

@@ -17,9 +17,6 @@ struct MySQLServerFlavorTests {
         ("11.4.2-MariaDB-log", .mariadb),
         ("8.0.11-TiDB-v7.5.1", .tidb(version: MySQLEngineVersion(major: 7, minor: 5, patch: 1))),
         ("8.0.11-TiDB-v8.5.1", .tidb(version: MySQLEngineVersion(major: 8, minor: 5, patch: 1))),
-        ("5.7.25-OceanBase-v4.2.1", .oceanbase(version: MySQLEngineVersion(major: 4, minor: 2, patch: 1))),
-        ("5.7.25 OceanBase 3.1.3", .oceanbase(version: MySQLEngineVersion(major: 3, minor: 1, patch: 3))),
-        ("5.7.25-OceanBase_CE-v4.3.5", .oceanbase(version: MySQLEngineVersion(major: 4, minor: 3, patch: 5))),
         (databendBanner, .databend)
     ])
     func bannerNamesTheEngine(banner: String, expected: MySQLServerFlavor) {
@@ -38,24 +35,39 @@ struct MySQLServerFlavorTests {
         #expect(MySQLServerFlavor.tidbVersion(fromReleaseInfo: "8.0.36") == nil)
     }
 
-    @Test("A TiDB, Databend or OceanBase connection whose banner does not say so is confirmed with a query")
+    @Test("A TiDB or Databend connection whose banner does not say so is confirmed with a query")
     func probesOnlyWhenTheBannerIsSilent() {
         #expect(MySQLFlavorResolution.needsTiDBVersionProbe(banner: "8.0.35", variant: "TiDB"))
         #expect(!MySQLFlavorResolution.needsTiDBVersionProbe(banner: "8.0.11-TiDB-v7.5.1", variant: "TiDB"))
         #expect(!MySQLFlavorResolution.needsTiDBVersionProbe(banner: "8.0.35", variant: nil))
         #expect(MySQLFlavorResolution.needsDatabendProbe(banner: "8.0.36", variant: "Databend"))
         #expect(!MySQLFlavorResolution.needsDatabendProbe(banner: Self.databendBanner, variant: "Databend"))
-        #expect(MySQLFlavorResolution.needsOceanBaseProbe(banner: "5.7.25", variant: "OceanBase"))
-        #expect(!MySQLFlavorResolution.needsOceanBaseProbe(banner: "5.7.25-OceanBase-v4.2.1", variant: "OceanBase"))
-        #expect(!MySQLFlavorResolution.needsOceanBaseProbe(banner: "5.7.25-OceanBase-v4.2.1", variant: nil))
     }
 
-    @Test("A MySQL connection whose banner names OceanBase is OceanBase")
-    func mysqlOpenedOceanBaseIsOceanBase() {
-        let flavor = MySQLServerFlavor.fromBanner("5.7.25-OceanBase-v4.2.1")
-        #expect(flavor.isOceanBase)
-        #expect(flavor.oceanbaseVersion == MySQLEngineVersion(major: 4, minor: 2, patch: 1))
-        #expect(!MySQLServerFlavor.fromBanner("5.7.25").isOceanBase)
+    @Test("OceanBase's handshake banner is a plain MySQL version, so no banner reads as OceanBase")
+    func oceanbaseBannerIsPlainMySQL() {
+        #expect(MySQLServerFlavor.fromBanner("5.7.25") == .mysql)
+        #expect(MySQLServerFlavor.fromBanner("5.6.25") == .mysql)
+    }
+
+    @Test("The version comment names OceanBase and carries its version", arguments: [
+        ("OceanBase_CE 4.4.2.1 (r101000022026050611-8cf64ed5) (Built May  6 2026 12:29:53)",
+         MySQLEngineVersion(major: 4, minor: 4, patch: 2)),
+        ("OceanBase 4.2.1.2 (r102000042023121309-6b1e1a4b)", MySQLEngineVersion(major: 4, minor: 2, patch: 1)),
+        ("OceanBase 3.1.3 (r10200392021123009-9a4f2a41)", MySQLEngineVersion(major: 3, minor: 1, patch: 3)),
+        ("OceanBase_CE-v4.3.5", MySQLEngineVersion(major: 4, minor: 3, patch: 5))
+    ])
+    func oceanbaseVersionComment(comment: String, expected: MySQLEngineVersion) {
+        #expect(MySQLServerFlavor.namesOceanBase(comment))
+        #expect(MySQLServerFlavor.oceanbaseVersion(fromVersionComment: comment) == expected)
+    }
+
+    @Test("A version comment from another engine does not name OceanBase")
+    func otherEnginesDoNotNameOceanBase() {
+        #expect(!MySQLServerFlavor.namesOceanBase("MySQL Community Server - GPL"))
+        #expect(!MySQLServerFlavor.namesOceanBase("mariadb.org binary distribution"))
+        #expect(!MySQLServerFlavor.namesOceanBase(""))
+        #expect(MySQLServerFlavor.oceanbaseVersion(fromVersionComment: "MySQL Community Server - GPL") == nil)
     }
 
     @Test("System databases are the exact spellings each engine reports")
@@ -127,6 +139,7 @@ struct MySQLServerFlavorTests {
         (.mysql, 30, "SET SESSION max_execution_time = 30000"),
         (.tidb(version: nil), 30, "SET SESSION max_execution_time = 30000"),
         (.oceanbase(version: nil), 30, "SET SESSION max_execution_time = 30000"),
+        (.oceanbase(version: nil), 0, "SET SESSION max_execution_time = 0, ob_query_timeout = 3216672000000000"),
         (.databend, 30, "SET max_execute_time_in_seconds = 30")
     ])
     func queryTimeout(flavor: MySQLServerFlavor, seconds: Int, expected: String) {
@@ -143,13 +156,10 @@ struct MySQLServerFlavorTests {
         #expect(!MySQLServerFlavor.databend.isInterruptedByKill(errno: 1_105, message: "SyntaxException. Code: 1005"))
     }
 
-    @Test("TiDB kills by its 64-bit connection id, OceanBase by CONNECTION_ID, Databend by its session id")
+    @Test("TiDB kills by its 64-bit connection id and Databend by its session id")
     func killStatements() {
         let tidb = MySQLServerFlavor.tidb(version: nil).killTarget(connectionIdentifier: "2199023255571")
         #expect(tidb.statement(threadId: 19) == "KILL TIDB QUERY 2199023255571")
-
-        let oceanbase = MySQLServerFlavor.oceanbase(version: nil).killTarget(connectionIdentifier: "3221490143")
-        #expect(oceanbase.statement(threadId: 19) == "KILL QUERY 3221490143")
 
         let databend = MySQLServerFlavor.databend.killTarget(connectionIdentifier: "1f7e5199-119f-484a-aaff-e8d5143a7979")
         #expect(databend.statement(threadId: 89) == "KILL QUERY '1f7e5199-119f-484a-aaff-e8d5143a7979'")
@@ -159,11 +169,18 @@ struct MySQLServerFlavorTests {
         #expect(mysql.statement(threadId: 0) == nil)
     }
 
+    @Test("OceanBase kills by the handshake thread id, which is its own session id")
+    func oceanbaseKillsByThreadId() {
+        let flavor = MySQLServerFlavor.oceanbase(version: nil)
+        #expect(flavor.killTarget(connectionIdentifier: "3221490143") == .threadId)
+        #expect(flavor.killTarget(connectionIdentifier: nil) == .threadId)
+        #expect(flavor.killTarget(connectionIdentifier: nil).statement(threadId: 3_221_490_143) == "KILL QUERY 3221490143")
+    }
+
     @Test("A connection id that cannot be read falls back to the handshake thread id")
     func killFallsBackToThreadId() {
         #expect(MySQLServerFlavor.tidb(version: nil).killTarget(connectionIdentifier: nil) == .threadId)
         #expect(MySQLServerFlavor.tidb(version: nil).killTarget(connectionIdentifier: "not-a-number") == .threadId)
-        #expect(MySQLServerFlavor.oceanbase(version: nil).killTarget(connectionIdentifier: nil) == .threadId)
         #expect(MySQLServerFlavor.databend.killTarget(connectionIdentifier: "") == .threadId)
     }
 
@@ -185,11 +202,11 @@ struct MySQLServerFlavorTests {
         #expect(!MySQLServerVersion.hasGenerationExpression(banner: Self.databendBanner, flavor: .databend))
         #expect(MySQLServerVersion.hasGenerationExpression(banner: "8.0.11-TiDB-v7.5.1", flavor: .tidb(version: nil)))
         #expect(MySQLServerVersion.hasGenerationExpression(
-            banner: "5.7.25-OceanBase-v4.2.1",
+            banner: "5.7.25",
             flavor: .oceanbase(version: MySQLEngineVersion(major: 4, minor: 2, patch: 1))
         ))
         #expect(!MySQLServerVersion.hasGenerationExpression(
-            banner: "5.7.25 OceanBase 3.1.3",
+            banner: "5.7.25",
             flavor: .oceanbase(version: MySQLEngineVersion(major: 3, minor: 1, patch: 3))
         ))
         #expect(!MySQLServerVersion.hasGenerationExpression(
@@ -197,11 +214,11 @@ struct MySQLServerFlavorTests {
             flavor: .oceanbase(version: nil)
         ))
         #expect(MySQLServerVersion.hasCheckConstraints(
-            banner: "5.7.25-OceanBase-v4.2.1",
+            banner: "5.7.25",
             flavor: .oceanbase(version: MySQLEngineVersion(major: 4, minor: 0, patch: 0))
         ))
         #expect(!MySQLServerVersion.hasCheckConstraints(
-            banner: "5.7.25 OceanBase 3.1.3",
+            banner: "5.7.25",
             flavor: .oceanbase(version: MySQLEngineVersion(major: 3, minor: 1, patch: 3))
         ))
     }

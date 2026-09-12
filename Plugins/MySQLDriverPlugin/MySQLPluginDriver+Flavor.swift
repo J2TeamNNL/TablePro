@@ -10,6 +10,7 @@ internal struct MySQLFlavorMismatchError: Error, Equatable {
     enum Kind: Equatable {
         case databendNeedsItsOwnType
         case notDatabend
+        case notOceanBase
     }
 
     let kind: Kind
@@ -22,6 +23,8 @@ extension MySQLFlavorMismatchError: PluginDriverError {
             return String(localized: "This server is Databend. Edit the connection and choose Databend as its type.")
         case .notDatabend:
             return String(localized: "This server did not identify as Databend. Check the host and port of its MySQL handler.")
+        case .notOceanBase:
+            return String(localized: "This server did not identify as OceanBase. Check the host and port of its MySQL mode tenant.")
         }
     }
 }
@@ -56,18 +59,11 @@ extension MySQLPluginDriver {
         }
 
         if variant == MySQLServerFlavor.oceanbaseVariant {
-            if MySQLFlavorResolution.needsOceanBaseProbe(banner: banner, variant: variant) {
-                if let comment = await firstValue(of: MySQLFlavorResolution.oceanbaseProbe, on: connection),
-                   let version = MySQLServerFlavor.oceanbaseVersion(fromBanner: comment) {
-                    return .oceanbase(version: version)
-                }
-                return .oceanbase(version: nil)
+            guard let comment = await firstValue(of: MySQLFlavorResolution.oceanbaseProbe, on: connection),
+                  MySQLServerFlavor.namesOceanBase(comment) else {
+                throw MySQLFlavorMismatchError(kind: .notOceanBase)
             }
-            return bannerFlavor.isOceanBase ? bannerFlavor : .oceanbase(version: nil)
-        }
-
-        if bannerFlavor.isOceanBase {
-            return bannerFlavor
+            return .oceanbase(version: MySQLServerFlavor.oceanbaseVersion(fromVersionComment: comment))
         }
 
         guard MySQLFlavorResolution.needsTiDBVersionProbe(banner: banner, variant: variant) else {
@@ -81,7 +77,7 @@ extension MySQLPluginDriver {
     }
 
     func killTarget(for flavor: MySQLServerFlavor, on connection: MariaDBPluginConnection) async -> MySQLKillTarget {
-        guard flavor.isTiDB || flavor.isDatabend || flavor.isOceanBase else { return .threadId }
+        guard flavor.isTiDB || flavor.isDatabend else { return .threadId }
         let identifier = await firstValue(of: MySQLFlavorResolution.connectionIdentifierProbe, on: connection)
         return flavor.killTarget(connectionIdentifier: identifier)
     }

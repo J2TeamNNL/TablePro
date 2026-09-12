@@ -4,7 +4,6 @@ internal enum MySQLKillTarget: Equatable, Sendable {
     case threadId
     case tidbConnection(UInt64)
     case databendSession(String)
-    case oceanbaseConnection(UInt64)
 
     func statement(threadId: UInt) -> String? {
         switch self {
@@ -14,8 +13,6 @@ internal enum MySQLKillTarget: Equatable, Sendable {
             return "KILL TIDB QUERY \(id)"
         case .databendSession(let session):
             return "KILL QUERY '\(mysqlEscapeStringLiteral(session))'"
-        case .oceanbaseConnection(let id):
-            return "KILL QUERY \(id)"
         }
     }
 }
@@ -29,10 +26,7 @@ internal extension MySQLServerFlavor {
         case .databend:
             guard let session = connectionIdentifier, !session.isEmpty else { return .threadId }
             return .databendSession(session)
-        case .oceanbase:
-            guard let id = connectionIdentifier.flatMap(UInt64.init) else { return .threadId }
-            return .oceanbaseConnection(id)
-        case .mysql, .mariadb:
+        case .mysql, .mariadb, .oceanbase:
             return .threadId
         }
     }

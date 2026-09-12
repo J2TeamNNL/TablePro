@@ -143,9 +143,10 @@ struct MySQLVariantSupportTests {
         #expect(ColumnDefaultVocabulary.options(for: .tidb) == ColumnDefaultVocabulary.options(for: .mysql))
     }
 
-    @Test("OceanBase treats the hidden primary key columns as immutable")
-    func oceanbaseImmutableHiddenKeys() {
-        #expect(PluginManager.shared.immutableColumns(for: .oceanbase) == ["__pk_increment", "__pk_cluster_column"])
+    @Test("No MySQL variant marks a column immutable")
+    func variantsHaveNoImmutableColumns() {
+        #expect(PluginManager.shared.immutableColumns(for: .oceanbase).isEmpty)
+        #expect(PluginManager.shared.immutableColumns(for: .tidb).isEmpty)
         #expect(PluginManager.shared.immutableColumns(for: .mysql).isEmpty)
     }
 

@@ -70,6 +70,16 @@ enum DockerComposeExtractor {
         "datafuselabs/databend-query", "databendlabs/databend-query",
     ]
 
+    /// The `oceanbase` organization also publishes OCP, obagent, the config server and miniob, none of
+    /// which speak the MySQL protocol, so the repository is matched rather than the whole image name.
+    /// OBProxy serves SQL on 2883, the observer on 2881.
+    private static let oceanbaseRepositories: [String: Int] = [
+        "oceanbase/oceanbase-ce": 2_881,
+        "oceanbase/oceanbase": 2_881,
+        "oceanbase/obproxy-ce": 2_883,
+        "oceanbase/obproxy": 2_883,
+    ]
+
     static func databaseKind(for image: String) -> ServiceDatabase? {
         let name = image.lowercased()
         let repositoryPath = repositoryComponents(of: name)
@@ -79,8 +89,8 @@ enum DockerComposeExtractor {
         if databendRepositories.contains(repositoryPath.suffix(2).joined(separator: "/")) {
             return ServiceDatabase(type: .databend, defaultPort: 3_307)
         }
-        if name.contains("oceanbase") {
-            return ServiceDatabase(type: .oceanbase, defaultPort: 2_881)
+        if let port = oceanbaseRepositories[repositoryPath.suffix(2).joined(separator: "/")] {
+            return ServiceDatabase(type: .oceanbase, defaultPort: port)
         }
         if name.contains("postgres"), !name.contains("postgrest") {
             return ServiceDatabase(type: .postgresql, defaultPort: 5_432)
@@ -183,9 +193,12 @@ enum DockerComposeExtractor {
             fields.password = variables["QUERY_DEFAULT_PASSWORD"] ?? ""
             fields.database = "default"
         case .oceanbase:
-            fields.username = "root@sys"
-            fields.password = ""
-            fields.database = ""
+            let tenant = variables["OB_TENANT_NAME"] ?? (variables["OB_TENANT_PASSWORD"] != nil ? "test" : "sys")
+            fields.username = "root@\(tenant)"
+            fields.password = tenant == "sys"
+                ? variables["OB_SYS_PASSWORD"] ?? ""
+                : variables["OB_TENANT_PASSWORD"] ?? ""
+            fields.database = variables["OB_DATABASE"] ?? ""
         case .mariadb, .mysql:
             let prefix = variables["MARIADB_PASSWORD"] != nil || variables["MARIADB_DATABASE"] != nil
                 ? "MARIADB"
