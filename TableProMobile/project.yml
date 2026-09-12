@@ -64,7 +64,9 @@ targets:
       - ../Plugins/MySQLDriverPlugin/MySQLLatin1.swift
       - ../Plugins/MySQLDriverPlugin/MySQLServerFlavor.swift
       # Foreign key catalog read the iOS PostgreSQL driver shares with the macOS plugin.
+      - ../Plugins/PostgreSQLDriverPlugin/PostgreSQLCapabilities.swift
       - ../Plugins/PostgreSQLDriverPlugin/PostgreSQLCatalogForeignKeys.swift
+      - ../Plugins/PostgreSQLDriverPlugin/PostgreSQLObjectQueries.swift
       # libpq COPY handling the iOS PostgreSQL driver shares with the macOS plugin.
       - ../Plugins/PostgreSQLDriverPlugin/LibPQPendingResultDrain.swift
       - ../Plugins/PostgreSQLDriverPlugin/LibPQCopyState.swift

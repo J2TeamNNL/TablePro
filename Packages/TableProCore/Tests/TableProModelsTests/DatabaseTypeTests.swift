@@ -61,7 +61,7 @@ struct DatabaseTypeTests {
 
     @Test("allKnownTypes contains all expected types")
     func allKnownTypesComplete() {
-        #expect(DatabaseType.allKnownTypes.count == 29)
+        #expect(DatabaseType.allKnownTypes.count == 30)
         #expect(DatabaseType.allKnownTypes.contains(.mysql))
         #expect(DatabaseType.allKnownTypes.contains(.tidb))
         #expect(DatabaseType.allKnownTypes.contains(.databend))
