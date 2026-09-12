@@ -28,7 +28,7 @@ oceanbase://root%40sys:password@host:2881/database
 
 ## Tables without a primary key
 
-OceanBase keeps a hidden `__pk_increment` column on a table declared without a primary key, but the catalog never reports it and a plain `SELECT *` never returns it, so TablePro edits such a table the way it edits one on [MySQL](/databases/mysql): the `UPDATE` or `DELETE` matches every column of the row, and a save that would touch more than one row is rolled back with a message that identical rows cannot be told apart.
+OceanBase keeps a hidden `__pk_increment` column on a table declared without a primary key, but the catalog never reports it and a plain `SELECT *` never returns it, so TablePro edits such a table the way it edits one on [MySQL](/databases/mysql): the `UPDATE` or `DELETE` matches every column of the row, and a save that would touch more than one row is rolled back with a message that identical rows cannot be told apart. A `FLOAT`, `DOUBLE` or `JSON` column is compared through `CONCAT()`, because the text those types read back as does not compare equal to the value it came from.
 
 The connection type decides the sidebar, the type picker, EXPLAIN and Stop. A server reached through a connection saved as **MySQL** is treated as MySQL, because the MySQL handshake reports `5.7.25` and names no engine. Choose **OceanBase** for what this page describes.
 

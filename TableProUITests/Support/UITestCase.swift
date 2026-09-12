@@ -182,9 +182,9 @@ internal class UITestCase: XCTestCase {
         waitForPredicate(timeout: timeout) { element.exists && element.isHittable }
     }
 
-    /// The settings window is 720x500, and the Editor pane is taller than that once the font
-    /// pickers sit above the SQL toggles. XCUITest reports the Vim switch as existing and not
-    /// hittable, because it is below the fold; a swipe is what brings it into the window.
+    /// The settings window is 720x500, and the Editor pane's SQL toggles run past that. XCUITest
+    /// reports the Vim switch as existing and not hittable, because it is below the fold; a swipe
+    /// is what brings it into the window.
     internal func waitUntilHittableByScrolling(
         _ element: XCUIElement,
         in container: XCUIElement,
