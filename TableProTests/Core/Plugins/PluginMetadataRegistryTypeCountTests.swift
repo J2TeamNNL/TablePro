@@ -43,10 +43,10 @@ struct PluginMetadataRegistryTypeCountTests {
         return Set(curated + registry)
     }
 
-    @Test("The app ships 35 database types before any plugin loads")
+    @Test("The app ships 36 database types before any plugin loads")
     func builtInDefaultsCoverTwentyNineTypes() {
         let ids = Self.builtInTypeIds()
-        #expect(ids.count == 35)
+        #expect(ids.count == 36)
         #expect(ids == Self.expectedTypeIds)
     }
 
