@@ -168,14 +168,12 @@ struct DataGridBodyChromeTests {
         #expect(!grid.coordinator.presentsColumn(atTableColumnIndex: rowNumber))
     }
 
-    /// The colour has to come from `tableView.gridColor`, which is the dynamic catalog colour AppKit
-    /// was filling with, so an appearance change carries the separator with it and there is no
-    /// second spelling to keep in sync. A hardcoded colour would pass a geometry test and be wrong
-    /// in dark mode.
-    @Test("The separator is drawn in the table view's own grid colour")
-    func separatorUsesTheTableViewGridColor() throws {
+    /// The colour has to come from the theme's grid line slot, which is what the rest of the grid
+    /// paints with. `tableView.gridColor` is not consulted: AppKit's grid lines are off, and a
+    /// hardcoded grey would pass a geometry test and be wrong in dark mode.
+    @Test("The separator is drawn in the theme's grid line colour")
+    func separatorUsesTheThemeGridLineColor() throws {
         let grid = makeGrid(columns: ["id", "name"])
-        grid.tableView.gridColor = .systemRed
         let rowView = try #require(grid.tableView.rowView(atRow: 0, makeIfNecessary: true) as? DataGridRowView)
         rowView.layoutSubtreeIfNeeded()
 
@@ -189,13 +187,14 @@ struct DataGridBodyChromeTests {
             x: Int((boundary - 0.5) * scale),
             y: Int(rowView.bounds.height * scale / 2)
         )?.usingColorSpace(.deviceRGB)
-        let expected = NSColor.systemRed.usingColorSpace(.deviceRGB)
+        let expected = ThemeEngine.shared.palette[.gridLine].usingColorSpace(.deviceRGB)
 
         let sampledRed = try #require(sampled?.redComponent)
         let sampledGreen = try #require(sampled?.greenComponent)
         let expectedRed = try #require(expected?.redComponent)
+        let expectedGreen = try #require(expected?.greenComponent)
         #expect(abs(sampledRed - expectedRed) < 0.15)
-        #expect(sampledRed > sampledGreen + 0.3, "the separator has to carry the grid colour, not a fixed grey")
+        #expect(abs(sampledGreen - expectedGreen) < 0.15)
     }
 
     /// `NSTableView` continues the alternation past the last row one row height at a time, numbered
