@@ -95,8 +95,7 @@ final class CockroachPluginDriver: LibPQBackedDriver, @unchecked Sendable {
     }
 
     func fetchIndexes(table: String, schema: String?) async throws -> [PluginIndexInfo] {
-        let quotedTable = quoteIdentifier(table)
-        let query = "SHOW INDEXES FROM \(quoteIdentifier(core.currentSchema)).\(quotedTable)"
+        let query = CockroachRelationSQL.showIndexes(table: table, schema: schema ?? core.currentSchema)
         let result = try await execute(query: query)
 
         guard let columnIndex = result.columns.firstIndex(of: "column_name"),
@@ -156,8 +155,9 @@ final class CockroachPluginDriver: LibPQBackedDriver, @unchecked Sendable {
     }
 
     func fetchTableDDL(table: String, schema: String?) async throws -> String {
-        let quotedTable = quoteIdentifier(table)
-        let result = try await execute(query: "SHOW CREATE TABLE \(quoteIdentifier(core.currentSchema)).\(quotedTable)")
+        let result = try await execute(
+            query: CockroachRelationSQL.showCreateTable(table: table, schema: schema ?? core.currentSchema)
+        )
         guard let ddl = Self.createStatement(from: result) else {
             throw LibPQPluginError(message: "Failed to fetch DDL for table '\(table)'", sqlState: nil, detail: nil)
         }
@@ -165,8 +165,9 @@ final class CockroachPluginDriver: LibPQBackedDriver, @unchecked Sendable {
     }
 
     func fetchViewDefinition(view: String, schema: String?) async throws -> String {
-        let quotedView = quoteIdentifier(view)
-        let result = try await execute(query: "SHOW CREATE VIEW \(quoteIdentifier(core.currentSchema)).\(quotedView)")
+        let result = try await execute(
+            query: CockroachRelationSQL.showCreateView(view: view, schema: schema ?? core.currentSchema)
+        )
         guard let ddl = Self.createStatement(from: result) else {
             throw LibPQPluginError(message: "Failed to fetch definition for view '\(view)'", sqlState: nil, detail: nil)
         }
