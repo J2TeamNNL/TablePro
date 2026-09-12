@@ -119,6 +119,9 @@ final class LibPQPluginConnection: @unchecked Sendable {
     private var _isConnectCancelled: Bool = false
     private var _postgisOidMap: [UInt32: PostGISType] = [:]
     private var _catalogTypeNames: [UInt32: String] = [:]
+    private var _lastTransactionState: LibPQTransactionState = .idle
+    private var _hasLostConnection = false
+    private var serverMessages: Unmanaged<LibPQServerMessageSink>?
     private var _standardConformingStrings = true
 
     var isConnected: Bool {
@@ -166,11 +169,14 @@ final class LibPQPluginConnection: @unchecked Sendable {
 
     deinit {
         let handle = conn
+        let sink = serverMessages
         let cleanupQueue = queue
         conn = nil
+        serverMessages = nil
         if let handle = handle {
             cleanupQueue.async {
                 PQfinish(handle)
+                sink?.release()
             }
         }
     }
@@ -220,9 +226,13 @@ final class LibPQPluginConnection: @unchecked Sendable {
 
         try pollUntilConnected(connection, reportingStage: report)
         configureEstablishedConnection(connection)
+        let sink = LibPQServerMessageSink.install(on: connection)
 
         stateLock.lock()
         conn = connection
+        serverMessages = sink
+        _lastTransactionState = .idle
+        _hasLostConnection = false
         _isConnected = true
         stateLock.unlock()
         adopted = true
@@ -396,7 +406,9 @@ final class LibPQPluginConnection: @unchecked Sendable {
         _isConnected = false
         _isConnectCancelled = true
         let handle = conn
+        let sink = serverMessages
         conn = nil
+        serverMessages = nil
         stateLock.unlock()
 
         _cachedServerVersion = nil
@@ -405,6 +417,7 @@ final class LibPQPluginConnection: @unchecked Sendable {
         if let handle {
             queue.async {
                 PQfinish(handle)
+                sink?.release()
             }
         }
     }
@@ -603,14 +616,17 @@ final class LibPQPluginConnection: @unchecked Sendable {
         defer { refreshStandardConformingStrings(from: conn) }
 
         let cancelsOutput = cancelsAbandonedOutput(conn)
+        if let ended = sessionEndedBeforeSending(conn) { throw ended }
+
         let localQuery = String(query)
         let result: OpaquePointer? = localQuery.withCString { queryPtr in
             PQexec(conn, queryPtr)
         }
 
         guard let result = result else {
-            throw getError(from: conn)
+            throw lostConnection(getError(from: conn), on: conn, sent: true)
         }
+        recordTransactionState(of: conn)
 
         let status = PQresultStatus(result)
 
@@ -642,7 +658,7 @@ final class LibPQPluginConnection: @unchecked Sendable {
             let error = getResultError(from: result)
             PQclear(result)
             if cancellationGate.isCancelled(generation) { throw CancellationError() }
-            throw error
+            throw lostConnection(error, on: conn, sent: true)
         }
     }
 
@@ -677,12 +693,15 @@ final class LibPQPluginConnection: @unchecked Sendable {
         let cancelsOutput = cancelsAbandonedOutput(conn)
         let suppressCancel = !cancelsOutput
         _ = finishPendingResults(conn, cancellingOutput: cancelsOutput)
+        if let ended = sessionEndedBeforeSending(conn) { throw ended }
 
         let localQuery = String(query)
         let sendOk = localQuery.withCString { queryPtr in
             PQsendQuery(conn, queryPtr)
         }
-        guard sendOk != 0 else { throw getError(from: conn) }
+        guard sendOk != 0 else {
+            throw lostConnection(getError(from: conn), on: conn, sent: false)
+        }
 
         guard PQsetSingleRowMode(conn) != 0 else {
             _ = cancelAndDrain(conn, suppressCancel: suppressCancel)
@@ -697,6 +716,7 @@ final class LibPQPluginConnection: @unchecked Sendable {
         var truncated = false
         var pendingError: Error?
         var firstRowTime: TimeInterval?
+        var failedStatement: LibPQPluginError?
 
         while let result = PQgetResult(conn) {
             let status = PQresultStatus(result)
@@ -749,7 +769,7 @@ final class LibPQPluginConnection: @unchecked Sendable {
                 break
             }
 
-            pendingError = getResultError(from: result)
+            failedStatement = getResultError(from: result)
             PQclear(result)
             break
         }
@@ -757,7 +777,12 @@ final class LibPQPluginConnection: @unchecked Sendable {
         let outcome = truncated
             ? cancelAndDrain(conn, suppressCancel: suppressCancel)
             : finishPendingResults(conn, cancellingOutput: cancelsOutput)
+        recordTransactionState(of: conn)
 
+        if let failedStatement {
+            if cancellationGate.isCancelled(generation) { throw CancellationError() }
+            throw lostConnection(failedStatement, on: conn, sent: true)
+        }
         if let pendingError {
             if cancellationGate.isCancelled(generation) { throw CancellationError() }
             throw pendingError
@@ -840,6 +865,8 @@ final class LibPQPluginConnection: @unchecked Sendable {
             }
         }
 
+        if let ended = sessionEndedBeforeSending(conn) { throw ended }
+
         let localQuery = String(query)
         let result: OpaquePointer? = localQuery.withCString { queryPtr in
             paramLengths.withUnsafeBufferPointer { lengthsBuf in
@@ -859,8 +886,9 @@ final class LibPQPluginConnection: @unchecked Sendable {
         }
 
         guard let result = result else {
-            throw getError(from: conn)
+            throw lostConnection(getError(from: conn), on: conn, sent: true)
         }
+        recordTransactionState(of: conn)
 
         let status = PQresultStatus(result)
 
@@ -892,7 +920,7 @@ final class LibPQPluginConnection: @unchecked Sendable {
             let error = getResultError(from: result)
             PQclear(result)
             if cancellationGate.isCancelled(generation) { throw CancellationError() }
-            throw error
+            throw lostConnection(error, on: conn, sent: true)
         }
     }
 
@@ -935,6 +963,7 @@ final class LibPQPluginConnection: @unchecked Sendable {
         logger.fault(
             "libpq stayed in \(String(describing: stuck.direction), privacy: .public); dropping the connection"
         )
+        stateLock.withLock { _hasLostConnection = true }
         disconnect()
         return outcome
     }
@@ -986,13 +1015,17 @@ final class LibPQPluginConnection: @unchecked Sendable {
                 let cancelsOutput = cancelsAbandonedOutput(conn)
                 let suppressCancel = !cancelsOutput
                 _ = finishPendingResults(conn, cancellingOutput: cancelsOutput)
+                if let ended = sessionEndedBeforeSending(conn) {
+                    continuation.finish(throwing: ended)
+                    return
+                }
 
                 let sendOk = queryToRun.withCString { queryPtr in
                     PQsendQuery(conn, queryPtr)
                 }
 
                 if sendOk == 0 {
-                    continuation.finish(throwing: getError(from: conn))
+                    continuation.finish(throwing: lostConnection(getError(from: conn), on: conn, sent: false))
                     return
                 }
 
@@ -1085,11 +1118,12 @@ final class LibPQPluginConnection: @unchecked Sendable {
                         let error = getResultError(from: result)
                         PQclear(result)
                         _ = finishPendingResults(conn, cancellingOutput: cancelsOutput)
+                        recordTransactionState(of: conn)
                         if cancellationGate.isCancelled(generation) {
                             continuation.finish(throwing: CancellationError())
                             return
                         }
-                        continuation.finish(throwing: error)
+                        continuation.finish(throwing: lostConnection(error, on: conn, sent: true))
                         return
                     }
                 }
@@ -1099,6 +1133,7 @@ final class LibPQPluginConnection: @unchecked Sendable {
                 }
 
                 let outcome = finishPendingResults(conn, cancellingOutput: cancelsOutput)
+                recordTransactionState(of: conn)
                 /// The header went out with the first row, so this stream keeps what it said;
                 /// the lookup is for the results that follow.
                 let missing = unresolvedOids(in: columnOids)
@@ -1372,6 +1407,70 @@ final class LibPQPluginConnection: @unchecked Sendable {
     }
 
     // MARK: - Private Helpers
+
+    var hasLostConnection: Bool {
+        stateLock.withLock { _hasLostConnection }
+    }
+
+    private var lastTransactionState: LibPQTransactionState {
+        stateLock.withLock { _lastTransactionState }
+    }
+
+    private var sessionEndingMessage: LibPQPluginError? {
+        stateLock.withLock { serverMessages }?.takeUnretainedValue().sessionEndingMessage
+    }
+
+    private func recordTransactionState(of conn: OpaquePointer) {
+        guard PQstatus(conn) == CONNECTION_OK else { return }
+        let state = Self.transactionState(PQtransactionStatus(conn))
+        stateLock.withLock { _lastTransactionState = state }
+    }
+
+    private func sessionEndedBeforeSending(_ conn: OpaquePointer) -> LibPQConnectionLostError? {
+        recordTransactionState(of: conn)
+        /// All three calls earn their place, measured against a terminated backend on 9.1.24 and
+        /// 17.11. One `PQconsumeInput` leaves the status `CONNECTION_OK`, so a single read never
+        /// sees the loss; the second one turns it `CONNECTION_BAD`. `PQisBusy` never moves the
+        /// status, but it is what parses the buffered message: without it every closed-session
+        /// case loses the server's FATAL and its SQLSTATE and reports libpq's own "server closed
+        /// the connection unexpectedly" instead.
+        if PQstatus(conn) == CONNECTION_OK {
+            _ = PQconsumeInput(conn)
+            _ = PQisBusy(conn)
+            _ = PQconsumeInput(conn)
+        }
+        guard PQstatus(conn) == CONNECTION_BAD else {
+            stateLock.withLock { serverMessages }?.takeUnretainedValue().clearIfHealthy()
+            return nil
+        }
+        let serverMessage = sessionEndingMessage
+        let loss = LibPQConnectionLoss(sent: false, recordedState: lastTransactionState)
+        stateLock.withLock { _hasLostConnection = true }
+        logger.info("Server closed the session before a statement was sent")
+        return LibPQConnectionLostError(loss: loss, underlying: serverMessage ?? getError(from: conn))
+    }
+
+    private func lostConnection(_ error: LibPQPluginError, on conn: OpaquePointer, sent: Bool) -> Error {
+        guard PQstatus(conn) == CONNECTION_BAD else { return error }
+        let loss = LibPQConnectionLoss(sent: sent, recordedState: lastTransactionState)
+        stateLock.withLock {
+            if sent { _lastTransactionState = .unknown }
+            _hasLostConnection = true
+        }
+        let phase = sent ? "while a statement was running" : "while sending a statement"
+        logger.warning("Connection lost \(phase, privacy: .public)")
+        return LibPQConnectionLostError(loss: loss, underlying: sessionEndingMessage ?? error)
+    }
+
+    private static func transactionState(_ status: PGTransactionStatusType) -> LibPQTransactionState {
+        switch status {
+        case PQTRANS_IDLE: return .idle
+        case PQTRANS_ACTIVE: return .active
+        case PQTRANS_INTRANS: return .inTransaction
+        case PQTRANS_INERROR: return .inError
+        default: return .unknown
+        }
+    }
 
     private func getError(from conn: OpaquePointer) -> LibPQPluginError {
         var message = "Unknown error"
