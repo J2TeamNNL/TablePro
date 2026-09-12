@@ -50,9 +50,9 @@ Filter values are typed from the collection schema: an `int` property filters as
 
 | Operator | What Weaviate runs |
 |----------|--------------------|
-| **=**, **!=** | `Equal`, `NotEqual` |
-| **>**, **>=**, **<**, **<=** | Numbers and dates only |
-| **CONTAINS**, **NOT CONTAINS**, **STARTS WITH**, **ENDS WITH** | `Like` with `*` wildcards, text properties only |
+| `=`, `!=` | `Equal`, `NotEqual` |
+| `>`, `>=`, `<`, `<=` | Numbers and dates only |
+| **CONTAINS**, **NOT CONTAINS**, **STARTS WITH**, **ENDS WITH** | `Like` with asterisk wildcards, text properties only |
 | **IN**, **NOT IN** | `ContainsAny`, `ContainsNone` over a comma-separated list |
 | **BETWEEN** | Two bounds, both inclusive |
 | **IS NULL**, **IS NOT NULL** | `IsNull`, which needs `indexNullState` on the collection |
