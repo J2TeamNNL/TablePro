@@ -102,6 +102,13 @@ internal final class WeaviatePluginDriver: PluginDatabaseDriver, @unchecked Send
         return rememberedCollection(name) ?? WeaviateCollection(name: name, properties: [])
     }
 
+    func propertySchema(of collection: WeaviateCollection) -> [String: WeaviateProperty] {
+        Dictionary(
+            collection.properties.map { ($0.name, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
     func typeName(for column: String, collection: WeaviateCollection) -> String {
         switch column {
         case WeaviateSchema.uuidColumn:

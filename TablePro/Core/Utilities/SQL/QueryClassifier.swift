@@ -752,6 +752,28 @@ private extension QueryClassifier {
         return QueryClassification(tier: .write, reachesFilesystemOrExecutesCode: touchesUnsafeSurface)
     }
 
+    /// A bare operation, a `{"query": ...}` envelope and a console body are the same request, and
+    /// the driver forwards the envelope verbatim, so the read-only gate has to read all three.
+    static func weaviateDeclaresMutation(_ body: String) -> Bool {
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.lowercased().hasPrefix("mutation") {
+            return true
+        }
+        guard let data = trimmed.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let query = object["query"] as? String
+        else { return false }
+        return query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("mutation")
+    }
+
+    static func weaviateConsoleBody(_ trimmed: String) -> String {
+        trimmed
+            .split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+            .dropFirst()
+            .first
+            .map(String.init) ?? ""
+    }
+
     static func weaviateClassification(_ trimmed: String) -> QueryClassification {
         if trimmed.hasPrefix("WEAVIATE_SEARCH:") {
             return .safe
@@ -770,15 +792,18 @@ private extension QueryClassifier {
             return QueryClassification(tier: .write, reachesFilesystemOrExecutesCode: false)
         }
         if trimmed.hasPrefix("{") || lowered.hasPrefix("query") || lowered.hasPrefix("fragment") {
-            return .safe
+            return weaviateDeclaresMutation(trimmed)
+                ? QueryClassification(tier: .write, reachesFilesystemOrExecutesCode: false)
+                : .safe
         }
         let (verb, path) = typesenseRequestLine(trimmed)
-        let upperPath = path.uppercased()
         if verb == "GET" || verb == "HEAD" {
             return .safe
         }
-        if verb == "POST", upperPath == "/V1/GRAPHQL" || upperPath.hasPrefix("/V1/GRAPHQL?") {
-            return .safe
+        if verb == "POST", path == "/V1/GRAPHQL" {
+            return weaviateDeclaresMutation(weaviateConsoleBody(trimmed))
+                ? QueryClassification(tier: .write, reachesFilesystemOrExecutesCode: false)
+                : .safe
         }
         if verb == "DELETE" {
             return QueryClassification(tier: .destructive, reachesFilesystemOrExecutesCode: false)

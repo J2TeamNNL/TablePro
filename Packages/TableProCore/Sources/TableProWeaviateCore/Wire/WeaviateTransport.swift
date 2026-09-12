@@ -25,18 +25,47 @@ public struct WeaviateHTTPRequest: Sendable, Equatable {
 public struct WeaviateHTTPResponse: Sendable, Equatable {
     public let statusCode: Int
     public let body: Data
+    private let parsed: ParsedResponseJSON
 
     public init(statusCode: Int, body: Data) {
         self.statusCode = statusCode
         self.body = body
+        self.parsed = ParsedResponseJSON(body)
     }
 
+    /// A filtered browse reads this two or three times, and a page of 1536-dimension vectors is
+    /// several megabytes, so the body is parsed once and the result held.
     public var json: Any? {
-        try? JSONSerialization.jsonObject(with: body, options: [.fragmentsAllowed])
+        parsed.value
     }
 
     public var text: String {
         String(data: body, encoding: .utf8) ?? ""
+    }
+
+    public static func == (lhs: WeaviateHTTPResponse, rhs: WeaviateHTTPResponse) -> Bool {
+        lhs.statusCode == rhs.statusCode && lhs.body == rhs.body
+    }
+}
+
+private final class ParsedResponseJSON: @unchecked Sendable {
+    private let body: Data
+    private let lock = NSLock()
+    private var value_: Any?
+    private var hasParsed = false
+
+    init(_ body: Data) {
+        self.body = body
+    }
+
+    var value: Any? {
+        lock.withLock {
+            if !hasParsed {
+                value_ = try? JSONSerialization.jsonObject(with: body, options: [.fragmentsAllowed])
+                hasParsed = true
+            }
+            return value_
+        }
     }
 }
 
@@ -87,7 +116,7 @@ public final class URLSessionWeaviateTransport: WeaviateTransport, @unchecked Se
         do {
             let (data, response) = try await session.data(for: urlRequest, delegate: tracker)
             guard let httpResponse = response as? HTTPURLResponse else {
-                throw WeaviateError.transport("Weaviate answered with something other than HTTP.")
+                throw WeaviateError.transport(String(localized: "Weaviate answered with something other than HTTP."))
             }
             return WeaviateHTTPResponse(statusCode: httpResponse.statusCode, body: data)
         } catch let error as URLError where error.code == .cancelled {
@@ -97,10 +126,6 @@ public final class URLSessionWeaviateTransport: WeaviateTransport, @unchecked Se
         } catch let error as URLError {
             throw WeaviateError.transport(error.localizedDescription)
         }
-    }
-
-    var inFlightCount: Int {
-        lock.withLock { inFlight.count }
     }
 
     fileprivate func register(_ task: URLSessionTask) {

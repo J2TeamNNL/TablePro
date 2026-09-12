@@ -26,8 +26,10 @@ public struct WeaviateAuth: Sendable, Equatable {
         return WeaviateAuth(method: method, apiKey: fields[WeaviateFieldID.apiKey] ?? "")
     }
 
+    /// A key left in the form after the user switches back to None must not be sent: the form
+    /// keeps the field's text, and only the method says whether the connection is authenticated.
     public var authorizationHeader: String? {
-        guard !apiKey.isEmpty else { return nil }
+        guard method == .apiKey, !apiKey.isEmpty else { return nil }
         return "Bearer \(apiKey)"
     }
 }
@@ -73,7 +75,7 @@ public struct WeaviateConnectionSettings: Sendable, Equatable {
         )
         _ = try settings.baseURL()
         if settings.auth.method == .apiKey, settings.auth.apiKey.isEmpty {
-            throw WeaviateError.configuration("Enter a Weaviate API key.")
+            throw WeaviateError.configuration(String(localized: "Enter a Weaviate API key."))
         }
         return settings
     }
@@ -84,7 +86,7 @@ public struct WeaviateConnectionSettings: Sendable, Equatable {
         components.host = host
         components.port = port
         guard let url = components.url else {
-            throw WeaviateError.configuration("The host is not valid in a URL.")
+            throw WeaviateError.configuration(String(localized: "The host is not valid in a URL."))
         }
         return url
     }

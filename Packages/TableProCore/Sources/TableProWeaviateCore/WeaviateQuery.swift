@@ -4,13 +4,16 @@ public struct WeaviateFilterSpec: Codable, Sendable, Equatable {
     public let column: String
     public let op: String
     public let value: String
-    public let typeName: String
 
-    public init(column: String, op: String, value: String, typeName: String = "text") {
+    /// The upper bound of `BETWEEN`, carried apart from `value` so a value holding a comma cannot
+    /// be mistaken for the separator between the two bounds.
+    public let secondValue: String?
+
+    public init(column: String, op: String, value: String, secondValue: String? = nil) {
         self.column = column
         self.op = op
         self.value = value
-        self.typeName = typeName
+        self.secondValue = secondValue
     }
 }
 
@@ -51,8 +54,15 @@ public struct WeaviateParsedSearch: Sendable, Equatable {
         self.propertyNames = propertyNames
     }
 
+    /// `GET /v1/objects` sorts, but only on a property: the grid's `vector` column is not one, and
+    /// Weaviate answers `no such prop with name 'vector'`. Everything else goes through GraphQL,
+    /// whose `sort` argument takes the object id as well.
+    public var sortableSorts: [WeaviateSortSpec] {
+        sorts.filter { $0.column != WeaviateSchema.vectorColumn }
+    }
+
     public var usesGraphQL: Bool {
-        !filters.isEmpty || !sorts.filter({ $0.column != WeaviateSchema.uuidColumn }).isEmpty
+        !filters.isEmpty || !sortableSorts.isEmpty
     }
 }
 
@@ -74,8 +84,12 @@ public enum WeaviateBrowseQuery {
             "limit": limit,
             "logicMode": logicMode,
             "sorts": sorts.map { ["column": $0.column, "ascending": $0.ascending] },
-            "filters": filters.map {
-                ["column": $0.column, "op": $0.op, "value": $0.value, "typeName": $0.typeName]
+            "filters": filters.map { filter -> [String: Any] in
+                var encoded: [String: Any] = ["column": filter.column, "op": filter.op, "value": filter.value]
+                if let secondValue = filter.secondValue {
+                    encoded["secondValue"] = secondValue
+                }
+                return encoded
             },
             "properties": propertyNames
         ]
@@ -109,7 +123,7 @@ public enum WeaviateBrowseQuery {
                     column: column,
                     op: op,
                     value: item["value"] as? String ?? "",
-                    typeName: item["typeName"] as? String ?? "text"
+                    secondValue: item["secondValue"] as? String
                 )
             },
             logicMode: json["logicMode"] as? String ?? "AND",
@@ -184,7 +198,7 @@ public struct WeaviateCellChange: Sendable, Equatable {
 }
 
 public struct WeaviateTrackedChange: Sendable, Equatable {
-    public enum Kind: Sendable, Equatable {
+    public enum Kind: String, Sendable, Equatable {
         case insert
         case update
         case delete
@@ -208,24 +222,79 @@ public struct WeaviateTrackedChange: Sendable, Equatable {
     }
 }
 
+public enum WeaviateSkipReason: String, Sendable, Equatable {
+    case missingUUID
+    case noEditableColumns
+    case payloadNotEncodable
+}
+
+public struct WeaviateSkippedChange: Sendable, Equatable {
+    public let kind: WeaviateTrackedChange.Kind
+    public let reason: WeaviateSkipReason
+
+    public init(kind: WeaviateTrackedChange.Kind, reason: WeaviateSkipReason) {
+        self.kind = kind
+        self.reason = reason
+    }
+}
+
+/// A skipped change writes nothing while the grid reports the save succeeded, so the driver has to
+/// be able to say what it dropped. Same reason the MongoDB generator logs its own skips.
+public struct WeaviateWriteBatch: Sendable, Equatable {
+    public let requests: [WeaviateWriteRequest]
+    public let skipped: [WeaviateSkippedChange]
+
+    public init(requests: [WeaviateWriteRequest], skipped: [WeaviateSkippedChange]) {
+        self.requests = requests
+        self.skipped = skipped
+    }
+}
+
 public enum WeaviateStatementGenerator {
     public static func generate(
         collection: String,
         columns: [String],
         typeNames: [String],
         changes: [WeaviateTrackedChange]
-    ) -> [WeaviateWriteRequest] {
-        let types = Dictionary(uniqueKeysWithValues: zip(columns, typeNames))
-        return changes.compactMap { change in
+    ) -> WeaviateWriteBatch {
+        let types = Dictionary(zip(columns, typeNames), uniquingKeysWith: { first, _ in first })
+        var requests: [WeaviateWriteRequest] = []
+        var skipped: [WeaviateSkippedChange] = []
+        for change in changes {
+            let request: WeaviateWriteRequest?
             switch change.kind {
             case .insert:
-                return insert(collection: collection, types: types, change: change)
+                request = insert(collection: collection, types: types, change: change)
             case .update:
-                return update(collection: collection, types: types, change: change)
+                request = update(collection: collection, types: types, change: change)
             case .delete:
-                return delete(collection: collection, change: change)
+                request = delete(collection: collection, change: change)
+            }
+            if let request {
+                requests.append(request)
+            } else {
+                skipped.append(WeaviateSkippedChange(kind: change.kind, reason: reason(for: change)))
             }
         }
+        return WeaviateWriteBatch(requests: requests, skipped: skipped)
+    }
+
+    private static func reason(for change: WeaviateTrackedChange) -> WeaviateSkipReason {
+        if change.kind != .insert, change.uuid?.isEmpty ?? true {
+            return .missingUUID
+        }
+        if change.kind == .update, editablePatch(from: change).isEmpty {
+            return .noEditableColumns
+        }
+        return .payloadNotEncodable
+    }
+
+    private static func editablePatch(from change: WeaviateTrackedChange) -> [String: String?] {
+        var patch: [String: String?] = [:]
+        for cell in change.cellChanges where !WeaviateSchema.immutableColumns.contains(cell.column) {
+            patch[cell.column] = cell.newText
+        }
+        return patch
     }
 
     private static func insert(
@@ -250,10 +319,7 @@ public enum WeaviateStatementGenerator {
         change: WeaviateTrackedChange
     ) -> WeaviateWriteRequest? {
         guard let uuid = change.uuid, !uuid.isEmpty else { return nil }
-        var patch: [String: String?] = [:]
-        for cell in change.cellChanges where !WeaviateSchema.immutableColumns.contains(cell.column) {
-            patch[cell.column] = cell.newText
-        }
+        let patch = editablePatch(from: change)
         guard !patch.isEmpty else { return nil }
         let payload: [String: Any] = [
             "class": collection,

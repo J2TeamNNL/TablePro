@@ -144,7 +144,7 @@ struct WeaviateClientTests {
 struct WeaviateUUIDEditTests {
     @Test("An update is a PATCH keyed by uuid and does not write uuid or vector")
     func updateIsPatchByUUID() async throws {
-        let requests = WeaviateStatementGenerator.generate(
+        let batch = WeaviateStatementGenerator.generate(
             collection: "Article",
             columns: ["uuid", "title", "vector"],
             typeNames: ["uuid", "text", "vector"],
@@ -161,7 +161,7 @@ struct WeaviateUUIDEditTests {
                 )
             ]
         )
-        let request = try #require(requests.first)
+        let request = try #require(batch.requests.first)
         #expect(request.method == "PATCH")
         #expect(request.path == "/v1/objects/\(WeaviateFixtures.articleUUID)")
         #expect(request.query["class"] == "Article")
@@ -185,7 +185,7 @@ struct WeaviateUUIDEditTests {
 
     @Test("A delete is DELETE /v1/objects/{uuid}")
     func deleteUsesUUID() async throws {
-        let requests = WeaviateStatementGenerator.generate(
+        let batch = WeaviateStatementGenerator.generate(
             collection: "Article",
             columns: ["uuid", "title"],
             typeNames: ["uuid", "text"],
@@ -198,7 +198,7 @@ struct WeaviateUUIDEditTests {
                 )
             ]
         )
-        let request = try #require(requests.first)
+        let request = try #require(batch.requests.first)
         #expect(request.method == "DELETE")
         #expect(request.path.hasSuffix(WeaviateFixtures.articleUUID))
 
@@ -216,7 +216,7 @@ struct WeaviateUUIDEditTests {
 
     @Test("An update without a uuid is skipped")
     func updateWithoutUUIDIsSkipped() {
-        let requests = WeaviateStatementGenerator.generate(
+        let batch = WeaviateStatementGenerator.generate(
             collection: "Article",
             columns: ["uuid", "title"],
             typeNames: ["uuid", "text"],
@@ -229,12 +229,13 @@ struct WeaviateUUIDEditTests {
                 )
             ]
         )
-        #expect(requests.isEmpty)
+        #expect(batch.requests.isEmpty)
+        #expect(batch.skipped == [WeaviateSkippedChange(kind: .update, reason: .missingUUID)])
     }
 
     @Test("Insert posts the collection and properties, and an explicit uuid")
     func insertPostsObject() throws {
-        let requests = WeaviateStatementGenerator.generate(
+        let batch = WeaviateStatementGenerator.generate(
             collection: "Article",
             columns: ["uuid", "title", "wordCount"],
             typeNames: ["uuid", "text", "int"],
@@ -251,7 +252,7 @@ struct WeaviateUUIDEditTests {
                 )
             ]
         )
-        let request = try #require(requests.first)
+        let request = try #require(batch.requests.first)
         #expect(request.method == "POST")
         #expect(request.path == "/v1/objects")
         let body = try #require(request.body)

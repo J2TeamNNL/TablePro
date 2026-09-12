@@ -61,7 +61,7 @@ extension WeaviatePluginDriver {
     }
 
     func fetchViewDefinition(view: String, schema: String?) async throws -> String {
-        throw WeaviateError.configuration("Weaviate does not support views.")
+        throw WeaviateError.configuration(String(localized: "Weaviate does not support views."))
     }
 
     func fetchTableMetadata(table: String, schema: String?) async throws -> PluginTableMetadata {
@@ -99,22 +99,18 @@ extension WeaviatePluginDriver {
         offset: Int,
         columnKinds: [String: PluginColumnKind]
     ) -> String? {
-        let collection = rememberedCollection(table)
         let sorts = sortColumns.compactMap { sort -> WeaviateSortSpec? in
             guard sort.columnIndex >= 0, sort.columnIndex < columns.count else { return nil }
             let column = columns[sort.columnIndex]
             guard column != WeaviateSchema.vectorColumn else { return nil }
             return WeaviateSortSpec(column: column, ascending: sort.ascending)
         }
-        let typeLookup = Dictionary(
-            uniqueKeysWithValues: (collection?.properties ?? []).map { ($0.name, $0.dataType) }
-        )
         let specs = filters.map { filter in
             WeaviateFilterSpec(
                 column: filter.column,
                 op: filter.op,
                 value: filter.value,
-                typeName: typeLookup[filter.column] ?? "text"
+                secondValue: filter.secondValue
             )
         }
         return WeaviateBrowseQuery.encode(
@@ -150,13 +146,18 @@ extension WeaviatePluginDriver {
                 insertedRowIndices: insertedRowIndices
             )
         }
-        let requests = WeaviateStatementGenerator.generate(
+        let batch = WeaviateStatementGenerator.generate(
             collection: table,
             columns: columns,
             typeNames: typeNames,
             changes: tracked
         )
-        return requests.map { (WeaviateWriteCodec.encode($0), []) }
+        for skipped in batch.skipped {
+            WeaviatePluginDriver.logger.warning(
+                "Skipped a \(skipped.kind.rawValue, privacy: .public) on \(table, privacy: .private): \(skipped.reason.rawValue, privacy: .public)"
+            )
+        }
+        return batch.requests.map { (WeaviateWriteCodec.encode($0), []) }
     }
 
     private func mappedChange(

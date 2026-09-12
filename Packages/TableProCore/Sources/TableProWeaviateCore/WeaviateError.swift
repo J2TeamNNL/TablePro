@@ -14,18 +14,19 @@ public enum WeaviateError: Error, LocalizedError, Equatable, Sendable {
         case .configuration(let detail), .transport(let detail), .malformedResponse(let detail):
             return detail
         case .notConnected:
-            return "Not connected to Weaviate."
+            return String(localized: "Not connected to Weaviate.")
         case .authentication(let detail):
             return detail
         case .api(_, let message):
             return message
         case .cancelled:
-            return "The request was cancelled."
+            return String(localized: "The request was cancelled.")
         }
     }
 
     public static func from(status: Int, body: Data) -> WeaviateError {
-        let message = apiMessage(from: body) ?? "Weaviate returned HTTP \(status)."
+        let message = apiMessage(from: body)
+            ?? String(format: String(localized: "Weaviate returned HTTP %d."), status)
         if status == 401 || status == 403 {
             return .authentication(message)
         }

@@ -22,14 +22,14 @@ There is no Database field. One connection reaches one Weaviate instance, and it
 | **Host** | Node hostname. `localhost` for Docker, a Weaviate Cloud hostname for hosted clusters |
 | **Port** | `8080` by default. Weaviate Cloud answers on `443` |
 | **Auth Method** | None, or API Key |
-| **API Key** | Sent as `Authorization: Bearer`. Leave empty for anonymous access |
+| **API Key** | Sent as an `Authorization: Bearer` header, and only when **Auth Method** is API Key |
 | **Skip TLS Verification** | Advanced section. Trusts any certificate, even under **Verify CA** or **Verify Identity** |
 
 ## Authentication
 
 | Auth Method | What is sent |
 |-------------|--------------|
-| **None** | Nothing, unless **API Key** is filled. For a local node with anonymous access |
+| **None** | Nothing. For a local node with anonymous access |
 | **API Key** | An `Authorization: Bearer` header. Paste the Weaviate Cloud key, or the key the local node was started with |
 
 Weaviate Cloud requires an API key and HTTPS. Set **SSL Mode** to **Required** (or **Verify Identity** if you have the CA) and **Auth Method** to API Key.
@@ -44,6 +44,22 @@ A vector is shown as a JSON number array. It is not a SQL BLOB and the inline ed
 
 Unfiltered pages load through `GET /v1/objects`. A column filter or a sort becomes a GraphQL `Get` with `where` and `sort`.
 
+## Filtering
+
+Filter values are typed from the collection schema: an `int` property filters as a number, a `date` property needs a full RFC 3339 timestamp such as `2024-01-31T00:00:00Z`, and an array property filters on one element.
+
+| Operator | What Weaviate runs |
+|----------|--------------------|
+| **=**, **!=** | `Equal`, `NotEqual` |
+| **>**, **>=**, **<**, **<=** | Numbers and dates only |
+| **CONTAINS**, **NOT CONTAINS**, **STARTS WITH**, **ENDS WITH** | `Like` with `*` wildcards, text properties only |
+| **IN**, **NOT IN** | `ContainsAny`, `ContainsNone` over a comma-separated list |
+| **BETWEEN** | Two bounds, both inclusive |
+| **IS NULL**, **IS NOT NULL** | `IsNull`, which needs `indexNullState` on the collection |
+| **IS EMPTY**, **IS NOT EMPTY** | `len()`, which needs `indexPropertyLength` on the collection |
+
+**REGEX** has no Weaviate equivalent, and a filter Weaviate cannot run reports why instead of returning the whole collection.
+
 Grid edits are REST calls keyed by `uuid`.
 
 | Change | Request |
@@ -52,11 +68,11 @@ Grid edits are REST calls keyed by `uuid`.
 | Edited cells | `PATCH /v1/objects/{uuid}?class=Collection` |
 | Deleted row | `DELETE /v1/objects/{uuid}?class=Collection` |
 
-An update or delete with no `uuid` is skipped.
+An update or delete with no `uuid` is skipped and logged.
 
 ## GraphQL editor
 
-Type a GraphQL operation and run it. `{ Get { … } }` and `query { … }` read. `mutation { … }` writes.
+Type a GraphQL operation and run it. Weaviate's GraphQL API reads only: `{ Get { … } }` and `query { … }` work, and there is no mutation type. Writes go through REST.
 
 ```graphql
 {
@@ -72,7 +88,7 @@ Type a GraphQL operation and run it. `{ Get { … } }` and `query { … }` read.
 }
 ```
 
-`Get` responses render as a grid, with `_additional.id` mapped to `uuid`. Anything else, including `Aggregate`, is shown as formatted JSON.
+`Get` responses render as a grid of the fields the query selected, with `_additional.id` mapped to `uuid`. The rest of `_additional`, such as `distance` and `score`, each become a column. Anything else, including `Aggregate`, is shown as formatted JSON.
 
 A REST line also runs, the way the other search drivers do:
 

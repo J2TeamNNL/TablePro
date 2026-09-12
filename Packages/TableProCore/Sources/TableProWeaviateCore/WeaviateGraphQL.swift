@@ -1,93 +1,5 @@
 import Foundation
 
-public enum WeaviateFilterBuilder {
-    public static func graphQLWhere(
-        filters: [WeaviateFilterSpec],
-        logicMode: String
-    ) -> String? {
-        let operands = filters.compactMap(operand(for:))
-        guard !operands.isEmpty else { return nil }
-        if operands.count == 1 {
-            return operands[0]
-        }
-        let joined = operands.joined(separator: " ")
-        let op = logicMode.uppercased() == "OR" ? "Or" : "And"
-        return "{ operator: \(op) operands: [\(joined)] }"
-    }
-
-    public static func operand(for filter: WeaviateFilterSpec) -> String? {
-        if WeaviateSchema.immutableColumns.contains(filter.column), filter.column != WeaviateSchema.uuidColumn {
-            return nil
-        }
-        let path = filter.column == WeaviateSchema.uuidColumn ? "id" : filter.column
-        let operatorName: String
-        var value = filter.value
-        switch filter.op.uppercased() {
-        case "=", "EQUAL", "EQ":
-            operatorName = "Equal"
-        case "!=", "<>", "NOT EQUAL":
-            operatorName = "NotEqual"
-        case ">":
-            operatorName = "GreaterThan"
-        case ">=":
-            operatorName = "GreaterThanEqual"
-        case "<":
-            operatorName = "LessThan"
-        case "<=":
-            operatorName = "LessThanEqual"
-        case "CONTAINS", "LIKE":
-            operatorName = "Like"
-            if !value.contains("*") {
-                value = "*\(value)*"
-            }
-        case "STARTS WITH":
-            operatorName = "Like"
-            if !value.hasSuffix("*") {
-                value += "*"
-            }
-        case "IS NULL":
-            return "{ path: [\"\(escape(path))\"] operator: IsNull valueBoolean: true }"
-        case "IS NOT NULL":
-            return "{ path: [\"\(escape(path))\"] operator: IsNull valueBoolean: false }"
-        default:
-            return nil
-        }
-        return "{ path: [\"\(escape(path))\"] operator: \(operatorName) \(valueField(filter.typeName)): \(literal(value, typeName: filter.typeName)) }"
-    }
-
-    private static func valueField(_ typeName: String) -> String {
-        switch typeName.lowercased() {
-        case "int":
-            return "valueInt"
-        case "number":
-            return "valueNumber"
-        case "boolean", "bool":
-            return "valueBoolean"
-        default:
-            return "valueText"
-        }
-    }
-
-    private static func literal(_ value: String, typeName: String) -> String {
-        switch typeName.lowercased() {
-        case "int":
-            return Int(value).map(String.init) ?? "0"
-        case "number":
-            return Double(value).map { String($0) } ?? "0"
-        case "boolean", "bool":
-            return value.lowercased() == "true" ? "true" : "false"
-        default:
-            return "\"\(escape(value))\""
-        }
-    }
-
-    private static func escape(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-    }
-}
-
 public enum WeaviateGraphQL {
     public static func getQuery(
         collection: String,
@@ -96,19 +8,24 @@ public enum WeaviateGraphQL {
         offset: Int,
         sorts: [WeaviateSortSpec],
         filters: [WeaviateFilterSpec],
-        logicMode: String
-    ) -> String {
+        logicMode: String,
+        schema: [String: WeaviateProperty]
+    ) throws -> String {
+        let types = schema.mapValues(\.dataType)
         let fields = properties
             .filter { $0 != WeaviateSchema.uuidColumn && $0 != WeaviateSchema.vectorColumn }
+            .compactMap { selection(for: $0, schema: schema) }
             .joined(separator: " ")
         var args: [String] = ["limit: \(max(limit, 0))", "offset: \(max(offset, 0))"]
-        if let whereClause = WeaviateFilterBuilder.graphQLWhere(filters: filters, logicMode: logicMode) {
+        if let whereClause = try WeaviateFilterBuilder.graphQLWhere(
+            filters: filters, logicMode: logicMode, types: types
+        ) {
             args.append("where: \(whereClause)")
         }
         let sortArgs = sorts.compactMap { sort -> String? in
-            let path = sort.column == WeaviateSchema.uuidColumn ? "id" : sort.column
-            if path == WeaviateSchema.vectorColumn { return nil }
-            return "{ path: [\"\(path)\"] order: \(sort.ascending ? "asc" : "desc") }"
+            guard let path = sortPath(for: sort) else { return nil }
+            let order = sort.ascending ? "asc" : "desc"
+            return "{ path: [\"\(WeaviateFilterBuilder.escape(path))\"] order: \(order) }"
         }
         if !sortArgs.isEmpty {
             args.append("sort: [\(sortArgs.joined(separator: " "))]")
@@ -119,16 +36,44 @@ public enum WeaviateGraphQL {
         """
     }
 
+    /// A structured property needs its own sub-selection, and an `object` with no declared nested
+    /// properties has nothing to select, so it is left out rather than failing the query.
+    private static func selection(for name: String, schema: [String: WeaviateProperty]) -> String? {
+        guard let property = schema[name] else { return name }
+        switch WeaviatePropertyShape.of(property) {
+        case .scalar:
+            return name
+        case .geoCoordinates:
+            return "\(name) { latitude longitude }"
+        case .phoneNumber:
+            return "\(name) { input internationalFormatted nationalFormatted countryCode national valid defaultCountry }"
+        case .object:
+            let nested = property.nestedProperties
+                .compactMap { selection(for: $0.name, schema: [$0.name: $0]) }
+                .joined(separator: " ")
+            return nested.isEmpty ? nil : "\(name) { \(nested) }"
+        case .crossReference(let targets):
+            let fragments = targets.map { "... on \($0) { _additional { id } }" }.joined(separator: " ")
+            return "\(name) { \(fragments) }"
+        }
+    }
+
+    /// `vector` is a grid column rather than a property, so Weaviate has nothing to sort on. Every
+    /// real property is passed through: a type it cannot sort, such as uuid, is reported by the
+    /// server, which beats painting a sort chevron over rows in insertion order.
+    private static func sortPath(for sort: WeaviateSortSpec) -> String? {
+        if sort.column == WeaviateSchema.uuidColumn {
+            return WeaviateSchema.uuidGraphQLPath
+        }
+        return sort.column == WeaviateSchema.vectorColumn ? nil : sort.column
+    }
+
     public static func looksLikeGraphQL(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.hasPrefix("{") { return true }
         let lowered = trimmed.lowercased()
         return lowered.hasPrefix("query") || lowered.hasPrefix("mutation") || lowered.hasPrefix("subscription")
             || lowered.hasPrefix("fragment")
-    }
-
-    public static func isMutation(_ text: String) -> Bool {
-        text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("mutation")
     }
 
     public static func requestBody(query: String) throws -> Data {

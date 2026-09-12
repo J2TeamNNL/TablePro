@@ -60,7 +60,7 @@ extension PluginMetadataRegistry {
                     hidesBuiltInPassword: true,
                     hidesBuiltInDatabase: true
                 )
-            )),
+            ))
         ]
     }
 }

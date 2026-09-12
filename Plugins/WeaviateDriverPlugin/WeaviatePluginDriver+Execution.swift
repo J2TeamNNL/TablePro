@@ -43,19 +43,20 @@ extension WeaviatePluginDriver {
         started: Date
     ) async throws -> PluginQueryResult {
         guard let parsed = WeaviateBrowseQuery.parse(query) else {
-            throw WeaviateError.malformedResponse("Invalid browse request.")
+            throw WeaviateError.malformedResponse(String(localized: "Invalid browse request."))
         }
         let collection = try await cachedCollection(parsed.collection)
         let objects: [WeaviateObject]
         if parsed.usesGraphQL {
-            let graphql = WeaviateGraphQL.getQuery(
+            let graphql = try WeaviateGraphQL.getQuery(
                 collection: parsed.collection,
                 properties: parsed.propertyNames,
                 limit: parsed.limit,
                 offset: parsed.offset,
-                sorts: parsed.sorts,
+                sorts: parsed.sortableSorts,
                 filters: parsed.filters,
-                logicMode: parsed.logicMode
+                logicMode: parsed.logicMode,
+                schema: propertySchema(of: collection)
             )
             let response = try await client.graphql(graphql)
             objects = WeaviateObjectCodec.objects(fromGraphQL: response.json as Any)
@@ -75,7 +76,7 @@ extension WeaviatePluginDriver {
         started: Date
     ) async throws -> PluginQueryResult {
         guard let request = WeaviateWriteCodec.decode(statement) else {
-            throw WeaviateError.malformedResponse("Invalid write request.")
+            throw WeaviateError.malformedResponse(String(localized: "Invalid write request."))
         }
         let response = try await client.execute(write: request)
         let outcome: String
@@ -107,11 +108,7 @@ extension WeaviatePluginDriver {
         if request.path.hasPrefix("/v1/objects"), let json = response.json {
             let objects = WeaviateObject.parseList(json)
             if !objects.isEmpty {
-                let collectionName = objects.first?.className ?? ""
-                let collection = (try? await cachedCollection(collectionName))
-                    ?? WeaviateCollection(name: collectionName, properties: [])
-                let columns = WeaviateSchema.columns(for: collection).map(\.name)
-                return render(objects: objects, collection: collection, columns: columns, started: started)
+                return await renderReturnedColumns(objects, started: started)
             }
         }
         return renderJSON(response, started: started)
@@ -125,25 +122,38 @@ extension WeaviatePluginDriver {
         let response = try await client.graphql(query)
         let objects = WeaviateObjectCodec.objects(fromGraphQL: response.json as Any)
         if !objects.isEmpty {
-            let collectionName = objects.first?.className ?? ""
-            let collection = (try? await cachedCollection(collectionName))
-                ?? WeaviateCollection(name: collectionName, properties: [])
-            var columns = WeaviateSchema.columns(for: collection).map(\.name)
-            if columns.count <= WeaviateSchema.metaColumns.count {
-                var seen = Set<String>()
-                columns = []
-                for name in [WeaviateSchema.uuidColumn]
-                    + objects.flatMap({ $0.properties.keys.sorted() })
-                    + [WeaviateSchema.vectorColumn]
-                {
-                    if seen.insert(name).inserted {
-                        columns.append(name)
-                    }
-                }
-            }
-            return render(objects: objects, collection: collection, columns: columns, started: started)
+            return await renderReturnedColumns(objects, started: started)
         }
         return renderJSON(response, started: started)
+    }
+
+    /// A console query selects its own fields, so the result shows what came back rather than every
+    /// column the collection has. That is also what carries `_additional { distance }` into the grid.
+    private func renderReturnedColumns(_ objects: [WeaviateObject], started: Date) async -> PluginQueryResult {
+        let collectionName = objects.first?.className ?? ""
+        let collection = (try? await cachedCollection(collectionName))
+            ?? WeaviateCollection(name: collectionName, properties: [])
+        return render(
+            objects: objects,
+            collection: collection,
+            columns: returnedColumns(of: objects, collection: collection),
+            started: started
+        )
+    }
+
+    private func returnedColumns(of objects: [WeaviateObject], collection: WeaviateCollection) -> [String] {
+        let declared = collection.properties.map(\.name)
+        let returned = Set(objects.flatMap { $0.properties.keys })
+        var columns: [String] = []
+        if objects.contains(where: { !$0.uuid.isEmpty }) {
+            columns.append(WeaviateSchema.uuidColumn)
+        }
+        columns += declared.filter { returned.contains($0) }
+        columns += returned.subtracting(declared).sorted()
+        if objects.contains(where: { $0.vector != nil }) {
+            columns.append(WeaviateSchema.vectorColumn)
+        }
+        return columns.isEmpty ? [WeaviateSchema.uuidColumn] : columns
     }
 
     private func render(

@@ -44,7 +44,7 @@ public final class WeaviateClient: @unchecked Sendable {
         let response = try await send(method: "GET", path: "/v1/schema")
         try throwIfFailed(response)
         guard let json = response.json else {
-            throw WeaviateError.malformedResponse("Schema response was empty.")
+            throw WeaviateError.malformedResponse(String(localized: "Schema response was empty."))
         }
         return WeaviateSchema.collections(from: json)
     }
@@ -109,7 +109,7 @@ public final class WeaviateClient: @unchecked Sendable {
     ) async throws -> WeaviateHTTPResponse {
         let base = try settings.baseURL()
         guard let url = WeaviatePathEncoding.resolve(path, query: query, against: base) else {
-            throw WeaviateError.configuration("Invalid path: \(path)")
+            throw WeaviateError.configuration(String(format: String(localized: "Invalid path: %@"), path))
         }
         var headers = [
             "Accept": "application/json"

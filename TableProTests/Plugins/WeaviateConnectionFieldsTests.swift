@@ -71,7 +71,6 @@ struct WeaviateConnectionFieldsTests {
         let apiKey = try #require(fields.first { $0.id == WeaviateFieldID.apiKey })
         #expect(apiKey.isSecure)
         #expect(!apiKey.isRequired)
-        #expect(apiKey.visibleWhen == nil)
         #expect(apiKey.hidesPassword)
         #expect(fields.hidesPassword(forValues: [:]))
         #expect(fields.hidesUsername(forValues: [:]))
@@ -91,6 +90,37 @@ struct WeaviateConnectionFieldsTests {
             var connection = DatabaseConnection(name: "Weaviate", type: .weaviate)
             connection.additionalFields = [WeaviateFieldID.authMethod: method]
             #expect(PluginManager.shared.hidesPassword(for: connection), "\(method)")
+        }
+    }
+}
+
+@Suite("Weaviate field parity")
+struct WeaviateFieldParityTests {
+    private static let repoRoot = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+
+    private func source(_ path: String) throws -> String {
+        try String(contentsOf: Self.repoRoot.appendingPathComponent(path), encoding: .utf8)
+    }
+
+    /// The plugin's own field list replaces the registry snapshot the moment the plugin is
+    /// installed, and no test can link both copies, so the two sources are compared as text.
+    @Test("The plugin's field list matches the registry copy")
+    func pluginCopyMatchesRegistryCopy() throws {
+        let plugin = try source("Plugins/WeaviateDriverPlugin/WeaviatePlugin.swift")
+        let registry = try source("TablePro/Core/Plugins/PluginMetadataRegistry+WeaviateDefaults.swift")
+        for field in [WeaviateFieldID.authMethod, WeaviateFieldID.apiKey, WeaviateFieldID.skipTLSVerify] {
+            #expect(registry.contains("id: \"\(field)\""), Comment(rawValue: field))
+        }
+        #expect(plugin.contains("id: WeaviateFieldID.authMethod"))
+        #expect(plugin.contains("id: WeaviateFieldID.apiKey"))
+        #expect(plugin.contains("id: WeaviateFieldID.skipTLSVerify"))
+        for copy in [plugin, registry] {
+            #expect(copy.contains("hidesPassword: true"))
+            #expect(copy.contains("withHidesUsername(true)"))
+            #expect(copy.contains("apiKey"))
         }
     }
 }

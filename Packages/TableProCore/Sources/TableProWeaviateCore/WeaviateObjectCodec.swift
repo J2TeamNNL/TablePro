@@ -48,8 +48,8 @@ public struct WeaviateObject: Sendable, Equatable {
     }
 
     private static func numberText(_ value: Double) -> String {
-        if value.rounded() == value, value >= Double(Int.min), value <= Double(Int.max) {
-            return String(Int(value))
+        if value.rounded() == value, let whole = Int(exactly: value) {
+            return String(whole)
         }
         return String(value)
     }
@@ -66,6 +66,8 @@ public struct WeaviateObject: Sendable, Equatable {
 }
 
 public enum WeaviateObjectCodec {
+    static let additionalKey = "_additional"
+
     public static func row(for object: WeaviateObject, columns: [String]) -> [String?] {
         return columns.map { column in
             switch column {
@@ -112,17 +114,26 @@ public enum WeaviateObjectCodec {
         return result
     }
 
+    /// `_additional` is where a vector search puts `distance`, `score` and `certainty`, which are
+    /// the whole point of the query the user wrote. Only `id` and `vector` have a column of their
+    /// own; the rest become properties so they reach the grid.
     private static func object(fromGetRow row: [String: Any], className: String) -> WeaviateObject {
         var properties: [String: String?] = [:]
+        var additional: [String: Any] = [:]
         var uuid = ""
         var vector: [Double]?
         for (key, value) in row {
-            if key == "_additional", let additional = value as? [String: Any] {
-                uuid = (additional["id"] as? String) ?? uuid
-                vector = WeaviateObject.vector(from: additional["vector"]) ?? vector
+            if key == additionalKey, let fields = value as? [String: Any] {
+                additional = fields
                 continue
             }
             properties[key] = WeaviateJSON.displayText(value)
+        }
+        uuid = (additional["id"] as? String) ?? uuid
+        vector = WeaviateObject.vector(from: additional["vector"])
+        for (key, value) in additional where key != "id" && key != WeaviateSchema.vectorColumn {
+            let name = properties[key] == nil ? key : "\(additionalKey).\(key)"
+            properties[name] = WeaviateJSON.displayText(value)
         }
         return WeaviateObject(uuid: uuid, className: className, properties: properties, vector: vector)
     }

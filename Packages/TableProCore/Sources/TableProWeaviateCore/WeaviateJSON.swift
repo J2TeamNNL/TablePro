@@ -1,21 +1,13 @@
 import Foundation
 
 public enum WeaviateJSON {
-    public static func object(from data: Data) throws -> Any {
-        do {
-            return try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
-        } catch {
-            throw WeaviateError.malformedResponse(error.localizedDescription)
-        }
-    }
-
     public static func dictionary(_ value: Any?) -> [String: Any]? {
         value as? [String: Any]
     }
 
     public static func data(_ object: Any, pretty: Bool = false) throws -> Data {
         guard JSONSerialization.isValidJSONObject(object) else {
-            throw WeaviateError.malformedResponse("Request body is not valid JSON.")
+            throw WeaviateError.malformedResponse(String(localized: "Request body is not valid JSON."))
         }
         var options: JSONSerialization.WritingOptions = [.sortedKeys]
         if pretty {

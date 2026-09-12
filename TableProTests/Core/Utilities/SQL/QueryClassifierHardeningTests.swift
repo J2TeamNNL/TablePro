@@ -558,6 +558,39 @@ struct QueryClassifierNonSqlTests {
         #expect(!QueryClassifier.isWriteQuery(search, databaseType: .weaviate))
     }
 
+    @Test("A console body declaring a mutation is classified the same as a bare one")
+    func weaviateConsoleBodyIsRead() {
+        #expect(QueryClassifier.isWriteQuery(
+            "POST /v1/graphql\nmutation { delete { Article } }",
+            databaseType: .weaviate
+        ))
+        #expect(QueryClassifier.isWriteQuery(
+            "POST /v1/graphql\n{\"query\": \"mutation { delete { Article } }\"}",
+            databaseType: .weaviate
+        ))
+        #expect(!QueryClassifier.isWriteQuery(
+            "POST /v1/graphql\n{\"query\": \"{ Get { Article { title } } }\"}",
+            databaseType: .weaviate
+        ))
+        #expect(!QueryClassifier.isWriteQuery(
+            "POST /v1/graphql?pretty\n{ Get { Article { title } } }",
+            databaseType: .weaviate
+        ))
+    }
+
+    @Test("A mutation inside a query envelope is a write however it is typed")
+    func weaviateEnvelopeIsRead() {
+        #expect(QueryClassifier.isWriteQuery(
+            "{\"query\": \"mutation { delete { Article } }\"}",
+            databaseType: .weaviate
+        ))
+        #expect(!QueryClassifier.isWriteQuery(
+            "{\"query\": \"{ Get { Article { title } } }\"}",
+            databaseType: .weaviate
+        ))
+        #expect(!QueryClassifier.isWriteQuery("{ Get { Article { title } } }", databaseType: .weaviate))
+    }
+
     @Test("Elasticsearch stored scripts are flagged as code execution on both verbs")
     func elasticsearchScriptsAreFlagged() {
         #expect(

@@ -25,8 +25,8 @@ struct WeaviateAuthTests {
         }
     }
 
-    @Test("A pasted key is sent even when Auth Method is still None")
-    func noneModeSendsAPastedKey() throws {
+    @Test("A pasted key is not sent when Auth Method is None")
+    func noneModeIgnoresAPastedKey() throws {
         let settings = try WeaviateConnectionSettings.parse(
             host: "localhost",
             port: 8_080,
@@ -36,7 +36,7 @@ struct WeaviateAuthTests {
                 WeaviateFieldID.apiKey: "wv-secret"
             ]
         )
-        #expect(settings.auth.authorizationHeader == "Bearer wv-secret")
+        #expect(settings.auth.authorizationHeader == nil)
     }
 
     @Test("None mode does not require a key")
@@ -122,15 +122,16 @@ struct WeaviateQueryTests {
 @Suite("Weaviate GraphQL and console")
 struct WeaviateGraphQLTests {
     @Test("A Get query asks for _additional id and vector")
-    func getQueryIncludesAdditional() {
-        let query = WeaviateGraphQL.getQuery(
+    func getQueryIncludesAdditional() throws {
+        let query = try WeaviateGraphQL.getQuery(
             collection: "Article",
             properties: ["uuid", "title", "vector"],
             limit: 10,
             offset: 0,
             sorts: [],
             filters: [WeaviateFilterSpec(column: "title", op: "=", value: "Hello")],
-            logicMode: "AND"
+            logicMode: "AND",
+            schema: ["title": WeaviateProperty(name: "title", dataType: "text")]
         )
         #expect(query.contains("Get"))
         #expect(query.contains("Article"))
@@ -145,7 +146,6 @@ struct WeaviateGraphQLTests {
     func detection() {
         #expect(WeaviateGraphQL.looksLikeGraphQL("{ Get { Article { title } } }"))
         #expect(WeaviateGraphQL.looksLikeGraphQL("query { Get { Article { title } } }"))
-        #expect(WeaviateGraphQL.isMutation("mutation { delete { Article } }"))
         #expect(!WeaviateGraphQL.looksLikeGraphQL("GET /v1/schema"))
     }
 
