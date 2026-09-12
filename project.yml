@@ -516,6 +516,7 @@ targets:
       - Plugins/PostgreSQLDriverPlugin/LibPQPendingResultDrain.swift
       - Plugins/PostgreSQLDriverPlugin/LibPQPluginError.swift
       - Plugins/PostgreSQLDriverPlugin/LibPQSSLMapping.swift
+      - Plugins/PostgreSQLDriverPlugin/LibPQStringConformance.swift
       - Plugins/PostgreSQLDriverPlugin/PostGISSpatialRewrite.swift
       - Plugins/PostgreSQLDriverPlugin/PostgreSQLCapabilities.swift
       - Plugins/PostgreSQLDriverPlugin/PostgreSQLCatalogForeignKeys.swift
