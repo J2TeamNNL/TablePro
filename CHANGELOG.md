@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - First-launch tour replaced by a one-page welcome sheet, shown again from Help > Getting Started.
 - Beancount connections held at Safe Mode Read-Only. (#2030)
 - MySQL sessions on the server's default `utf8mb4` collation.
+- Structure editor options the connected PostgreSQL server does not support left out: generated columns before 12, BRIN before 9.5, and the MySQL-only FULLTEXT and SPATIAL index types.
 
 ### Removed
 
@@ -58,6 +59,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Crash opening a MySQL result whose column has no name on iPhone and iPad.
 - Wrong SQLSTATE code in PostgreSQL, Redshift, CockroachDB and PGlite error messages.
 - Read-only write explanation never shown on PostgreSQL servers.
+- Trigger editing and the New Trigger template failing on PostgreSQL 13 and earlier.
+- Reindexing a whole PostgreSQL database failing before PostgreSQL 16.
+- Schema copy, check constraint rename, column reorder and role editing failing on older PostgreSQL servers.
+- FULLTEXT and SPATIAL index types creating a plain B-tree index on PostgreSQL.
 - Table list, foreign keys, triggers, check constraints, types and grants failing on PostgreSQL 9.1 to 9.5. (#2734)
 - Wrong index column order on PostgreSQL 9.4 and earlier.
 - Sequences missing from SQL dumps of PostgreSQL 9.6 and earlier.

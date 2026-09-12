@@ -538,6 +538,7 @@ targets:
       - Plugins/PostgreSQLDriverPlugin/PostgreSQLTextArray.swift
       - Plugins/PostgreSQLDriverPlugin/PostgreSQLTransactionStatement.swift
       - Plugins/PostgreSQLDriverPlugin/PostgreSQLTypeDefinition.swift
+      - Plugins/PostgreSQLDriverPlugin/PostgreSQLVersionedStatements.swift
       - Plugins/PostgreSQLDriverPlugin/RedshiftExternalSchemaQueries.swift
       - Plugins/PostgreSQLDriverPlugin/RedshiftSchemaQueries.swift
       - Plugins/KafkaDriverPlugin/KafkaApiKey.swift

@@ -130,6 +130,9 @@ protocol DatabaseDriver: AnyObject, Sendable {
     var triggerEditUsesReplace: Bool { get }
     var supportsTransactionalDDL: Bool { get }
 
+    var unsupportedStructureColumnFields: Set<StructureColumnField> { get }
+    var unsupportedIndexTypes: Set<String> { get }
+
     /// Fetch foreign keys for all tables in the current database/schema in bulk.
     /// Default implementation falls back to per-table fetchForeignKeys.
     func fetchAllForeignKeys() async throws -> [String: [ForeignKeyInfo]]
@@ -391,6 +394,9 @@ extension DatabaseDriver {
     func generateDropTriggerSQL(name: String, table: String) -> String? { nil }
     var triggerEditUsesReplace: Bool { false }
     var supportsTransactionalDDL: Bool { false }
+
+    var unsupportedStructureColumnFields: Set<StructureColumnField> { [] }
+    var unsupportedIndexTypes: Set<String> { [] }
 
     func ping() async throws {
         _ = try await execute(query: "SELECT 1")
