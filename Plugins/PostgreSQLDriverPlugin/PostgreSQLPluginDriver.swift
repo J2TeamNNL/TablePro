@@ -95,7 +95,7 @@ class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
         }
     }
 
-    private func includesMaterializedViews() -> Bool {
+    func includesMaterializedViews() -> Bool {
         catalogPresence?.hasMaterializedViews ?? versionedCapabilities.hasMaterializedViewsCatalog
     }
 
