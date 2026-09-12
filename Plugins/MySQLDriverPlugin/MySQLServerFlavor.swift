@@ -87,18 +87,8 @@ nonisolated internal enum MySQLServerFlavor: Equatable, Sendable {
 
     var isDatabend: Bool { self == .databend }
 
-    var isOceanBase: Bool {
-        guard case .oceanbase = self else { return false }
-        return true
-    }
-
     var tidbVersion: MySQLEngineVersion? {
         guard case .tidb(let version) = self else { return nil }
-        return version
-    }
-
-    var oceanbaseVersion: MySQLEngineVersion? {
-        guard case .oceanbase(let version) = self else { return nil }
         return version
     }
 
@@ -136,10 +126,19 @@ nonisolated internal enum MySQLServerFlavor: Equatable, Sendable {
     }
 
     /// OceanBase enforces `ob_query_timeout` of its own, 10 seconds by default, and
-    /// `max_execution_time` only outranks it while it is above zero. Zero is the setting's "no
-    /// limit", which an export relies on, so it has to lift OceanBase's own limit as well. The
-    /// server clamps the value it accepts there and warns; this is what it clamps to.
+    /// `max_execution_time` governs read-only statements alone: measured on 4.4.2.1, an `UPDATE`
+    /// under a 30 second `max_execution_time` still failed at 10 seconds with error 4012. So the
+    /// setting has to move OceanBase's own limit, in microseconds, whatever its value. Zero is the
+    /// setting's "no limit", which an export relies on, and the server clamps what it accepts
+    /// there; this is what it clamps to.
     static let oceanbaseUnlimitedQueryTimeoutMicroseconds = 3_216_672_000_000_000
+
+    static func oceanbaseQueryTimeoutStatement(seconds: Int) -> String {
+        let microseconds = seconds > 0
+            ? seconds * 1_000_000
+            : oceanbaseUnlimitedQueryTimeoutMicroseconds
+        return "SET SESSION max_execution_time = \(max(seconds, 0) * 1_000), ob_query_timeout = \(microseconds)"
+    }
 
     func queryTimeoutStatement(seconds: Int) -> String {
         switch self {
@@ -147,10 +146,9 @@ nonisolated internal enum MySQLServerFlavor: Equatable, Sendable {
             return "SET SESSION max_statement_time = \(seconds)"
         case .databend:
             return "SET max_execute_time_in_seconds = \(seconds)"
-        case .oceanbase where seconds <= 0:
-            return "SET SESSION max_execution_time = 0, ob_query_timeout = "
-                + "\(Self.oceanbaseUnlimitedQueryTimeoutMicroseconds)"
-        case .mysql, .tidb, .oceanbase:
+        case .oceanbase:
+            return Self.oceanbaseQueryTimeoutStatement(seconds: seconds)
+        case .mysql, .tidb:
             return "SET SESSION max_execution_time = \(seconds * 1_000)"
         }
     }

@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import TableProPluginKit
 
 enum DockerComposeExtractor {
     struct ServiceDatabase {
@@ -116,6 +117,18 @@ enum DockerComposeExtractor {
         return nil
     }
 
+    /// OBProxy routes by a cluster the observer's own port does not need, and `root@sys` reaches it
+    /// only when the proxy was given a default cluster, so the name goes into the username whenever
+    /// the compose file states it.
+    private static func applyOceanBaseCredentials(_ fields: inout ScannedConnectionFields, variables: [String: String]) {
+        let tenantPassword = variables["OB_TENANT_PASSWORD"]?.nilIfEmpty
+        let tenant = variables["OB_TENANT_NAME"]?.nilIfEmpty ?? (tenantPassword != nil ? "test" : "sys")
+        let cluster = variables["OB_CLUSTER_NAME"]?.nilIfEmpty
+        fields.username = "root@\(tenant)" + (cluster.map { "#\($0)" } ?? "")
+        fields.password = tenant == "sys" ? variables["OB_SYS_PASSWORD"] ?? "" : tenantPassword ?? ""
+        fields.database = variables["OB_DATABASE"] ?? ""
+    }
+
     static func repositoryComponents(of image: String) -> [String] {
         let withoutDigest = image.split(separator: "@", maxSplits: 1).first.map(String.init) ?? image
         var components = withoutDigest.split(separator: "/").map(String.init)
@@ -193,12 +206,7 @@ enum DockerComposeExtractor {
             fields.password = variables["QUERY_DEFAULT_PASSWORD"] ?? ""
             fields.database = "default"
         case .oceanbase:
-            let tenant = variables["OB_TENANT_NAME"] ?? (variables["OB_TENANT_PASSWORD"] != nil ? "test" : "sys")
-            fields.username = "root@\(tenant)"
-            fields.password = tenant == "sys"
-                ? variables["OB_SYS_PASSWORD"] ?? ""
-                : variables["OB_TENANT_PASSWORD"] ?? ""
-            fields.database = variables["OB_DATABASE"] ?? ""
+            applyOceanBaseCredentials(&fields, variables: variables)
         case .mariadb, .mysql:
             let prefix = variables["MARIADB_PASSWORD"] != nil || variables["MARIADB_DATABASE"] != nil
                 ? "MARIADB"

@@ -138,7 +138,7 @@ struct MySQLServerFlavorTests {
         (.mysql, 0, "SET SESSION max_execution_time = 0"),
         (.mysql, 30, "SET SESSION max_execution_time = 30000"),
         (.tidb(version: nil), 30, "SET SESSION max_execution_time = 30000"),
-        (.oceanbase(version: nil), 30, "SET SESSION max_execution_time = 30000"),
+        (.oceanbase(version: nil), 30, "SET SESSION max_execution_time = 30000, ob_query_timeout = 30000000"),
         (.oceanbase(version: nil), 0, "SET SESSION max_execution_time = 0, ob_query_timeout = 3216672000000000"),
         (.databend, 30, "SET max_execute_time_in_seconds = 30")
     ])

@@ -305,6 +305,27 @@ struct DockerComposeExtractorTests {
         #expect(proxy?.parsedURL.port == 2_883)
     }
 
+    @Test("An OBProxy cluster name joins the username, and an empty tenant name keeps the default")
+    func testOceanBaseClusterAndEmptyTenant() {
+        let candidates = extract("""
+        services:
+          proxy:
+            image: oceanbase/obproxy-ce:latest
+            environment:
+              OB_CLUSTER_NAME: obcluster
+            ports:
+              - "2883:2883"
+          ob:
+            image: oceanbase/oceanbase-ce:latest
+            environment:
+              OB_TENANT_NAME: ""
+            ports:
+              - "2881:2881"
+        """)
+        #expect(candidates.first { $0.sourceKey == "services.proxy" }?.parsedURL.username == "root@sys#obcluster")
+        #expect(candidates.first { $0.sourceKey == "services.ob" }?.parsedURL.username == "root@sys")
+    }
+
     @Test("OceanBase images that do not serve SQL are not imported")
     func testOceanBaseNonDatabaseImages() {
         let candidates = extract("""
