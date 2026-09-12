@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Strikethrough on a row queued for deletion, and an underline on a new row or an edited value.
 - Google Cloud Spanner as a registry plugin over the REST API. (#1226, #2480)
+- Weaviate as a registry REST plugin, collections as tables. (#1724)
 - TiDB and Databend connection types on the MySQL driver. (#1066, #2514)
 - Empty state in the inspector and the assistant for a connection that is not up.
 - **Check connections** in Settings > General, including Only when I use the connection. (#2700)

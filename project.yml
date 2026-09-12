@@ -639,7 +639,7 @@ targets:
     dependencies:
       - target: TablePro
       - package: TableProCore
-        products: [TableProMSSQLCore, TableProNumberFormatting]
+        products: [TableProMSSQLCore, TableProNumberFormatting, TableProWeaviateCore]
       # The Kafka integration suite drives the real driver, so the test target links what
       # the plugin target links: zstd for decompression and NIO for the transport.
       - package: zstd
@@ -1262,6 +1262,15 @@ targets:
       - package: TableProCore
         product: TableProNumberFormatting
 
+  WeaviateDriverPlugin:
+    templates: [DriverPlugin]
+    templateAttributes:
+      folder: WeaviateDriverPlugin
+      principalClass: WeaviatePlugin
+    dependencies:
+      - package: TableProCore
+        product: TableProWeaviateCore
+
 # Compile-checks every plugin, including the registry-only ones the app does not
 # embed. CI builds this scheme so a registry plugin cannot rot between releases.
 aggregateTargets:
@@ -1306,6 +1315,7 @@ aggregateTargets:
       - TeradataDriver
       - TrinoDriverPlugin
       - TypesenseDriverPlugin
+      - WeaviateDriverPlugin
       - XLSXExport
     scheme: {}
 
