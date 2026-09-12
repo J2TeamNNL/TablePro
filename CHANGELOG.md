@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Header, grid line, selection and focus colors in the theme editor.
 - Themes that name a system color for a slot, so the built-in themes keep the system's own contrast settings.
 - Reason shown in Settings > Appearance for a theme file that could not be loaded.
+- Panel and status colors in the theme editor, covering the results, inspector, structure, compare and query plan panes.
 - **Refresh Materialized View…** on PostgreSQL, with a concurrent refresh where the view qualifies. (#2726)
 - **Show DDL** and **Copy DDL** for views and materialized views. (#2726)
 - **Edit Comment…** for PostgreSQL tables, views, materialized views and foreign tables. (#2726)
@@ -49,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Editor Font and Data Grid Font moved to Settings > Editor and Settings > Data & Results, and kept per Mac.
 - Editor font size range of 10 to 24 points everywhere, including zoom.
 - Structure editor options the connected PostgreSQL server does not support left out: generated columns before 12, BRIN before 9.5, and the MySQL-only FULLTEXT and SPATIAL index types.
+- Structure tab read-only on a view, a materialized view, a foreign table or a system table outside PostgreSQL. (#2726)
 
 ### Removed
 
@@ -71,6 +73,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Query history preview ignoring the theme and the editor font.
 - Theme editor changing the active theme instead of the theme selected for the slot being edited.
 - Malformed theme files loading as Default Light under their own name.
+- Content panes outside the editor and the data grid ignoring the theme.
+- JSON and PHP tree values colored differently from the same values in the row inspector.
+- Autocomplete icon colors ignoring the theme.
 - Color with a typo in it rendering as a different color instead of being reported.
 - Text past the first 64 KB of a UTF-16 SQL import arriving byte-swapped.
 - SQL import failing on a file whose encoding is not UTF-8 when a character lands on a 64 KB boundary.
@@ -232,8 +237,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cross-engine copy and JSON import creating `jsonb` columns on PostgreSQL 9.3 and earlier.
 - SQL Server edits and deletes matching no row when the row is identified by a binary column.
 - SQL Server parameters sent to the wrong placeholders when a column name holds a question mark.
+- Maintenance offered on views and sequences, where the server skips or refuses it. (#2726)
+- Maintenance running against a same-named object in another schema. (#2726)
+- Maintenance SQL preview showing a statement the app never runs. (#2726)
 - `[` in a SQL Server filter value read as a wildcard.
 - Non-ASCII text turned into `?` by Copy as INSERT, Copy as IN, Preview Referenced Row, compare scripts and column defaults on SQL Server.
+- Structure tab offering column, index and constraint edits that views and materialized views refuse. (#2726)
 
 ### Security
 
