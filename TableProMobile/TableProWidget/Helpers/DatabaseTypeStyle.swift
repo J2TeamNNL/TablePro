@@ -23,6 +23,7 @@ enum DatabaseTypeStyle {
         case "DynamoDB": return "dynamodb-icon"
         case "BigQuery": return "bigquery-icon"
         case "Spanner": return "spanner-icon"
+        case "Weaviate": return "weaviate-icon"
         default: return "externaldrive"
         }
     }

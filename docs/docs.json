@@ -176,7 +176,8 @@
               "databases/teradata",
               "databases/tidb",
               "databases/trino",
-              "databases/typesense"
+              "databases/typesense",
+              "databases/weaviate"
             ]
           },
           {

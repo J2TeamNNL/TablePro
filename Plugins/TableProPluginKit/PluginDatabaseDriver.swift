@@ -112,6 +112,19 @@ public protocol PluginDatabaseDriver: AnyObject, Sendable {
     /// here must not also declare the same indexes in `fetchTableDDL`, or the dump creates each
     /// one twice.
     func fetchIndexDDL(table: String, schema: String?) async throws -> [String]
+
+    /// The `COMMENT` statements that reattach this relation's own comment and its column comments,
+    /// ready to run. A dump writes them directly after the object's `CREATE`, which is where every
+    /// engine's own tool puts them.
+    ///
+    /// This is statement text rather than the comment strings, because only the driver knows the
+    /// keyword its engine demands: PostgreSQL checks `COMMENT ON TABLE` against the relation's
+    /// `relkind` and refuses it on a view with "is not a table".
+    ///
+    /// Returning nothing is the right answer for an engine whose `CREATE TABLE` carries its comments
+    /// inline. A driver that answers here must not also declare the same comments in
+    /// `fetchTableDDL`, or the dump sets each one twice.
+    func fetchCommentDDL(table: String, schema: String?) async throws -> [String]
     func fetchForeignKeys(table: String, schema: String?) async throws -> [PluginForeignKeyInfo]
     func fetchTriggers(table: String, schema: String?) async throws -> [PluginTriggerInfo]
     func fetchCheckConstraints(table: String, schema: String?) async throws -> [PluginCheckConstraintInfo]
@@ -177,6 +190,7 @@ public protocol PluginDatabaseDriver: AnyObject, Sendable {
     /// it and say so. Throwing is reserved for a release that was attempted and failed.
     func releaseIdleResource() async throws -> PluginResourceRelease
     var serverVersion: String? { get }
+    var hasLostConnection: Bool { get }
     var parameterStyle: ParameterStyle { get }
     func resolveQueryCompletionProfile(
         databaseTypeId: String,
@@ -315,6 +329,10 @@ public protocol PluginDatabaseDriver: AnyObject, Sendable {
     /// answer, which stands the check down for an engine TablePro never runs a rebuild on anyway.
     func columnReorderSchemaFingerprint(table: String, schema: String?) async throws -> String?
 
+    var unsupportedStructureColumnFields: Set<StructureColumnField> { get }
+    var unsupportedIndexTypes: Set<String> { get }
+    func schemaOperationRefusal(_ operation: PluginSchemaOperation) -> String?
+
     func generateCreateTableSQL(definition: PluginCreateTableDefinition) -> String?
 
     // Definition SQL for clipboard copy (optional — return nil if not supported)
@@ -336,6 +354,23 @@ public protocol PluginDatabaseDriver: AnyObject, Sendable {
     /// make: on Oracle it is a user, and on SQL Server it needs its own batch. Callers leave those
     /// namespaces out and say so rather than emitting DDL the server will reject.
     func createSchemaStatement(name: String) -> String?
+
+    /// Sets or clears the comment on a table-like object. `objectType` is the object's type as the
+    /// table listing reported it, because engines that key the statement on the kind refuse the
+    /// wrong keyword: PostgreSQL answers `COMMENT ON TABLE` on a view with "is not a table". A nil
+    /// or empty comment removes it. Return nil for a kind the engine cannot comment on.
+    func objectCommentStatement(name: String, objectType: String, schema: String?, comment: String?) -> String?
+
+    /// The statement that recomputes a materialized view's stored rows. Return nil where the engine
+    /// has no materialized views or keeps them current on its own.
+    func refreshMaterializedViewStatement(name: String, schema: String?, concurrently: Bool) -> String?
+
+    /// Whether this view can be refreshed without blocking its readers. Return nil where the engine
+    /// has no such refresh, so the option is not offered at all.
+    func concurrentRefreshAvailability(
+        materializedView: String,
+        schema: String?
+    ) async throws -> PluginConcurrentRefreshAvailability?
 
     // Maintenance operations (optional — return nil if not supported)
     func supportedMaintenanceOperations() -> [String]?
@@ -542,6 +577,8 @@ public extension PluginDatabaseDriver {
 
     var serverVersion: String? { nil }
 
+    var hasLostConnection: Bool { false }
+
     var parameterStyle: ParameterStyle { .questionMark }
 
     func resolveQueryCompletionProfile(
@@ -612,6 +649,11 @@ public extension PluginDatabaseDriver {
     /// its indexes and for one that has none. A driver that overrides this must drop the same
     /// statements from `fetchTableDDL` in the same change.
     func fetchIndexDDL(table: String, schema: String?) async throws -> [String] { [] }
+
+    /// Defaults to nothing, which is correct for an engine whose `CREATE TABLE` already carries its
+    /// comments and for one that stores none. A driver that overrides this must drop the same
+    /// statements from `fetchTableDDL` in the same change.
+    func fetchCommentDDL(table: String, schema: String?) async throws -> [String] { [] }
 
     /// Answers whether `fetchAllIndexes` is a single query rather than the N+1 default below.
     var providesBulkIndexFetch: Bool { false }
@@ -765,6 +807,10 @@ public extension PluginDatabaseDriver {
 
     func columnReorderSchemaFingerprint(table: String, schema: String?) async throws -> String? { nil }
 
+    var unsupportedStructureColumnFields: Set<StructureColumnField> { [] }
+    var unsupportedIndexTypes: Set<String> { [] }
+    func schemaOperationRefusal(_ operation: PluginSchemaOperation) -> String? { nil }
+
     func generateCreateTableSQL(definition: PluginCreateTableDefinition) -> String? { nil }
 
     func generateColumnDefinitionSQL(column: PluginColumnDefinition) -> String? { nil }
@@ -776,6 +822,19 @@ public extension PluginDatabaseDriver {
     func foreignKeyDisableStatements() -> [String]? { nil }
     func foreignKeyEnableStatements() -> [String]? { nil }
     func createSchemaStatement(name: String) -> String? { nil }
+
+    func objectCommentStatement(name: String, objectType: String, schema: String?, comment: String?) -> String? {
+        nil
+    }
+
+    func refreshMaterializedViewStatement(name: String, schema: String?, concurrently: Bool) -> String? { nil }
+
+    func concurrentRefreshAvailability(
+        materializedView: String,
+        schema: String?
+    ) async throws -> PluginConcurrentRefreshAvailability? {
+        nil
+    }
 
     func supportedMaintenanceOperations() -> [String]? { nil }
     func maintenanceStatements(operation: String, table: String?, schema: String?, options: [String: String]) -> [String]? { nil }

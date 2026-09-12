@@ -8,13 +8,12 @@ import TableProPluginKit
 
 extension PostgreSQLPluginDriver {
     func fetchColumns(table: String, schema: String?) async throws -> [PluginColumnInfo] {
-        let safeSchema = escapeStringLiteral(schema ?? core.currentSchema)
-        let safeTable = escapeStringLiteral(table)
         let catalog = try await fetchTypeCatalog()
         let query = PostgreSQLSchemaQueries.columnsQuery(
-            schemaLiteral: safeSchema,
-            tableLiteral: safeTable,
-            capabilities: versionedCapabilities
+            schema: schema ?? core.currentSchema,
+            table: table,
+            capabilities: versionedCapabilities,
+            includeMaterializedViews: includesMaterializedViews()
         )
         let result = try await execute(query: query)
         return result.rows.compactMap { row in
@@ -23,12 +22,12 @@ extension PostgreSQLPluginDriver {
     }
 
     func fetchAllColumns(schema: String?) async throws -> [String: [PluginColumnInfo]] {
-        let safeSchema = escapeStringLiteral(schema ?? core.currentSchema)
         let catalog = try await fetchTypeCatalog()
         let query = PostgreSQLSchemaQueries.columnsQuery(
-            schemaLiteral: safeSchema,
-            tableLiteral: nil,
-            capabilities: versionedCapabilities
+            schema: schema ?? core.currentSchema,
+            table: nil,
+            capabilities: versionedCapabilities,
+            includeMaterializedViews: includesMaterializedViews()
         )
         let result = try await execute(query: query)
         var allColumns: [String: [PluginColumnInfo]] = [:]
@@ -43,23 +42,18 @@ extension PostgreSQLPluginDriver {
 
     func fetchCheckConstraints(table: String, schema: String?) async throws -> [PluginCheckConstraintInfo] {
         let query = PostgreSQLSchemaQueries.checkConstraintsQuery(
-            schemaLiteral: escapeStringLiteral(schema ?? core.currentSchema),
-            tableLiteral: escapeStringLiteral(table)
+            schema: schema ?? core.currentSchema,
+            table: table
         )
         let result = try await execute(query: query)
         return result.rows.compactMap { row in
             guard let name = row[safe: 0]?.asText,
                   let definition = row[safe: 1]?.asText else { return nil }
-            // JSON rather than a comma-joined string: a quoted PostgreSQL identifier may itself
-            // contain a comma, which splitting would turn into two column names.
-            let columns = (row[safe: 3]?.asText?.nilIfEmpty)
-                .flatMap { $0.data(using: .utf8) }
-                .flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? []
             return PluginCheckConstraintInfo(
                 name: name,
                 expression: PostgreSQLCheckConstraintDefinition.expression(fromConstraintDef: definition),
-                columns: columns,
-                isValidated: row[safe: 2]?.asText?.lowercased() != "f"
+                columns: PostgreSQLTextArray.values(row[safe: 3]?.asText),
+                isValidated: PostgreSQLCatalogBoolean.isTrue(row[safe: 2]?.asText)
             )
         }
     }

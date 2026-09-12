@@ -77,6 +77,7 @@ struct DatabaseTypeTests {
         #expect(DatabaseType.allKnownTypes.contains(.dameng))
         #expect(DatabaseType.allKnownTypes.contains(.kafka))
         #expect(DatabaseType.allKnownTypes.contains(.cloudflareR2SQL))
+        #expect(DatabaseType.allKnownTypes.contains(.weaviate))
     }
 
     /// The list has no duplicates, which a count alone would not catch: adding a type twice
@@ -92,6 +93,13 @@ struct DatabaseTypeTests {
         #expect(DatabaseType.cloudflareR2SQL.rawValue == "Cloudflare R2 SQL")
         #expect(DatabaseType.cloudflareR2SQL.iconName == "cloudflare-r2-sql-icon")
         #expect(DatabaseType.cloudflareR2SQL.pluginTypeId == "Cloudflare R2 SQL")
+    }
+
+    @Test("Weaviate resolves its icon and plugin type id")
+    func weaviateIdentity() {
+        #expect(DatabaseType.weaviate.rawValue == "Weaviate")
+        #expect(DatabaseType.weaviate.iconName == "weaviate-icon")
+        #expect(DatabaseType.weaviate.pluginTypeId == "Weaviate")
     }
 
     @Test("Hashable conformance")

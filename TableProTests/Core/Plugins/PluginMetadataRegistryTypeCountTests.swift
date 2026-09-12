@@ -34,7 +34,7 @@ struct PluginMetadataRegistryTypeCountTests {
         "CockroachDB", "Dameng", "Databend", "DuckDB", "DynamoDB", "Elasticsearch", "etcd", "Kafka",
         "libSQL", "MariaDB", "MongoDB", "MySQL", "Oracle", "PGlite", "PostgreSQL", "Redis", "Redshift",
         "ScyllaDB", "Snowflake", "Spanner", "SQL Server", "SQLite", "SurrealDB", "Teradata", "TiDB", "Trino",
-        "Turso", "Typesense", "OceanBase"
+        "Turso", "Typesense", "Weaviate", "OceanBase"
     ]
 
     private static func builtInTypeIds() -> Set<String> {

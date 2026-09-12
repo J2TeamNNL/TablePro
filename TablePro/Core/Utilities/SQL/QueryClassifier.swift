@@ -581,6 +581,8 @@ private extension QueryClassifier {
             return elasticsearchClassification(trimmed)
         case .typesense:
             return typesenseClassification(trimmed)
+        case .weaviate:
+            return weaviateClassification(trimmed)
         default:
             return nil
         }
@@ -748,5 +750,70 @@ private extension QueryClassifier {
             return QueryClassification(tier: .destructive, reachesFilesystemOrExecutesCode: touchesUnsafeSurface)
         }
         return QueryClassification(tier: .write, reachesFilesystemOrExecutesCode: touchesUnsafeSurface)
+    }
+
+    /// A bare operation, a `{"query": ...}` envelope and a console body are the same request, and
+    /// the driver forwards the envelope verbatim, so the read-only gate has to read all three.
+    static func weaviateDeclaresMutation(_ body: String) -> Bool {
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.lowercased().hasPrefix("mutation") {
+            return true
+        }
+        guard let data = trimmed.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let query = object["query"] as? String
+        else { return false }
+        return query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("mutation")
+    }
+
+    /// The driver takes a body from the rest of the request line as well as from the lines below
+    /// it, so the gate has to read the same two places.
+    static func weaviateConsoleBody(_ trimmed: String) -> String {
+        let lines = trimmed.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+        let header = lines.first.map(String.init) ?? ""
+        let following = lines.count > 1 ? String(lines[1]) : ""
+        let parts = header.split(maxSplits: 2, omittingEmptySubsequences: true, whereSeparator: \.isWhitespace)
+        let inline = parts.count > 2 ? String(parts[2]) : ""
+        return inline.isEmpty ? following : inline
+    }
+
+    static func weaviateClassification(_ trimmed: String) -> QueryClassification {
+        if trimmed.hasPrefix("WEAVIATE_SEARCH:") {
+            return .safe
+        }
+        if trimmed.hasPrefix("WEAVIATE_WRITE:") {
+            let encoded = String(trimmed.dropFirst("WEAVIATE_WRITE:".count))
+            if let data = Data(base64Encoded: encoded),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               (json["method"] as? String)?.uppercased() == "DELETE" {
+                return QueryClassification(tier: .destructive, reachesFilesystemOrExecutesCode: false)
+            }
+            return QueryClassification(tier: .write, reachesFilesystemOrExecutesCode: false)
+        }
+        let lowered = trimmed.lowercased()
+        if lowered.hasPrefix("mutation") {
+            return QueryClassification(tier: .write, reachesFilesystemOrExecutesCode: false)
+        }
+        if trimmed.hasPrefix("{") || lowered.hasPrefix("query") || lowered.hasPrefix("fragment") {
+            return weaviateDeclaresMutation(trimmed)
+                ? QueryClassification(tier: .write, reachesFilesystemOrExecutesCode: false)
+                : .safe
+        }
+        let (verb, path) = typesenseRequestLine(trimmed)
+        if verb == "GET" || verb == "HEAD" {
+            return .safe
+        }
+        if verb == "POST", path == "/V1/GRAPHQL" {
+            return weaviateDeclaresMutation(weaviateConsoleBody(trimmed))
+                ? QueryClassification(tier: .write, reachesFilesystemOrExecutesCode: false)
+                : .safe
+        }
+        if verb == "DELETE" {
+            return QueryClassification(tier: .destructive, reachesFilesystemOrExecutesCode: false)
+        }
+        if verb.isEmpty {
+            return .safe
+        }
+        return QueryClassification(tier: .write, reachesFilesystemOrExecutesCode: false)
     }
 }

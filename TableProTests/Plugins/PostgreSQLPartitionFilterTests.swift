@@ -6,7 +6,7 @@ import Testing
 struct PostgreSQLPartitionFilterTests {
     private func awareQuery() -> String {
         PostgreSQLSchemaQueries.fetchTables(
-            schemaLiteral: "public",
+            schema: "public",
             includeMaterializedViews: false,
             includeForeignTables: false
         )
@@ -42,7 +42,7 @@ struct PostgreSQLPartitionFilterTests {
     @Test("Partition awareness degrades independently of the optional catalogs")
     func partitionAwarenessDegradesIndependently() {
         let query = PostgreSQLSchemaQueries.fetchTables(
-            schemaLiteral: "public",
+            schema: "public",
             includeMaterializedViews: true,
             includeForeignTables: true,
             includePartitionAwareness: false
@@ -56,7 +56,7 @@ struct PostgreSQLPartitionFilterTests {
     @Test("Every union branch still projects three aligned columns when partition aware")
     func unionBranchesStayAligned() {
         let query = PostgreSQLSchemaQueries.fetchTables(
-            schemaLiteral: "public",
+            schema: "public",
             includeMaterializedViews: true,
             includeForeignTables: true
         )
@@ -69,7 +69,7 @@ struct PostgreSQLPartitionFilterTests {
 
     @Test("Partition listing is scoped to one parent in one schema")
     func fetchPartitionsScopesToParent() {
-        let query = PostgreSQLSchemaQueries.fetchPartitions(schemaLiteral: "public", tableLiteral: "orders")
+        let query = PostgreSQLSchemaQueries.fetchPartitions(schema: "public", table: "orders")
         #expect(query.contains("pn.nspname = 'public'"))
         #expect(query.contains("parent.relname = 'orders'"))
         #expect(query.contains("parent.relkind = 'p'"))
@@ -77,13 +77,13 @@ struct PostgreSQLPartitionFilterTests {
 
     @Test("Partition listing sorts the DEFAULT partition last")
     func fetchPartitionsSortsDefaultLast() {
-        let query = PostgreSQLSchemaQueries.fetchPartitions(schemaLiteral: "public", tableLiteral: "orders")
+        let query = PostgreSQLSchemaQueries.fetchPartitions(schema: "public", table: "orders")
         #expect(query.contains("ORDER BY pg_catalog.pg_get_expr(cc.relpartbound, cc.oid) = 'DEFAULT', cc.relname"))
     }
 
     @Test("Partition listing projects relkind so subpartitioned children stay expandable")
     func fetchPartitionsProjectsRelkind() {
-        let query = PostgreSQLSchemaQueries.fetchPartitions(schemaLiteral: "public", tableLiteral: "orders")
+        let query = PostgreSQLSchemaQueries.fetchPartitions(schema: "public", table: "orders")
         #expect(query.contains("SELECT cc.relname, cc.relkind"))
     }
 }

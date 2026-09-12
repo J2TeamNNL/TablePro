@@ -50,6 +50,7 @@ extension DatabaseType {
     static let typesense = DatabaseType(rawValue: "Typesense")
     static let teradata = DatabaseType(rawValue: "Teradata")
     static let trino = DatabaseType(rawValue: "Trino")
+    static let weaviate = DatabaseType(rawValue: "Weaviate")
 }
 
 extension DatabaseType: Codable {
