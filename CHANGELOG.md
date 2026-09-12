@@ -51,6 +51,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Silently lost edit on a table with no primary key holding a `FLOAT`, `DOUBLE` or `JSON` column.
+- A save on a table with no primary key reporting success when it matched no row.
+- SQL Server and Oracle reporting zero rows affected for every `INSERT`, `UPDATE` and `DELETE`.
 - Query confirmation dialog cut to the first 200 characters of the statement. (#2759)
 - Statement folded onto one line and cut at 400 characters in an MCP client's approval prompt.
 - Blank line under "Are you sure you want to execute this query?" when confirming a rename.
