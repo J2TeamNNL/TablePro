@@ -118,8 +118,8 @@ extension MainContentCoordinator {
         /// database (`selectRedisDatabaseAndQuery`), which a restore does not do, so a Back would
         /// put the table back while leaving the connection on another database index.
         if navigationModel == .inPlace {
-            if let oldTab = tabManager.selectedTab, let oldTableName = oldTab.tableContext.tableName {
-                saveLastFilters(for: oldTableName)
+            if let oldTab = tabManager.selectedTab {
+                saveLastFilters(of: oldTab)
             }
             if let tabId = tabManager.selectedTabId {
                 let token = TableLoadTracer.shared.begin(
@@ -302,8 +302,8 @@ extension MainContentCoordinator {
         let previousTableName = tabManager.selectedTab?.tableContext.tableName
         let replacesPreviewTab = tabManager.selectedTab?.isPreview == true
         let departing = captureNavigationEntry()
-        if let previousTableName {
-            saveLastFilters(for: previousTableName)
+        if let departingTab = tabManager.selectedTab {
+            saveLastFilters(of: departingTab)
         }
 
         var token: TableLoadTraceToken?
