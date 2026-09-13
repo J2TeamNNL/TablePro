@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A line on the welcome window naming the version TablePro updated from, with a link to what changed.
 - What's New window, from Help > What's New.
 - Update install mode and check frequency in the anonymous usage heartbeat.
+- OceanBase MySQL-mode connection type on the MySQL driver. (#1748)
 
 ### Changed
 
