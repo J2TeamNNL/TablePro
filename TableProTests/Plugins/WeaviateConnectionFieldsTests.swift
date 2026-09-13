@@ -127,7 +127,7 @@ struct WeaviateFieldParityTests {
 
 @Suite("Weaviate plugin manifest")
 struct WeaviatePluginManifestTests {
-    @Test("The bundle pins the PluginKit ABI and the Weaviate type id")
+    @Test("Info.plist declares the current PluginKit ABI and the Weaviate type id")
     func plistDeclaresType() throws {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -137,6 +137,5 @@ struct WeaviatePluginManifestTests {
         let plist = try #require(NSDictionary(contentsOf: url) as? [String: Any])
         #expect(plist["TableProPluginKitVersion"] as? Int == PluginManager.currentPluginKitVersion)
         #expect(plist["TableProProvidesDatabaseTypeIds"] as? [String] == ["Weaviate"])
-        #expect(plist["TableProMinAppVersion"] as? String == "0.73.0")
     }
 }

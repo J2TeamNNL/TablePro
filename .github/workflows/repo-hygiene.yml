@@ -80,6 +80,13 @@ jobs:
       - name: Check the plugin manifest against the plugin classes
         run: python3 scripts/ci/check-plugin-manifest.py
 
+      # The iOS app compiles source files that belong to macOS plugin targets, and it alone sets
+      # SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor, so one unmarked declaration in a shared file is
+      # @MainActor on iOS and nonisolated in the plugin. The macOS suite cannot see it and the iOS
+      # job reports it one symbol at a time, which took main red three times over one keyword.
+      - name: Check shared plugin sources are explicitly isolated for iOS
+        run: python3 scripts/ci/check-ios-shared-isolation.py
+
       - name: Validate the registry update script
         run: python3 .github/scripts/test_update_registry.py
 
@@ -92,6 +99,15 @@ jobs:
 
       - name: Validate release note extraction
         run: python3 scripts/ci/test_release_notes.py
+
+      # Only a real release runs sign-and-appcast.sh, so nothing on a pull request ever exercised
+      # the code that edits the file every install polls. These two cover the parts that can be
+      # tested without a signing key: which bytes move, and which releases are refused.
+      - name: Validate the appcast merge
+        run: python3 scripts/ci/test_merge_appcast.py
+
+      - name: Validate release withdrawal
+        run: python3 scripts/ci/test_pull_release.py
 
       # A check that guarded a real invariant and ran nowhere. Pure grep over Swift sources, so it
       # belongs on the free Linux runner. The MongoDB filter-shape check is the other one that was

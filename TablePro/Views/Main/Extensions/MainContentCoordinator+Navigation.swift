@@ -41,10 +41,14 @@ extension MainContentCoordinator {
         )
     }
 
+    /// `database` names the target when the caller knows it, which a foreign key does and the
+    /// sidebar does not: a reference can point into another database, and taking the browse cursor
+    /// there opens a tab on whichever one the sidebar happens to be showing.
     @discardableResult
     func openTableTab(
         _ tableName: String,
         schema: String? = nil,
+        database: String? = nil,
         showStructure: Bool = false,
         isView: Bool = false,
         objectType: TableInfo.TableType? = nil,
@@ -63,7 +67,7 @@ extension MainContentCoordinator {
             }
             currentDatabase = String(tableName.dropFirst(2))
         } else {
-            currentDatabase = browseDatabaseName
+            currentDatabase = database?.nilIfEmpty ?? browseDatabaseName
         }
 
         let resolvedSchema = DatabaseManager.shared.resolvedSchemaName(schema, for: connectionId)
@@ -391,6 +395,10 @@ extension MainContentCoordinator {
         return false
     }
 
+    /// Whether browsing the object list may take the selected tab over.
+    ///
+    /// Only browsing asks. Following a foreign key never takes a tab over, because a reference can
+    /// only be followed from a grid and the row the reader clicked is in that grid.
     var isActiveTabReusable: Bool {
         guard let tab = tabManager.selectedTab else { return false }
         if selectedTabHoldsProtectedContent { return false }
@@ -442,8 +450,23 @@ extension MainContentCoordinator {
 
         // SQL databases: delegate to plugin driver
         guard let driver = DatabaseManager.shared.driver(for: connectionId) else { return nil }
-        let schema = (driver as? SchemaSwitchable)?.escapedSchema
-        return (driver as? PluginDriverAdapter)?.allTablesMetadataSQL(schema: schema)
+        return (driver as? PluginDriverAdapter)?.allTablesMetadataSQL(schema: allTablesContainer(driver))
+    }
+
+    /// The container this listing is about, named rather than left to the driver.
+    ///
+    /// A schema-less engine answers an unnamed container with whatever database the shared driver
+    /// was last pinned to, which a cross-database tab moves and nothing restores, so the listing
+    /// described a database the user was not browsing.
+    private func allTablesContainer(_ driver: DatabaseDriver) -> String? {
+        switch EngineNamespaceSlot(databaseType: connection.type) {
+        case .schema:
+            return (driver as? SchemaSwitchable)?.escapedSchema
+        case .database:
+            return browseDatabaseName.nilIfEmpty
+        case .unqualified:
+            return nil
+        }
     }
 
     // MARK: - Database Switching

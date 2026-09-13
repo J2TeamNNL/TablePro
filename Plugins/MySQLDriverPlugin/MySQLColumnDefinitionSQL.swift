@@ -6,12 +6,12 @@
 import Foundation
 import TableProPluginKit
 
-nonisolated internal func mysqlQuoteIdentifier(_ name: String) -> String {
+internal func mysqlQuoteIdentifier(_ name: String) -> String {
     let escaped = name.replacingOccurrences(of: "`", with: "``")
     return "`\(escaped)`"
 }
 
-nonisolated internal func mysqlEscapeStringLiteral(_ value: String) -> String {
+internal func mysqlEscapeStringLiteral(_ value: String) -> String {
     var result = value
     result = result.replacingOccurrences(of: "\\", with: "\\\\")
     result = result.replacingOccurrences(of: "'", with: "''")

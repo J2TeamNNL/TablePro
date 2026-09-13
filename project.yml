@@ -233,7 +233,7 @@ targets:
       - package: Sparkle
       - package: Yams
       - package: TableProCore
-        products: [TableProAnalytics, TableProGoogleCloud, TableProImport, TableProNumberFormatting, TableProSyncTransport]
+        products: [TableProAnalytics, TableProGeometry, TableProGoogleCloud, TableProImport, TableProNumberFormatting, TableProSyncTransport]
     settings:
       base:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -594,6 +594,8 @@ targets:
       - Plugins/RedisDriverPlugin/RedisSentinelResolver.swift
       - Plugins/RedisDriverPlugin/RedisStatementGenerator.swift
       - Plugins/RedisDriverPlugin/RedisTopologyDiagnostics.swift
+      - Plugins/SQLExportPlugin/SQLExportBinaryLiteral.swift
+      - Plugins/SQLExportPlugin/SQLExportCompressor.swift
       - Plugins/SQLExportPlugin/SQLExportDDLRewriter.swift
       - Plugins/SQLExportPlugin/SQLExportEncodingDeclaration.swift
       - Plugins/SQLExportPlugin/SQLExportFileWriter.swift
@@ -601,7 +603,10 @@ targets:
       - Plugins/SQLExportPlugin/SQLExportModels.swift
       - Plugins/SQLExportPlugin/SQLExportOptionsView.swift
       - Plugins/SQLExportPlugin/SQLExportPlugin.swift
+      - Plugins/SQLExportPlugin/SQLExportRowValueEncoder.swift
+      - Plugins/SQLExportPlugin/SQLExportSessionScope.swift
       - Plugins/SQLExportPlugin/SQLExportSnapshot.swift
+      - Plugins/SQLExportPlugin/SQLExportStatementBudget.swift
       - Plugins/SQLImportPlugin/SQLImportFailure.swift
       - Plugins/SQLImportPlugin/SQLImportOptions.swift
       - Plugins/SQLImportPlugin/SQLImportOptionsView.swift
@@ -642,7 +647,7 @@ targets:
     dependencies:
       - target: TablePro
       - package: TableProCore
-        products: [TableProMSSQLCore, TableProNumberFormatting, TableProWeaviateCore]
+        products: [TableProGeometry, TableProMSSQLCore, TableProNumberFormatting, TableProWeaviateCore]
       # The Kafka integration suite drives the real driver, so the test target links what
       # the plugin target links: zstd for decompression and NIO for the transport.
       - package: zstd
@@ -695,6 +700,9 @@ targets:
     templateAttributes:
       folder: MySQLDriverPlugin
       principalClass: MySQLPlugin
+    dependencies:
+      - package: TableProCore
+        product: TableProGeometry
     settings:
       base:
         HEADER_SEARCH_PATHS:

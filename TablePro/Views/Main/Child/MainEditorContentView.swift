@@ -96,7 +96,7 @@ struct MainEditorContentView: View {
                 get: { !historyState.isVisible },
                 set: { historyState.isVisible = !$0 }
             ),
-            autosaveName: "HistoryDrawer-\(connectionId)",
+            autosaveName: SplitViewAutosaveName.historyDrawer(connectionId: connectionId),
             topMinimumThickness: Self.tabContentMinimumHeight,
             bottomMinimumThickness: 180,
             topContent: {
@@ -420,7 +420,7 @@ struct MainEditorContentView: View {
                     _ = coordinator.tabManager.mutate(tabId: tab.id) { $0.display.isResultsCollapsed = collapsed }
                 }
             ),
-            autosaveName: "QuerySplit-\(connectionId)-\(tab.id)",
+            autosaveName: SplitViewAutosaveName.querySplit(connectionId: connectionId),
             topContent: {
                 VStack(spacing: 0) {
                     if tab.content.externalModificationDetected,
@@ -631,6 +631,7 @@ struct MainEditorContentView: View {
             if let draft = coordinator.createTableDrafts[tab.id] {
                 CreateTableView(
                     connection: connection,
+                    scope: structureScope(for: tab),
                     coordinator: coordinator,
                     selectionState: selectionState,
                     draft: draft
@@ -731,6 +732,38 @@ struct MainEditorContentView: View {
                         String(localized: "No Data"),
                         systemImage: "chart.bar.xaxis",
                         description: Text(String(localized: "Execute a query to chart its loaded rows."))
+                    )
+                }
+            case .map:
+                resultTabBarSection(tab: tab)
+                if let resultSet = tab.display.activeResultSet {
+                    ResultMapView(
+                        configuration: mapConfigurationBinding(for: tab),
+                        columns: tab.display.spatialColumns,
+                        tableRows: resolvedTableRows(for: tab),
+                        displayIDs: coordinator.displayIDs(forTab: tab.id),
+                        selectedRowIndices: selectionState.indices,
+                        tabId: tab.id,
+                        resultSetId: resultSet.id,
+                        dataRevision: coordinator.tabSessionRegistry.session(for: tab.id)?.dataRevision ?? 0,
+                        displayRevision: coordinator.gridDisplayRevision,
+                        onSelectRow: { displayIndex in
+                            let rows: Set<Int> = displayIndex.map { [$0] } ?? []
+                            selectionState.indices = rows
+                            /// The shared channel alone does not survive the trip to Data mode: the
+                            /// grid remounts and restores the tab's own stored selection over it,
+                            /// which a map click never wrote. Storing it here is the same half that
+                            /// #2667 added for a mode switch, and the cell rectangle is cleared
+                            /// because a shape names a row and no columns.
+                            coordinator.storeGridSelection(rows: rows, cells: .empty, forTab: tab.id)
+                        }
+                    )
+                    .id(tab.id)
+                } else {
+                    ContentUnavailableView(
+                        String(localized: "No Data"),
+                        systemImage: "map",
+                        description: Text(String(localized: "Execute a query to map its loaded rows."))
                     )
                 }
             case .data:
@@ -966,6 +999,18 @@ struct MainEditorContentView: View {
                 if let index = tabManager.selectedTabIndex {
                     tabManager.mutate(at: index) { $0.chartConfiguration = newValue }
                 }
+            }
+        )
+    }
+
+    /// The map's choices belong to the tab for the same reason the chart's do: a page turn, a sort
+    /// or a re-execute builds a new `ResultSet`, and the chosen column has to outlive it.
+    private func mapConfigurationBinding(for tab: QueryTab) -> Binding<ResultMapConfiguration> {
+        let tabId = tab.id
+        return Binding(
+            get: { tab.mapConfiguration },
+            set: { newValue in
+                tabManager.mutate(tabId: tabId) { $0.mapConfiguration = newValue }
             }
         )
     }
