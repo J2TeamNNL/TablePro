@@ -49,4 +49,14 @@ struct MySQLVariantSupportTests {
         let mysql = try #require(driver as? MySQLDriver)
         #expect(mysql.databaseType == .oceanbase)
     }
+
+    @Test("An OceanBase session lifts the server's own statement limit; other MySQL engines set nothing")
+    func oceanBaseSessionSetup() {
+        #expect(MySQLDriver.sessionSetupStatements(for: .oceanbase) == [
+            "SET SESSION ob_query_timeout = 3216672000000000", "SET SESSION max_execution_time = 0"
+        ])
+        #expect(MySQLDriver.sessionSetupStatements(for: .mysql).isEmpty)
+        #expect(MySQLDriver.sessionSetupStatements(for: .tidb).isEmpty)
+        #expect(MySQLDriver.sessionSetupStatements(for: .mariadb).isEmpty)
+    }
 }

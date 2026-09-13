@@ -59,7 +59,14 @@ extension MySQLPluginDriver {
         }
 
         if variant == MySQLServerFlavor.oceanbaseVariant {
-            return try await oceanbaseFlavor(on: connection)
+            let identity = try await connection.executeQuery(MySQLFlavorResolution.oceanbaseProbe).rows.first
+            guard let flavor = MySQLFlavorResolution.oceanbaseFlavor(
+                versionComment: identity?[safe: 0]?.asText,
+                serverVersion: identity?[safe: 1]?.asText
+            ) else {
+                throw MySQLFlavorMismatchError(kind: .notOceanBase)
+            }
+            return flavor
         }
 
         guard MySQLFlavorResolution.needsTiDBVersionProbe(banner: banner, variant: variant) else {
@@ -70,26 +77,6 @@ extension MySQLPluginDriver {
             return bannerFlavor
         }
         return .tidb(version: version)
-    }
-
-    /// The handshake banner is a plain MySQL version on OceanBase, so `@@version_comment` is the only
-    /// thing that names the engine and the connection cannot be confirmed without it. A server that
-    /// answers with another engine's comment is refused; a probe that does not answer at all is not
-    /// evidence of anything, and failing there would turn one unlucky reconnect into a connection the
-    /// user cannot reopen.
-    private func oceanbaseFlavor(on connection: MariaDBPluginConnection) async throws -> MySQLServerFlavor {
-        let comment: String
-        do {
-            comment = try await connection.executeQuery(MySQLFlavorResolution.oceanbaseProbe)
-                .rows.first?.first?.asText ?? ""
-        } catch {
-            Self.logger.debug("OceanBase probe failed: \(error.localizedDescription, privacy: .public)")
-            return .oceanbase(version: nil)
-        }
-        guard MySQLServerFlavor.namesOceanBase(comment) else {
-            throw MySQLFlavorMismatchError(kind: .notOceanBase)
-        }
-        return .oceanbase(version: MySQLServerFlavor.oceanbaseVersion(fromVersionComment: comment))
     }
 
     func killTarget(for flavor: MySQLServerFlavor, on connection: MariaDBPluginConnection) async -> MySQLKillTarget {
