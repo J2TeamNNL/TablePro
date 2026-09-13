@@ -169,6 +169,37 @@ TableProPluginKit pin `MARKETING_VERSION = 1.0` in `project.yml`; the iOS app re
    awk '/^## \[<version>\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md | grep -c '^- '
    ```
 
+### Write the release highlights
+
+A version section may open with a **lead block**: at most six lines before its first `###`
+heading, naming what a reader would notice. That block is what the update window and the
+Sparkle feed show. Without one they fall back to the whole section, which for 0.73.0 meant
+22,443 bytes and 231 list items inside a dialog.
+
+```
+## [0.75.0] - 2026-01-01
+
+Map view for results holding a geometry column.
+Row-number gutter held at the left edge when the grid scrolls sideways.
+
+### Added
+...
+```
+
+Two or three lines is right. Write them from the `### Added` entries a reader would change
+their behaviour over, in their words rather than the changelog's. A release of pure fixes can
+skip the block and take the fallback.
+
+Then regenerate the in-app notes from that block, so **Help > What's New** and the update
+window cannot disagree:
+
+```bash
+scripts/generate-whats-new.sh <version>
+```
+
+A release with no lead block gets a short pointer to the changelog instead of 270 entries
+compiled into the app bundle.
+
 ### Update the docs changelog
 
 `docs/changelog.mdx` needs a new `<Update>` block at the top, right after the
@@ -195,10 +226,45 @@ Group by audience, not by the Keep a Changelog types. This is the one place the
 wording may grow past the `CHANGELOG.md` entry it came from: the changelog states
 the change, the docs entry can name the feature and say what the reader does with it.
 
+### Decide whether this release may interrupt anyone
+
+`.github/release-flags.json` holds `criticalUpdate`. Leave it `false`. Updates
+install in the background and apply on quit, so an ordinary release costs a user
+nothing, and the flag is the only way one is allowed to cost them attention.
+
+Set it `true` only when the release fixes one of these, and say which:
+
+- **Data loss or corruption** of a database, saved connections, or persisted tabs.
+- **A security issue** that earns a `### Security` entry and to which a user on the
+  old build is actively exposed.
+- **A crash or hang on a common path**, or a failure to launch, connect, or update.
+- **A regression from the previous release** with no workaround.
+
+Nothing else. Not "a user asked for it today", not "it is a one-line fix". Budget it
+at a handful a year: 0.74.0 alone carries five `### Security` entries and most would
+not qualify. Marking loosely puts back the interruptions this exists to remove.
+
+What Sparkle does differently for a critical item, none of it cosmetic: it bypasses
+phased rollout, hides Skip and Remind Me Later, retitles the alert, reschedules an
+already-downloaded update at `MIN(regular, impatient)` instead of `MAX`, and shows it
+even under automatic downloads.
+
+Set it in the release commit and set it back in the next one. The release job fails
+if it is `true` while the file has not changed since the previous tag, which is what
+a flag left over from last time looks like.
+
+Three rules around it. A release-pipeline retag is never a hotfix and never gets the
+flag. A release that raises `minimumCompatiblePluginKitVersion` is not tagged until
+`release-all-plugins.sh` has published, because a silent install removes the user's
+chance to notice their drivers stopped loading. And a build that has to be withdrawn
+is pulled with `scripts/ci/pull-release.py` and superseded by a corrective release
+carrying the flag; that is the only rollback path there is.
+
 ### Commit, tag, push
 
 ```bash
-git add Configs/Version.xcconfig CHANGELOG.md docs/changelog.mdx
+git add Configs/Version.xcconfig CHANGELOG.md docs/changelog.mdx .github/release-flags.json \
+    TablePro/Resources/WhatsNew.md
 git commit -m "release: v<version>"
 git tag -a v<version> -m "v<version>"
 git push origin main && git push origin v<version>

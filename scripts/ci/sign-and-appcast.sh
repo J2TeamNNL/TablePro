@@ -16,8 +16,10 @@ set -euo pipefail
 #
 # Usage: sign-and-appcast.sh <version>
 # Requires: SPARKLE_PRIVATE_KEY env var, artifacts/ directory with both architectures' ZIPs.
+# Optional: CRITICAL_UPDATE=1 to mark the release critical.
 
 BASE_APPCAST="${BASE_APPCAST:-appcast.xml}"
+CRITICAL_UPDATE="${CRITICAL_UPDATE:-0}"
 VERSION="${1:?Usage: sign-and-appcast.sh <version>}"
 
 if [ -z "${SPARKLE_PRIVATE_KEY:-}" ]; then
@@ -31,9 +33,17 @@ if [ ! -f "$BASE_APPCAST" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 1. Extract the same version-specific notes used by the GitHub release
+# 1. Extract the notes
 # ---------------------------------------------------------------------------
+# Two files, for two audiences. release_notes.md is the whole section and becomes the GitHub
+# release body, where a reader has scrolled to it on purpose. release_highlights.md is the lead
+# block and is what goes in the feed, because an appcast item is downloaded by every install on
+# every check and read inside a dialog. 0.73.0's ran 22,443 bytes and 231 list items.
+#
+# A version with no lead block falls back to the full notes, so this changes nothing until the
+# convention is used.
 bash "$(dirname "$0")/extract-release-notes.sh" "$VERSION"
+bash "$(dirname "$0")/extract-release-notes.sh" "$VERSION" --highlights-only --out release_highlights.md
 
 # ---------------------------------------------------------------------------
 # 2. Locate Sparkle tools
@@ -83,16 +93,33 @@ for arch in arm64 x86_64; do
   # Without the pairing the item ships with no description at all.
   {
     printf "# What's New in TablePro %s\n\n" "$VERSION"
-    cat release_notes.md
+    cat release_highlights.md
     printf '\n[View full changelog](https://docs.tablepro.app/changelog)\n'
   } > "${STAGING}/TablePro-${VERSION}-${arch}.md"
 
+  # Sparkle bypasses phasing for a critical item anyway, but passing both would be a contradiction
+  # in the feed rather than a belt and braces.
+  GENERATE_FLAGS=()
+  if [ "$CRITICAL_UPDATE" = "1" ]; then
+    # An empty --critical-update-version writes <sparkle:criticalUpdate/> with no version
+    # attribute, which SPUAppcastItemStateResolver treats as critical for every host.
+    GENERATE_FLAGS+=(--critical-update-version "")
+  else
+    # Seven cohorts, so the interval times six is the tail: 21600 puts the last one 36 hours
+    # behind, which fits inside the median gap between releases. A user-initiated check is never
+    # phased, so Check for Updates always offers the newest build.
+    GENERATE_FLAGS+=(--phased-rollout-interval 21600)
+  fi
+
+  # --maximum-versions 1 states the invariant merge-appcast.py checks rather than leaving it as a
+  # consequence of the directory holding one archive.
   "$SPARKLE_BIN/generate_appcast" \
     --ed-key-file "$KEY_FILE" \
     --download-url-prefix "$DOWNLOAD_PREFIX" \
     --embed-release-notes \
     --full-release-notes-url "https://docs.tablepro.app/changelog" \
-    --maximum-versions 0 \
+    --maximum-versions 1 \
+    "${GENERATE_FLAGS[@]}" \
     "$STAGING"
 
   if [ ! -f "$STAGING/appcast.xml" ]; then
