@@ -41,4 +41,15 @@ struct ConnectionURLParserOceanBaseTests {
         #expect(parsed.host == "host")
         #expect(parsed.database == "db")
     }
+
+    @Test("An OBProxy user name keeps its tenant and cluster")
+    func testProxyUserNameWithCluster() {
+        let result = ConnectionURLParser.parse("oceanbase://root%40test%23obcluster:pass@proxy:2883/db")
+        guard case .success(let parsed) = result else {
+            Issue.record("Expected success"); return
+        }
+        #expect(parsed.username == "root@test#obcluster")
+        #expect(parsed.password == "pass")
+        #expect(parsed.port == 2_883)
+    }
 }

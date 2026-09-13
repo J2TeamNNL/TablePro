@@ -7,9 +7,20 @@ import Foundation
 import TableProPluginKit
 
 enum DockerComposeExtractor {
+    enum OceanBaseRole {
+        case observer
+        case proxy
+    }
+
     struct ServiceDatabase {
         let type: DatabaseType
         let defaultPort: Int
+        var oceanbaseRole: OceanBaseRole?
+    }
+
+    struct OceanBaseObserver {
+        let hostNames: Set<String>
+        let variables: [String: String]
     }
 
     static func extract(
@@ -22,18 +33,20 @@ enum DockerComposeExtractor {
               let services = YamlMappingSupport.mapping(root["services"]) else {
             return []
         }
+        let observers = oceanbaseObservers(in: services)
         return services.keys.sorted().compactMap { name in
             guard let service = YamlMappingSupport.mapping(services[name]) else {
                 return nil
             }
-            return candidate(name: name, service: service, relativePath: relativePath)
+            return candidate(name: name, service: service, relativePath: relativePath, oceanbaseObservers: observers)
         }
     }
 
     static func candidate(
         name: String,
         service: [String: Any],
-        relativePath: String
+        relativePath: String,
+        oceanbaseObservers: [OceanBaseObserver]
     ) -> ScannedConnectionCandidate? {
         guard let image = YamlMappingSupport.string(service["image"]),
               let database = databaseKind(for: image) else {
@@ -43,7 +56,17 @@ enum DockerComposeExtractor {
         var fields = ScannedConnectionFields(type: database.type)
         fields.host = "127.0.0.1"
         fields.connectionName = name
-        applyCredentials(&fields, type: database.type, variables: variables)
+        switch database.oceanbaseRole {
+        case .observer:
+            applyOceanBaseCredentials(&fields, variables: variables, cluster: nil)
+        case .proxy:
+            let observer = proxiedObserver(rsList: variables["RS_LIST"], among: oceanbaseObservers)
+            applyOceanBaseCredentials(
+                &fields, variables: observer?.variables ?? [:], cluster: variables["OB_CLUSTER"]?.nilIfEmpty
+            )
+        case nil:
+            applyCredentials(&fields, type: database.type, variables: variables)
+        }
         var warnings: [String] = []
         if [fields.username, fields.password, fields.database].contains(where: ComposeInterpolator.isUnresolved) {
             warnings.append(String(localized: "Some values are set outside this file"))
@@ -71,27 +94,29 @@ enum DockerComposeExtractor {
         "datafuselabs/databend-query", "databendlabs/databend-query",
     ]
 
-    /// The `oceanbase` organization also publishes OCP, obagent, the config server and miniob, none of
-    /// which speak the MySQL protocol, so the repository is matched rather than the whole image name.
-    /// OBProxy serves SQL on 2883, the observer on 2881.
-    private static let oceanbaseRepositories: [String: Int] = [
-        "oceanbase/oceanbase-ce": 2_881,
-        "oceanbase/oceanbase": 2_881,
-        "oceanbase/obproxy-ce": 2_883,
-        "oceanbase/obproxy": 2_883,
+    private static let oceanbaseObserverRepositories: Set<String> = [
+        "oceanbase/oceanbase-ce", "oceanbase/oceanbase",
+    ]
+
+    private static let oceanbaseProxyRepositories: Set<String> = [
+        "oceanbase/obproxy-ce", "oceanbase/obproxy",
     ]
 
     static func databaseKind(for image: String) -> ServiceDatabase? {
         let name = image.lowercased()
         let repositoryPath = repositoryComponents(of: name)
+        let repository = repositoryPath.suffix(2).joined(separator: "/")
         if repositoryPath.last == "tidb" {
             return ServiceDatabase(type: .tidb, defaultPort: 4_000)
         }
-        if databendRepositories.contains(repositoryPath.suffix(2).joined(separator: "/")) {
+        if databendRepositories.contains(repository) {
             return ServiceDatabase(type: .databend, defaultPort: 3_307)
         }
-        if let port = oceanbaseRepositories[repositoryPath.suffix(2).joined(separator: "/")] {
-            return ServiceDatabase(type: .oceanbase, defaultPort: port)
+        if oceanbaseObserverRepositories.contains(repository) {
+            return ServiceDatabase(type: .oceanbase, defaultPort: 2_881, oceanbaseRole: .observer)
+        }
+        if oceanbaseProxyRepositories.contains(repository) {
+            return ServiceDatabase(type: .oceanbase, defaultPort: 2_883, oceanbaseRole: .proxy)
         }
         if name.contains("postgres"), !name.contains("postgrest") {
             return ServiceDatabase(type: .postgresql, defaultPort: 5_432)
@@ -115,18 +140,6 @@ enum DockerComposeExtractor {
             return ServiceDatabase(type: .mssql, defaultPort: 1_433)
         }
         return nil
-    }
-
-    /// OBProxy routes by a cluster the observer's own port does not need, and `root@sys` reaches it
-    /// only when the proxy was given a default cluster, so the name goes into the username whenever
-    /// the compose file states it.
-    private static func applyOceanBaseCredentials(_ fields: inout ScannedConnectionFields, variables: [String: String]) {
-        let tenantPassword = variables["OB_TENANT_PASSWORD"]?.nilIfEmpty
-        let tenant = variables["OB_TENANT_NAME"]?.nilIfEmpty ?? (tenantPassword != nil ? "test" : "sys")
-        let cluster = variables["OB_CLUSTER_NAME"]?.nilIfEmpty
-        fields.username = "root@\(tenant)" + (cluster.map { "#\($0)" } ?? "")
-        fields.password = tenant == "sys" ? variables["OB_SYS_PASSWORD"] ?? "" : tenantPassword ?? ""
-        fields.database = variables["OB_DATABASE"] ?? ""
     }
 
     static func repositoryComponents(of image: String) -> [String] {
@@ -187,6 +200,59 @@ enum DockerComposeExtractor {
         return nil
     }
 
+    private static func oceanbaseObservers(in services: [String: Any]) -> [OceanBaseObserver] {
+        services.keys.sorted().compactMap { name in
+            guard let service = YamlMappingSupport.mapping(services[name]),
+                  let image = YamlMappingSupport.string(service["image"]),
+                  databaseKind(for: image)?.oceanbaseRole == .observer
+            else { return nil }
+            let hostNames = [name, YamlMappingSupport.string(service["container_name"]),
+                             YamlMappingSupport.string(service["hostname"])]
+            return OceanBaseObserver(
+                hostNames: Set(hostNames.compactMap { $0 }),
+                variables: environmentVariables(service["environment"])
+            )
+        }
+    }
+
+    private static func proxiedObserver(rsList: String?, among observers: [OceanBaseObserver]) -> OceanBaseObserver? {
+        let hosts = (rsList ?? "").split(separator: ";").compactMap { entry in
+            entry.split(separator: ":").first.map { $0.trimmingCharacters(in: .whitespaces) }
+        }
+        if let named = observers.first(where: { !$0.hostNames.isDisjoint(with: hosts) }) {
+            return named
+        }
+        return observers.count == 1 ? observers.first : nil
+    }
+
+    private static func applyOceanBaseCredentials(
+        _ fields: inout ScannedConnectionFields,
+        variables: [String: String],
+        cluster: String?
+    ) {
+        let clusterSuffix = cluster.map { "#\($0)" } ?? ""
+        let tenantName = variables["OB_TENANT_NAME"]?.nilIfEmpty
+        let tenantPassword = variables["OB_TENANT_PASSWORD"]?.nilIfEmpty
+        let database = variables["OB_DATABASE"]?.nilIfEmpty
+        if tenantName != nil || tenantPassword != nil || database != nil {
+            fields.username = "root@\(tenantName ?? "test")\(clusterSuffix)"
+            fields.password = tenantPassword ?? ""
+            fields.database = database ?? ""
+            return
+        }
+        let bootsFromDemoStore = variables["MODE"]?.uppercased() == "SLIM"
+        let sysPassword = variables["OB_SYS_PASSWORD"]?.nilIfEmpty ?? variables["OB_ROOT_PASSWORD"]?.nilIfEmpty
+        if !bootsFromDemoStore, let sysPassword {
+            fields.username = "root@sys\(clusterSuffix)"
+            fields.password = sysPassword
+            fields.database = ""
+            return
+        }
+        fields.username = "root@test\(clusterSuffix)"
+        fields.password = ""
+        fields.database = ""
+    }
+
     private static func applyCredentials(
         _ fields: inout ScannedConnectionFields,
         type: DatabaseType,
@@ -205,8 +271,6 @@ enum DockerComposeExtractor {
             fields.username = variables["QUERY_DEFAULT_USER"] ?? "root"
             fields.password = variables["QUERY_DEFAULT_PASSWORD"] ?? ""
             fields.database = "default"
-        case .oceanbase:
-            applyOceanBaseCredentials(&fields, variables: variables)
         case .mariadb, .mysql:
             let prefix = variables["MARIADB_PASSWORD"] != nil || variables["MARIADB_DATABASE"] != nil
                 ? "MARIADB"
