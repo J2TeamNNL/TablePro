@@ -43,7 +43,7 @@ extension PluginMetadataRegistry {
         "Spatial": ["GEOMETRY", "GEOGRAPHY"],
     ]
 
-    static func mysqlColumnTypesWithoutSpatial(from mysqlColumnTypes: [String: [String]]) -> [String: [String]] {
+    static func tidbColumnTypes(from mysqlColumnTypes: [String: [String]]) -> [String: [String]] {
         mysqlColumnTypes.filter { $0.key != "Spatial" }
     }
 
@@ -119,7 +119,7 @@ extension PluginMetadataRegistry {
             editor: PluginMetadataSnapshot.EditorConfig(
                 sqlDialect: dialect,
                 statementCompletions: [],
-                columnTypesByCategory: mysqlColumnTypesWithoutSpatial(from: mysqlColumnTypes)
+                columnTypesByCategory: tidbColumnTypes(from: mysqlColumnTypes)
             ),
             connection: PluginMetadataSnapshot.ConnectionConfig(
                 additionalConnectionFields: [idleReleaseField],
@@ -219,7 +219,7 @@ extension PluginMetadataRegistry {
                 supportsSSH: true,
                 supportsSSL: true,
                 supportsCascadeDrop: false,
-                supportsForeignKeyDisable: false,
+                supportsForeignKeyDisable: true,
                 supportsReadOnlyMode: true,
                 supportsQueryProgress: false,
                 requiresReconnectForDatabaseSwitch: false,
@@ -235,7 +235,7 @@ extension PluginMetadataRegistry {
                 supportsRoutines: true,
                 supportsDatabaseTriggerBrowse: true,
                 defaultSSLMode: .preferred,
-                supportsPrincipalConnectionLimit: false
+                supportsPrincipalConnectionLimit: true
             ),
             schema: PluginMetadataSnapshot.SchemaInfo(
                 defaultSchemaName: "public",
@@ -244,7 +244,10 @@ extension PluginMetadataRegistry {
                 containerEntityName: "Database",
                 defaultPrimaryKeyColumn: nil,
                 immutableColumns: [],
-                systemDatabaseNames: ["information_schema", "mysql", "oceanbase"],
+                systemDatabaseNames: [
+                    "information_schema", "mysql", "oceanbase", "__recyclebin", "__public",
+                    "SYS", "LBACSYS", "ORAAUDITOR"
+                ],
                 systemSchemaNames: [],
                 fileExtensions: [],
                 databaseGroupingStrategy: .byDatabase,
@@ -257,7 +260,7 @@ extension PluginMetadataRegistry {
             editor: PluginMetadataSnapshot.EditorConfig(
                 sqlDialect: dialect,
                 statementCompletions: [],
-                columnTypesByCategory: mysqlColumnTypesWithoutSpatial(from: mysqlColumnTypes)
+                columnTypesByCategory: mysqlColumnTypes
             ),
             connection: PluginMetadataSnapshot.ConnectionConfig(
                 additionalConnectionFields: [idleReleaseField],

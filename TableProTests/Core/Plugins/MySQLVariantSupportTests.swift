@@ -47,12 +47,14 @@ struct MySQLVariantSupportTests {
         #expect(types["JSON"] == ["JSON"])
     }
 
-    @Test("OceanBase keeps its type list without the spatial group once the MySQL plugin registers")
+    @Test("OceanBase keeps MySQL's spatial types once the MySQL plugin registers")
     func oceanbaseColumnTypesSurviveRegistration() throws {
         let registry = PluginMetadataRegistry.shared
-        registry.registerVariant(pluginSnapshot: try Self.mysqlPluginSnapshot(), forTypeId: "OceanBase", primaryTypeId: "MySQL")
+        let mysql = try Self.mysqlPluginSnapshot()
+        registry.registerVariant(pluginSnapshot: mysql, forTypeId: "OceanBase", primaryTypeId: "MySQL")
         let types = try #require(registry.snapshot(forRegisteredTypeId: "OceanBase")).editor.columnTypesByCategory
-        #expect(types["Spatial"] == nil)
+        #expect(types["Spatial"] != nil)
+        #expect(types["Spatial"] == mysql.editor.columnTypesByCategory["Spatial"])
         #expect(types["JSON"] == ["JSON"])
     }
 
@@ -84,9 +86,16 @@ struct MySQLVariantSupportTests {
     @Test("TiDB hides the connection limit it ignores; the others keep it")
     func principalConnectionLimit() {
         #expect(!PluginManager.shared.supportsPrincipalConnectionLimit(for: .tidb))
-        #expect(!PluginManager.shared.supportsPrincipalConnectionLimit(for: .oceanbase))
+        #expect(PluginManager.shared.supportsPrincipalConnectionLimit(for: .oceanbase))
         #expect(PluginManager.shared.supportsPrincipalConnectionLimit(for: .mysql))
         #expect(PluginManager.shared.supportsPrincipalConnectionLimit(for: .mariadb))
+    }
+
+    @Test("OceanBase honours SET FOREIGN_KEY_CHECKS, so the option to skip them stays; Databend has none")
+    func foreignKeyDisable() {
+        #expect(PluginManager.shared.supportsForeignKeyDisable(for: .oceanbase))
+        #expect(PluginManager.shared.supportsForeignKeyDisable(for: .tidb))
+        #expect(!PluginManager.shared.supportsForeignKeyDisable(for: .databend))
     }
 
     @Test("Only Databend leaves column types out of a keyless row match")
