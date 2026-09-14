@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unchecked and soloed filter rows dropped from a table's saved filters after switching tabs.
 - Table opened in another database from a link, MCP or AppleScript bound to the current schema.
 - Recent table opened before connecting reopening a same-named table in another schema, and listed twice.
+- AI and Copilot schema context listing a table with the columns of a same-named table in another schema.
 - Inline cell editor left open over a different row after a refresh.
 - Row selected by Back or Forward dropped once the table finished loading.
 - Data grid jumping to the top on a later reload after a page change failed.
