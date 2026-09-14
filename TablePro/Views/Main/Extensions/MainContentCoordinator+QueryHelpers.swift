@@ -130,7 +130,8 @@ extension MainContentCoordinator {
         isTruncated: Bool = false,
         queryParameterValues: [QueryParameter]? = nil,
         anchor: StatementAnchor? = nil,
-        timing: PluginQueryTiming? = nil
+        timing: PluginQueryTiming? = nil,
+        viewport: GridReloadIntent = .firstRow
     ) {
         queryExecutionCoordinator.applyPhase1Result(
             tabId: tabId,
@@ -149,7 +150,8 @@ extension MainContentCoordinator {
             isTruncated: isTruncated,
             queryParameterValues: queryParameterValues,
             anchor: anchor,
-            timing: timing
+            timing: timing,
+            viewport: viewport
         )
     }
 

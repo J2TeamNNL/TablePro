@@ -439,14 +439,14 @@ extension MainContentCoordinator {
                 initialQuery: "db.runCommand({\"listCollections\": 1, \"nameOnly\": false})",
                 databaseName: browseDatabaseName
             )
-            runQuery()
+            runQuery(viewport: .firstRow)
             return nil
         } else if editorLang == .bash {
             tabManager.addTab(
                 initialQuery: "SCAN 0 MATCH * COUNT 100",
                 databaseName: browseDatabaseName
             )
-            runQuery()
+            runQuery(viewport: .firstRow)
             return nil
         }
 
@@ -735,7 +735,7 @@ extension MainContentCoordinator {
             }
             guard !Task.isCancelled else { return }
             toolbarState.currentDatabase = database
-            executeTableTabQueryDirectly()
+            executeTableTabQueryDirectly(viewport: .firstRow)
 
             let separator = connection.additionalFields["redisSeparator"] ?? ":"
             if sidebarViewModel?.redisKeyTreeViewModel == nil {
@@ -795,6 +795,6 @@ extension MainContentCoordinator {
             query = "GET \"\(escapedKey)\""
         }
         tabManager.addTab(initialQuery: query, title: keyName)
-        runQuery()
+        runQuery(viewport: .firstRow)
     }
 }
