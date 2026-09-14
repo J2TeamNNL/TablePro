@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- SSH settings dropped from a Mac connection after it synced from the iPhone app, turning off its tunnel or remote database file.
 - Remote database file path and access mode dropped when a connection was exported, shared as a link, or imported.
 - Remote database file connection hanging for minutes when its SSH connection dropped silently, with Cancel doing nothing.
 - Remote database file reaching the previous server after the connection's host, port, or user was changed.
