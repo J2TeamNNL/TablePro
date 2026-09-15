@@ -35,10 +35,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Welcome window list moved with the arrow keys instead of `Ctrl+J`, `Ctrl+K`, `Ctrl+H` and `Ctrl+L`.
 - Connection switcher lists Favorites, Recent and groups at every depth.
 - Connection rows without colored dots, on the Mac and on iOS.
+- SQL Server sessions open with the ANSI SET profile the server requires, matching every other client.
 - Compared columns in data Compare & Sync chosen per table, and saved with each table's key, filter and row limit. (#2537)
 
 ### Fixed
 
+- Empty Procedures and Functions lists on every SQL Server connection.
+- SQL Server rows that could not be saved on a table with a filtered index or an index on a computed column.
+- SQL Server CLR and extended procedures and functions missing from the Procedures and Functions lists.
+- SQL Server routines labelled encrypted when the account simply cannot read their source.
+- SQL Server version detection on a patched server, which left `CREATE OR ALTER` unused since 2016.
 - SQL editor jumping back while scrolling sideways near the start of a long line. (#2841)
 - Data sync scripts missing every UPDATE and DELETE. (#2537)
 - Data sync statements written to the source schema instead of the target.
