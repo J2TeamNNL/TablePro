@@ -42,6 +42,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQL Server sessions open with the ANSI SET profile the server requires, matching every other client.
 - Compared columns in data Compare & Sync chosen per table, and saved with each table's key, filter and row limit. (#2537)
 
+### Removed
+
+- CodeEditSymbols, a dependency the editor linked and never called, from the app and from Acknowledgements.
+
 ### Fixed
 
 - Connections still reaching an SSH profile's old host and username after the profile was edited.
