@@ -15,7 +15,7 @@ struct WelcomeActionsPanel: View {
     let onImportConnectionsFile: () -> Void
     let onOpenProjectFolder: () -> Void
 
-    private let updaterBridge = UpdaterBridge.shared
+    private let updater = SoftwareUpdater.shared
 
     /// Captured once, because the stored value is overwritten on the same appearance that reads
     /// it. Without the capture the line would replace itself with nothing on the next redraw.
@@ -40,12 +40,12 @@ struct WelcomeActionsPanel: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
 
-                    Button(String(localized: "Check for Updates…")) {
-                        updaterBridge.checkForUpdates()
+                    Button(updater.checkForUpdatesTitle) {
+                        updater.checkForUpdates()
                     }
                     .buttonStyle(.link)
                     .font(.callout)
-                    .disabled(!updaterBridge.canCheckForUpdates)
+                    .disabled(!updater.canCheckForUpdates)
 
                     if showsWhatsNew {
                         Button(String(format: String(localized: "What's New in %@"), Bundle.main.appVersion)) {
