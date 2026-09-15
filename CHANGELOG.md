@@ -49,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Detached JSON cell editor writing into another record after a column filter or a sort moved the rows.
 - NULL written into every selected row when a field they disagree on was cleared in the row inspector.
 - Row inspector showing the discarded values after Discard Changes.
+- One undo step per character when typing in a row inspector field.
 - Empty Procedures and Functions lists on every SQL Server connection.
 - SQL Server rows that could not be saved on a table with a filtered index or an index on a computed column.
 - SQL Server CLR and extended procedures and functions missing from the Procedures and Functions lists.
