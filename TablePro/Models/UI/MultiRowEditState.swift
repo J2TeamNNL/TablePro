@@ -86,6 +86,10 @@ final class MultiRowEditState {
     /// send, so it asks for each row's own configured value instead.
     var onFieldReverted: ((Int, [RowID: PluginCellValue]) -> Void)?
 
+    /// A value window still open over a selection that has moved on. It names the rows it was
+    /// opened for, because the fields it was opened from are gone.
+    var onDetachedFieldChanged: ((Int, PluginCellValue, [RowID]) -> Void)?
+
     private(set) var selectedRowIndices: Set<Int> = []
 
     /// The rows an edit is staged against, captured when the selection was configured.
@@ -283,6 +287,20 @@ final class MultiRowEditState {
         return values
     }
 
+    /// A commit from a detached value window, which outlives the selection it was opened from.
+    ///
+    /// While that selection is still the one on screen this is an ordinary field edit. Once it has
+    /// moved the fields no longer describe those rows, so the value goes straight to the rows the
+    /// window was opened for rather than into whatever is selected now.
+    func updateDetachedField(columnIndex: Int, rowIDs: [RowID], value: String?) {
+        guard !rowIDs.isEmpty else { return }
+        if self.rowIDs == rowIDs, fields.indices.contains(columnIndex) {
+            updateField(at: columnIndex, value: value)
+            return
+        }
+        onDetachedFieldChanged?(columnIndex, PluginCellValue.fromOptional(value), rowIDs)
+    }
+
     private static func resolvePendingValue(_ value: String?, original: String?, isJson: Bool) -> String? {
         if isJson, let value, !value.isEmpty {
             let normalized = JsonReindenter.normalize(value)
@@ -359,6 +377,7 @@ final class MultiRowEditState {
         fields = []
         onFieldChanged = nil
         onFieldReverted = nil
+        onDetachedFieldChanged = nil
         selectedRowIndices = []
         rowIDs = []
         allRows = []

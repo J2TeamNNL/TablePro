@@ -242,6 +242,16 @@ extension MainContentView {
         trailingPaneState.inspector.editState.onFieldReverted = { columnIndex, valuesByRow in
             capturedCoordinator.revertInspectorFieldEdit(columnIndex: columnIndex, valuesByRow: valuesByRow)
         }
+        trailingPaneState.inspector.editState.onDetachedFieldChanged = { columnIndex, newValue, rowIDs in
+            /// A value window commits on every keystroke exactly as the field it detached from
+            /// does, so its typing folds into one undo step the same way.
+            capturedCoordinator.stageInspectorFieldEdit(
+                columnIndex: columnIndex,
+                value: newValue,
+                rowIDs: rowIDs,
+                continuity: .typing
+            )
+        }
     }
 
     /// The per-column display formats the grid is applying, in column order.
@@ -290,6 +300,7 @@ extension MainContentView {
     private func clearSidebarEditHandlers() {
         trailingPaneState.inspector.editState.onFieldChanged = nil
         trailingPaneState.inspector.editState.onFieldReverted = nil
+        trailingPaneState.inspector.editState.onDetachedFieldChanged = nil
     }
 
     /// Populate the inspector from the grid that owns a schema selection, and send every
@@ -312,6 +323,7 @@ extension MainContentView {
 
         let capturedCoordinator = coordinator
         trailingPaneState.inspector.editState.onFieldReverted = nil
+        trailingPaneState.inspector.editState.onDetachedFieldChanged = nil
         trailingPaneState.inspector.editState.onFieldChanged = { fieldIndex, newValue, _ in
             capturedCoordinator.inspectorRowSource?.commitInspectorField(
                 displayRow: displayRow,
