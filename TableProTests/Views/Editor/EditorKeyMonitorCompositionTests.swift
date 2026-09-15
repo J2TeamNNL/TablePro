@@ -5,9 +5,9 @@
 
 import AppKit
 import Carbon.HIToolbox
-@testable import CodeEditSourceEditor
-import CodeEditTextView
 import SwiftUI
+@testable import TableProEditorKit
+import TableProTextEngine
 import Testing
 
 internal struct EditorKeyChord: Sendable, CustomTestStringConvertible {

@@ -4,11 +4,11 @@
 //
 
 import AppKit
-@testable import CodeEditSourceEditor
-@testable import CodeEditTextView
 import Foundation
 import SwiftUI
 @testable import TablePro
+@testable import TableProEditorKit
+@testable import TableProTextEngine
 import Testing
 
 @MainActor

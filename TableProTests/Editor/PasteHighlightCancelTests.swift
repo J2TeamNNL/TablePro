@@ -13,11 +13,11 @@
 //
 
 import AppKit
-@preconcurrency @testable import CodeEditSourceEditor
-import CodeEditTextView
 import Foundation
 import Rearrange
+@preconcurrency @testable import TableProEditorKit
 import TableProGrammars
+import TableProTextEngine
 import Testing
 
 @MainActor

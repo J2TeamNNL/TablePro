@@ -9,10 +9,10 @@
 //
 
 import AppKit
-@testable import CodeEditSourceEditor
-import CodeEditTextView
 import SwiftUI
 @testable import TablePro
+@testable import TableProEditorKit
+import TableProTextEngine
 import Testing
 
 private final class RecordingCoordinator: TextViewCoordinator {

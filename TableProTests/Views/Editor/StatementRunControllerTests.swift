@@ -7,12 +7,12 @@
 //
 
 import AppKit
-import CodeEditSourceEditor
-import CodeEditTextView
 import Foundation
 @testable import TablePro
+import TableProEditorKit
 import TableProGrammars
 import TableProPluginKit
+import TableProTextEngine
 import Testing
 
 @Suite("Statement run controls")

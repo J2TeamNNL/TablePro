@@ -4,11 +4,11 @@
 //
 
 import AppKit
-import CodeEditSourceEditor
-import CodeEditTextView
 import Foundation
 @testable import TablePro
+import TableProEditorKit
 import TableProGrammars
+import TableProTextEngine
 import Testing
 
 @Suite("Fold gutter layout")
