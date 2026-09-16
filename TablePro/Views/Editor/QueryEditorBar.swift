@@ -129,6 +129,13 @@ struct QueryEditorBar: View {
     /// and not a `Menu(primaryAction:)`. Clear Query leaves the results standing and makes Run
     /// unavailable, and disabling one control for both would have taken Clear Results down with it
     /// at exactly the moment the reader wanted it.
+    ///
+    /// The menu half draws nothing but the segment's own disclosure chevron. A visible label of any
+    /// kind lands beside that chevron rather than replacing it: `systemImage:` puts a second one
+    /// there, and a bare `Text` survives `.labelStyle(.iconOnly)` and widens the segment from 47pt
+    /// to 115pt. A `Label` whose icon is empty is the one shape that renders as the chevron alone
+    /// and still carries a name, because `.accessibilityLabel` on a `Menu` is not additive:
+    /// measured, it replaces the label's own name with nothing at all.
     @ViewBuilder
     private var runControl: some View {
         if isExecuting {
@@ -146,7 +153,7 @@ struct QueryEditorBar: View {
                     .help(commands.runHint)
                     .accessibilityIdentifier("query-run")
 
-                Menu(String(localized: "Run Options"), systemImage: "chevron.down") {
+                Menu {
                     Button(String(localized: "Run All Statements"), action: onRunAllStatements)
                         .disabled(!commands.canRun)
                     Button(String(localized: "Run Without Limit"), action: onRunWithoutLimit)
@@ -156,9 +163,13 @@ struct QueryEditorBar: View {
                         .disabled(!commands.canClearQuery)
                     Button(String(localized: "Clear Results"), action: onClearResults)
                         .disabled(!commands.canClearResults)
+                } label: {
+                    Label { Text("Run Options") } icon: { EmptyView() }
                 }
                 .labelStyle(.iconOnly)
+                .menuIndicator(.visible)
                 .disabled(!commands.canOpenRunMenu)
+                .help(String(localized: "Run Options"))
                 .accessibilityIdentifier("query-run-menu")
                 .historyTipAnchor(isEnabled: showsHistoryTip)
             }

@@ -25,15 +25,13 @@ internal struct ValuePickerFieldView: View {
                     menuEntry(option)
                 }
             } label: {
-                Image(systemName: "chevron.down")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Label { Text("Choose Value") } icon: { EmptyView() }
             }
+            .labelStyle(.iconOnly)
             .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
+            .menuIndicator(.visible)
             .fixedSize()
             .disabled(context.isReadOnly)
-            .accessibilityLabel(String(localized: "Choose Value"))
             /// A SwiftUI `Menu` is an `NSPopUpButton` on macOS, so it publishes `menuButton` or
             /// `popUpButton` and never `button`, and no suite has ever resolved one by its label.
             /// The identifier is the hook `InspectorFieldRow`'s own value menu already carries, and

@@ -156,19 +156,22 @@ internal struct InspectorFieldRow: View {
     // MARK: - Value menu
 
     /// Always drawn, never hover-gated.
+    ///
+    /// The button's own disclosure chevron is the whole control. A chevron supplied as the label
+    /// would be its icon and would render beside that one, which is why the hand-drawn version had
+    /// to hide the real indicator to look right at all. The `Label` carries a title with no icon so
+    /// the control still has a name: `.accessibilityLabel` on a `Menu` does not add one, it
+    /// replaces whatever the label was providing with nothing.
     private var valueMenu: some View {
         Menu {
             menuContent
         } label: {
-            Label(String(localized: "Value Options"), systemImage: "chevron.down")
+            Label { Text("Value Options") } icon: { EmptyView() }
         }
         .labelStyle(.iconOnly)
-        .font(.caption2)
-        .foregroundStyle(.tertiary)
         .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
+        .menuIndicator(.visible)
         .fixedSize()
-        .frame(minWidth: 12)
         .help(String(localized: "Value Options"))
         .accessibilityIdentifier("inspector-value-menu")
     }
