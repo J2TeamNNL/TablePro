@@ -72,6 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Empty PostgreSQL `jsonb` object copied to another engine as an empty array. (Copy Objects)
 - Boolean dropdown on a PostgreSQL `bit(8)[]` column, and no element editor on `numeric(10,2)[]`.
 - Two chevrons on the row inspector's `SET` field.
 - Unicode whitespace dropped from a PostgreSQL array element when a sibling element was edited.
