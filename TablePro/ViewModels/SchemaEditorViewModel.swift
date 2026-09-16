@@ -3,6 +3,7 @@
 //  TablePro
 //
 
+import Combine
 import Foundation
 import os
 import TableProPluginKit
@@ -14,8 +15,8 @@ import TableProPluginKit
 /// is the text the gate authorizes and the server runs. The current state is read immediately
 /// before the plan is built, which is what keeps the privilege diff from revoking a grant another
 /// session added while the sheet was open.
-@MainActor @Observable
-final class SchemaEditorViewModel {
+@MainActor
+final class SchemaEditorViewModel: ObservableObject {
     nonisolated static let logger = Logger(subsystem: "com.TablePro", category: "SchemaEditor")
 
     enum Mode: Equatable {
@@ -34,24 +35,24 @@ final class SchemaEditorViewModel {
         case failed(String)
     }
 
-    private(set) var mode: Mode
+    @Published private(set) var mode: Mode
     let connectionId: UUID
     let databaseType: DatabaseType
     let database: String?
 
-    private(set) var loadState: LoadState = .loading
-    private(set) var current: PluginSchemaDetails?
-    private(set) var ownerCandidates: [String] = []
-    private(set) var privileges: [PluginPrivilegeDescriptor] = []
-    private(set) var existingSchemas: [String] = []
-    private(set) var isApplying = false
-    private(set) var failure: String?
+    @Published private(set) var loadState: LoadState = .loading
+    @Published private(set) var current: PluginSchemaDetails?
+    @Published private(set) var ownerCandidates: [String] = []
+    @Published private(set) var privileges: [PluginPrivilegeDescriptor] = []
+    @Published private(set) var existingSchemas: [String] = []
+    @Published private(set) var isApplying = false
+    @Published private(set) var failure: String?
 
-    var name = ""
-    var owner = ""
-    var comment = ""
+    @Published var name = ""
+    @Published var owner = ""
+    @Published var comment = ""
 
-    private(set) var granteeRows: [SchemaGranteeRow] = []
+    @Published private(set) var granteeRows: [SchemaGranteeRow] = []
 
     /// What the form held when it loaded. Dirtiness is this compared with the form now, never a
     /// latch: a checkbox toggled on and straight off again is not an edit, and treating it as one

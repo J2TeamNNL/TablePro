@@ -20,7 +20,7 @@ import TableProPluginKit
 struct SchemaEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
 
-    @State var model: SchemaEditorViewModel
+    @StateObject var model: SchemaEditorViewModel
     var onCompleted: ((String) -> Void)?
 
     private var entityName: String {
@@ -243,7 +243,7 @@ struct SchemaEditorSheet: View {
             Label(String(localized: "Add Role"), systemImage: "plus")
         }
         .menuStyle(.button)
-        .buttonStyle(.accessoryBar)
+        .accessoryBarStyle()
         .fixedSize()
         .disabled(availableGrantees.isEmpty)
     }

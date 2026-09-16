@@ -69,7 +69,13 @@ internal final class SettingsPaneTabViewController: NSTabViewController {
     }
 
     internal func select(_ pane: SettingsPane?) {
-        loadViewIfNeeded()
+        /// `loadViewIfNeeded()` is macOS 14. Reading `view` is what it does: the getter loads
+        /// the view when it has not been loaded yet.
+        if #available(macOS 14.0, *) {
+            loadViewIfNeeded()
+        } else {
+            _ = view
+        }
         let wanted = pane ?? persistedPane
         guard let index = Self.paneOrder.firstIndex(of: wanted) else {
             Self.logger.error("Settings pane \(wanted.rawValue, privacy: .public) has no tab and cannot be shown")
@@ -122,7 +128,7 @@ internal final class SettingsPaneTabViewController: NSTabViewController {
 }
 
 private struct SettingsPaneContent: View {
-    @Bindable private var settingsManager = AppSettingsManager.shared
+    @ObservedObject private var settingsManager = AppSettingsManager.shared
 
     private let pane: SettingsPane
 
