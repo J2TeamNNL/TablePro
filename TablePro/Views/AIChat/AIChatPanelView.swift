@@ -323,7 +323,8 @@ struct AIChatPanelView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
         .fixedSize()
         .help(settingsManager.ai.chatMode.helpText)
     }
@@ -389,7 +390,8 @@ struct AIChatPanelView: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .menuStyle(.borderlessButton)
+            .menuStyle(.button)
+            .buttonStyle(.borderless)
             .help(String(localized: "Choose AI provider and model"))
         }
     }
@@ -440,11 +442,12 @@ struct AIChatPanelView: View {
                 Image(systemName: "at")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .accessibilityLabel(String(localized: "Attach context"))
             }
-            .menuStyle(.borderlessButton)
+            .menuStyle(.button)
+            .buttonStyle(.borderless)
             .fixedSize()
             .help(String(localized: "Attach context"))
-            .accessibilityLabel(String(localized: "Attach context"))
         }
     }
 
@@ -480,11 +483,12 @@ struct AIChatPanelView: View {
             Image(systemName: "command")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .accessibilityLabel(String(localized: "Slash commands"))
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
         .fixedSize()
         .help(String(localized: "Slash commands"))
-        .accessibilityLabel(String(localized: "Slash commands"))
     }
 
     @ViewBuilder

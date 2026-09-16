@@ -78,9 +78,10 @@ struct SchemaPickerControl: View {
                 Text(currentSchema ?? String(format: String(localized: "Select %@"), entityName.lowercased()))
                     .lineLimit(1)
                     .truncationMode(.middle)
+                    .accessibilityLabel(String(format: String(localized: "Current %@"), entityName.lowercased()))
             }
-            .menuStyle(.borderlessButton)
-            .accessibilityLabel(String(format: String(localized: "Current %@"), entityName.lowercased()))
+            .menuStyle(.button)
+            .buttonStyle(.borderless)
         }
     }
 }
