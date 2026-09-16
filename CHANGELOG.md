@@ -76,6 +76,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Autocomplete popup never opening again after a completion request came back with nothing. (#2915)
+- Completion popup opening by itself over an editor whose popup had already been dismissed.
+- Escape and `Ctrl+Space` doing nothing after a completion request came back with nothing.
 - Nested Elasticsearch fields showing as null in the grid, and filters on those leaves matching nothing.
 - `Esc` no longer leaving Vim's Insert mode in the SQL editor, with `Ctrl+[` still working. (#2914)
 - Vim mode inert until the editor is refocused when it is turned on while the editor already has focus.
