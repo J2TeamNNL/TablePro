@@ -5,10 +5,9 @@
 
 import CloudKit
 import Foundation
-import Testing
-import TableProSyncTransport
-
 @testable import TablePro
+import TableProSyncTransport
+import Testing
 
 @Suite("Favorite database sync")
 struct FavoriteDatabaseSyncTests {
