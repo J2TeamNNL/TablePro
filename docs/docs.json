@@ -237,7 +237,8 @@
             "pages": [
               "features/ai-assistant",
               "features/agent-mode",
-              "features/mcp"
+              "features/mcp",
+              "features/mcp-outside-servers"
             ]
           },
           {

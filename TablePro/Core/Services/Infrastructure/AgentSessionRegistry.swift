@@ -116,6 +116,7 @@ internal final class AgentSessionRegistry: ObservableObject {
         sessions.append(session)
         displayedSessionIds[connectionId] = id
         persist()
+        attachRemoteTools(to: session)
         return session
     }
 
@@ -124,6 +125,7 @@ internal final class AgentSessionRegistry: ObservableObject {
     internal func resolveSession(for connectionId: UUID, startingIfNeeded: Bool) -> AgentSession? {
         if let existing = currentSession(for: connectionId) {
             existing.resume()
+            attachRemoteTools(to: existing)
             return existing
         }
         guard startingIfNeeded else { return nil }
@@ -134,6 +136,7 @@ internal final class AgentSessionRegistry: ObservableObject {
     internal func stopSession(id: UUID) {
         guard let session = session(id: id) else { return }
         session.stop()
+        detachRemoteTools(from: id)
         persist()
     }
 
@@ -153,6 +156,7 @@ internal final class AgentSessionRegistry: ObservableObject {
         guard !owned.isEmpty else { return }
         for session in owned {
             session.stop()
+            detachRemoteTools(from: session.id)
         }
         persist()
     }
@@ -163,6 +167,7 @@ internal final class AgentSessionRegistry: ObservableObject {
         let session = sessions[index]
         let conversationId = session.conversationId
         session.viewModel.cancelStream()
+        detachRemoteTools(from: id)
         AIProviderFactory.resetCopilotConversation(sessionId: id)
         sessions.remove(at: index)
         if displayedSessionIds[session.connectionId] == id {
@@ -178,6 +183,26 @@ internal final class AgentSessionRegistry: ObservableObject {
     internal func markActive(id: UUID) {
         session(id: id)?.markActive()
         persist()
+    }
+
+    // MARK: - Outside MCP servers
+
+    /// Connects the outside MCP servers this session's connection allows, and registers their tools.
+    ///
+    /// Started rather than awaited. A server on the other side of a network is not something a
+    /// session's first paint may wait on, and a session with no remote tools yet is a session the
+    /// model simply has not been offered them in; they appear on the turn after they land.
+    ///
+    /// Attaching an already-attached session is how a resumed one keeps its tools, so this is safe
+    /// to call on every resolve.
+    private func attachRemoteTools(to session: AgentSession) {
+        Task { await MCPRemoteToolCoordinator.shared.attach(session: session) }
+    }
+
+    /// Drops this session's claim on every server. The tools stay registered while another session
+    /// still holds one, so ending one conversation cannot take them from another mid-turn.
+    private func detachRemoteTools(from sessionId: UUID) {
+        Task { await MCPRemoteToolCoordinator.shared.detach(sessionId: sessionId) }
     }
 
     // MARK: - Persistence

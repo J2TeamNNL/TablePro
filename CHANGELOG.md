@@ -50,6 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **View > Mode**, with **Toggle Agent Mode** on ⌥⇧⌘A.
 - Agent mode holds its connection at Safe Mode **Alert** while it is on, and hands back the level you set on the way out.
 - **Open in Agent Mode** on a connection in the welcome window.
+- **Outside MCP Servers** in Settings > Integrations, letting a session call tools on an MCP server you run.
+- Per-connection allowlist for an outside MCP server, with its token in the Keychain and neither synced.
 
 ### Changed
 
@@ -262,6 +264,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- A chat tool registered at runtime could take the name of a tool TablePro ships.
 - Oracle login continuing in clear text when the server picked an encryption algorithm but sent no key exchange material. (#2919)
 - Pairing approval never showed the address the one-time code is delivered to. (#2930)
 - A pairing link whose connection allowlist failed to parse widened the request to every connection. (#2930)

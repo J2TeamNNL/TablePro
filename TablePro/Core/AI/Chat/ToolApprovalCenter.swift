@@ -21,11 +21,6 @@ enum ToolApprovalDecision: Sendable {
 struct ApprovalRequestID: Hashable, Sendable {
     let sessionId: UUID
     let toolUseId: String
-
-    init(sessionId: UUID, toolUseId: String) {
-        self.sessionId = sessionId
-        self.toolUseId = toolUseId
-    }
 }
 
 /// Where a tool call waits for the user's answer.

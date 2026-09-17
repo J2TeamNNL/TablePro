@@ -157,6 +157,7 @@ extension AIChatViewModel {
         registry: ChatToolRegistry? = nil
     ) {
         let chatMode = settings.chatMode
+        let scope = ChatToolScope(sessionId: sessionId, connectionId: connection?.id, mode: chatMode)
         let roundtripLimit = min(
             settings.effectiveMaxToolRoundtrips ?? Self.hardToolRoundtripCeiling,
             Self.hardToolRoundtripCeiling
@@ -178,7 +179,7 @@ extension AIChatViewModel {
                 guard preflightOK else { return }
 
                 let toolSpecs = await MainActor.run {
-                    (registry ?? ChatToolRegistry.shared).allSpecs(for: chatMode)
+                    (registry ?? ChatToolRegistry.shared).specs(in: scope)
                 }
                 var workingTurns = chatMessages
                 var executedRoundtrips = 0
@@ -213,7 +214,8 @@ extension AIChatViewModel {
                         ChatToolContext(
                             connectionId: self.connection?.id,
                             bridge: ChatToolBootstrap.bridge,
-                            authPolicy: ChatToolBootstrap.authPolicy
+                            authPolicy: ChatToolBootstrap.authPolicy,
+                            sessionId: self.sessionId
                         )
                     }
                     let approvals = await self.resolveAndAwaitApprovals(
@@ -230,7 +232,7 @@ extension AIChatViewModel {
                     }
                     let executedResults = await Self.executeToolUses(
                         approvedBlocks,
-                        mode: chatMode,
+                        scope: scope,
                         context: context,
                         explicitlyApproved: approvals.explicitlyApproved,
                         registry: registry
@@ -638,7 +640,7 @@ extension AIChatViewModel {
 
     nonisolated static func executeToolUses(
         _ blocks: [ToolUseBlock],
-        mode: AIChatMode,
+        scope: ChatToolScope,
         context: ChatToolContext,
         explicitlyApproved: Set<String> = [],
         registry: ChatToolRegistry? = nil
@@ -649,7 +651,7 @@ extension AIChatViewModel {
                     approvalWasExplicit: explicitlyApproved.contains(block.id)
                 )
                 group.addTask {
-                    (index, await runToolUse(block, mode: mode, context: blockContext, registry: registry))
+                    (index, await runToolUse(block, scope: scope, context: blockContext, registry: registry))
                 }
             }
             var indexed: [(Int, ToolResultBlock)] = []
@@ -660,19 +662,20 @@ extension AIChatViewModel {
 
     nonisolated private static func runToolUse(
         _ block: ToolUseBlock,
-        mode: AIChatMode,
+        scope: ChatToolScope,
         context: ChatToolContext,
         registry: ChatToolRegistry?
     ) async -> ToolResultBlock {
+        let mode = scope.mode
         if Task.isCancelled {
             return ToolResultBlock(toolUseId: block.id, content: "Cancelled", isError: true)
         }
         let resolution = await MainActor.run { () -> ToolResolution in
             let activeRegistry = registry ?? ChatToolRegistry.shared
-            guard activeRegistry.isToolAllowed(name: block.name, in: mode) else {
+            guard activeRegistry.isToolAllowed(name: block.name, in: scope) else {
                 return .blocked
             }
-            guard let tool = activeRegistry.tool(named: block.name, in: mode) else {
+            guard let tool = activeRegistry.tool(named: block.name, in: scope) else {
                 return .missing
             }
             return .resolved(tool)
