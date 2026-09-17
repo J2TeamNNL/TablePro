@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Every plugin bundle compiled under the same concurrency settings as the app that loads it.
 - Release C optimization and link-time optimization scoped to the app, not to its Swift package dependencies.
 
 ### Fixed
