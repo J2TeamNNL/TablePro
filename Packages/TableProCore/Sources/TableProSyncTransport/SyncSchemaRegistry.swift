@@ -4,7 +4,8 @@ import Foundation
 public extension SyncRecordType {
     static let verifiedInProduction: Set<SyncRecordType> = [
         .connection, .group, .tag, .settings,
-        .favorite, .favoriteFolder, .tableFavorite, .sshProfile, .credentialProfile
+        .favorite, .favoriteFolder, .tableFavorite, .sshProfile, .credentialProfile,
+        .favoriteDatabase
     ]
 
     var productionSchemaState: ProductionSchemaState {

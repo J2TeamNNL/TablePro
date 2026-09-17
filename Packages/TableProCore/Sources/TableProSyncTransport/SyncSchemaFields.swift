@@ -62,7 +62,9 @@ public enum FavoriteDatabaseSyncField: String, SyncSchemaField {
     case modifiedAtLocal
     case schemaVersion
 
-    public static let verifiedInProduction: Set<Self> = []
+    public static let verifiedInProduction: Set<Self> = [
+        .connectionId, .database, .environment, .modifiedAtLocal, .schemaVersion
+    ]
 }
 
 public enum SQLFavoriteSyncField: String, SyncSchemaField {

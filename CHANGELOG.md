@@ -56,6 +56,7 @@ Find and Replace in the SQL editor, a Run button with more ways to run, and part
 - **View > Focus** submenu: Object List `Ctrl+Option+Cmd+L`, Editor `+E`, Results `+R`, Inspector `+I`, Assistant `+A`. (#2904, #2916 by @datlechin)
 - **Network Encryption** on the Oracle connection form, matching `SQLNET.ENCRYPTION_CLIENT`. (#2919, #2935 by @datlechin)
 - **No Database Selected** in the sidebar for a MySQL, MariaDB, TiDB or OceanBase connection with no database open. (#2950 by @datlechin)
+- Favorite databases synced through iCloud.
 ### Changed
 
 - Pairing approval in a window of its own when no window can host it as a sheet. (#2933 by @datlechin)
