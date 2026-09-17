@@ -496,6 +496,7 @@ targets:
       - Plugins/MySQLDriverPlugin/MySQLMaintenance.swift
       - Plugins/MySQLDriverPlugin/MySQLObjectQueries.swift
       - Plugins/MySQLDriverPlugin/MySQLPartitionBound.swift
+      - Plugins/MySQLDriverPlugin/MySQLTableListing.swift
       - Plugins/MySQLDriverPlugin/MySQLSelectLimitStatement.swift
       - Plugins/MySQLDriverPlugin/MySQLServerFlavor.swift
       - Plugins/MySQLDriverPlugin/MySQLSystemDatabases.swift
@@ -507,6 +508,7 @@ targets:
       - Plugins/MySQLDriverPlugin/DatabendResultShape.swift
       - Plugins/MySQLDriverPlugin/TiDBCheckConstraints.swift
       - Plugins/MySQLDriverPlugin/MySQLCreateTableScanner.swift
+      - Plugins/MySQLDriverPlugin/MySQLIndexGrouping.swift
       - Plugins/MySQLDriverPlugin/OceanBaseColumnDefaults.swift
       - Plugins/SQLiteDriverPlugin/SQLiteCheckConstraintParser.swift
       - Plugins/SQLiteDriverPlugin/SQLiteCreateTableDDL.swift
@@ -518,6 +520,7 @@ targets:
       - Plugins/CloudflareD1DriverPlugin/CloudflareD1DefaultValue.swift
       - Plugins/CloudflareD1DriverPlugin/D1HttpClient.swift
       - Plugins/MSSQLDriverPlugin/MSSQLCheckConstraintDefinition.swift
+      - Plugins/MSSQLDriverPlugin/MSSQLTableDefinitionSQL.swift
       - Plugins/PostgreSQLDriverPlugin/CockroachRelationSQL.swift
       - Plugins/PostgreSQLDriverPlugin/ColumnQueryShape.swift
       - Plugins/PostgreSQLDriverPlugin/LibPQByteaDecoder.swift
@@ -529,6 +532,7 @@ targets:
       - Plugins/PostgreSQLDriverPlugin/LibPQPluginError.swift
       - Plugins/PostgreSQLDriverPlugin/LibPQSSLMapping.swift
       - Plugins/PostgreSQLDriverPlugin/LibPQStringConformance.swift
+      - Plugins/PostgreSQLDriverPlugin/LibPQTypeNameRegistry.swift
       - Plugins/PostgreSQLDriverPlugin/PostGISSpatialRewrite.swift
       - Plugins/PostgreSQLDriverPlugin/PostgreSQLCapabilities.swift
       - Plugins/PostgreSQLDriverPlugin/PostgreSQLCatalogBoolean.swift
@@ -539,6 +543,7 @@ targets:
       - Plugins/PostgreSQLDriverPlugin/PostgreSQLColumnClauses.swift
       - Plugins/PostgreSQLDriverPlugin/PostgreSQLCommentStatements.swift
       - Plugins/PostgreSQLDriverPlugin/PostgreSQLForeignKeyQueries.swift
+      - Plugins/PostgreSQLDriverPlugin/PostgreSQLIndexClauses.swift
       - Plugins/PostgreSQLDriverPlugin/PostgreSQLIndexQueries.swift
       - Plugins/PostgreSQLDriverPlugin/PostgreSQLMaintenance.swift
       - Plugins/PostgreSQLDriverPlugin/PostgreSQLObjectQueries.swift
@@ -550,6 +555,7 @@ targets:
       - Plugins/PostgreSQLDriverPlugin/PostgreSQLSchemaStatementPlanner.swift
       - Plugins/PostgreSQLDriverPlugin/PostgreSQLSchemaQueries.swift
       - Plugins/PostgreSQLDriverPlugin/PostgreSQLSequenceQueries.swift
+      - Plugins/PostgreSQLDriverPlugin/PostgreSQLSequenceReference.swift
       - Plugins/PostgreSQLDriverPlugin/PostgreSQLSystemDatabases.swift
       - Plugins/PostgreSQLDriverPlugin/PostgreSQLTableListingLadder.swift
       - Plugins/PostgreSQLDriverPlugin/PostgreSQLTextArray.swift

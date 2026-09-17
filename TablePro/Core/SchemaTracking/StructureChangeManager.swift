@@ -105,21 +105,7 @@ final class StructureChangeManager: ObservableObject, ChangeManaging {
             }
         }
         self.currentIndexes = indexes.map { EditableIndexDefinition.from($0) }
-        // Group foreign keys by name to merge multi-column FKs into single definitions
-        let groupedFKs = Dictionary(grouping: foreignKeys, by: { $0.name })
-        self.currentForeignKeys = groupedFKs.keys.sorted().compactMap { name -> EditableForeignKeyDefinition? in
-            guard let fkInfos = groupedFKs[name], let first = fkInfos.first else { return nil }
-            return EditableForeignKeyDefinition(
-                id: first.id,
-                name: first.name,
-                columns: fkInfos.map { $0.column },
-                referencedTable: first.referencedTable,
-                referencedColumns: fkInfos.map { $0.referencedColumn },
-                referencedSchema: first.referencedSchema,
-                onDelete: EditableForeignKeyDefinition.ReferentialAction(rawValue: first.onDelete.uppercased()) ?? .noAction,
-                onUpdate: EditableForeignKeyDefinition.ReferentialAction(rawValue: first.onUpdate.uppercased()) ?? .noAction
-            )
-        }
+        self.currentForeignKeys = EditableForeignKeyDefinition.grouping(foreignKeys).sorted { $0.name < $1.name }
         self.currentCheckConstraints = checkConstraints.map { EditableCheckConstraintDefinition.from($0) }
         self.currentPrimaryKey = primaryKey
 
@@ -177,8 +163,11 @@ final class StructureChangeManager: ObservableObject, ChangeManaging {
         stageAddition(column, using: Self.columnOperations)
     }
 
+    /// A deleted index is left out of what the copy is added beside, because the save drops every
+    /// index before it adds one.
     func addIndex(_ index: EditableIndexDefinition) {
-        stageAddition(index, using: Self.indexOperations)
+        let remaining = workingIndexes.filter { pendingChanges[.index($0.id)]?.isDelete != true }
+        stageAddition(index.addedBeside(remaining), using: Self.indexOperations)
     }
 
     func addForeignKey(_ foreignKey: EditableForeignKeyDefinition) {
@@ -462,9 +451,10 @@ final class StructureChangeManager: ObservableObject, ChangeManaging {
         /// a rename in the same save leaves that name stale in the working copy without the user
         /// having done anything wrong: every engine's `RENAME COLUMN` carries the dependency over
         /// itself. Checking those rows would refuse a rename that works today. What this catches is
-        /// a row the user is *editing* into a state the database will reject.
+        /// a row the user is *editing* into a state the database will reject. An expression key names
+        /// no column of its own, so an index is checked by its column names alone.
         for index in workingIndexes where isStaged(.index(index.id)) && index.isValid {
-            for columnName in index.columns where !namesAColumn(columnName, in: columnNames) {
+            for columnName in index.referencedColumnNames where !namesAColumn(columnName, in: columnNames) {
                 validationErrors[.index(index.id)] = String(
                     format: String(localized: "Index references a column that does not exist: %@"), columnName
                 )

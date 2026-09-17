@@ -9,43 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Delete for a Kafka topic, and `DROP TOPIC` in the Kafka query editor.
-- Delete for a DynamoDB table.
-- Credential profiles, one username and password shared by any number of connections. (#2853)
-- **Profiles** pane in Settings, listing credential profiles and SSH servers with how many connections use each.
-- **Credentials** picker on a connection's Authentication section, with **Save These as a Profile…**.
-- **Credential Profiles** toggle in Settings > Sync, and credential profiles in exported connection bundles.
-- **Download and install updates automatically** in Settings > General.
-- **Last checked** beside **Check for Updates…** in Settings > General.
-- A line on the welcome window naming the version TablePro updated from, with a link to what changed.
-- What's New window, from Help > What's New and from Settings > General.
-- Update install mode and check frequency in the anonymous usage heartbeat.
-- SQL Server alias, table and CLR types in the sidebar's **Types** section, each with a rebuilt `CREATE TYPE` statement.
-- OceanBase MySQL-mode connection type on the MySQL driver. (#1748)
-- On the Server mode for a SQLite Remote Database File, editing a database on an SSH server in place with statements run on the server. (#2831)
-- **System Databases and Schemas** for the sidebar tree, in View Options and Settings > General. (#2832)
-- Partitions nested under their parent table in the sidebar, with the bound and a count on the parent. (#2523)
-- **Partitions** for the sidebar tree, in View Options and Settings > General. (#2523)
-- Partitions for MySQL, MariaDB and Oracle tables, which were listed nowhere before. (#2523)
-- Favorites and Recent sections, sorting, drag and drop into groups, inline rename and tag search tokens in the welcome window.
-- **File > New Group…**, **File > Rename** and **View > Sort Connections By** for the welcome window.
-- Favorites, Recent, nested groups, sorting and tag search tokens in the iOS connection list.
-- **File > Import > Import from AWS…** for RDS instances and Aurora clusters, imported as connections. (#2852)
-- Per-table row filter, with an optional separate target filter, and row limit in data Compare & Sync. (#2537)
-- Row grid for data Compare & Sync with every column shown and each differing value marked. (#2537)
-- Acknowledgements entries for the four tree-sitter grammars the SQL editor ships.
-- **Edit > Find > Find and Replace…** (`Cmd+Option+F`) and **Use Selection for Find** (`Cmd+E`) in the SQL editor.
-- **Run** split button in the query editor, with Run All Statements, Run Without Limit, Clear Query and Clear Results on its menu.
-- **Stop** in the query editor while a query is running.
-- **Query > Clear Query** and **Query > Clear Results**.
-- Result chooser in the status bar, naming the result on screen and offering Pin, Unpin, Close and Close Others.
-- A reason on a dimmed Run, Explain, Format or Favorite saying why it cannot run.
-- Formatted JSON inspection and per-element editing for PostgreSQL `jsonb[]` and `json[]` columns. (#2897)
-- **New Schema…** and **Edit Schema…** for PostgreSQL, with owner, comment, `USAGE` and `CREATE` privileges and a statement preview. (#2908)
-- Array element editor in the row inspector.
-- **Keyword case** in Settings > Editor: completed keywords and functions follow the case you type. (#2833)
-- **View > Focus** submenu: Object List `Ctrl+Option+Cmd+L`, Editor `+E`, Results `+R`, Inspector `+I`, Assistant `+A`. (#2904)
-- **Network Encryption** on the Oracle connection form, matching `SQLNET.ENCRYPTION_CLIENT`. (#2919)
 - **Agent** mode, giving one session the whole connection window: its sessions, its conversation, and what it ran.
 - **View > Mode**, with **Toggle Agent Mode** on ⌥⇧⌘A.
 - Agent mode holds its connection at Safe Mode **Alert** while it is on, and hands back the level you set on the way out.
@@ -55,205 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Pairing approval in a window of its own when no window can host it as a sheet.
-- System disclosure chevron on the row inspector's value and default menus.
-- Minimum macOS lowered to 13.0 (Ventura).
-- Toggle Filters on `Cmd+Shift+F`, leaving `Cmd+Option+F` to Find and Replace.
-- The editor's find panel keeps the mode it was left in instead of reverting to Find each time it opens.
-- Duplicate Connection shares a linked credential profile instead of copying its password.
-- **View > Zoom In** and **Zoom Out** (`Cmd+=`, `Cmd+-`) in place of Increase and Decrease Text Size, zooming a focused ER or query plan diagram.
-- Updates download in the background and install when you quit, instead of asking each time.
-- New versions roll out over 36 hours instead of reaching everyone at once.
-- A scheduled update renames **Check for Updates…** to **Update Available…** instead of interrupting.
-- The update window shows the release highlights, with the full changelog one click away.
-- Data grid top row held across a refresh, matched by primary key.
-- Data grid scroll reset to the first row on sort, filter and page change.
-- Schema picker lists system schemas last, in place of its Show System Schemas toggle. (#2832)
-- Welcome window at a fixed size, remembering where it sits on screen.
-- Welcome window list moved with the arrow keys instead of `Ctrl+J`, `Ctrl+K`, `Ctrl+H` and `Ctrl+L`.
-- Connection switcher lists Favorites, Recent and groups at every depth.
-- Connection rows without colored dots, on the Mac and on iOS.
-- SQL Server sessions open with the ANSI SET profile the server requires, matching every other client.
-- Compared columns in data Compare & Sync chosen per table, and saved with each table's key, filter and row limit. (#2537)
-- Query editor command bar with one control size, the container picker leading and the commands trailing.
-- Approval cards name the statement and the connection, and **Cancel** on one is now **Reject**.
 - Assistant conversations belong to one connection, and outlive the window that opened them.
-
-### Removed
-
-- CodeEditSymbols, a dependency the editor linked and never called, from the app and from Acknowledgements.
-- `Ctrl+Cmd+J` from the editor's reserved shortcuts, so it can be bound in Settings > Keyboard.
-- Result tab strip above the query results, and the "Query" heading above the editor.
-- Trash button that cleared the query and the results under one name.
-- **Auto-uppercase keywords** in Settings > Editor, replaced by **Keyword case**.
-- `Escape` shortcut for Clear Selection in Settings > Keyboard.
 
 ### Fixed
 
 - Crash when a model proposed two tool calls carrying the same id in one turn.
-- Oracle login hanging until the server gave up when it declined the network encryption negotiation. (#2919)
-- Oracle login timeout that never fired, leaving the connecting spinner up past its deadline. (#2919)
-- Crash from an Oracle server sending a marker packet, or an accept packet under 32 bytes, during login. (#2919)
-- Crash on launch when a pairing deep link opens the approval sheet. (#2930)
-- `Cmd+Return` inserting the highlighted completion instead of running the query while the autocomplete list is open.
-- Wrong table dropped, truncated or opened from a PostgreSQL partition that lives in another schema. (#2523)
-- A PostgreSQL partition missing from the object list when its parent table is not readable. (#2523)
-- A PostgreSQL foreign-table partition listed twice, under Foreign Tables and under its parent. (#2523)
-- PostgreSQL to PostgreSQL Copy To failing on enum, composite and PostGIS columns, and dropping type lengths and precision. (#2934)
-- `Return` in the raw SQL filter accepting a suggestion nobody selected instead of applying the filter.
-- `Return` on a filter value replacing what was typed with the first suggestion.
-- Filter autocomplete opening a full column list where the editor's stays shut.
-- No autocomplete after an opening backtick or double quote, in the editor and the grid filter field.
-- No type list after a PostgreSQL `::` cast until a character was typed.
-- Twelve pull-down menus VoiceOver read without a name, the result chooser and the sidebar's schema picker among them.
-- Autocomplete popup never opening again after a completion request came back with nothing. (#2915)
-- Completion popup opening by itself over an editor whose popup had already been dismissed.
-- Escape and `Ctrl+Space` doing nothing after a completion request came back with nothing.
-- Nested Elasticsearch fields showing as null in the grid, and filters on those leaves matching nothing.
-- Typesense object array columns misaligning when an element omitted the field.
-- Two disclosure chevrons on the connection form's Tags row.
-- **Add tags** not opening the tag menu when the words themselves are clicked.
-- `Esc` no longer leaving Vim's Insert mode in the SQL editor, with `Ctrl+[` still working. (#2914)
-- Vim mode inert until the editor is refocused when it is turned on while the editor already has focus.
-- A find bar open in one window swallowing `Esc` in every other window.
-- `Tab` accepting an AI suggestion instead of the selected item in the autocomplete list.
-- Drop Schema and Drop Database skipping Safe Mode's confirmation and Touch ID, and writing no audit record.
-- New Database offered on a read-only connection, and running without Safe Mode's confirmation.
-- Drop Schema failing on Redshift, CockroachDB and PGlite, which offered it with nothing behind it.
-- Missing `CREATE SCHEMA` steps when duplicating a Redshift or CockroachDB database with more than one schema.
-- Drop Schema promising to delete dependent objects on engines with no `CASCADE`, such as SQL Server and BigQuery.
-- Recent Tables entries left pointing at tables in a dropped schema.
-- `Tab` reaching no further than the sidebar, leaving the editor, data grid, inspector and assistant unreachable from the keyboard. (#2904)
-- Clear Selection enabled on a window with nothing to clear.
-- PostgreSQL `box[]` cell split into fragments by the element editor, which read it with a comma.
-- Empty PostgreSQL `jsonb` object copied to another engine as an empty array. (Copy Objects)
-- Boolean dropdown on a PostgreSQL `bit(8)[]` column, and no element editor on `numeric(10,2)[]`.
-- Two chevrons on the row inspector's `SET` field.
-- Unicode whitespace dropped from a PostgreSQL array element when a sibling element was edited.
-- Stale error banner over a pinned result after clearing the results of a failed query.
-- `DROP TABLE` and `TRUNCATE TABLE` generated for Elasticsearch, Kafka, Weaviate and etcd, which have no SQL. (#2884)
-- Empty Elasticsearch and Weaviate exports, which asked the engine for `SELECT * FROM`.
-- Drop Table and Truncate Table offered on every iOS engine, including Redis keys.
-- Delete and Truncate offered on engines that have no statement for them.
-- Truncate on a Redis database emptying whichever database the connection was on.
-- Base64 text instead of the request in the Typesense drop and truncate confirmation.
-- Imported connections pointing at an SSH profile that is not on the importing Mac.
-- Syntax highlighting falling a second or two behind while typing quickly in the SQL editor.
-- Beep and a question-mark badge when pressing `Ctrl+Cmd+J` in the SQL editor.
-- Connections still reaching an SSH profile's old host and username after the profile was edited.
-- SSH profile edits made on another Mac never reaching the connections that use it.
-- Deleting an SSH profile leaving the connections that used it without a tunnel.
-- SSH profile secrets left in the keychain when the profile was deleted on another Mac.
-- An SSH profile editor reporting a save or a delete that never reached disk.
-- Clearing a connection's password, or an inline SSH password or key passphrase, leaving the old one stored.
-- Backups and restores running with no password when the connection's password comes from a password source or `~/.pgpass`.
-- Password source failures during a backup or restore reported as a database authentication failure.
-- SqlPackage password-exposure warning skipped on a restore, and on a connection using a password source or `~/.pgpass`.
-- Saved passwords deleted from iCloud Keychain when TablePro for iPhone launched before its connections loaded.
-- Stutter when scrolling a very long line in the SQL editor.
-- Row inspector edits missing from the grid cell and gone from the inspector on reselect. (#2851)
-- Detached JSON cell editor writing into another record after a column filter or a sort moved the rows.
-- NULL written into every selected row when a field they disagree on was cleared in the row inspector.
-- Row inspector showing the discarded values after Discard Changes.
-- One undo step per character when typing in a row inspector field.
-- Text typed into a detached row inspector value window silently dropped once another row was selected.
-- Row inspector's JSON view showing the row as it was while a detached value window was still writing it.
-- Empty Procedures and Functions lists on every SQL Server connection.
-- SQL Server rows that could not be saved on a table with a filtered index or an index on a computed column.
-- SQL Server CLR and extended procedures and functions missing from the Procedures and Functions lists.
-- SQL Server routines labelled encrypted when the account simply cannot read their source.
-- SQL Server version detection on a patched server, which left `CREATE OR ALTER` unused since 2016.
-- SQL editor jumping back while scrolling sideways near the start of a long line. (#2841)
-- Data sync scripts missing every UPDATE and DELETE. (#2537)
-- Data sync statements written to the source schema instead of the target.
-- Numeric-looking text such as `007` written unquoted by data sync, and key matches that hit extra rows.
-- Data sync pairing arbitrary rows on a key that is not unique.
-- Data sync inserts failing on SQL Server identity and PostgreSQL `GENERATED ALWAYS` columns.
-- Text columns compared as timestamps, and keys that differ only in case never synced.
-- Data sync scripts including tables never compared, or rows that changed after comparing.
-- Structure sync scripts written from a schema that changed after it was compared.
-- Apply unavailable for a second sync in the same Compare & Sync window.
-- Choosing a source, target, mode or option during Apply cancelling the running sync.
-- Apply offered for a target switched to Read-Only after it was picked.
-- Compare & Sync reporting nothing written after a sync had written to the target.
-- Rolled-back data sync on MyISAM tables reported as leaving the target unchanged.
-- Cancelling a repeated data comparison clearing the previous results.
-- Table whose data comparison failed stuck included with no way to exclude it.
-- SSH settings dropped from a Mac connection after it synced from the iPhone app, turning off its tunnel or remote database file.
-- Remote database file path and access mode dropped when a connection was exported, shared as a link, or imported.
-- Remote database file connection hanging for minutes when its SSH connection dropped silently, with Cancel doing nothing.
-- Stutter when scrolling a long line while Find highlights many matches.
-- Remote database file reaching the previous server after the connection's host, port, or user was changed.
-- Favoriting, moving or reordering a connection reverting a Safe Mode level changed in its window.
-- Connections in groups nested more than three levels deep missing from the welcome window.
-- Linked folder and Team Library connections to two databases on one host treated as one connection.
-- Slow typing and scrolling in a very long line with word wrap on.
-- New, duplicated and moved connections placed at the top of their group.
-- Password sources skipped after an older connection store was renumbered.
-- Connections from a cancelled New Group sheet moved into the next group created.
-- Search in the welcome window hiding matches inside collapsed groups.
-- Memory spike when dragging selected text in an editor that holds a very long line.
-- Blank line added to text dragged from an editor for every extra cursor in the document.
-- Connection switcher showing a dropped connection as connected and checking the wrong one in a second window.
-- Welcome window changes that failed to save shown as saved.
-- Linked folder connection losing its SSH, SSL and Safe Mode settings on connect.
-- iOS connection edit resetting the order, color, query timeout and extra tags.
-- iOS group delete leaving its subgroups behind, and tag counts reading only the first tag.
-- iOS sync overwriting a connection edited while the sync ran.
-- iOS Duplicate losing the password, SSH secrets, client certificates and file access.
-- Update preferences overwritten by the app at every launch instead of following the setting.
-- No automatic update checks on a fresh install, and a permission prompt on the second launch.
-- No automatic update checks at all with the usage heartbeat off and **Reopen Last Session** chosen.
-- Architecture error shown when a plugin actually needs a newer version of TablePro.
-- Sidebar, completion and other windows not updating after a table, view, routine, trigger, type, schema or database changes. (#2819)
-- Saving a staged Drop or Truncate running the selected query tab's statement again.
-- Dropped tables left staged after a save that failed part way, and drops staged in another database unstaged on refresh.
-- Table tab showing another database's rows after a database switch on PostgreSQL, Redshift and CockroachDB.
-- Wrong approximate row count for a PostgreSQL or PGlite table outside the current schema.
-- Queued queries running on a reopened connection, or stalling it, after a disconnect.
-- Redis keys read from the wrong database when switching databases while a load was running.
-- "This tab is on" error on a table tab for the previous database when it reloads during a database switch.
-- Table on another database opening empty with no error while the connection switches database.
-- Reopen Closed Tab removing the closed tab without reopening it when its connection's window already had tabs.
-- Unchecked and soloed filter rows dropped from a table's saved filters after switching tabs.
-- Table opened in another database from a link, MCP or AppleScript bound to the current schema.
-- Recent table opened before connecting reopening a same-named table in another schema, and listed twice.
-- AI and Copilot schema context listing a table with the columns of a same-named table in another schema.
-- Inline cell editor left open over a different row after a refresh.
-- Row selected by Back or Forward dropped once the table finished loading.
-- Data grid jumping to the top on a later reload after a page change failed.
-- System databases such as `mysql` missing from the database switcher, the tab database picker and Open Quickly. (#2832)
-- SQL Server and ClickHouse system databases listed as user databases once the database switcher finished loading.
-- Cmd+scroll not zooming the ER diagram or the query plan diagram.
-- Oracle system schemas such as `SYS` and `XDB` listed with user schemas.
-- Dameng `SYSDBA` schema hidden from the sidebar and listed under System.
-- TiDB's `INFORMATION_SCHEMA` and `PERFORMANCE_SCHEMA` listed as user databases on a MySQL or MariaDB connection.
-- SQL Server database size and table count showing the current database's numbers, and no size at 2 GB or more.
-- ClickHouse databases with no tables missing from the database switcher and database statistics.
-- Stale write-ahead log replayed over a freshly fetched copy of a remote SQLite database.
-- Remote database copy reused after a commit that did not grow its write-ahead log.
-- Killed remote `VACUUM INTO` snapshot reported as a successful copy.
-- Interrupted remote snapshot files left on the server, now swept on the next fetch.
-- Local working copies of remote databases kept forever, now removed after 30 days unused.
-- Clicks, drags and the hand pointer landing on the wrong table or plan step once a diagram is zoomed.
-- ER diagram table held at the edge of the view sliding away from the pointer, or auto-pan not starting when zoomed out.
-- ER diagram scrolling on its own after a table drag was interrupted by a tab or connection switch.
-- Fit to Window on an ER diagram fitting empty space left behind by a dragged table.
-- Query plan mode, selected step, zoom and scroll lost on a mode or editor tab switch, or zoom carried over to another plan.
-- Zoom Out on a diagram at 5% jumping to 1%.
-- An AWS profile backed by IAM Identity Center, or an assume-role chain rooted on one, failing to authenticate.
-- AWS SSO sign-in leaving the `aws` CLI unable to refresh its own token.
-- AWS SSO, STS and RDS unreachable in the China, GovCloud and secret partitions.
-- Auto-uppercase keywords leaving `ADD`, `MERGE`, `CALL`, `COMMENT` and 17 more in the case they were typed.
-- Autocomplete committing a different column between launches when two scored the same.
-- MongoDB autocomplete inserting `$MATCH` and `DB`, which the server rejects.
-- ClickHouse autocomplete offering 18 function names the server rejects, `TOSTRING` and `UNIQ` among them.
-- Completion inserted beside a non-ASCII prefix instead of replacing it: `SELECT 名` became `SELECT 名名前`.
-- Caret landing after the closing parenthesis when accepting a function in the filter panel's Raw SQL field.
-- Run and Reject did nothing on every approval card but the first when a turn proposed several tool calls.
-- Return answered an arbitrary approval card when more than one was waiting.
-- A reply still arriving was lost when its window closed, its connection dropped, or its session ended.
-- The assistant held a provider and its open stream for the rest of the session when a window closed over an approval card.
 - Another connection's chat history appeared in a second connection's assistant, and could be deleted from there.
 - Two conversations on one Copilot configuration were answered with each other's context.
 - The sidebar toggle announced its SF Symbol names to VoiceOver instead of Tables and Favorites.
@@ -265,16 +34,293 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - A chat tool registered at runtime could take the name of a tool TablePro ships.
-- Oracle login continuing in clear text when the server picked an encryption algorithm but sent no key exchange material. (#2919)
-- Pairing approval never showed the address the one-time code is delivered to. (#2930)
-- A pairing link whose connection allowlist failed to parse widened the request to every connection. (#2930)
-- Sparkle 2.10.0, carrying installer fixes for a symlink attack and a privilege escalation under root.
-- SQLite denies the `fts3_tokenizer` function, which could crash the app from a crafted query on any connection.
-- The AI assistant refuses statements that read or write files or run server-side code (ATTACH, LOAD, VACUUM INTO), matching the MCP server. (#2831)
-- Remote `VACUUM INTO` snapshot created world-readable beside a database with stricter permissions.
-- AWS SSO access token cached world-readable in `~/.aws/sso/cache`.
-- The AI assistant could write to a connection other than the one it was attached to, with that connection's Safe Mode skipped.
-- The AI assistant could read the schema and DDL of any saved connection by id, including one with AI access turned off.
+
+## [0.75.0] - 2026-09-18
+
+Runs on macOS 13 Ventura and later.
+Credential profiles: one saved login shared by any number of connections.
+Import RDS instances and Aurora clusters from AWS as connections.
+Updates download in the background and install when you quit.
+A rebuilt welcome window with Favorites, Recent, nested groups and drag and drop.
+Find and Replace in the SQL editor, a Run button with more ways to run, and partitions in the sidebar.
+
+### Added
+
+- Delete for a Kafka topic, and `DROP TOPIC` in the Kafka query editor. (#2899 by @datlechin)
+- Delete for a DynamoDB table. (#2899 by @datlechin)
+- Credential profiles, one username and password shared by any number of connections. (#2853, #2876 by @datlechin)
+- **Profiles** pane in Settings, listing credential profiles and SSH servers with how many connections use each. (#2876 by @datlechin)
+- **Credentials** picker on a connection's Authentication section, with **Save These as a Profile…**. (#2876 by @datlechin)
+- **Credential Profiles** toggle in Settings > Sync, and credential profiles in exported connection bundles. (#2879 by @datlechin)
+- **Download and install updates automatically** in Settings > General. (#2865 by @datlechin)
+- **Last checked** beside **Check for Updates…** in Settings > General. (#2865 by @datlechin)
+- A line on the welcome window naming the version TablePro updated from, with a link to what changed. (#2816 by @datlechin)
+- What's New window, from Help > What's New and from Settings > General. (#2865 by @datlechin)
+- Update install mode and check frequency in the anonymous usage heartbeat. (#2816 by @datlechin)
+- SQL Server alias, table and CLR types in the sidebar's **Types** section, each with a rebuilt `CREATE TYPE` statement. (#2856 by @datlechin)
+- OceanBase MySQL-mode connection type on the MySQL driver. (#1748, #2741 by @J2TeamNNL)
+- Server mode for a SQLite Remote Database File, editing a database on an SSH server in place. (#2831, #2835 by @datlechin)
+- **System Databases and Schemas** for the sidebar tree, in View Options and Settings > General. (#2832, #2834 by @datlechin)
+- Partitions nested under their parent table in the sidebar, with the bound and a count on the parent. (#2523, #2937 by @datlechin)
+- **Partitions** for the sidebar tree, in View Options and Settings > General. (#2523, #2937 by @datlechin)
+- Partitions for MySQL, MariaDB and Oracle tables, which were listed nowhere before. (#2523, #2937 by @datlechin)
+- Favorites, Recent, sorting, drag and drop into groups, inline rename and tag search in the welcome window. (#2849 by @datlechin)
+- **File > New Group…**, **File > Rename** and **View > Sort Connections By** for the welcome window. (#2849 by @datlechin)
+- Favorites, Recent, nested groups, sorting and tag search tokens in the iOS connection list. (#2849 by @datlechin)
+- **File > Import > Import from AWS…** for RDS instances and Aurora clusters, imported as connections. (#2852, #2857 by @datlechin)
+- Per-table row filter, with an optional separate target filter, and row limit in data Compare & Sync. (#2537, #2854 by @datlechin)
+- Row grid for data Compare & Sync with every column shown and each differing value marked. (#2537, #2854 by @datlechin)
+- Acknowledgements entries for the four tree-sitter grammars the SQL editor ships. (#2878 by @datlechin)
+- **Edit > Find > Find and Replace…** (`Cmd+Option+F`) and **Use Selection for Find** (`Cmd+E`) in the SQL editor. (#2893 by @datlechin)
+- **Run** split button in the query editor with Run All Statements, Run Without Limit, Clear Query and Clear Results. (#2892 by @datlechin)
+- **Stop** in the query editor while a query is running. (#2892 by @datlechin)
+- **Query > Clear Query** and **Query > Clear Results**. (#2892 by @datlechin)
+- Result chooser in the status bar, naming the result on screen and offering Pin, Unpin, Close and Close Others. (#2892 by @datlechin)
+- A reason on a dimmed Run, Explain, Format or Favorite saying why it cannot run. (#2892 by @datlechin)
+- Formatted JSON inspection and per-element editing for PostgreSQL `jsonb[]` and `json[]` columns. (#2897, #2903 by @datlechin)
+- **New Schema…** and **Edit Schema…** for PostgreSQL, with owner, comment, privileges and a statement preview. (#2908, #2917 by @datlechin)
+- Array element editor in the row inspector. (#2903 by @datlechin)
+- **Keyword case** in Settings > Editor: completed keywords and functions follow the case you type. (#2833, #2902 by @datlechin)
+- **View > Focus** submenu: Object List `Ctrl+Option+Cmd+L`, Editor `+E`, Results `+R`, Inspector `+I`, Assistant `+A`. (#2904, #2916 by @datlechin)
+- **Network Encryption** on the Oracle connection form, matching `SQLNET.ENCRYPTION_CLIENT`. (#2919, #2935 by @datlechin)
+- **No Database Selected** in the sidebar for a MySQL, MariaDB, TiDB or OceanBase connection with no database open. (#2950 by @datlechin)
+- Favorite databases synced through iCloud.
+### Changed
+
+- Pairing approval in a window of its own when no window can host it as a sheet. (#2933 by @datlechin)
+- System disclosure chevron on the row inspector's value and default menus. (#2928 by @datlechin)
+- Minimum macOS lowered to 13.0 (Ventura). (#2874 by @datlechin)
+- Toggle Filters on `Cmd+Shift+F`, leaving `Cmd+Option+F` to Find and Replace. (#2893 by @datlechin)
+- The editor's find panel keeps the mode it was left in instead of reverting to Find each time it opens. (#2893 by @datlechin)
+- Duplicate Connection shares a linked credential profile instead of copying its password. (#2876 by @datlechin)
+- **Zoom In** and **Zoom Out** (`Cmd+=`, `Cmd+-`) in place of Increase and Decrease Text Size, zooming diagrams too. (#2847 by @datlechin)
+- Updates download in the background and install when you quit, instead of asking each time. (#2813 by @datlechin)
+- New versions roll out over 36 hours instead of reaching everyone at once. (#2815 by @datlechin)
+- A scheduled update renames **Check for Updates…** to **Update Available…** instead of interrupting. (#2865 by @datlechin)
+- The update window shows the release highlights, with the full changelog one click away. (#2815 by @datlechin)
+- Data grid top row held across a refresh, matched by primary key. (#2825 by @datlechin)
+- Data grid scroll reset to the first row on sort, filter and page change. (#2825 by @datlechin)
+- Schema picker lists system schemas last, in place of its Show System Schemas toggle. (#2832, #2834 by @datlechin)
+- Welcome window at a fixed size, remembering where it sits on screen. (#2868 by @datlechin)
+- Welcome window list moved with the arrow keys instead of `Ctrl+J`, `Ctrl+K`, `Ctrl+H` and `Ctrl+L`. (#2849 by @datlechin)
+- Connection switcher lists Favorites, Recent and groups at every depth. (#2849 by @datlechin)
+- Connection rows without colored dots, on the Mac and on iOS. (#2849 by @datlechin)
+- SQL Server sessions open with the ANSI SET profile the server requires, matching every other client. (#2855 by @datlechin)
+- Compared columns in data Compare & Sync chosen per table, and saved with each table's key, filter and row limit. (#2537, #2854 by @datlechin)
+- Query editor command bar with one control size, the container picker leading and the commands trailing. (#2892 by @datlechin)
+- Approval cards name the statement and the connection, with **Reject** in place of **Cancel**. (#2936 by @datlechin)
+- Scripts with their own `BEGIN` or `START TRANSACTION` run without a second transaction wrapped around them. (#2949 by @datlechin)
+### Removed
+
+- CodeEditSymbols, a dependency the editor linked and never called, from the app and from Acknowledgements. (#2873 by @datlechin)
+- `Ctrl+Cmd+J` from the editor's reserved shortcuts. (#2877 by @datlechin)
+- Result tab strip above the query results, and the "Query" heading above the editor. (#2892 by @datlechin)
+- Trash button that cleared the query and the results under one name. (#2892 by @datlechin)
+- **Auto-uppercase keywords** in Settings > Editor, replaced by **Keyword case**. (#2902 by @datlechin)
+- `Escape` shortcut for Clear Selection in Settings > Keyboard. (#2918 by @datlechin)
+
+### Fixed
+
+- Filters cleared on a table coming back the next time that table is read.
+
+- Oracle login hanging until the server gave up when it declined the network encryption negotiation. (#2919, #2935 by @datlechin)
+- Oracle login timeout that never fired, leaving the connecting spinner up past its deadline. (#2919, #2935 by @datlechin)
+- Crash from an Oracle server sending a marker packet, or an accept packet under 32 bytes, during login. (#2919, #2935 by @datlechin)
+- Crash on launch when a pairing deep link opens the approval sheet. (#2930, #2933 by @datlechin)
+- `Cmd+Return` inserting the highlighted completion instead of running the query while the autocomplete list is open. (#2940 by @datlechin)
+- Wrong table dropped, truncated or opened from a PostgreSQL partition that lives in another schema. (#2523, #2937 by @datlechin)
+- A PostgreSQL partition missing from the object list when its parent table is not readable. (#2523, #2937 by @datlechin)
+- A PostgreSQL foreign-table partition listed twice, under Foreign Tables and under its parent. (#2523, #2937 by @datlechin)
+- PostgreSQL Copy To failing on enum, composite and PostGIS columns, and dropping type lengths and precision. (#2934, #2943 by @datlechin)
+- `Return` in the raw SQL filter accepting a suggestion nobody selected instead of applying the filter. (#2927 by @filipac)
+- `Return` on a filter value replacing what was typed with the first suggestion. (#2927 by @filipac)
+- Filter autocomplete opening a full column list where the editor's stays shut. (#2927 by @filipac)
+- No autocomplete after an opening backtick or double quote, in the editor and the grid filter field. (#2923 by @datlechin)
+- No type list after a PostgreSQL `::` cast until a character was typed. (#2925 by @datlechin)
+- Twelve pull-down menus VoiceOver read without a name, the result chooser and the sidebar's schema picker among them. (#2929 by @datlechin)
+- Autocomplete popup never opening again after a completion request came back with nothing. (#2915, #2921 by @datlechin)
+- Completion popup opening by itself over an editor whose popup had already been dismissed. (#2921 by @datlechin)
+- Escape and `Ctrl+Space` doing nothing after a completion request came back with nothing. (#2921 by @datlechin)
+- Nested Elasticsearch fields showing as null in the grid, and filters on those leaves matching nothing. (#2905 by @digows)
+- Typesense object array columns misaligning when an element omitted the field. (#2922 by @datlechin)
+- Two disclosure chevrons on the connection form's Tags row. (#2928 by @datlechin)
+- **Add tags** not opening the tag menu when the words themselves are clicked. (#2928 by @datlechin)
+- `Esc` not leaving Vim's Insert mode in the SQL editor. (#2914, #2918 by @datlechin)
+- Vim mode inert until the editor is refocused when it is turned on while the editor already has focus. (#2918 by @datlechin)
+- A find bar open in one window swallowing `Esc` in every other window. (#2918 by @datlechin)
+- `Tab` accepting an AI suggestion instead of the selected item in the autocomplete list. (#2918 by @datlechin)
+- Drop Schema and Drop Database skipping Safe Mode's confirmation and Touch ID, and writing no audit record. (#2917 by @datlechin)
+- New Database offered on a read-only connection, and running without Safe Mode's confirmation. (#2917 by @datlechin)
+- Drop Schema failing on Redshift, CockroachDB and PGlite, which offered it with nothing behind it. (#2917 by @datlechin)
+- Missing `CREATE SCHEMA` steps when duplicating a Redshift or CockroachDB database with more than one schema. (#2917 by @datlechin)
+- Drop Schema promising to delete dependent objects on engines with no `CASCADE`, such as SQL Server and BigQuery. (#2917 by @datlechin)
+- Recent Tables entries left pointing at tables in a dropped schema. (#2917 by @datlechin)
+- `Tab` stopping at the sidebar, leaving the editor, data grid, inspector and assistant unreachable from the keyboard. (#2904, #2916 by @datlechin)
+- Clear Selection enabled on a window with nothing to clear. (#2916 by @datlechin)
+- PostgreSQL `box[]` cell split into fragments by the element editor, which read it with a comma. (#2913 by @datlechin)
+- Empty PostgreSQL `jsonb` object copied to another engine as an empty array. (Copy Objects) (#2911 by @datlechin)
+- Boolean dropdown on a PostgreSQL `bit(8)[]` column, and no element editor on `numeric(10,2)[]`. (#2910 by @datlechin)
+- Two chevrons on the row inspector's `SET` field. (#2909 by @datlechin)
+- Unicode whitespace dropped from a PostgreSQL array element when a sibling element was edited. (#2903 by @datlechin)
+- Stale error banner over a pinned result after clearing the results of a failed query. (#2892 by @datlechin)
+- `DROP TABLE` and `TRUNCATE TABLE` generated for Elasticsearch, Kafka, Weaviate and etcd, which have no SQL. (#2884, #2896 by @datlechin)
+- Empty Elasticsearch and Weaviate exports, which asked the engine for `SELECT * FROM`. (#2899 by @datlechin)
+- Drop Table and Truncate Table offered on every iOS engine, including Redis keys. (#2899 by @datlechin)
+- Delete and Truncate offered on engines that have no statement for them. (#2896 by @datlechin)
+- Truncate on a Redis database emptying whichever database the connection was on. (#2896 by @datlechin)
+- Base64 text instead of the request in the Typesense drop and truncate confirmation. (#2896 by @datlechin)
+- Imported connections pointing at an SSH profile that is not on the importing Mac. (#2879 by @datlechin)
+- Syntax highlighting falling a second or two behind while typing quickly in the SQL editor. (#2880 by @datlechin)
+- Beep and a question-mark badge when pressing `Ctrl+Cmd+J` in the SQL editor. (#2877 by @datlechin)
+- Connections still reaching an SSH profile's old host and username after the profile was edited. (#2872 by @datlechin)
+- SSH profile edits made on another Mac never reaching the connections that use it. (#2872 by @datlechin)
+- Deleting an SSH profile leaving the connections that used it without a tunnel. (#2872 by @datlechin)
+- SSH profile secrets left in the keychain when the profile was deleted on another Mac. (#2872 by @datlechin)
+- An SSH profile editor reporting a save or a delete that never reached disk. (#2872 by @datlechin)
+- Clearing a connection's password, or an inline SSH password or key passphrase, leaving the old one stored. (#2872 by @datlechin)
+- Backups and restores running with no password when it comes from a password source or `~/.pgpass`. (#2872 by @datlechin)
+- Password source failures during a backup or restore reported as a database authentication failure. (#2872 by @datlechin)
+- SqlPackage password-exposure warning skipped on a restore, and on a connection using a password source or `~/.pgpass`. (#2872 by @datlechin)
+- Saved passwords deleted from iCloud Keychain when TablePro for iPhone launched before its connections loaded. (#2872 by @datlechin)
+- Stutter when scrolling a very long line in the SQL editor. (#2861 by @datlechin)
+- Row inspector edits missing from the grid cell and gone from the inspector on reselect. (#2851, #2858 by @datlechin)
+- Detached JSON cell editor writing into another record after a column filter or a sort moved the rows. (#2869 by @datlechin)
+- NULL written into every selected row when a field they disagree on was cleared in the row inspector. (#2867 by @datlechin)
+- Row inspector showing the discarded values after Discard Changes. (#2867 by @datlechin)
+- One undo step per character when typing in a row inspector field. (#2871 by @datlechin)
+- Text typed into a detached row inspector value window silently dropped once another row was selected. (#2870 by @datlechin)
+- Row inspector's JSON view showing the row as it was while a detached value window was still writing it. (#2870 by @datlechin)
+- Empty Procedures and Functions lists on every SQL Server connection. (#2855 by @datlechin)
+- SQL Server rows that could not be saved on a table with a filtered index or an index on a computed column. (#2855 by @datlechin)
+- SQL Server CLR and extended procedures and functions missing from the Procedures and Functions lists. (#2855 by @datlechin)
+- SQL Server routines labelled encrypted when the account simply cannot read their source. (#2855 by @datlechin)
+- SQL Server version detection on a patched server, which left `CREATE OR ALTER` unused since 2016. (#2855 by @datlechin)
+- SQL editor jumping back while scrolling sideways near the start of a long line. (#2841, #2848 by @datlechin)
+- Data sync scripts missing every UPDATE and DELETE. (#2537, #2854 by @datlechin)
+- Data sync statements written to the source schema instead of the target. (#2854 by @datlechin)
+- Numeric-looking text such as `007` written unquoted by data sync, and key matches that hit extra rows. (#2854 by @datlechin)
+- Data sync pairing arbitrary rows on a key that is not unique. (#2854 by @datlechin)
+- Data sync inserts failing on SQL Server identity and PostgreSQL `GENERATED ALWAYS` columns. (#2854 by @datlechin)
+- Text columns compared as timestamps, and keys that differ only in case never synced. (#2854 by @datlechin)
+- Data sync scripts including tables never compared, or rows that changed after comparing. (#2854 by @datlechin)
+- Structure sync scripts written from a schema that changed after it was compared. (#2859 by @datlechin)
+- Apply unavailable for a second sync in the same Compare & Sync window. (#2854 by @datlechin)
+- Choosing a source, target, mode or option during Apply cancelling the running sync. (#2854 by @datlechin)
+- Apply offered for a target switched to Read-Only after it was picked. (#2854 by @datlechin)
+- Compare & Sync reporting nothing written after a sync had written to the target. (#2854 by @datlechin)
+- Rolled-back data sync on MyISAM tables reported as leaving the target unchanged. (#2854 by @datlechin)
+- Cancelling a repeated data comparison clearing the previous results. (#2854 by @datlechin)
+- Table whose data comparison failed stuck included with no way to exclude it. (#2854 by @datlechin)
+- SSH settings dropped from a Mac connection after syncing from the iPhone app, turning off its tunnel or remote file. (#2846 by @datlechin)
+- Remote database file path and access mode dropped when a connection was exported, shared as a link, or imported. (#2845 by @datlechin)
+- Remote database file connections hanging for minutes when SSH dropped silently, with Cancel doing nothing. (#2843 by @datlechin)
+- Stutter when scrolling a long line while Find highlights many matches. (#2862 by @datlechin)
+- Remote database file reaching the previous server after the connection's host, port, or user was changed. (#2843 by @datlechin)
+- Favoriting, moving or reordering a connection reverting a Safe Mode level changed in its window. (#2849 by @datlechin)
+- Connections in groups nested more than three levels deep missing from the welcome window. (#2849 by @datlechin)
+- Linked folder and Team Library connections to two databases on one host treated as one connection. (#2849 by @datlechin)
+- Slow typing and scrolling in a very long line with word wrap on. (#2863 by @datlechin)
+- New, duplicated and moved connections placed at the top of their group. (#2849 by @datlechin)
+- Password sources skipped after an older connection store was renumbered. (#2849 by @datlechin)
+- Connections from a cancelled New Group sheet moved into the next group created. (#2849 by @datlechin)
+- Search in the welcome window hiding matches inside collapsed groups. (#2849 by @datlechin)
+- Memory spike when dragging selected text in an editor that holds a very long line. (#2864 by @datlechin)
+- Blank line added to text dragged from an editor for every extra cursor in the document. (#2864 by @datlechin)
+- Connection switcher showing a dropped connection as connected and checking the wrong one in a second window. (#2849 by @datlechin)
+- Welcome window changes that failed to save shown as saved. (#2849 by @datlechin)
+- Linked folder connection losing its SSH, SSL and Safe Mode settings on connect. (#2849 by @datlechin)
+- iOS connection edit resetting the order, color, query timeout and extra tags. (#2849 by @datlechin)
+- iOS group delete leaving its subgroups behind, and tag counts reading only the first tag. (#2849 by @datlechin)
+- iOS sync overwriting a connection edited while the sync ran. (#2849 by @datlechin)
+- iOS Duplicate losing the password, SSH secrets, client certificates and file access. (#2849 by @datlechin)
+- Update preferences overwritten by the app at every launch instead of following the setting. (#2813 by @datlechin)
+- No automatic update checks on a fresh install, and a permission prompt on the second launch. (#2865 by @datlechin)
+- No automatic update checks at all with the usage heartbeat off and **Reopen Last Session** chosen. (#2865 by @datlechin)
+- Architecture error shown when a plugin actually needs a newer version of TablePro. (#2814 by @datlechin)
+- Sidebar, completion and other windows missing a change to a table, view, routine, trigger, type, schema or database. (#2819, #2821 by @datlechin)
+- Saving a staged Drop or Truncate running the selected query tab's statement again. (#2821 by @datlechin)
+- Dropped tables left staged after a partly failed save, and drops staged in another database unstaged on refresh. (#2821 by @datlechin)
+- Table tab showing another database's rows after a database switch on PostgreSQL, Redshift and CockroachDB. (#2820 by @datlechin)
+- Wrong approximate row count for a PostgreSQL or PGlite table outside the current schema. (#2822 by @datlechin)
+- Queued queries running on a reopened connection, or stalling it, after a disconnect. (#2824 by @datlechin)
+- Redis keys read from the wrong database when switching databases while a load was running. (#2824 by @datlechin)
+- "This tab is on" error on a table tab for the previous database when it reloads during a database switch. (#2824 by @datlechin)
+- Table on another database opening empty with no error while the connection switches database. (#2824 by @datlechin)
+- Reopen Closed Tab removing the closed tab without reopening it when its connection's window already had tabs. (#2829 by @datlechin)
+- Unchecked and soloed filter rows dropped from a table's saved filters after switching tabs. (#2827 by @datlechin)
+- Table opened in another database from a link, MCP or AppleScript bound to the current schema. (#2828 by @datlechin)
+- Recent table opened before connecting reopening a same-named table in another schema, and listed twice. (#2828 by @datlechin)
+- AI and Copilot schema context listing a table with the columns of a same-named table in another schema. (#2830 by @datlechin)
+- Inline cell editor left open over a different row after a refresh. (#2825 by @datlechin)
+- Row selected by Back or Forward dropped once the table finished loading. (#2825 by @datlechin)
+- Data grid jumping to the top on a later reload after a page change failed. (#2825 by @datlechin)
+- System databases such as `mysql` missing from the database switcher, the tab database picker and Open Quickly. (#2832, #2834 by @datlechin)
+- SQL Server and ClickHouse system databases listed as user databases once the database switcher finished loading. (#2834 by @datlechin)
+- Cmd+scroll not zooming the ER diagram or the query plan diagram. (#2840 by @datlechin)
+- Oracle system schemas such as `SYS` and `XDB` listed with user schemas. (#2839 by @datlechin)
+- Dameng `SYSDBA` schema hidden from the sidebar and listed under System. (#2839 by @datlechin)
+- TiDB's `INFORMATION_SCHEMA` and `PERFORMANCE_SCHEMA` listed as user databases on a MySQL or MariaDB connection. (#2838 by @datlechin)
+- SQL Server database size and table count showing the current database's numbers, and no size at 2 GB or more. (#2837 by @datlechin)
+- ClickHouse databases with no tables missing from the database switcher and database statistics. (#2836 by @datlechin)
+- Stale write-ahead log replayed over a freshly fetched copy of a remote SQLite database. (#2842 by @datlechin)
+- Remote database copy reused after a commit that did not grow its write-ahead log. (#2842 by @datlechin)
+- Killed remote `VACUUM INTO` snapshot reported as a successful copy. (#2842 by @datlechin)
+- Interrupted remote snapshot files left on the server. (#2842 by @datlechin)
+- Local working copies of remote databases kept forever. (#2842 by @datlechin)
+- Clicks, drags and the hand pointer landing on the wrong table or plan step once a diagram is zoomed. (#2844 by @datlechin)
+- ER diagram table held at the edge of the view sliding away from the pointer, or auto-pan not starting when zoomed out. (#2850 by @datlechin)
+- ER diagram scrolling on its own after a table drag was interrupted by a tab or connection switch. (#2850 by @datlechin)
+- Fit to Window on an ER diagram fitting empty space left behind by a dragged table. (#2850 by @datlechin)
+- Query plan mode, selected step, zoom and scroll lost on a mode or tab switch, or zoom carried over to another plan. (#2850 by @datlechin)
+- Zoom Out on a diagram at 5% jumping to 1%. (#2850 by @datlechin)
+- An AWS profile backed by IAM Identity Center, or an assume-role chain rooted on one, failing to authenticate. (#2857 by @datlechin)
+- AWS SSO sign-in leaving the `aws` CLI unable to refresh its own token. (#2857 by @datlechin)
+- AWS SSO, STS and RDS unreachable in the China, GovCloud and secret partitions. (#2857 by @datlechin)
+- Auto-uppercase keywords leaving `ADD`, `MERGE`, `CALL`, `COMMENT` and 17 more in the case they were typed. (#2912 by @datlechin)
+- Autocomplete committing a different column between launches when two scored the same. (#2907 by @datlechin)
+- MongoDB autocomplete inserting `$MATCH` and `DB`, which the server rejects. (#2902 by @datlechin)
+- ClickHouse autocomplete offering 18 function names the server rejects, `TOSTRING` and `UNIQ` among them. (#2902 by @datlechin)
+- Completion inserted beside a non-ASCII prefix instead of replacing it: `SELECT 名` became `SELECT 名名前`. (#2902 by @datlechin)
+- Caret landing after the closing parenthesis when accepting a function in the filter panel's Raw SQL field. (#2902 by @datlechin)
+- Run and Reject did nothing on every approval card but the first when a turn proposed several tool calls. (#2936 by @datlechin)
+- Return answered an arbitrary approval card when more than one was waiting. (#2936 by @datlechin)
+- A reply still arriving was lost when its window closed, its connection dropped, or its session ended. (#2936 by @datlechin)
+- The assistant keeping a provider and its open stream for the session after a window closed over an approval card. (#2936 by @datlechin)
+- Data race on the server version of a PostgreSQL, Redshift or CockroachDB connection while it closes. (#2947 by @datlechin)
+- Structure sync scripts refused for tables that had not changed since they were compared. (#2946 by @datlechin)
+- MySQL and MariaDB indexes listed in a different order each time a table's structure loads. (#2946 by @datlechin)
+- `START TRANSACTION READ WRITE` syntax error on MySQL and MariaDB 5.5 when saving, importing or running several statements. (#2949 by @datlechin)
+- A batch whose transaction failed to start reported as a failed commit of its first statement. (#2949 by @datlechin)
+- No tables listed for a MySQL server that answers `information_schema` with nothing or an error. (#2950 by @datlechin)
+- Tables and routines of the previous database, or none, shown with no error when a newly opened database fails to load. (#2950 by @datlechin)
+- PostgreSQL columns copied to another engine losing length, precision, scale and fractional seconds. (#2951 by @datlechin)
+- Copying an Oracle `NUMBER` with a negative or oversized scale to another engine failing. (#2951 by @datlechin)
+- Copying `CHAR` text with accented characters into ClickHouse failing. (#2951 by @datlechin)
+- Copying a table to MySQL, SQL Server or Oracle failing when a key, foreign key or index is too wide for it. (#2951 by @datlechin)
+- Column collation dropped by PostgreSQL Copy To, table DDL, column type changes and column reorder scripts. (#2952 by @datlechin)
+- PostgreSQL Copy To failing on a column default that passes a sequence to a function or casts it to a type. (#2952 by @datlechin)
+- Compare & Sync rewriting a column's collation while collation differences are ignored. (#2952 by @datlechin)
+- PostgreSQL expression indexes missing from the Indexes tab and Copy To, or shown without their expression keys. (#2953 by @datlechin)
+- PostgreSQL `INCLUDE` columns shown, copied and recreated as index key columns. (#2953 by @datlechin)
+- PostgreSQL Copy To failing on a `gin_trgm_ops` index, or a partial index naming a type or function in another schema. (#2953 by @datlechin)
+- PostgreSQL Copy To and index renames losing an index's operator classes, collation, sort order and storage parameters. (#2953 by @datlechin)
+- PostgreSQL SP-GiST, HNSW, IVFFlat and BLOOM indexes shown as BTREE on the Indexes tab and rebuilt as B-tree by an index edit. (#2953 by @datlechin)
+- Compare & Sync treating two PostgreSQL indexes that differ only in type as the same index. (#2953 by @datlechin)
+- SQL Server clustered indexes recreated as nonclustered by Copy To or an index edit. (#2953 by @datlechin)
+- ClickHouse data-skipping indexes dropped by an index edit on the Indexes tab. (#2953 by @datlechin)
+- Copy To from Redshift, Snowflake or BigQuery creating indexes from table keys and failing on a second table in one schema. (#2953 by @datlechin)
+### Security
+
+- Oracle login continuing in clear text when the server picked an encryption algorithm but sent no key material. (#2919, #2935 by @datlechin)
+- Pairing approval never showed the address the one-time code is delivered to. (#2930, #2933 by @datlechin)
+- A pairing link whose connection allowlist failed to parse widened the request to every connection. (#2930, #2933 by @datlechin)
+- Sparkle 2.10.0, carrying installer fixes for a symlink attack and a privilege escalation under root. (#2865 by @datlechin)
+- SQLite denies the `fts3_tokenizer` function, which could crash the app from a crafted query on any connection. (#2835 by @datlechin)
+- The AI assistant refuses statements that read or write files or run server code (ATTACH, LOAD, VACUUM INTO). (#2831, #2835 by @datlechin)
+- Remote `VACUUM INTO` snapshot created world-readable beside a database with stricter permissions. (#2842 by @datlechin)
+- AWS SSO access token cached world-readable in `~/.aws/sso/cache`. (#2857 by @datlechin)
+- The AI assistant could write to a connection other than its own, with that connection's Safe Mode skipped. (#2936 by @datlechin)
+- The AI assistant could read the schema and DDL of any saved connection by id, including one with AI access turned off. (#2936 by @datlechin)
 
 ## [0.74.0] - 2026-09-13
 
@@ -4525,7 +4571,8 @@ TablePro is a native macOS database client built with SwiftUI and AppKit, design
     - Custom SQL query templates
     - Performance optimized for large datasets
 
-[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.74.0...HEAD
+[Unreleased]: https://github.com/TableProApp/TablePro/compare/v0.75.0...HEAD
+[0.75.0]: https://github.com/TableProApp/TablePro/compare/v0.74.0...v0.75.0
 [0.74.0]: https://github.com/TableProApp/TablePro/compare/v0.73.0...v0.74.0
 [0.73.0]: https://github.com/TableProApp/TablePro/compare/v0.72.0...v0.73.0
 [0.72.0]: https://github.com/TableProApp/TablePro/compare/v0.71.0...v0.72.0
