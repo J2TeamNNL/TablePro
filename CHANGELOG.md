@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Release C optimization and link-time optimization scoped to the app, not to its Swift package dependencies.
+
 ### Fixed
 
 - iCloud sync stopping for good once 250 records were waiting to upload.
