@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Agent** mode, giving one session the whole connection window: its sessions, its conversation, and what it ran.
+- **View > Mode**, with **Toggle Agent Mode** on ⌥⇧⌘A.
+- Agent mode holds its connection at Safe Mode **Alert** while it is on, and hands back the level you set on the way out.
+- **Open in Agent Mode** on a connection in the welcome window.
+- **Outside MCP Servers** in Settings > Integrations, letting a session call tools on an MCP server you run.
+- Per-connection allowlist for an outside MCP server, with its token in the Keychain and neither synced.
+
+### Changed
+
+- Every plugin bundle compiled under the same concurrency settings as the app that loads it.
+- Release C optimization and link-time optimization scoped to the app, not to its Swift package dependencies.
+- Assistant conversations belong to one connection, and outlive the window that opened them.
+
 ### Fixed
 
 - No columns, indexes or foreign keys listed for a MySQL server that answers `information_schema` with nothing or an error.
@@ -34,16 +49,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Extra layout measurement on every sidebar, inspector, outline and field-list row.
 - Cut, Copy and Paste in the SQL editor's context menu were English in every language.
 - A statement count on a review sheet reading "1 statements".
-
-### Changed
-
-- Every plugin bundle compiled under the same concurrency settings as the app that loads it.
-- Release C optimization and link-time optimization scoped to the app, not to its Swift package dependencies.
+- Crash when a model proposed two tool calls carrying the same id in one turn.
+- Another connection's chat history appeared in a second connection's assistant, and could be deleted from there.
+- Two conversations on one Copilot configuration were answered with each other's context.
+- The sidebar toggle announced its SF Symbol names to VoiceOver instead of Tables and Favorites.
+- Choosing Tables or Favorites from the toolbar's overflow menu did nothing.
+- The Inspector toolbar button was permanently dimmed on macOS 13.
+- A connection's status on the welcome window stopped updating once the window was open.
+- The Compare & Sync licence notice froze the app instead of opening as a sheet.
 
 ### Security
 
 - Code inside a plugin bundle, and its resource envelope, were not verified before the bundle was loaded.
 - The system log carried query text, schema and table names, file paths and driver error messages, which can hold row values.
+- A chat tool registered at runtime could take the name of a tool TablePro ships.
 
 ## [0.75.0] - 2026-09-18
 
