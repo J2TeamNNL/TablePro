@@ -78,9 +78,9 @@ internal final class MainSplitViewController: NSSplitViewController, TrailingPan
 
     // MARK: - Split View Items
 
-    private var sidebarSplitItem: NSSplitViewItem!
+    internal private(set) var sidebarSplitItem: NSSplitViewItem!
     private var detailSplitItem: NSSplitViewItem!
-    private var inspectorSplitItem: NSSplitViewItem!
+    internal private(set) var inspectorSplitItem: NSSplitViewItem!
 
     private var navigationSidebar: NavigationSidebarViewController!
     /// Stable containers, one per split item. The pane they show is the selected workspace's own,
@@ -837,7 +837,13 @@ internal final class MainSplitViewController: NSSplitViewController, TrailingPan
         /// Agent mode draws before a session exists on purpose: the prompt the user typed is the
         /// thing they are waiting with, and hiding it until the connect lands means typing into
         /// nothing and then watching the conversation flash in.
-        if workspace.resolvedContentMode == .agent, let connection = workspace.connection {
+        ///
+        /// It does not preempt `.unavailable`, though. A failed, cancelled or disconnected attempt
+        /// carries the error, the Retry, the sign-in or edit action and Manage Connections, and a
+        /// composer with none of those is a dead end whichever mode the window is in.
+        if workspace.resolvedContentMode == .agent,
+           pane == .connecting || pane == .content,
+           let connection = workspace.connection {
             AgentConversationView(
                 connection: connection,
                 session: AgentSessionRegistry.shared.currentSession(for: connection.id),
@@ -1074,9 +1080,20 @@ internal final class MainSplitViewController: NSSplitViewController, TrailingPan
     /// The stored surface is left alone: a user who turns the assistant off and on again gets it
     /// back, because `TrailingPaneSurface.resolved` is what hides it in the meantime rather than
     /// anything overwriting their choice.
+    /// Turning AI off takes Agent mode with it, and that is every pane rather than the trailing one.
+    ///
+    /// Swapping only the trailing child left a window whose sidebar still held the session rail and
+    /// whose detail pane still held a live conversation, with an inspector beside them: the feature
+    /// was off and half the window had not heard.
     private func reconcileTrailingSurfaceAvailability() {
         guard isViewLoaded else { return }
+        for workspace in workspaces.workspaces {
+            syncPanes(of: workspace)
+            AgentModeSafeModeFloor.reapply(for: workspace.connectionId)
+        }
         showSelectedTrailingPane()
+        applyPaneChrome()
+        toolbarOwner?.refreshContentMode()
         toolbarOwner?.managedToolbar.validateVisibleItems()
     }
 

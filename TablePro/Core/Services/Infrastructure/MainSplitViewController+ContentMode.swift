@@ -26,6 +26,10 @@ internal extension MainSplitViewController {
         setContentMode(mode, for: workspace.connectionId)
     }
 
+    /// What Browse had collapsed, so entering Agent mode can reveal its columns and leaving can put
+    /// the window back the way the user had it.
+    private static var browseCollapseState: [UUID: (sidebar: Bool, inspector: Bool)] = [:]
+
     func setContentMode(_ mode: ConnectionWorkspaceContentMode, for connectionId: UUID) {
         guard let workspace = workspaces.workspace(for: connectionId) else { return }
         let resolved = ConnectionWorkspaceContentMode.resolved(
@@ -41,10 +45,37 @@ internal extension MainSplitViewController {
             AgentSessionRegistry.shared.resolveSession(for: connectionId, startingIfNeeded: true)
         }
 
+        applyColumnVisibility(for: connectionId, mode: resolved)
+
         /// The floor follows the mode in both directions, and writes nothing to the connection: the
         /// level the user chose is handed straight back on the way out.
         AgentModeSafeModeFloor.reapply(for: connectionId)
         applyContentMode(for: workspace)
+    }
+
+    /// Agent mode needs all three of its columns.
+    ///
+    /// A fresh window starts with the inspector collapsed, and the user may have collapsed the
+    /// sidebar, so swapping the hosted roots alone gave a first-time Agent mode with no Result
+    /// column and sometimes no Sessions column either. What Browse had is remembered and put back.
+    private func applyColumnVisibility(
+        for connectionId: UUID,
+        mode: ConnectionWorkspaceContentMode
+    ) {
+        guard workspaces.selectedConnectionId == connectionId else { return }
+        switch mode {
+        case .agent:
+            Self.browseCollapseState[connectionId] = (
+                sidebar: sidebarSplitItem.isCollapsed,
+                inspector: inspectorSplitItem.isCollapsed
+            )
+            sidebarSplitItem.animator().isCollapsed = false
+            inspectorSplitItem.animator().isCollapsed = false
+        case .browse:
+            guard let previous = Self.browseCollapseState.removeValue(forKey: connectionId) else { return }
+            sidebarSplitItem.animator().isCollapsed = previous.sidebar
+            inspectorSplitItem.animator().isCollapsed = previous.inspector
+        }
     }
 
     func toggleContentMode(_ sender: Any?) {

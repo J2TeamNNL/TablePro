@@ -54,16 +54,20 @@ extension AIChatViewModel {
             }
             self.appendPendingToolUseBlocks(initial, assistantID: assistantID)
             ToolApprovalCenter.shared.expect(
-                initial.compactMap { block in
+                sessionId: self.sessionId,
+                toolUseIds: initial.compactMap { block in
                     guard case .pending = block.approvalState else { return nil }
                     return block.id
                 }
             )
             return initial
         }
+        let sessionId = await MainActor.run { self.sessionId }
         defer {
             let ids = initialBlocks.map(\.id)
-            Task { @MainActor in ToolApprovalCenter.shared.forget(ids) }
+            Task { @MainActor in
+                ToolApprovalCenter.shared.forget(sessionId: sessionId, toolUseIds: ids)
+            }
         }
 
         var resolved: [ToolUseBlock] = []
@@ -73,7 +77,10 @@ extension AIChatViewModel {
                 resolved.append(block)
                 continue
             }
-            let decision = await ToolApprovalCenter.shared.awaitDecision(for: block.id)
+            let decision = await ToolApprovalCenter.shared.awaitDecision(
+                sessionId: sessionId,
+                toolUseId: block.id
+            )
             let finalState: ToolApprovalState
             switch decision {
             case .run:
@@ -227,14 +234,17 @@ extension AIChatViewModel {
         )
         appendPendingToolUseBlocks([pendingBlock], assistantID: assistantID)
         if case .pending = initialState {
-            ToolApprovalCenter.shared.expect([block.id])
+            ToolApprovalCenter.shared.expect(sessionId: sessionId, toolUseIds: [block.id])
         }
-        defer { ToolApprovalCenter.shared.forget([block.id]) }
+        defer { ToolApprovalCenter.shared.forget(sessionId: sessionId, toolUseIds: [block.id]) }
 
         let finalState: ToolApprovalState
         var approvalWasExplicit = false
         if case .pending = initialState {
-            let decision = await ToolApprovalCenter.shared.awaitDecision(for: block.id)
+            let decision = await ToolApprovalCenter.shared.awaitDecision(
+                sessionId: sessionId,
+                toolUseId: block.id
+            )
             switch decision {
             case .run:
                 finalState = .approved
@@ -279,18 +289,40 @@ extension AIChatViewModel {
         case .pending:
             result = ChatToolResult(content: "Tool approval was not resolved.", isError: true)
         }
+        appendToolResultBlock(
+            ToolResultBlock(toolUseId: block.id, content: result.content, isError: result.isError),
+            assistantID: assistantID
+        )
         await replyToken.reply(result)
     }
 
+    /// Writes a Copilot call's outcome into the transcript beside the call itself.
+    ///
+    /// Every other provider records one because the next round has to send it back. Copilot keeps
+    /// the conversation on its own server and is answered over the LSP request instead, so nothing
+    /// forced the block to exist and the transcript held a call with no outcome: the result pane
+    /// read every statement as still waiting, and a restored session lost what had already run.
+    @MainActor
+    func appendToolResultBlock(_ result: ToolResultBlock, assistantID: UUID) {
+        guard let turn = turn(withID: assistantID) else { return }
+        turn.appendBlock(.toolResult(result))
+    }
+
+    /// Pairs each proposed call with its outcome by position, not by id.
+    ///
+    /// `executeToolUses` returns one result per approved block in the order it was given them, so
+    /// position is exact. An id-keyed dictionary is not: several endpoints number a turn's calls
+    /// from `call_0` and a provider is free to repeat one inside a round, which made
+    /// `Dictionary(uniqueKeysWithValues:)` trap on the duplicate key.
     nonisolated static func synthesizeResults(
         for blocks: [ToolUseBlock],
         executed: [ToolResultBlock]
     ) -> [ToolResultBlock] {
-        let executedById = Dictionary(uniqueKeysWithValues: executed.map { ($0.toolUseId, $0) })
+        var remaining = executed[...]
         return blocks.map { block in
             switch block.approvalState {
             case .approved:
-                return executedById[block.id] ?? ToolResultBlock(
+                return remaining.popFirst() ?? ToolResultBlock(
                     toolUseId: block.id,
                     content: "Tool execution result missing.",
                     isError: true

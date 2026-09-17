@@ -202,7 +202,7 @@ internal final class AgentSessionRegistry: ObservableObject {
         writeTask?.cancel()
         writeTask = nil
         for session in sessions {
-            session.viewModel.persistCurrentConversation()
+            session.viewModel.persistCurrentConversationSynchronously()
         }
         store.save(sessions.map(\.record))
     }

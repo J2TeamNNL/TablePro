@@ -72,37 +72,75 @@ internal struct AgentArtifact: Equatable {
 /// A pure function over the turns rather than a second store, which is what makes a restored
 /// session's pane correct with no replay: the transcript is what was restored, and there is one
 /// record of "waiting" instead of two that can disagree.
+///
+/// A result is matched to the call it answers within the round that raised it, never by id alone.
+/// Several endpoints number every turn's calls from `call_0`, so a session's fifth round reuses the
+/// ids of its first: matching across the whole transcript gave every earlier `call_0` the last
+/// round's outcome, and a row that failed read as having run. A round writes its results into the
+/// user turn straight after the assistant turn that proposed them, so the nearest unanswered call
+/// with that id is the one being answered.
 @MainActor
 internal enum AgentArtifactProjection {
+    private struct UnansweredCall {
+        let toolUseId: String
+        let statementOffset: Int?
+        let sql: String?
+        let isApproved: Bool
+    }
+
     internal static func build(from turns: [ChatTurn]) -> AgentArtifact {
         var artifact = AgentArtifact()
-        var resultsByToolUseId: [String: ToolResultBlock] = [:]
+        var unanswered: [UnansweredCall] = []
 
         for turn in turns {
             for block in turn.blocks {
-                guard case .toolResult(let result) = block.kind else { continue }
-                resultsByToolUseId[result.toolUseId] = result
-            }
-        }
-
-        for turn in turns {
-            for block in turn.blocks {
-                guard case .toolUse(let use) = block.kind else { continue }
-                guard let sql = statementText(in: use.input) else { continue }
-                let result = resultsByToolUseId[use.id]
-                artifact.statements.append(
-                    ProposedStatement(
-                        id: use.id,
+                switch block.kind {
+                case .toolUse(let use):
+                    let sql = statementText(in: use.input)
+                    var statementOffset: Int?
+                    if let sql {
+                        statementOffset = artifact.statements.count
+                        artifact.statements.append(
+                            ProposedStatement(
+                                id: block.id.uuidString,
+                                sql: sql,
+                                toolName: use.name,
+                                state: state(for: use.approvalState, result: nil)
+                            )
+                        )
+                    }
+                    unanswered.append(UnansweredCall(
+                        toolUseId: use.id,
+                        statementOffset: statementOffset,
                         sql: sql,
-                        toolName: use.name,
-                        state: state(for: use.approvalState, result: result)
-                    )
-                )
-                if case .approved = use.approvalState,
-                   let result, !result.isError {
-                    artifact.runs.append(
-                        AgentQueryRun(id: use.id, sql: sql, resultJSON: result.content)
-                    )
+                        isApproved: use.approvalState == .approved
+                    ))
+                case .toolResult(let result):
+                    guard let slot = unanswered.lastIndex(where: { $0.toolUseId == result.toolUseId })
+                    else { continue }
+                    let call = unanswered.remove(at: slot)
+                    guard call.isApproved else { continue }
+                    if let offset = call.statementOffset {
+                        let statement = artifact.statements[offset]
+                        artifact.statements[offset] = ProposedStatement(
+                            id: statement.id,
+                            sql: statement.sql,
+                            toolName: statement.toolName,
+                            state: state(for: .approved, result: result)
+                        )
+                    }
+                    if let sql = call.sql, !result.isError {
+                        artifact.runs.append(
+                            AgentQueryRun(
+                                id: call.statementOffset.map { artifact.statements[$0].id }
+                                    ?? result.toolUseId,
+                                sql: sql,
+                                resultJSON: result.content
+                            )
+                        )
+                    }
+                default:
+                    continue
                 }
             }
         }

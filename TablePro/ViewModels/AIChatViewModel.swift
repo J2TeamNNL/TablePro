@@ -113,6 +113,30 @@ final class AIChatViewModel: ObservableObject {
     var pendingConversationToRestore: UUID? { conversationToRestore }
     var hasRestoredConversation: Bool { didRestoreConversation }
 
+    /// Whether the connection this session names is still being opened.
+    ///
+    /// Agent mode draws its composer over a connect on purpose, so a turn can be submitted before
+    /// there is a session to run its tools against. Every such turn used to open a stream anyway,
+    /// which reached the tools with no connection behind them and answered the user's first
+    /// question with a row of failures. The turn is appended to the transcript as usual and the
+    /// stream is held until the connect lands, which is what a live composer during a connect
+    /// promises.
+    var isAwaitingConnection = false {
+        didSet {
+            guard oldValue, !isAwaitingConnection else { return }
+            releaseHeldTurn()
+        }
+    }
+
+    /// A turn that was submitted during a connect and has not been streamed yet.
+    var heldTurnAwaitsConnection = false
+
+    private func releaseHeldTurn() {
+        guard heldTurnAwaitsConnection else { return }
+        heldTurnAwaitsConnection = false
+        startStreaming()
+    }
+
     func markConversationRestored() {
         didRestoreConversation = true
     }
@@ -216,7 +240,7 @@ final class AIChatViewModel: ObservableObject {
         prepTask = nil
         streamingTask?.cancel()
         streamingTask = nil
-        ToolApprovalCenter.shared.cancelAll()
+        ToolApprovalCenter.shared.cancelAll(sessionId: sessionId)
 
         if case .streaming(let assistantID) = streamingState,
            let idx = messages.firstIndex(where: { $0.id == assistantID }) {
@@ -292,7 +316,7 @@ final class AIChatViewModel: ObservableObject {
     /// card: a `CheckedContinuation` is not resumed by cancellation, so the suspended turn held the
     /// provider and its open stream for the life of the process.
     func clearSessionData() {
-        ToolApprovalCenter.shared.cancelAll()
+        ToolApprovalCenter.shared.cancelAll(sessionId: sessionId)
         persistCurrentConversation()
         AIProviderFactory.resetCopilotConversation(sessionId: sessionId)
         prepTask?.cancel()

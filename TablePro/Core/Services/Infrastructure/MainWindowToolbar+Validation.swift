@@ -92,7 +92,28 @@ extension MainWindowToolbar: NSToolbarItemValidation {
     }
 
     func validationContext() -> ValidationContext? {
-        guard let state = coordinator?.toolbarState else { return nil }
+        guard let state = coordinator?.toolbarState else {
+            /// A workspace that is still connecting has no coordinator, and returning nil here
+            /// disabled every item including the mode control, whose whole point is to be reachable
+            /// in exactly that state.
+            guard let host = windowController, host.hasSelectedWorkspace else { return nil }
+            return ValidationContext(
+                connected: false,
+                isTableTab: false,
+                canAddRow: false,
+                canRestorePreviousValues: false,
+                hasPendingChanges: false,
+                hasDataPendingChanges: false,
+                blocksAllWrites: false,
+                fileBased: false,
+                supportsContainerSwitching: false,
+                supportsImport: false,
+                supportsServerDashboard: false,
+                canNavigateBack: false,
+                canNavigateForward: false,
+                hasSelectedWorkspace: true
+            )
+        }
         return ValidationContext(
             connected: Self.hasLiveSession(state.connectionState),
             isTableTab: state.isTableTab,
@@ -107,7 +128,7 @@ extension MainWindowToolbar: NSToolbarItemValidation {
             supportsServerDashboard: coordinator?.commandActions?.supportsServerDashboard ?? false,
             canNavigateBack: coordinator?.canNavigateBack ?? false,
             canNavigateForward: coordinator?.canNavigateForward ?? false,
-            hasSelectedWorkspace: coordinator?.splitViewController?.hasSelectedWorkspace ?? false
+            hasSelectedWorkspace: modeHost?.hasSelectedWorkspace ?? false
         )
     }
 

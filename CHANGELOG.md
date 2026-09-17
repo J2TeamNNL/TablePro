@@ -88,6 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Crash when a model proposed two tool calls carrying the same id in one turn.
 - Oracle login hanging until the server gave up when it declined the network encryption negotiation. (#2919)
 - Oracle login timeout that never fired, leaving the connecting spinner up past its deadline. (#2919)
 - Crash from an Oracle server sending a marker packet, or an accept packet under 32 bytes, during login. (#2919)

@@ -64,22 +64,52 @@ internal final class AgentSession: ObservableObject, Identifiable {
     /// Republishes the engine's changes as the session's own, so a rail row bound to the session
     /// redraws when the transcript moves. `AIChatViewModel` is an `ObservableObject` of its own and
     /// nothing else forwards it.
+    /// Republishes the engine's changes, and its turns'.
+    ///
+    /// A `ChatTurn` is an `ObservableObject` of its own, and appending a tool-use block mutates the
+    /// turn rather than the view model's `messages` array, so the view model never announced it.
+    /// The result pane could not show a proposed statement until some later top-level change
+    /// happened to fire, which for a card waiting on an answer is never.
     private func observeEngine() {
         viewModel.objectWillChange
             .sink { [weak self] _ in
                 guard let self else { return }
                 self.objectWillChange.send()
-                Task { @MainActor [weak self] in self?.refreshDerivedState() }
+                Task { @MainActor [weak self] in
+                    self?.observeTurns()
+                    self?.refreshDerivedState()
+                }
             }
             .store(in: &cancellables)
+        observeTurns()
+    }
+
+    private var turnCancellables: [UUID: AnyCancellable] = [:]
+
+    private func observeTurns() {
+        let live = Set(viewModel.messages.map(\.id))
+        turnCancellables = turnCancellables.filter { live.contains($0.key) }
+        for turn in viewModel.messages where turnCancellables[turn.id] == nil {
+            turnCancellables[turn.id] = turn.objectWillChange
+                .sink { [weak self] _ in
+                    guard let self else { return }
+                    self.objectWillChange.send()
+                    Task { @MainActor [weak self] in self?.refreshDerivedState() }
+                }
+        }
     }
 
     /// Status follows the engine while the session is live. A session the user stopped, or one that
     /// failed, keeps the state it ended on: the engine underneath it is idle either way, and idle
     /// is not the same answer as stopped.
+    /// A stopped session keeps the state it ended on; a failed one does not.
+    ///
+    /// Retry is offered on a failure and moves the engine back through idle, loading and streaming,
+    /// so freezing on `.failed` left the rail reporting Failed for the whole of a successful retry
+    /// and session resolution still treating it as ended.
     private func refreshDerivedState() {
         let engineStatus = derivedStatus()
-        if !status.isEnded, status != engineStatus {
+        if status != .stopped, status != engineStatus {
             status = engineStatus
         }
         let derivedTitle = derivedTitle()
@@ -88,11 +118,14 @@ internal final class AgentSession: ObservableObject, Identifiable {
         }
     }
 
+    /// Waiting is asked before working, because an ordinary tool card leaves `streamingState` on
+    /// `.streaming`: the stream is parked on the answer, not producing. `.awaitingApproval` is the
+    /// connection's own AI-access confirmation and is a different question.
     private func derivedStatus() -> AgentSessionStatus {
+        if ToolApprovalCenter.shared.hasPending(sessionId: id) { return .waitingOnYou }
+        if case .awaitingApproval = viewModel.streamingState { return .waitingOnYou }
         if viewModel.lastMessageFailed { return .failed }
         if viewModel.isStreaming { return .working }
-        if case .awaitingApproval = viewModel.streamingState { return .waitingOnYou }
-        if ToolApprovalCenter.shared.hasPending { return .waitingOnYou }
         return .ready
     }
 
@@ -127,6 +160,8 @@ internal final class AgentSession: ObservableObject, Identifiable {
     /// throwing a conversation away, so the transcript is written first and kept.
     internal func stop() {
         viewModel.cancelStream()
+        settlePendingApprovals()
+        viewModel.persistCurrentConversation()
         mark(.stopped)
     }
 
@@ -137,6 +172,23 @@ internal final class AgentSession: ObservableObject, Identifiable {
         guard status.isEnded else { return }
         mark(.ready)
         markActive()
+    }
+
+    /// Settles a card that is still waiting before the transcript is written.
+    ///
+    /// `cancelStream()` resumes the continuation, but the suspended task only marks the block
+    /// `.cancelled` once it is back on the main actor, and the snapshot was taken before that. The
+    /// restored transcript then held a `.pending` card with no continuation behind it, whose Run
+    /// button could never work.
+    private func settlePendingApprovals() {
+        for turn in viewModel.messages {
+            for block in turn.blocks {
+                guard case .toolUse(var use) = block.kind,
+                      case .pending = use.approvalState else { continue }
+                use.approvalState = .cancelled
+                block.setKind(.toolUse(use))
+            }
+        }
     }
 
     internal var record: AgentSessionRecord {

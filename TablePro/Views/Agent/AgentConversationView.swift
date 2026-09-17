@@ -41,6 +41,7 @@ internal struct AgentConversationView: View {
                     session.viewModel.restoreConversationsIfNeeded()
                 }
                 .task(id: flushKey(session)) {
+                    session.viewModel.isAwaitingConnection = isConnecting
                     sendPendingPromptIfReady(session)
                 }
             } else {
@@ -64,7 +65,8 @@ internal struct AgentConversationView: View {
     }
 
     /// Named rather than spun. A connect the user can see is a connect they can type through, so the
-    /// composer below stays live and what they type is sent when the session lands.
+    /// composer below stays live and what they type is held by the engine and streamed when the
+    /// session lands.
     private var connectingNotice: some View {
         HStack(spacing: 8) {
             DelayedProgressIndicator(isActive: true)

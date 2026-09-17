@@ -39,6 +39,11 @@ extension AIChatViewModel {
             return
         }
 
+        if isAwaitingConnection {
+            heldTurnAwaitsConnection = true
+            return
+        }
+
         let settings = services.appSettings.ai
 
         let resolved = AIProviderFactory.resolve(

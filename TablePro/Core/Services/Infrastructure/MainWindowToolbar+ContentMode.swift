@@ -69,20 +69,29 @@ internal extension MainWindowToolbar {
     /// The Inspector item on macOS 13, forwarded because the action belongs to the split controller
     /// and a toolbar item's explicit target has to respond to its own selector to validate.
     @objc func forwardToggleInspector(_ sender: Any?) {
-        coordinator?.splitViewController?.toggleInspector(sender)
+        modeHost?.toggleInspector(sender)
+    }
+
+    /// The window's own controller, not the connection's coordinator.
+    ///
+    /// A workspace that is still connecting, or disconnected, has no `MainContentCoordinator`, so
+    /// reaching the split controller through one made the mode control inert in the one state agent
+    /// mode exists to cover.
+    var modeHost: MainSplitViewController? {
+        windowController ?? coordinator?.splitViewController
     }
 
     @objc func contentModeChanged(_ sender: Any?) {
         guard let index = Self.segmentIndex(from: sender, group: contentModeGroup),
               Self.contentModes.indices.contains(index) else { return }
-        coordinator?.splitViewController?.setContentMode(Self.contentModes[index])
+        modeHost?.setContentMode(Self.contentModes[index])
     }
 
     /// Pushed from the split view controller when the mode changes, and the tick in the overflow
     /// menu follows the same pass the segments do rather than being a second channel that can drift.
     func refreshContentMode() {
         guard let group = contentModeGroup else { return }
-        let mode = coordinator?.splitViewController?.contentMode ?? .browse
+        let mode = modeHost?.contentMode ?? .browse
         let index = Self.contentModes.firstIndex(of: mode) ?? 0
         group.selectedIndex = index
         for (itemIndex, item) in (group.menuFormRepresentation?.submenu?.items ?? []).enumerated() {

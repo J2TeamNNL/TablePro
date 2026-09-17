@@ -61,7 +61,18 @@ extension AIChatViewModel {
     /// an id the list had not caught up with took the new-conversation branch, orphaning the
     /// transcript the user was reading and starting a second one beside it.
     func persistCurrentConversation() {
-        guard !messages.isEmpty else { return }
+        guard let conversation = snapshotCurrentConversation() else { return }
+        Task { await chatStorage.save(conversation) }
+    }
+
+    /// The same write, finished before this call returns. Termination is the only caller.
+    func persistCurrentConversationSynchronously() {
+        guard let conversation = snapshotCurrentConversation() else { return }
+        chatStorage.saveSynchronously(conversation)
+    }
+
+    private func snapshotCurrentConversation() -> AIConversation? {
+        guard !messages.isEmpty else { return nil }
         let wireMessages = messages.map { $0.wireSnapshot }
 
         if let existingID = activeConversationID {
@@ -71,14 +82,13 @@ extension AIChatViewModel {
             conversation.updatedAt = Date()
             conversation.updateTitle()
             conversation.connectionName = connection?.name
-            Task { await chatStorage.save(conversation) }
 
             if let index = conversations.firstIndex(where: { $0.id == existingID }) {
                 conversations[index] = conversation
             } else {
                 conversations.insert(conversation, at: 0)
             }
-            return
+            return conversation
         }
 
         var conversation = AIConversation(
@@ -87,8 +97,8 @@ extension AIChatViewModel {
             connectionName: connection?.name
         )
         conversation.updateTitle()
-        Task { await chatStorage.save(conversation) }
         activeConversationID = conversation.id
         conversations.insert(conversation, at: 0)
+        return conversation
     }
 }

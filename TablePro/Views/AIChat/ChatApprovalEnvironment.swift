@@ -18,6 +18,10 @@ private struct ChatApprovalConnectionNameKey: EnvironmentKey {
     static let defaultValue: String? = nil
 }
 
+private struct ChatApprovalSessionIdKey: EnvironmentKey {
+    static let defaultValue: UUID? = nil
+}
+
 extension EnvironmentValues {
     /// The only waiting card that may claim Return and Escape.
     ///
@@ -34,5 +38,12 @@ extension EnvironmentValues {
     var chatApprovalConnectionName: String? {
         get { self[ChatApprovalConnectionNameKey.self] }
         set { self[ChatApprovalConnectionNameKey.self] = newValue }
+    }
+
+    /// Which session a card's answer belongs to. Two sessions can both be waiting on a call the
+    /// provider numbered `call_0`, so the answer has to name the session as well as the call.
+    var chatApprovalSessionId: UUID? {
+        get { self[ChatApprovalSessionIdKey.self] }
+        set { self[ChatApprovalSessionIdKey.self] = newValue }
     }
 }
