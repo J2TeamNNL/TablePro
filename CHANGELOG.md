@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Menu rows that only a colour or a glyph tells apart reading as identical on macOS 27.
 - A UI test run writing sync bookkeeping into the real defaults instead of its sandbox.
 - Extra layout measurement on every sidebar, inspector, outline and field-list row.
+- Cut, Copy and Paste in the SQL editor's context menu were English in every language.
+- A statement count on a review sheet reading "1 statements".
 
 ### Changed
 
