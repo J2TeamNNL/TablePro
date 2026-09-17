@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A batch whose transaction failed to start reported as a failed commit of its first statement.
 - No tables listed for a MySQL server that answers `information_schema` with nothing or an error.
 - Tables and routines of the previous database, or none, shown with no error when a newly opened database fails to load.
+- PostgreSQL columns copied to another engine losing length, precision, scale and fractional seconds.
+- Copying an Oracle `NUMBER` with a negative or oversized scale to another engine failing.
+- Copying `CHAR` text with accented characters into ClickHouse failing.
+- Copying a table to MySQL, SQL Server or Oracle failing when a key, foreign key or index is too wide for it.
 
 ## [0.75.0] - 2026-09-17
 
