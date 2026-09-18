@@ -36,6 +36,16 @@ final class RedisPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
     static let maxKeyBrowseScan = 10_000
 
+    /// The commands the app queued into the block it opened, in the order it queued them, so
+    /// ``commitTransaction`` can name the ones `EXEC` reports as failed. A user is free to type
+    /// their own `MULTI` on the same session, so the list is a best effort that
+    /// ``RedisTransactionOutcome`` falls back from rather than a promise, and it is bounded because
+    /// nothing but a user's own typing decides how long a block gets.
+    private static let maxRecordedQueuedCommands = 10_000
+
+    private let queuedCommandsLock = NSLock()
+    private var queuedCommands: [String] = []
+
     var serverVersion: String? {
         redisConnection?.serverVersion()
     }
@@ -189,6 +199,30 @@ final class RedisPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
         let operation = try RedisCommandParser.parse(trimmed)
         return try await executeOperation(operation, connection: conn, startTime: startTime)
+    }
+
+    /// `+QUEUED` is the honest answer for a command the user sent into an open block, so it is the
+    /// result rather than an error: the block is theirs to end, and `EXEC` will report every reply.
+    static let queuedStatus = "QUEUED"
+
+    func recordQueued(_ command: String) {
+        queuedCommandsLock.lock()
+        if queuedCommands.count < Self.maxRecordedQueuedCommands { queuedCommands.append(command) }
+        queuedCommandsLock.unlock()
+    }
+
+    private func takeQueuedCommands() -> [String] {
+        queuedCommandsLock.lock()
+        defer { queuedCommandsLock.unlock() }
+        let recorded = queuedCommands
+        queuedCommands = []
+        return recorded
+    }
+
+    private func clearQueuedCommands() {
+        queuedCommandsLock.lock()
+        queuedCommands = []
+        queuedCommandsLock.unlock()
     }
 
     func executeParameterized(query: String, parameters: [PluginCellValue]) async throws -> PluginQueryResult {
@@ -371,18 +405,34 @@ final class RedisPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
     var supportsTransactions: Bool { redisConnection?.supportsTransactions ?? true }
 
+    /// `MULTI` does not open a transaction so much as start queueing: every command after it
+    /// answers `+QUEUED` in place of its own reply and nothing runs until `EXEC`. So the app's
+    /// statements are recorded as they are queued, and `EXEC`'s own reply is what says whether each
+    /// of them ran.
+    ///
+    /// The block is still worth opening for a write the app generated, because a command the server
+    /// refuses at queue time aborts the whole block instead of leaving half of it applied. Measured
+    /// on Redis 8.10.1: an ACL user without `+expire` running `MULTI; SET b 1; EXPIRE b 10; EXEC`
+    /// leaves `EXISTS b` at 0, where the same two commands sent unwrapped leave the `SET` applied.
     func beginTransaction() async throws {
         guard let conn = redisConnection else { throw RedisPluginError.notConnected }
+        clearQueuedCommands()
         try await conn.run(["MULTI"])
     }
 
     func commitTransaction() async throws {
         guard let conn = redisConnection else { throw RedisPluginError.notConnected }
-        try await conn.run(["EXEC"])
+        let queued = takeQueuedCommands()
+        let reply = try await conn.run(["EXEC"])
+        let failed = RedisTransactionOutcome.failures(inExecReply: reply, queuedCommands: queued)
+        guard failed.isEmpty else { throw RedisTransactionError(failed: failed) }
     }
 
+    /// `DISCARD` drops a block nothing has applied yet, which is the whole of what Redis can take
+    /// back. A block `EXEC` already ran is gone, and the failure `commitTransaction` raises says so.
     func rollbackTransaction() async throws {
         guard let conn = redisConnection else { throw RedisPluginError.notConnected }
+        clearQueuedCommands()
         try await conn.run(["DISCARD"])
     }
 

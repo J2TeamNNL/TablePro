@@ -77,6 +77,12 @@ final class PluginManager: ObservableObject {
     /// by where its declared spelling names no kind: a PostgreSQL enum, a domain and a PostGIS
     /// geometry all classify as text otherwise, which takes the value picker off an enum and the
     /// spatial rendering off a geometry.
+    ///
+    /// 33 also adds `checkConstraintRefusal`, which reports why the connected server has no check
+    /// constraints even though the engine does, and `sessionTransactionState()`, which reports what
+    /// the session already has open so nothing the app owns wraps a transaction the user opened.
+    /// Both have defaults (nil and `.unknown`), so an already-built plugin keeps loading and
+    /// answers them; the minimum stays where it is and no bulk re-release is needed.
     nonisolated static let currentPluginKitVersion = 33
 
     /// Still 19, so every plugin already published for the previous release keeps loading.

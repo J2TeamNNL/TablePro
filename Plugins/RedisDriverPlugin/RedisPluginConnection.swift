@@ -68,6 +68,7 @@ final class RedisPluginConnection: RedisCommandChannel, @unchecked Sendable {
     private var _isShuttingDown: Bool = false
     private var _cachedServerVersion: String?
     private var _currentDatabase: Int
+    private var _queuedDatabase = RedisQueuedDatabase()
 
     var isConnected: Bool {
         stateLock.lock()
@@ -167,6 +168,7 @@ final class RedisPluginConnection: RedisCommandChannel, @unchecked Sendable {
         _isConnected = false
         _cachedServerVersion = nil
         _currentDatabase = database
+        _queuedDatabase.clear()
         stateLock.unlock()
 
         #if canImport(CRedis)
@@ -267,6 +269,10 @@ final class RedisPluginConnection: RedisCommandChannel, @unchecked Sendable {
 
     // MARK: - Database Selection
 
+    /// A `SELECT` the server queued into an open `MULTI` block has not moved the session, so the
+    /// index is held aside until the block resolves rather than recorded now. Recording it now is
+    /// right only if `EXEC` follows: after a `DISCARD` the session is still on the old database,
+    /// and a `FLUSHDB` staged against the row the app believed it was on would empty that one.
     func selectDatabase(_ index: Int) async throws {
         #if canImport(CRedis)
         try await pluginDispatchAsync(on: queue) { [self] in
@@ -286,7 +292,12 @@ final class RedisPluginConnection: RedisCommandChannel, @unchecked Sendable {
                 throw RedisPluginError(code: 2, message: "SELECT \(index) failed: \(msg)")
             }
             stateLock.lock()
-            _currentDatabase = index
+            if reply.isQueued {
+                _queuedDatabase.queue(index)
+            } else {
+                _queuedDatabase.clear()
+                _currentDatabase = index
+            }
             stateLock.unlock()
         }
         #else
@@ -453,6 +464,7 @@ private extension RedisPluginConnection {
         context = nil
         sslContext = nil
         _isConnected = false
+        _queuedDatabase.clear()
         stateLock.unlock()
         if let handle { redisFree(handle) }
         if let ssl { redisFreeSSLContext(ssl) }
@@ -485,12 +497,30 @@ private extension RedisPluginConnection {
     /// which side it happened on. An incomplete RESP command is never executed, so a failed write
     /// is always replayable; once the command is on the wire only a read-only command is.
     func executeCommandSyncRetrying(_ args: [Data]) throws -> RedisReply {
+        let reply = try sendAllowingReplay(args)
+        resolveQueuedDatabase(command: args.first, reply: reply)
+        return reply
+    }
+
+    private func sendAllowingReplay(_ args: [Data]) throws -> RedisReply {
         do {
             return try executeCommandSync(args)
         } catch let failure as RedisTransportFailure where !isShuttingDown && canReplay(args, after: failure) {
             try reconnectSync()
             return try executeCommandSync(args)
         }
+    }
+
+    /// The block a queued `SELECT` was held in has resolved, so the session's database follows the
+    /// server's own answer. `reconnectSync` frees the context, which drops any pending index, so a
+    /// replay never promotes one the lost session had queued.
+    private func resolveQueuedDatabase(command: Data?, reply: RedisReply) {
+        let name = command.flatMap { String(data: $0, encoding: .utf8) }
+        stateLock.lock()
+        if let selected = _queuedDatabase.resolve(command: name, reply: reply) {
+            _currentDatabase = selected
+        }
+        stateLock.unlock()
     }
 
     /// A pipeline puts several commands in one buffer, so a read failure part-way through cannot
@@ -786,6 +816,5 @@ private extension RedisPluginConnection {
         }
         return nil
     }
-
 }
 #endif

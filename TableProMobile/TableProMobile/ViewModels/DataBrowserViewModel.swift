@@ -144,7 +144,7 @@ final class DataBrowserViewModel {
                 do {
                     foreignKeys = try await session.driver.fetchForeignKeys(table: table.name, schema: nil)
                 } catch {
-                    Self.logger.warning("Failed to fetch foreign keys: \(error.localizedDescription, privacy: .public)")
+                    Self.logger.warning("Failed to fetch foreign keys: \(error.localizedDescription, privacy: .private)")
                 }
             }
 
@@ -237,7 +237,7 @@ final class DataBrowserViewModel {
                 pagination.totalRows = Int(firstCol ?? "0")
             }
         } catch {
-            Self.logger.warning("Failed to fetch row count: \(error.localizedDescription, privacy: .public)")
+            Self.logger.warning("Failed to fetch row count: \(error.localizedDescription, privacy: .private)")
         }
     }
 
@@ -331,15 +331,15 @@ final class DataBrowserViewModel {
     func deleteRow(pkValues: [(column: String, value: String)]) async -> Bool {
         guard let session, let table, !pkValues.isEmpty else { return false }
         do {
-            _ = try await session.driver.execute(
-                query: SQLBuilder.buildDelete(
+            try await session.driver.executeWrite([
+                SQLBuilder.buildDelete(
                     table: table.name,
                     schema: schema,
                     type: databaseType,
                     driver: session.driver,
                     primaryKeys: pkValues
                 )
-            )
+            ])
             await load()
             return true
         } catch {

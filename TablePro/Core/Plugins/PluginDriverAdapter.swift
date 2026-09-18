@@ -356,6 +356,8 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
 
     var unsupportedIndexTypes: Set<String> { pluginDriver.unsupportedIndexTypes }
 
+    var checkConstraintRefusal: String? { pluginDriver.checkConstraintRefusal }
+
     func fetchApproximateRowCount(table: String) async throws -> Int? {
         try await fetchApproximateRowCount(table: table, schema: nil)
     }
@@ -628,6 +630,10 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
 
     func rollbackTransaction() async throws {
         try await pluginDriver.rollbackTransaction()
+    }
+
+    func sessionTransactionState() async -> PluginSessionTransactionState {
+        await pluginDriver.sessionTransactionState()
     }
 
     // MARK: - Schema Switching
