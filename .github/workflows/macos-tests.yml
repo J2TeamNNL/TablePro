@@ -63,8 +63,9 @@ env:
 jobs:
   # Reproduces the paths filter this workflow used to carry on `on: pull_request`. Keep this
   # list and the `push:` paths above identical, so a pull request and a push to main run the
-  # same suites. `Native/` is on both because the Dameng steps below build and test the Rust
-  # bridge that lives there, and a bridge-only change would otherwise compile nowhere.
+  # same suites. `Native/` is on both because the Dameng and SAP HANA steps below build and test
+  # the Rust and Go bridges that live there, and a bridge-only change would otherwise compile
+  # nowhere.
   changes:
     name: Detect relevant changes
     runs-on: ubuntu-latest
@@ -195,7 +196,7 @@ jobs:
         run: scripts/build-dameng.sh arm64
 
       - name: Set up Go for the SAP HANA bridge
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16b1 # v6.0.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: Native/HanaBridge/go.mod
           cache-dependency-path: Native/HanaBridge/go.sum
@@ -211,6 +212,15 @@ jobs:
       - name: Test Dameng native bridge
         working-directory: Native/DamengBridge
         run: cargo test --locked
+
+      # Only the bridge's own tests, none of which needs a HANA server. Run from the bridge
+      # directory so the go command reads its go.mod and builds with the toolchain it pins.
+      - name: Test SAP HANA native bridge
+        working-directory: Native/HanaBridge
+        run: |
+          set -euo pipefail
+          go vet ./...
+          go test ./...
 
       # Secrets.xcconfig is gitignored. Tests do not need analytics keys, and the project only
       # needs the variable to resolve, so an empty value is enough and no secret is read here.
@@ -276,9 +286,10 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             | xcbeautify --renderer github-actions
 
-      # DamengDriverTests is the one plugin-owned unit bundle: its suites import CDameng, so
-      # they cannot move into TableProTests the way pure-logic plugin tests do. Without this
-      # step nothing runs them and they rot silently.
+      # DamengDriverTests and HanaDriverTests are the plugin-owned unit bundles: their suites
+      # import the plugin's C bridge module (CDameng, CHana), so they cannot move into
+      # TableProTests the way pure-logic plugin tests do. Without these steps nothing runs them
+      # and they rot silently.
       - name: Build the Dameng driver tests
         run: |
           set -o pipefail
@@ -374,6 +385,15 @@ jobs:
           set -o pipefail
           xcodebuild test-without-building \
             -xctestrun "$DAMENG_XCTESTRUN" \
+            -destination "$TEST_DESTINATION" \
+            -parallel-testing-enabled NO \
+            | xcbeautify --renderer github-actions
+
+      - name: Run SAP HANA driver tests
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building \
+            -xctestrun "$HANA_XCTESTRUN" \
             -destination "$TEST_DESTINATION" \
             -parallel-testing-enabled NO \
             | xcbeautify --renderer github-actions
