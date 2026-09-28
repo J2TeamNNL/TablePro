@@ -1,0 +1,46 @@
+---
+title: SAP HANA
+description: Connect TablePro to SAP HANA with the downloadable native driver
+---
+
+The SAP HANA driver is a downloadable plugin for SAP HANA SQL endpoints. It uses the open-source
+[`SAP/go-hdb`](https://github.com/SAP/go-hdb) native protocol implementation, so the SAP HDB Client,
+ODBC, SQLDBC and a local SAP installation are not required.
+
+## Connection
+
+Use the HANA host, port, database user and password from the connection form. The default port is
+443, which is the common SAP HANA Cloud endpoint. Enter an initial schema in **Database** when you
+want the first session to open there. HANA schemas remain switchable from the sidebar.
+
+The driver supports the normal TablePro TLS modes. **Required** encrypts the connection without
+requiring a CA file. **Verify CA** and **Verify Identity** require a CA certificate path. **TLS Server
+Name** is an optional advanced field for a certificate name that differs from the host, such as a
+tunnelled or proxied cloud endpoint.
+
+The first release uses database username and password authentication. Client certificates, LDAP,
+JWT and SSO are not connection options in this plugin.
+
+## What it supports
+
+- Schema, table and view browsing.
+- Column metadata including type, nullability, default and comment where the account can read it.
+- Index metadata from `SYS.INDEX_COLUMNS`.
+- SQL queries and result sets, including binary cells.
+- SQL editor export and query cancellation.
+
+The driver is read-only from the structure UI. It does not advertise table editing, DDL helpers or
+parameterized query support yet. Run a write or DDL statement directly in the SQL editor and review
+the statement before executing it.
+
+## Permissions
+
+HANA catalog visibility follows the privileges of the connected account. HANA's catalog views can
+require `CATALOG READ`, `DATABASE ADMIN`, `SELECT METADATA`, or ownership of the relevant schema or
+table. A connection can therefore succeed while a schema, column or index list is incomplete.
+
+## Troubleshooting
+
+If TLS verification fails, check that the CA file contains the issuer for the endpoint and that the
+TLS Server Name matches the certificate. If a catalog query is denied, ask the HANA administrator for
+the minimum metadata privilege needed for the schema you want to browse.

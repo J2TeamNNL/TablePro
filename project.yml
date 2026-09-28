@@ -1279,6 +1279,59 @@ targets:
           - -liconv
         SWIFT_INCLUDE_PATHS: $(SRCROOT)/Plugins/DamengDriverPlugin/CDameng
 
+  HanaDriver:
+    templates: [DriverPlugin]
+    templateAttributes:
+      folder: HanaDriverPlugin
+      principalClass: HanaPlugin
+    settings:
+      base:
+        HEADER_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/Plugins/HanaDriverPlugin/CHana
+        LIBRARY_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/Native/HanaBridge/lib
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - -force_load
+          - $(SRCROOT)/Native/HanaBridge/lib/libhana_bridge.a
+          - -framework
+          - Security
+          - -framework
+          - CoreFoundation
+        SWIFT_INCLUDE_PATHS: $(SRCROOT)/Plugins/HanaDriverPlugin/CHana
+
+  HanaDriverTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Plugins/HanaDriverPlugin
+        excludes:
+          - Info.plist
+          - README.md
+      - Plugins/HanaDriverPluginTests
+    dependencies:
+      - target: TableProPluginKit
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        HEADER_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/Plugins/HanaDriverPlugin/CHana
+        LIBRARY_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/Native/HanaBridge/lib
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - -force_load
+          - $(SRCROOT)/Native/HanaBridge/lib/libhana_bridge.a
+          - -framework
+          - Security
+          - -framework
+          - CoreFoundation
+        SWIFT_INCLUDE_PATHS: $(SRCROOT)/Plugins/HanaDriverPlugin/CHana
+
   ElasticsearchDriverPlugin:
     templates: [DriverPlugin]
     templateAttributes:
@@ -1476,6 +1529,7 @@ aggregateTargets:
       - CloudflareD1DriverPlugin
       - CloudflareR2SQLDriverPlugin
       - DamengDriver
+      - HanaDriver
       - DuckDBDriver
       - DynamoDBDriverPlugin
       - ElasticsearchDriverPlugin
@@ -1519,6 +1573,16 @@ schemes:
       config: Debug
       targets:
         - name: DamengDriverTests
+
+  HanaDriverTests:
+    build:
+      targets:
+        HanaDriverTests: test
+      buildImplicitDependencies: true
+    test:
+      config: Debug
+      targets:
+        - name: HanaDriverTests
 
   TablePro:
     build:

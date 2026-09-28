@@ -84,6 +84,7 @@ TablePro 补上缺失的第四类:原生、多数据库、开源。
 | MongoDB | 插件 |
 | Oracle Database | 插件 |
 | 达梦 DM8 | 插件 |
+| SAP HANA | 插件 |
 | DuckDB | 插件 |
 | Cassandra / ScyllaDB | 插件 |
 | Etcd | 插件 |
@@ -152,4 +153,3 @@ brew install --cask tablepro
 ## 许可证
 
 本项目采用 [GNU Affero General Public License v3.0 (AGPLv3)](LICENSE) 许可。
-

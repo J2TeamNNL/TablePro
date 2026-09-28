@@ -158,6 +158,7 @@
               "databases/cloudflare-r2-sql",
               "databases/cockroachdb",
               "databases/dameng",
+              "databases/sap-hana",
               "databases/databend",
               "databases/duckdb",
               "databases/elasticsearch",

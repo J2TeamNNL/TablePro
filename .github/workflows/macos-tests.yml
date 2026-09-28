@@ -194,6 +194,15 @@ jobs:
       - name: Build Dameng native bridge
         run: scripts/build-dameng.sh arm64
 
+      - name: Set up Go for the SAP HANA bridge
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16b1 # v6.0.0
+        with:
+          go-version-file: Native/HanaBridge/go.mod
+          cache-dependency-path: Native/HanaBridge/go.sum
+
+      - name: Build SAP HANA native bridge
+        run: scripts/build-hana.sh arm64
+
       # Only the bridge's own FFI tests live here. The DM8 protocol crates are a pinned
       # revision of TableProApp/rust-dameng and carry their own suite in that repository.
       # Run from the bridge directory so rustup reads its rust-toolchain.toml: rustup resolves
@@ -276,6 +285,19 @@ jobs:
           xcodebuild build-for-testing \
             -project "$XCODE_PROJECT" \
             -scheme DamengDriverTests \
+            -destination "$TEST_DESTINATION" \
+            -derivedDataPath "$DERIVED_DATA" \
+            -clonedSourcePackagesDirPath ~/.spm-cache \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcbeautify --renderer github-actions
+
+      - name: Build the SAP HANA driver tests
+        run: |
+          set -o pipefail
+          xcodebuild build-for-testing \
+            -project "$XCODE_PROJECT" \
+            -scheme HanaDriverTests \
             -destination "$TEST_DESTINATION" \
             -derivedDataPath "$DERIVED_DATA" \
             -clonedSourcePackagesDirPath ~/.spm-cache \

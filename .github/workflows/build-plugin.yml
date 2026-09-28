@@ -168,6 +168,17 @@ jobs:
         if: ${{ contains(matrix.tag, 'plugin-dameng-') }}
         run: ./scripts/build-dameng.sh both
 
+      - name: Set up Go
+        if: ${{ contains(matrix.tag, 'plugin-hana-') }}
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16b1 # v6.0.0
+        with:
+          go-version-file: Native/HanaBridge/go.mod
+          cache-dependency-path: Native/HanaBridge/go.sum
+
+      - name: Build SAP HANA native bridge
+        if: ${{ contains(matrix.tag, 'plugin-hana-') }}
+        run: ./scripts/build-hana.sh both
+
       # NOTARIZE is not optional. Gatekeeper refuses to load an unnotarized plugin bundle
       # into TablePro, so a build that skips it publishes a driver no user can open.
       - name: Build plugin binaries

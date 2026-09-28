@@ -639,6 +639,102 @@ extension PluginMetadataRegistry {
                     tagline: String(localized: "Enterprise relational database for DM8 deployments")
                 )
             )),
+            ("SAP HANA", PluginMetadataSnapshot(
+                displayName: "SAP HANA", iconName: "cylinder", defaultPort: 443,
+                requiresAuthentication: true, supportsForeignKeys: false, supportsSchemaEditing: false,
+                isDownloadable: true, primaryUrlScheme: "hdb", parameterStyle: .questionMark,
+                navigationModel: .standard, explainVariants: [
+                    ExplainVariant(id: "plan", label: "Plan", sqlPrefix: "EXPLAIN PLAN FOR")
+                ],
+                pathFieldRole: .database,
+                supportsHealthMonitor: true, urlSchemes: ["hdb"],
+                postConnectActions: [.selectSchemaFromLastSession],
+                brandColorHex: "#0FAAFF",
+                queryLanguageName: "SQL", editorLanguage: .sql,
+                connectionMode: .network, supportsDatabaseSwitching: false,
+                structureEditing: SchemaEditingSupport(),
+                capabilities: PluginMetadataSnapshot.CapabilityFlags(
+                    supportsSchemaSwitching: true,
+                    supportsImport: false,
+                    supportsExport: true,
+                    supportsSSH: false,
+                    supportsSSL: true,
+                    supportsCascadeDrop: false,
+                    supportsForeignKeyDisable: false,
+                    supportsReadOnlyMode: false,
+                    supportsQueryProgress: false,
+                    requiresReconnectForDatabaseSwitch: false,
+                    supportsDropDatabase: false,
+                    supportsAddColumn: false,
+                    supportsModifyColumn: false,
+                    supportsDropColumn: false,
+                    supportsAddIndex: false,
+                    supportsDropIndex: false,
+                    supportsModifyPrimaryKey: false,
+                    supportsDropSchema: false,
+                    supportsOpportunisticTLS: false
+                ),
+                schema: PluginMetadataSnapshot.SchemaInfo(
+                    defaultSchemaName: "",
+                    defaultGroupName: "main",
+                    tableEntityName: "Tables",
+                    containerEntityName: "Schema",
+                    defaultPrimaryKeyColumn: nil,
+                    immutableColumns: [],
+                    systemDatabaseNames: [],
+                    systemSchemaNames: ["SYS", "_SYS_BI", "_SYS_BIC", "_SYS_REPO", "_SYS_STATISTICS"],
+                    fileExtensions: [],
+                    databaseGroupingStrategy: .hierarchicalSchema,
+                    structureColumnFields: [.name, .type, .nullable, .defaultValue, .comment]
+                ),
+                editor: PluginMetadataSnapshot.EditorConfig(
+                    sqlDialect: SQLDialectDescriptor(
+                        identifierQuote: "\"",
+                        keywords: [
+                            "SELECT", "FROM", "WHERE", "JOIN", "ON", "GROUP", "BY", "ORDER", "LIMIT", "TOP", "INSERT", "INTO", "VALUES",
+                            "UPDATE", "SET", "DELETE", "CREATE", "ALTER", "DROP", "TABLE", "VIEW", "INDEX", "SCHEMA", "EXPLAIN", "PLAN", "FOR"
+                        ],
+                        functions: ["COUNT", "SUM", "AVG", "MIN", "MAX", "COALESCE", "NULLIF", "CAST", "CURRENT_SCHEMA"],
+                        dataTypes: [
+                            "TINYINT", "SMALLINT", "INTEGER", "BIGINT", "DECIMAL", "SMALLDECIMAL", "REAL", "DOUBLE",
+                            "CHAR", "NCHAR", "VARCHAR", "NVARCHAR", "CLOB", "NCLOB", "DATE", "TIME", "SECONDDATE",
+                            "TIMESTAMP", "BLOB", "VARBINARY", "BOOLEAN", "ALPHANUM", "SHORTTEXT", "TEXT", "ST_GEOMETRY"
+                        ],
+                        tableOptions: ["PARTITION BY", "UNLOAD PRIORITY"],
+                        regexSyntax: .regexpLike,
+                        booleanLiteralStyle: .truefalse,
+                        likeEscapeStyle: .explicit,
+                        paginationStyle: .limit,
+                        autoLimitStyle: .limit
+                    ),
+                    statementCompletions: [
+                        CompletionEntry(label: "SELECT", insertText: "SELECT * FROM \"SCHEMA\".\"TABLE\""),
+                        CompletionEntry(label: "CREATE TABLE", insertText: "CREATE TABLE \"SCHEMA\".\"TABLE\""),
+                        CompletionEntry(label: "EXPLAIN PLAN", insertText: "EXPLAIN PLAN FOR SELECT 1")
+                    ],
+                    columnTypesByCategory: [
+                        "Integer": ["TINYINT", "SMALLINT", "INTEGER", "BIGINT"],
+                        "Float": ["DECIMAL", "SMALLDECIMAL", "REAL", "DOUBLE"],
+                        "String": ["CHAR", "NCHAR", "VARCHAR", "NVARCHAR", "CLOB", "NCLOB"],
+                        "Date": ["DATE", "TIME", "SECONDDATE", "TIMESTAMP"],
+                        "Binary": ["BLOB", "VARBINARY"],
+                        "Boolean": ["BOOLEAN"],
+                        "Other": ["ALPHANUM", "SHORTTEXT", "TEXT", "ST_GEOMETRY"]
+                    ]
+                ),
+                connection: PluginMetadataSnapshot.ConnectionConfig(
+                    additionalConnectionFields: [
+                        ConnectionField(
+                            id: "hanaTLSServerName",
+                            label: String(localized: "TLS Server Name"),
+                            placeholder: String(localized: "Leave empty to use the host"),
+                            section: .advanced
+                        )
+                    ],
+                    category: .relational,
+                    tagline: String(localized: "Enterprise SQL database with native protocol TLS")
+                )
+            )),
             ("ClickHouse", PluginMetadataSnapshot(
                 displayName: "ClickHouse", iconName: "clickhouse-icon", defaultPort: 8_123,
                 requiresAuthentication: true, supportsForeignKeys: false, supportsSchemaEditing: true,
