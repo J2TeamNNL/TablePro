@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - SAP HANA database driver plugin. (#1966)
 
+### Fixed
+
+- Save disabled for Kafka and SQL Server connections set to Verify CA or Verify Identity without a CA file.
+
 ## [0.76.0] - 2026-09-28
 
 Agent mode: one AI session that works across the whole connection window, with every statement it ran.

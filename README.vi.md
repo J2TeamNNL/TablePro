@@ -154,3 +154,4 @@ Muốn tham gia? Đọc [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Bản quyền
 
 Dự án này cấp phép theo [GNU Affero General Public License v3.0 (AGPLv3)](LICENSE).
+
