@@ -14,6 +14,7 @@ import UniformTypeIdentifiers
 /// connections leave alone.
 struct SSLSections: View {
     let databaseType: DatabaseType
+    let serverPort: Int
     @Binding var sslMode: SSLMode
     @Binding var sslCaCertPath: String
     @Binding var sslClientCertPath: String
@@ -29,6 +30,11 @@ struct SSLSections: View {
         return String(localized: "This driver has no TLS fallback. Preferred forces TLS, same as Required.")
     }
 
+    static func trinoTLSWarning(databaseType: DatabaseType, serverPort: Int, sslMode: SSLMode) -> String? {
+        guard databaseType == .trino, serverPort == 443, sslMode == .disabled else { return nil }
+        return String(localized: "Trino uses plain HTTP while SSL is Disabled. Port 443 usually requires TLS; choose Verify Identity or another SSL mode.")
+    }
+
     var body: some View {
         Group {
             Section {
@@ -40,6 +46,15 @@ struct SSLSections: View {
                 if sslMode == .preferred, !databaseType.supportsOpportunisticTLS {
                     Label(noOpportunisticTLSWarning, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(databaseType == .oracle ? .red : .orange)
+                        .font(.caption)
+                }
+                if let warning = Self.trinoTLSWarning(
+                    databaseType: databaseType,
+                    serverPort: serverPort,
+                    sslMode: sslMode
+                ) {
+                    Label(warning, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
                         .font(.caption)
                 }
             } footer: {

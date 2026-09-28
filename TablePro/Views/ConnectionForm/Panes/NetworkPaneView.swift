@@ -22,6 +22,7 @@ struct NetworkPaneView: View {
             if coordinator.supportsSSL {
                 SSLSections(
                     databaseType: coordinator.network.type,
+                    serverPort: coordinator.network.resolvedPort,
                     sslMode: $coordinator.ssl.mode,
                     sslCaCertPath: $coordinator.ssl.caCertPath,
                     sslClientCertPath: $coordinator.ssl.clientCertPath,
