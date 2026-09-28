@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"syscall"
 	"testing"
 )
@@ -215,5 +216,24 @@ func TestCleanupConnectionFailureOutranksTheStatementError(t *testing.T) {
 				t.Fatalf("message = %q; want the cleanup failure alone", failure.Message)
 			}
 		}
+	}
+}
+
+func TestAnUnfinishedTransactionDropsTheSession(t *testing.T) {
+	statementErr := errors.New("unique constraint violated")
+	rollbackErr := errors.New("SQL error 3: fatal error: transaction is not active")
+	failure := unsettledTransaction(statementErr, rollbackErr)
+	if !isConnectionFailure(failure) {
+		t.Fatal("a failed rollback left the session reusable")
+	}
+	classified := resolveFailure(sessionConnected, stopNone, failure)
+	assertKind(t, classified, kindConnectionLost)
+	if !strings.Contains(classified.Message, "transaction is not active") || !strings.Contains(classified.Message, "unique constraint violated") {
+		t.Fatalf("message %q lost a cause", classified.Message)
+	}
+	commitFailure := unsettledTransaction(nil, errors.New("commit refused"))
+	assertKind(t, resolveFailure(sessionConnected, stopNone, commitFailure), kindConnectionLost)
+	if isConnectionFailure(statementErr) {
+		t.Fatal("a plain statement error was read as a lost session")
 	}
 }

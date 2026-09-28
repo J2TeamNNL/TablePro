@@ -169,8 +169,33 @@ func cleanupInto(err *error, cleanup func() error) {
 	*err = joinCleanupFailure(*err, cleanup())
 }
 
+var errTransactionUnsettled = errors.New("the transaction could not be finished")
+
+type transactionFailure struct {
+	finalize  error
+	statement error
+}
+
+func (e *transactionFailure) Error() string {
+	if e.statement == nil {
+		return e.finalize.Error()
+	}
+	return e.finalize.Error() + "; " + e.statement.Error()
+}
+
+func (e *transactionFailure) Unwrap() []error {
+	return []error{errTransactionUnsettled, e.finalize}
+}
+
+func unsettledTransaction(statementErr error, finalizeErr error) error {
+	return &transactionFailure{finalize: finalizeErr, statement: statementErr}
+}
+
 func isConnectionFailure(err error) bool {
 	if errors.Is(err, driver.ErrBadConn) || errors.Is(err, sql.ErrConnDone) || errors.Is(err, errDialerSevered) || errors.Is(err, errPingUnanswered) {
+		return true
+	}
+	if errors.Is(err, errTransactionUnsettled) {
 		return true
 	}
 	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, net.ErrClosed) {

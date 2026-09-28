@@ -96,10 +96,13 @@ func runInTransaction(conn *sql.Conn, op *operation, request executeRequest, pla
 		err = errOperationStopped
 	}
 	if err != nil {
-		return nil, joinCleanupFailure(err, transaction.Rollback())
+		if rollbackErr := transaction.Rollback(); rollbackErr != nil {
+			return nil, unsettledTransaction(err, rollbackErr)
+		}
+		return nil, err
 	}
 	if err := transaction.Commit(); err != nil {
-		return nil, err
+		return nil, unsettledTransaction(nil, err)
 	}
 	return envelope, nil
 }
