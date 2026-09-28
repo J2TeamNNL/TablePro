@@ -9,7 +9,6 @@ import Testing
 
 @testable import TablePro
 
-@Suite("Database tree contextual menu")
 struct DatabaseTreeMenuSpecTests {
     private func tableRef(_ name: String, type: TableInfo.TableType = .table) -> DatabaseTreeTableRef {
         DatabaseTreeTableRef(
@@ -51,6 +50,7 @@ struct DatabaseTreeMenuSpecTests {
         canCopyObjects: Bool = true,
         canDuplicateDatabase: Bool = true,
         canCreateType: Bool = false,
+        canCreateTable: Bool = true,
         supportsCreateSchema: Bool = false,
         supportsSchemaOwner: Bool = false,
         supportsSchemaPrivileges: Bool = false,
@@ -110,12 +110,14 @@ struct DatabaseTreeMenuSpecTests {
             showObjectIcons: true,
             showObjectComments: false,
             showSystemContainers: false,
+            showPartitions: true,
             rowSize: .matchSystem,
             canFilterDatabases: canFilterDatabases,
             hasDatabaseFilter: hasDatabaseFilter,
             canCopyObjects: canCopyObjects,
             canDuplicateDatabase: canDuplicateDatabase,
             canCreateType: canCreateType,
+            canCreateTable: canCreateTable,
             objectToolSupport: objectToolSupport
         )
     }
@@ -181,6 +183,16 @@ struct DatabaseTreeMenuSpecTests {
         let issued = commands(DatabaseTreeMenuSpec.sections(for: context(clicked: nil)))
 
         #expect(issued.contains(.createTable))
+        #expect(issued.contains(.createView))
+    }
+
+    /// MongoDB before its plugin could create a collection, and Redis, Kafka and every other engine
+    /// without a create hook, opened the grid and refused only once it was filled in.
+    @Test("An engine that cannot create a table is not offered New Table")
+    func emptyAreaHidesNewTableWithoutCreateSupport() {
+        let issued = commands(DatabaseTreeMenuSpec.sections(for: context(clicked: nil, canCreateTable: false)))
+
+        #expect(!issued.contains(.createTable))
         #expect(issued.contains(.createView))
     }
 
@@ -262,12 +274,13 @@ struct DatabaseTreeMenuSpecTests {
         #expect(entry(for: .toggleSystemContainers)?.isOn == false)
     }
 
-    @Test("View Options offers System Databases and Schemas beside Icons and Comments")
+    @Test("View Options offers System Databases and Schemas and Partitions beside Icons and Comments")
     func viewOptionsOfferSystemContainers() {
         let sections = SidebarViewOptionsMenu.sections(
             showObjectIcons: true,
             showObjectComments: true,
             showSystemContainers: true,
+            showPartitions: true,
             rowSize: .matchSystem
         )
         let items = sections.first?.items ?? []
@@ -275,9 +288,28 @@ struct DatabaseTreeMenuSpecTests {
             guard case .command(let entry) = item, entry.isOn == true else { return nil }
             return entry.command
         }
-        let expected: [SidebarMenuCommand] = [.toggleObjectIcons, .toggleObjectComments, .toggleSystemContainers]
+        let expected: [SidebarMenuCommand] = [
+            .toggleObjectIcons, .toggleObjectComments, .toggleSystemContainers, .togglePartitions
+        ]
 
         #expect(toggles == expected)
+    }
+
+    @Test("Partitions reports its own state rather than borrowing another option's")
+    func viewOptionsReportPartitionState() {
+        let sections = SidebarViewOptionsMenu.sections(
+            showObjectIcons: true,
+            showObjectComments: true,
+            showSystemContainers: true,
+            showPartitions: false,
+            rowSize: .matchSystem
+        )
+        let states: [Bool?] = (sections.first?.items ?? []).compactMap { item in
+            guard case .command(let entry) = item, entry.command == .togglePartitions else { return nil }
+            return entry.isOn
+        }
+
+        #expect(states == [false])
     }
 
     // MARK: - Tables
@@ -820,6 +852,25 @@ struct DatabaseTreeMenuSpecTests {
         .hierarchicalSchemaSection(schema: "billing"),
         .status(.loading)
     ]
+
+    /// The Keys section's error row said what went wrong but left nothing to do about it, since the
+    /// tree only loaded again on a database switch.
+    @Test("The Keys section offers Refresh and nothing scoped to the connection")
+    func redisKeysSectionOffersRefresh() {
+        let issued = commands(DatabaseTreeMenuSpec.sections(for: context(clicked: .redisKeysSection)))
+
+        #expect(issued == [.refreshRedisKeys])
+        #expect(SidebarMenuCommand.refreshRedisKeys.shortcutAction == nil)
+    }
+
+    @Test("A status row keeps the background menu")
+    func statusRowKeepsTheBackgroundMenu() {
+        let status = commands(DatabaseTreeMenuSpec.sections(for: context(clicked: .status(.error("NOPERM")))))
+        let background = commands(DatabaseTreeMenuSpec.sections(for: context(clicked: nil)))
+
+        #expect(status == background)
+        #expect(!status.contains(.refreshRedisKeys))
+    }
 
     @Test("Every menu produces at least one item, so none opens as an empty frame")
     func everyMenuHasContent() {

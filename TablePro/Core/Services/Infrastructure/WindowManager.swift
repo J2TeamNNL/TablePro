@@ -133,7 +133,7 @@ internal final class WindowManager {
 
     /// A window that is a background member of a native tab group is made key without being
     /// brought to the front of its group, so it is selected in the group first.
-    private func bringToFront(_ window: NSWindow?) {
+    internal func bringToFront(_ window: NSWindow?) {
         guard let window else { return }
         if let group = window.tabGroup, group.selectedWindow !== window {
             group.selectedWindow = window
@@ -501,6 +501,17 @@ internal final class WindowManager {
 
     internal func coordinators(for connectionId: UUID) -> [MainContentCoordinator] {
         workspaces(for: connectionId).compactMap { $0.sessionState?.coordinator }
+    }
+
+    /// Every window's controller hosting this connection, for a command whose result the other
+    /// windows have to be told about rather than discover.
+    ///
+    /// A workspace nobody selected repairs itself on selection through its pane render key, but a
+    /// second window showing the same connection has that workspace selected already, so nothing
+    /// there is about to ask. Closing or deleting an agent session from one window is exactly that
+    /// case: the other window's assistant is pointed at a session that has gone.
+    internal func hostControllers(for connectionId: UUID) -> [MainSplitViewController] {
+        hosts().filter { $0.workspaces.workspace(for: connectionId) != nil }
     }
 
     /// The window hosting this connection, whatever state it is in.

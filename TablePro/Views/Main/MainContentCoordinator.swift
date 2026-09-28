@@ -12,6 +12,7 @@ import os
 import SwiftUI
 import TableProEditorKit
 import TableProPluginKit
+import TableProSQLGrammar
 
 /// Discard action types for unified alert handling
 enum DiscardAction {
@@ -89,6 +90,10 @@ enum ActiveSheet: Identifiable {
     case copyObjects(ObjectCopyLaunchRequest)
     case rewind
     case tableRebuildReview
+    /// The collection and its database travel with the request, for the reason `.maintenance`
+    /// carries its scope: the document is written where it was read, not wherever the object
+    /// browser points by the time Save is pressed.
+    case documentEditor(DocumentEditorRequest)
 
     var id: String {
         switch self {
@@ -112,6 +117,7 @@ enum ActiveSheet: Identifiable {
         case .copyObjects(let launch): "copyObjects-\(launch.id)"
         case .rewind: "rewind"
         case .tableRebuildReview: "tableRebuildReview"
+        case .documentEditor(let request): "documentEditor-\(request.id.uuidString)"
         }
     }
 }
@@ -135,11 +141,21 @@ final class MainContentCoordinator: ObservableObject {
     let connection: DatabaseConnection
     var connectionId: UUID { connection.id }
     var sqlDialect: SqlDialect { SqlDialect.from(databaseTypeId: connection.type.rawValue) }
+
+    /// How this connection's scripts are split for execution, with what the driver read from its own session.
+    var lexicalGrammar: SQLLexicalGrammar {
+        SQLLexicalResolver.executionGrammar(for: connection.type, connectionId: connectionId)
+    }
     var statementModel: QueryStatementModel { QueryStatementModel.forDatabaseType(connection.type) }
     var browseDatabaseName: String {
         services.databaseManager.browseDatabaseName(for: connection)
     }
     var safeModeLevel: SafeModeLevel { toolbarState.safeModeLevel }
+    /// The level the toolbar shows, and the floor under it with Agent mode's included, which is what
+    /// the Safe Mode list offers from and what the toolbar's tooltip explains.
+    var safeModeStatus: SafeModeStatus {
+        SafeModeStatus(level: safeModeLevel, floor: AgentModeSafeModeFloor.effectiveFloor(for: connection))
+    }
     func setSafeModeLevel(_ level: SafeModeLevel) {
         services.databaseManager.chooseSafeModeLevel(level, for: connectionId)
         toolbarState.safeModeLevel = services.databaseManager.session(for: connectionId)?.safeModeLevel ?? level
@@ -180,12 +196,6 @@ final class MainContentCoordinator: ObservableObject {
 
     /// Direct reference to structure view actions — eliminates notification broadcasts
     weak var structureActions: StructureViewActionHandler?
-
-    /// Raised while a close is applying the staged structure edits of tabs it is about to close.
-    /// Each apply broadcasts a data refresh for its scope, and a mounted structure view on the same
-    /// database answers that by asking whether to discard its own staged edits, which mid-close is
-    /// a question the user cannot usefully answer. Scoped by the caller's `defer`, never latched.
-    @Published var isApplyingStagedStructureEdits = false
 
     /// Direct reference to create-table view actions so the Save Changes menu
     /// (Cmd+S) routes to table creation. Set by `CreateTableView` on appear.
@@ -232,10 +242,15 @@ final class MainContentCoordinator: ObservableObject {
     /// AppKit object reached through observation-ignored hops, so it cannot invalidate a view.
     @Published var gridDisplayRevision: Int = 0
 
-    /// Bumped when an inspector edit rewrites the selected row's values, so the inspector's JSON
+    /// Sent when an inspector edit rewrites the selected row's values, so the inspector's JSON
     /// rendering re-reads the row. Apart from `gridDisplayRevision`, which drives a full rebuild of
     /// the field list and takes first responder out of whatever is being typed into.
-    var inspectorRowContentRevision: Int = 0
+    ///
+    /// An event rather than a published counter. The counter it replaces was not published, so the
+    /// `onChange` that read it never fired and the JSON rendering went stale. Publishing it would
+    /// have redrawn every view that observes this coordinator on each keystroke a detached value
+    /// window commits, and only one of them wants to know.
+    let inspectorRowContentChanged = PassthroughSubject<Void, Never>()
 
     /// dispatch insertRows/removeRows directly to the NSTableView via DataGridViewDelegate.
     weak var dataTabDelegate: DataTabGridDelegate?
@@ -275,7 +290,9 @@ final class MainContentCoordinator: ObservableObject {
 
     @Published var cursorPositions: [CursorPosition] = []
     @Published var tableMetadata: TableMetadata?
-    @Published var activeSheet: ActiveSheet?
+    @Published var activeSheet: ActiveSheet? {
+        didSet { releaseImportFileUnlessImporting() }
+    }
     /// Owns the connection and database switcher surfaces. The commands present through this
     /// rather than flipping a flag a toolbar-hosted view has to observe, because that view is
     /// absent whenever its item is clipped into the overflow menu or removed by the user. It
@@ -285,7 +302,7 @@ final class MainContentCoordinator: ObservableObject {
     }
     @Published var sessionContexts: [PluginSessionContext] = []
     @Published var containerDropRequest: DatabaseDropRequest?
-    @Published var importFileURL: URL?
+    @Published var importFile: ImportFileHandoff?
     @Published var exportPreselection: ExportPreselection?
     @Published var pendingLoadTrigger: TableLoadTrigger?
     var deferredRestoreLoadTabId: UUID?
@@ -309,6 +326,8 @@ final class MainContentCoordinator: ObservableObject {
 
     var hostedTabRouting = HostedTabRouting.live
 
+    var importFormatLookup = ImportFormatLookup.live
+
     /// Routing failures report through here so a test can observe the message instead of raising a
     /// real alert. `AlertHelper.present` runs application-modal when no window qualifies, and a
     /// unit test host has no window, so calling it directly parks the main thread in a modal loop
@@ -327,13 +346,12 @@ final class MainContentCoordinator: ObservableObject {
     /// change. It is a value type, so every claim, settle and invalidate is a write to this
     /// property and invalidates its readers.
     @Published internal var tabExecution = TabExecutionRegistry()
-    internal var currentQueryTask: Task<Void, Never>?
 
-    /// Which claim installed `currentQueryTask`. The handle is one per window while claims are one
-    /// per tab, so owning your own tab is not the same as owning the query the window is running:
-    /// superseding tab B cancels tab A's task, and A's completion would otherwise nil out B's
-    /// handle and leave B's query with no spinner and no way to stop it.
-    internal var currentQueryTaskOwner: TabExecutionClaim?
+    /// One in-flight query task per tab, beside the claim registry that owns each tab's result.
+    /// Cancellation is keyed by tab for the same reason ownership is: the window hosts several tabs
+    /// on one connection, and a handle shared between them made every start path a Stop for whoever
+    /// held it.
+    internal var queryTasks = TabQueryTasks()
     internal var rowCountTasks: [UUID: (token: UUID, task: Task<Void, Never>)] = [:]
 
     /// Which user-requested exact count currently owns each tab's counting indicator.
@@ -352,7 +370,9 @@ final class MainContentCoordinator: ObservableObject {
     private var terminationObserver: NSObjectProtocol?
     internal var postConnectCancellable: AnyCancellable?
     private var externalFileModCancellable: AnyCancellable?
+    internal lazy var sourceFileDiskChangeMonitor = SourceFileDiskChangeMonitor(tabManager: tabManager)
     private var schemaSwitchCancellable: AnyCancellable?
+    private var clearedEditsCancellable: AnyCancellable?
 
     @Published var fileConflictRequest: FileConflictRequest?
 
@@ -718,7 +738,7 @@ final class MainContentCoordinator: ObservableObject {
             .sink { [weak self] payload in
                 guard let self else { return }
                 guard payload == nil || payload == self.connectionId else { return }
-                self.checkOpenTabsForExternalModification()
+                self.refreshSourceFileDiskChanges()
             }
 
         schemaSwitchCancellable = services.appEvents.currentSchemaChanged
@@ -737,24 +757,15 @@ final class MainContentCoordinator: ObservableObject {
         self.queryExecutionCoordinator = QueryExecutionCoordinator(parent: self)
         self.paginationCoordinator = PaginationCoordinator(parent: self)
         self.rowEditingCoordinator = RowEditingCoordinator(parent: self)
+        clearedEditsCancellable = resumeWhenEditsClear()
 
         Self.lifecycleLogger.info(
             "[open] MainContentCoordinator.init done connId=\(connection.id, privacy: .public) elapsedMs=\(Int(Date().timeIntervalSince(initStart) * 1_000))"
         )
     }
 
-    private func checkOpenTabsForExternalModification() {
-        for index in tabManager.tabs.indices {
-            guard let url = tabManager.tabs[index].content.sourceFileURL,
-                  let loadMtime = tabManager.tabs[index].content.loadMtime,
-                  let currentMtime = (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate]) as? Date
-            else { continue }
-
-            let modified = currentMtime > loadMtime.addingTimeInterval(0.5)
-            if modified != tabManager.tabs[index].content.externalModificationDetected {
-                tabManager.mutate(at: index) { $0.content.externalModificationDetected = modified }
-            }
-        }
+    func refreshSourceFileDiskChanges() {
+        sourceFileDiskChangeMonitor.refresh()
     }
 
     func markActivated() {
@@ -803,7 +814,7 @@ final class MainContentCoordinator: ObservableObject {
         /// The gate comes first. Activating builds the view model, whose init reads the stored
         /// conversations, and the pane would then refuse to open it anyway.
         guard AppSettingsManager.shared.ai.enabled else { return }
-        trailingPaneState?.assistant.activate()
+        trailingPaneState?.assistant.activate(connection: connection)
         trailingPaneProxy?.showAssistant()
     }
 
@@ -919,11 +930,11 @@ final class MainContentCoordinator: ObservableObject {
         }
         postConnectCancellable = nil
         externalFileModCancellable = nil
+        sourceFileDiskChangeMonitor.cancel()
         schemaSwitchCancellable = nil
         fileWatcher?.stopWatching(connectionId: connectionId)
         fileWatcher = nil
-        currentQueryTask?.cancel()
-        currentQueryTask = nil
+        cancelAllQueryTasks()
         /// A cancelled task is not a finished one. `Task.cancel()` is cooperative, so the driver
         /// call may still be running and will throw on the way out; without this the resulting
         /// error reaches the ordinary failure path and reports a query that "failed" when what
@@ -956,6 +967,7 @@ final class MainContentCoordinator: ObservableObject {
         tableMetadataCache.removeAll()
         schemaColumns.removeAll()
         columnScopeRequeryTask?.cancel()
+        releaseImportFile()
 
         tabManager.tabs.removeAll()
         tabManager.selectedTabId = nil
@@ -1016,10 +1028,6 @@ final class MainContentCoordinator: ObservableObject {
 
         if let session = services.databaseManager.session(for: connectionId) {
             toolbarState.updateConnectionState(from: session.reportedStatus)
-            if let driver = session.driver {
-            }
-        } else if let driver = services.databaseManager.driver(for: connectionId) {
-            toolbarState.connectionState = .connected
         }
     }
 
@@ -1048,40 +1056,12 @@ final class MainContentCoordinator: ObservableObject {
             return
         }
 
-        let fullQuery = tab.content.query
-
         /// The offset says where the SQL sits in the tab's query, so each result can point back at the statement that
-        /// produced it. A sort override is SQL the app wrote rather than text the reader can be sent to, so it has
-        /// none. The other two hand over untrimmed text with an exact offset and let the scanner do the trimming,
-        /// which keeps the two from having to agree about how much whitespace was dropped.
-        let sql: String
-        let sourceOffset: Int?
-        if let sortOverride = tab.pagination.sortExecutionOverride {
-            tabManager.mutate(at: index) { $0.pagination.sortExecutionOverride = nil }
-            sql = sortOverride
-            sourceOffset = nil
-        } else if let firstCursor = cursorPositions.first,
-                  firstCursor.range.length > 0 {
-            // Execute selected text only
-            let nsQuery = fullQuery as NSString
-            let clampedRange = NSIntersectionRange(
-                firstCursor.range,
-                NSRange(location: 0, length: nsQuery.length)
-            )
-            sql = nsQuery.substring(with: clampedRange)
-            sourceOffset = clampedRange.location
-        } else {
-            let statement = QueryStatementScanner.locatedStatementAtCursor(
-                in: fullQuery,
-                cursorPosition: cursorPositions.first?.range.location ?? 0,
-                model: statementModel,
-                dialect: sqlDialect
-            )
-            sql = statement.sql
-            sourceOffset = statement.offset
-        }
-
-        executeResolvedSQL(sql, tabIndex: index, bypassRowLimit: bypassRowLimit, sourceOffset: sourceOffset)
+        /// produced it. The selection and the statement at the caret both hand over untrimmed text with an exact
+        /// offset and let the scanner do the trimming, which keeps the two from having to agree about how much
+        /// whitespace was dropped.
+        let target = selectionOrStatementAtCursor(in: tab.content.query)
+        executeResolvedSQL(target.sql, tabIndex: index, bypassRowLimit: bypassRowLimit, sourceOffset: target.offset)
     }
 
     /// Runs one statement, named by its own text rather than by where the caret happens to be.
@@ -1110,27 +1090,37 @@ final class MainContentCoordinator: ObservableObject {
     /// Returns whether the SQL was actually dispatched. It is not when the statement carries parameters whose panel
     /// has yet to be filled in: that opens the panel and runs nothing, and a caller that advances the caret on the
     /// strength of a run would then be pointing at the wrong statement when the reader presses again.
+    ///
+    /// `boundParameters` are the values a result already ran with, handed back when that result runs again. They
+    /// stand in for the panel's, which may have changed since, so the panel is neither reconciled nor opened.
     @discardableResult
     private func executeResolvedSQL(
         _ sql: String,
         tabIndex index: Int,
         bypassRowLimit: Bool,
-        sourceOffset: Int? = nil
+        sourceOffset: Int? = nil,
+        boundParameters: [QueryParameter]? = nil
     ) -> Bool {
-        let anchored = { (statements: [SQLStatementScanner.ExecutableStatement]) in
-            guard let sourceOffset else { return statements }
-            return statements.map { $0.offset(by: sourceOffset) }
+        let batches = queryExecutionCoordinator.executionBatches(in: sql, sourceOffset: sourceOffset ?? 0)
+        let statements = batches.flatMap(\.statements)
+        guard !statements.isEmpty else { return false }
+
+        if let boundParameters {
+            tabManager.tabStructureVersion += 1
+            dispatchParameterizedBatches(
+                batches,
+                parameters: boundParameters,
+                tabIndex: index,
+                bypassRowLimit: bypassRowLimit
+            )
+            return true
         }
 
         // `:active` is a bind placeholder in SQL and an ordinary object key in JavaScript, so a
         // script would open the parameter panel and then be rewritten into something the driver
         // cannot run.
         if services.appSettings.editor.queryParametersEnabled, statementModel == .sql {
-            let paramStatements = anchored(
-                QueryStatementScanner.executableStatements(in: sql, model: statementModel, dialect: sqlDialect)
-            )
-            guard !paramStatements.isEmpty else { return false }
-            let combinedSQL = paramStatements.map(\.sql).joined(separator: "; ")
+            let combinedSQL = SQLParameterExtractor.parameterSource(of: statements)
             let detectedNames = SQLParameterExtractor.extractParameters(from: combinedSQL)
 
             if !detectedNames.isEmpty {
@@ -1146,8 +1136,8 @@ final class MainContentCoordinator: ObservableObject {
                 }
 
                 tabManager.tabStructureVersion += 1
-                dispatchParameterizedStatements(
-                    paramStatements,
+                dispatchParameterizedBatches(
+                    batches,
                     parameters: reconciled,
                     tabIndex: index,
                     bypassRowLimit: bypassRowLimit
@@ -1156,13 +1146,8 @@ final class MainContentCoordinator: ObservableObject {
             }
         }
 
-        let statements = anchored(
-            QueryStatementScanner.executableStatements(in: sql, model: statementModel, dialect: sqlDialect)
-        )
-        guard !statements.isEmpty else { return false }
-
         tabManager.tabStructureVersion += 1
-        dispatchStatements(statements, tabIndex: index, bypassRowLimit: bypassRowLimit)
+        dispatchBatches(batches, tabIndex: index, bypassRowLimit: bypassRowLimit)
         return true
     }
 
@@ -1204,7 +1189,7 @@ final class MainContentCoordinator: ObservableObject {
                 switch decision {
                 case .authorized:
                     executeQueryInternal(sql, isAutoLoad: true, trigger: trigger, viewport: viewport)
-                case .denied(let reason):
+                case .denied(let reason, _):
                     traceNavigationAbandoned(tabId: tab.id, outcome: .safeModeDenied)
                     tabManager.mutate(at: index) { $0.execution.errorMessage = reason }
                 }
@@ -1283,8 +1268,7 @@ final class MainContentCoordinator: ObservableObject {
     ) {
         guard let (selectedTab, index) = tabManager.selectedTabAndIndex else { return }
 
-        supersedeExecution(for: selectedTab.id)
-        let claim = tabExecution.claim(selectedTab.id)
+        let (claim, lease) = beginTabExecution(for: selectedTab.id)
 
         tabManager.mutate(at: index) { tab in
             tab.execution.executionTime = nil
@@ -1302,12 +1286,8 @@ final class MainContentCoordinator: ObservableObject {
         let rowCap = statement.rowCap
         let (tableName, isEditable) = resolveTableEditability(tab: tab, sql: sql)
 
-        let needsMetadataFetch: Bool
-        if isEditable, let tableName {
-            needsMetadataFetch = !isMetadataCached(tabId: tabId, tableName: tableName)
-        } else {
-            needsMetadataFetch = false
-        }
+        let needsDefinition = tabSessionRegistry.needsDefinition(tabId)
+        let needsMetadataFetch = tableName.map { isEditable && !isMetadataCached(tabId: tabId, tableName: $0) } ?? false
         /// Captured now, while the result this decision was made against is still the active one.
         let cachedMetadata: ParsedSchemaMetadata? = needsMetadataFetch ? nil : ParsedSchemaMetadata.cached(
             rows: tabSessionRegistry.tableRows(for: tabId),
@@ -1315,7 +1295,7 @@ final class MainContentCoordinator: ObservableObject {
         )
         if let tableName {
             Self.logger.info(
-                "[fk] metadata decision table=\(tableName, privacy: .public) isEditable=\(isEditable) needsFetch=\(needsMetadataFetch)"
+                "[fk] metadata decision table=\(tableName, privacy: .private(mask: .hash)) isEditable=\(isEditable) needsFetch=\(needsMetadataFetch)"
             )
         }
         guard let scope = scope(for: tab) else {
@@ -1327,6 +1307,7 @@ final class MainContentCoordinator: ObservableObject {
         }
         let isTableTab = tab.tabType == .table
 
+        let failureOutput = ServerOutputBox()
         let queryTask = Task { [weak self] in
             guard let self else { return }
 
@@ -1338,31 +1319,28 @@ final class MainContentCoordinator: ObservableObject {
                         guard let self else { return }
                         traceConnectUnavailable(traceToken)
                         guard tabExecution.settle(claim) else { return }
-                        retireQueryTask(for: claim)
+                        retireQueryTask(.claim(claim))
                         pendingLoadTrigger = trigger
                     }
                     return
                 }
             }
 
-            let schemaTask: Task<FetchedTableSchema, Error>?
-            if needsMetadataFetch, let tableName {
-                schemaTask = Task { try await QueryExecutor.fetchTableSchema(scope: scope, tableName: tableName) }
-            } else {
-                schemaTask = nil
-            }
+            let schemaTask = QueryExecutor.schemaFetch(tableName: needsMetadataFetch ? tableName : nil, scope: scope)
 
             let fetchBeganAt = ContinuousClock.now
             do {
                 let fetchResult = try await withExecutionDriver(
                     scope: scope,
-                    isTableTab: isTableTab
+                    isTableTab: isTableTab,
+                    lease: lease
                 ) { [queryExecutor] driver in
                     try await queryExecutor.executeQuery(
                         driver: driver,
                         sql: statement.sql,
                         parameters: nil,
-                        rowCap: rowCap
+                        rowCap: rowCap,
+                        capturingOutputInto: isTableTab ? nil : failureOutput
                     )
                 }
                 let fetchEndedAt = ContinuousClock.now
@@ -1378,6 +1356,9 @@ final class MainContentCoordinator: ObservableObject {
                 let inlineMeta = needsMetadataFetch
                     ? QueryExecutor.inlineMetadata(from: fetchResult.resultColumnMeta, columns: fetchResult.columns)
                     : nil
+                /// After a definition change the rows and the definition commit together, so the grid
+                /// never holds the new columns under the old keys, defaults or generated columns.
+                let definition = needsDefinition ? try? await schemaTask?.value : nil
 
                 await MainActor.run { [weak self] in
                     guard let self else { return }
@@ -1393,7 +1374,7 @@ final class MainContentCoordinator: ObservableObject {
                         traceStaleResultDropped(traceToken)
                         return
                     }
-                    retireQueryTask(for: claim)
+                    retireQueryTask(.claim(claim))
                     guard !Task.isCancelled else {
                         traceStaleResultDropped(traceToken)
                         return
@@ -1402,6 +1383,7 @@ final class MainContentCoordinator: ObservableObject {
 
                     traceApplyingResult(traceToken, tabId: tabId)
 
+                    let definitionMetadata = adoptLoadedDefinition(definition, of: tableName, in: scope, readBy: claim)
                     applyPhase1Result(
                         tabId: tabId,
                         columns: fetchResult.columns,
@@ -1412,14 +1394,18 @@ final class MainContentCoordinator: ObservableObject {
                         statusMessage: fetchResult.statusMessage,
                         tableName: tableName,
                         isEditable: isEditable,
-                        metadata: inlineMeta ?? cachedMetadata,
-                        hasSchema: false,
+                        metadata: definitionMetadata ?? inlineMeta ?? cachedMetadata,
+                        hasSchema: definitionMetadata != nil,
+                        read: TableFreshness.Read(startedAt: claim.startedAt, includesDefinition: definitionMetadata != nil),
                         sql: sql,
                         connection: conn,
                         isTruncated: fetchResult.isTruncated,
                         anchor: anchor,
                         timing: fetchResult.resolvedTiming,
-                        viewport: viewport
+                        viewport: viewport,
+                        serverOutput: fetchResult.serverOutput,
+                        rowLocators: isTableTab ? fetchResult.rowLocators : nil,
+                        absentCells: fetchResult.absentCells
                     )
 
                     scheduleTraceCompletion(traceToken, outcome: .completed)
@@ -1464,75 +1450,12 @@ final class MainContentCoordinator: ObservableObject {
                     claim: claim,
                     isAutoLoad: isAutoLoad,
                     trigger: trigger,
-                    traceToken: traceToken
+                    traceToken: traceToken,
+                    serverOutput: failureOutput.output
                 )
             }
         }
-        installQueryTask(queryTask, for: claim)
-    }
-
-    /// A nil claim means work that runs against a tab without claiming it, which is Fetch All. It
-    /// still owns the handle for as long as it runs; it just cannot be retired by any claim.
-    internal func installQueryTask(_ task: Task<Void, Never>, for claim: TabExecutionClaim?) {
-        currentQueryTask = task
-        currentQueryTaskOwner = claim
-    }
-
-    /// Retires the window's Stop handle, but only for the execution that installed it. A completion
-    /// that owns its own tab can still be a stranger to the query the window is running, and taking
-    /// that one's handle down would leave a live query with nothing to cancel it.
-    ///
-    /// It no longer reports anything: what the titlebar shows is derived from `tabExecution`, so a
-    /// completion that cannot retire the handle can no longer leave the window claiming to be busy.
-    internal func retireQueryTask(for claim: TabExecutionClaim?) {
-        guard currentQueryTaskOwner == claim else { return }
-        currentQueryTask = nil
-        currentQueryTaskOwner = nil
-    }
-
-    internal func cancelInFlightQueryTask(reach: DriverCancellationReach = .userStop) {
-        guard currentQueryTask != nil else { return }
-        currentQueryTask?.cancel()
-        do {
-            try services.databaseManager.cancelRunningQuery(for: connectionId, reach: reach)
-        } catch {
-            Self.logger.warning("cancelQuery failed: \(error.localizedDescription, privacy: .public)")
-        }
-        currentQueryTask = nil
-        currentQueryTaskOwner = nil
-    }
-
-    /// Ends whatever the tab was doing so a new navigation owns it outright. Invalidating before the
-    /// new claim is minted is what makes "the user navigated away and no successor ever ran" still
-    /// discard the old result, which a counter that only moved on a successful start could not do.
-    ///
-    /// Removing the entry is also what puts the titlebar back to idle, because the indicator reads
-    /// the registry. A retarget need not be followed by a successor, and nothing else would have
-    /// lowered a stored flag.
-    internal func supersedeExecution(for tabId: UUID) {
-        reportEndedExecutions(tabExecution.invalidate(tabId, reason: .supersededNavigation).map { [$0] } ?? [])
-        cancelTableLoad(for: tabId)
-        cancelRowCountTask(for: tabId)
-        cancelInFlightQueryTask(reach: .supersededNavigation)
-    }
-
-    /// Reset execution state when a query is cancelled, releasing the tab only if this claim still
-    /// owns it. Settling is that gate and it comes first, exactly as `finishFailedQuery` does for
-    /// the other way an execution ends early.
-    ///
-    /// This used to invalidate by tab id, which releases whatever the tab is running now rather
-    /// than what this claim started. A cancelled execution unwinding after its successor had
-    /// claimed the tab therefore deleted the successor's entry, and the successor's own `settle`
-    /// then refused to apply the rows it had just fetched (#2342).
-    @MainActor
-    internal func resetExecutionState(claim: TabExecutionClaim, executionTime: TimeInterval) {
-        guard tabExecution.settle(claim) else { return }
-        reportEndedExecutions([
-            EndedExecution(tabId: claim.tabId, startedAt: claim.startedAt, reason: .cancelledByUser)
-        ])
-        guard currentQueryTaskOwner == claim else { return }
-        retireQueryTask(for: claim)
-        toolbarState.recordQueryTiming(PluginQueryTiming(total: executionTime), for: claim.tabId)
+        installQueryTask(queryTask, owner: .claim(claim), lease: lease)
     }
 
     internal func resolveTableEditability(tab: QueryTab, sql: String) -> (tableName: String?, isEditable: Bool) {
@@ -1589,6 +1512,7 @@ final class MainContentCoordinator: ObservableObject {
         QuerySqlParser.extractTableName(
             from: sql,
             dialect: sqlDialect,
+            readings: connection.type.lexicalReadings,
             browseSchema: services.databaseManager.session(for: connectionId)?.browseSchema
         )
     }
@@ -1604,32 +1528,42 @@ final class MainContentCoordinator: ObservableObject {
         if tab.tabType == .query {
             let tabId = tab.id
             let capturedSort = newState
-            let hasBoundParameters = tab.pagination.baseQueryParameterValues?.isEmpty == false
-            let baseQuery = hasBoundParameters
-                ? tab.content.query
-                : (tab.pagination.baseQueryForMore ?? tab.content.query)
+            guard let rerun = tab.sortRerun else {
+                sortHeldRows(by: newState, tabId: tabId)
+                return
+            }
+            /// The result on screen stays clickable while the next run is in flight, and its re-run cannot start
+            /// until that run ends. The click is dropped, not kept for later: kept on the tab, it stood in for the
+            /// reader's next Run, bound to the values of a result that run had already replaced.
+            guard !tabExecution.isExecuting(tabId) else {
+                traceExecutionBlocked(tabId: tabId, site: "handleSortStateChanged")
+                return
+            }
             let capturedColumns = tableRows.columns
             confirmDiscardChangesIfNeeded(action: .sort) { [weak self] confirmed in
-                guard let self, confirmed else { return }
+                guard let self, confirmed, self.tabManager.selectedTabId == tabId,
+                      !self.tabExecution.isExecuting(tabId) else { return }
                 let orderClause = capturedSort.columns.compactMap { sortCol -> String? in
                     guard sortCol.columnIndex >= 0, sortCol.columnIndex < capturedColumns.count else { return nil }
                     let columnName = capturedColumns[sortCol.columnIndex]
                     let direction = sortCol.direction == .ascending ? "ASC" : "DESC"
                     return "\(self.queryBuilder.quoteIdentifier(columnName)) \(direction)"
                 }.joined(separator: ", ")
-                let orderQuery = QuerySqlParser.applyingOrderBy(
-                    orderClause,
-                    to: baseQuery,
-                    lexicalDialect: self.sqlDialect
-                )
+                let orderQuery = rerun.transformingSQL {
+                    QuerySqlParser.applyingOrderBy(orderClause, to: $0, grammar: self.lexicalGrammar)
+                }
                 guard self.tabManager.mutate(tabId: tabId, { tab in
                     tab.sortState = capturedSort
                     tab.hasUserInteraction = true
                     tab.pagination.reset()
                     tab.pagination.resetLoadMore()
-                    tab.pagination.sortExecutionOverride = orderQuery
-                }) else { return }
-                self.runQuery(viewport: .firstRow)
+                }), let index = self.tabManager.selectedTabIndex else { return }
+                self.executeResolvedSQL(
+                    orderQuery.sql,
+                    tabIndex: index,
+                    bypassRowLimit: false,
+                    boundParameters: orderQuery.boundParameters
+                )
             }
             return
         }

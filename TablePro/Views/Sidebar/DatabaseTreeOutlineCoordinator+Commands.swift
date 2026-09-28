@@ -160,13 +160,16 @@ extension DatabaseTreeOutlineCoordinator {
             ClipboardService.shared.writeText(text)
         case .showObjectSource(let ref):
             mainCoordinator?.showObjectSource(ref)
+        case .refreshRedisKeys:
+            sidebarState?.redisKeyTreeViewModel?.reload()
         case .copyRedisNamespacePrefix(let prefix):
             ClipboardService.shared.writeText(prefix)
         case .copyRedisKey(let key):
             ClipboardService.shared.writeText(key)
         case .openRedisKey(let key, let keyType):
             mainCoordinator?.openRedisKey(key, keyType: keyType)
-        case .toggleObjectIcons, .toggleObjectComments, .toggleSystemContainers, .setRowSize:
+        case .toggleObjectIcons, .toggleObjectComments, .toggleSystemContainers, .togglePartitions,
+             .setRowSize:
             _ = SidebarViewOptionsMenu.apply(command)
         }
     }

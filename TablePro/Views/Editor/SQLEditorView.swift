@@ -17,14 +17,16 @@ import TableProTextEngine
 
 /// SwiftUI SQL editor powered by TableProEditorKit
 struct SQLEditorView: View {
+    @ObservedObject private var settingsManager = AppSettingsManager.shared
+    @ObservedObject private var themeEngine = ThemeEngine.shared
     @Binding var text: String
     @Binding var cursorPositions: [CursorPosition]
     @State private var completionProfile: QueryCompletionProfile?
+    @State private var observedProfileRevision = 0
     var schemaProvider: SQLSchemaProvider?
     var databaseType: DatabaseType?
     var databaseScope: DatabaseScope?
     var connectionId: UUID?
-    var connectionAIPolicy: AIConnectionPolicy?
     var tabID: UUID?
     var claimFocusOnAppear: Bool = false
     /// Called once the editor has latched a focus claim. The owner's one-shot intent is cleared
@@ -41,8 +43,8 @@ struct SQLEditorView: View {
     var onRunStatement: ((String, Int) -> Bool)?
     /// A tab runs one thing at a time, so the gutter's run controls go dim for the length of a query.
     var isExecuting: Bool = false
-    var onAIExplain: ((String) -> Void)?
-    var onAIOptimize: ((String) -> Void)?
+    var currentAIAvailability: (() -> AIQueryActionAvailability)?
+    var onAIAction: ((AIQueryAction, AIQueryTarget) -> Void)?
     var onSaveAsFavorite: ((String) -> Void)?
 
     @State private var editorState = SourceEditorState()
@@ -58,12 +60,11 @@ struct SQLEditorView: View {
         coordinator.onExecuteQuery = onExecuteQuery
         coordinator.onRunStatement = onRunStatement
         coordinator.setStatementRunControlsEnabled(!isExecuting)
-        coordinator.setStatementHighlightEnabled(AppSettingsManager.shared.editor.highlightCurrentStatement)
-        coordinator.onAIExplain = onAIExplain
-        coordinator.onAIOptimize = onAIOptimize
+        coordinator.setStatementHighlightEnabled(settingsManager.editor.highlightCurrentStatement)
+        coordinator.currentAIAvailability = currentAIAvailability
+        coordinator.onAIAction = onAIAction
         coordinator.onSaveAsFavorite = onSaveAsFavorite
         coordinator.schemaProvider = schemaProvider
-        coordinator.connectionAIPolicy = connectionAIPolicy
         coordinator.databaseType = databaseType
         coordinator.tabID = tabID
         coordinator.connectionId = connectionId
@@ -133,13 +134,16 @@ struct SQLEditorView: View {
             completionProfile = nil
             configureCompletion()
         }
+        .onReceive(completionRevisionChanges) { revision in
+            observedProfileRevision = revision
+        }
         .task(id: completionProfileRequest) {
             await resolveCompletionProfile()
         }
         .onChange(of: colorScheme) { _ in
             editorConfiguration = Self.makeConfiguration()
         }
-        .onChange(of: AppSettingsManager.shared.editor) { _ in
+        .onChange(of: settingsManager.editor) { _ in
             editorConfiguration = Self.makeConfiguration()
         }
         .onReceive(AppEvents.shared.accessibilityTextSizeChanged) { _ in
@@ -178,14 +182,24 @@ struct SQLEditorView: View {
         )
     }
 
-    /// Reading `revision` here is what subscribes this body to its own scope's invalidations, and
-    /// only its own: the registry is not `@Observable`, so the dependency lands on this one box.
+    /// This scope's box alone, never the registry. The registry publishes on every fetch, and an
+    /// editor redrawn for each of them would redraw while the user types. A `@Published` publisher
+    /// delivers its current value on subscribe, so the key starts in step with the box.
+    private var completionRevisionChanges: AnyPublisher<Int, Never> {
+        guard let databaseScope else { return Empty().eraseToAnyPublisher() }
+        return QueryCompletionProfileRegistry.shared.revisionBox(for: databaseScope).$revision
+            .eraseToAnyPublisher()
+    }
+
+    /// The revision is part of the key, so an invalidation of this scope restarts the resolution.
+    /// It is the value `completionRevisionChanges` last delivered, not a read of the box: the box is
+    /// an `ObservableObject`, and reading it from a body subscribes nothing.
     private var completionProfileRequest: CompletionProfileRequest? {
         guard let databaseScope, let databaseType else { return nil }
         return CompletionProfileRequest(
             scope: databaseScope,
             databaseType: databaseType,
-            profileRevision: QueryCompletionProfileRegistry.shared.revisionBox(for: databaseScope).revision
+            profileRevision: observedProfileRevision
         )
     }
 

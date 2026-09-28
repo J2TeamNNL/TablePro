@@ -2,6 +2,10 @@ import SwiftUI
 import TableProImport
 
 internal struct FavoritesTabView: View {
+    @ObservedObject private var teamLibrarySync = TeamLibrarySyncCoordinator.shared
+    @ObservedObject private var licenseManager = LicenseManager.shared
+    @ObservedObject private var settingsManager = AppSettingsManager.shared
+    @ObservedObject private var gitStatusStore = LinkedFolderGitStatusStore.shared
     @Environment(\.sidebarRowSize) private var systemRowSize
 
     @StateObject private var viewModel: FavoritesSidebarViewModel
@@ -88,10 +92,12 @@ internal struct FavoritesTabView: View {
 
                 switch FavoritesEmptyState.resolve(FavoritesEmptyState.Input(
                     isInitialLoadComplete: viewModel.isInitialLoadComplete,
-                    hasAnyFavorite: !viewModel.nodes.isEmpty
-                        || !availableFavoriteTables.isEmpty
-                        || !teamLibraryQueries.isEmpty
-                        || !favoriteDatabases.isEmpty,
+                    hasAnyFavorite: FavoritesEmptyState.hasAnyFavorite(
+                        hasQueries: !viewModel.nodes.isEmpty,
+                        favoriteTableCount: favoriteTables.count,
+                        favoriteDatabaseCount: favoriteDatabases.count,
+                        teamLibraryQueryCount: allTeamLibraryQueries.count
+                    ),
                     hasVisibleContent: !items.isEmpty
                         || !groups.isEmpty
                         || !filteredTables.isEmpty
@@ -176,8 +182,9 @@ internal struct FavoritesTabView: View {
                 linkedFileToTrash = nil
             }
             Button(String(localized: "Move to Trash"), role: .destructive) {
-                coordinator?.trashLinkedFavorite(file)
-                viewModel.reloadLinkedFolders()
+                if coordinator?.trashLinkedFavorite(file) == true {
+                    viewModel.reloadLinkedFolders()
+                }
                 linkedFileToTrash = nil
             }
         } message: { file in
@@ -202,9 +209,16 @@ internal struct FavoritesTabView: View {
 
     // MARK: - List
 
+    /// Every team query this license can see, before the filter field has had a word to say about
+    /// it. The empty state asks whether the user owns anything, and the filtered list cannot answer
+    /// that question.
+    private var allTeamLibraryQueries: [TeamLibraryPullResponse.Query] {
+        guard licenseManager.isFeatureAvailable(.teamLibrary) else { return [] }
+        return teamLibrarySync.library.queries
+    }
+
     private var teamLibraryQueries: [TeamLibraryPullResponse.Query] {
-        guard LicenseManager.shared.isFeatureAvailable(.teamLibrary) else { return [] }
-        let all = TeamLibrarySyncCoordinator.shared.library.queries
+        let all = allTeamLibraryQueries
         guard !searchText.isEmpty else { return all }
         return all.filter {
             $0.name.localizedCaseInsensitiveContains(searchText) || $0.query.localizedCaseInsensitiveContains(searchText)
@@ -288,10 +302,11 @@ internal struct FavoritesTabView: View {
                 },
                 renamingFolderId: viewModel.renamingFolderId,
                 allFolders: viewModel.nodes.collectFolders(),
-                teamLibraryAvailable: LicenseManager.shared.isFeatureAvailable(.teamLibrary)
+                teamLibraryAvailable: licenseManager.isFeatureAvailable(.teamLibrary),
+                linkedFileGitStates: gitStatusStore.states(for: Self.linkedFavorites(in: items))
             ),
             selection: $sharedSidebarState.selectedFavorite,
-            rowSizePreference: AppSettingsManager.shared.general.sidebarRowSize,
+            rowSizePreference: settingsManager.general.sidebarRowSize,
             actions: FavoritesOutlineActions(
                 primaryAction: { handlePrimaryAction($0) },
                 deleteSelection: { deleteNode($0) },
@@ -319,7 +334,7 @@ internal struct FavoritesTabView: View {
     /// list grew with the sidebar size and the Favorites list beside it did not.
     private var resolvedRowSize: SidebarRowSize {
         SidebarRowSizeResolver.resolve(
-            preference: AppSettingsManager.shared.general.sidebarRowSize,
+            preference: settingsManager.general.sidebarRowSize,
             system: systemRowSize
         )
     }
@@ -358,12 +373,12 @@ internal struct FavoritesTabView: View {
         } icon: {
             Image(systemName: group.environment.iconName)
         }
-        .sidebarRowIcon(visible: AppSettingsManager.shared.general.showObjectIcons)
+        .sidebarRowIcon(visible: settingsManager.general.showObjectIcons)
     }
 
     private func favoriteDatabaseRow(_ entry: FavoriteDatabaseEntry) -> some View {
         Label(entry.database, systemImage: "cylinder")
-            .sidebarRowIcon(visible: AppSettingsManager.shared.general.showObjectIcons)
+            .sidebarRowIcon(visible: settingsManager.general.showObjectIcons)
             .lineLimit(1)
             .accessibilityLabel(String(
                 format: String(localized: "%@: %@"),
@@ -378,13 +393,19 @@ internal struct FavoritesTabView: View {
         case .favorite(let favorite):
             FavoriteRowView(favorite: favorite)
         case .folder(let folder):
-            Label(folder.name, systemImage: "folder")
+            FavoriteFolderRowView(folder: folder)
         case .linkedFolder(let folder):
             LinkedFolderRowLabel(folder: folder)
         case .linkedSubfolder(_, let displayName, _):
             LinkedSubfolderRowLabel(displayName: displayName)
         case .linkedFavorite(let linked):
-            LinkedFavoriteRowView(favorite: linked)
+            LinkedFavoriteRowView(favorite: linked, gitState: gitStatusStore.state(for: linked))
+        }
+    }
+
+    private static func linkedFavorites(in nodes: [FavoriteNode]) -> [LinkedSQLFavorite] {
+        nodes.flatMap { node in
+            [node.asLinkedFavorite].compactMap { $0 } + linkedFavorites(in: node.children ?? [])
         }
     }
 
@@ -415,7 +436,7 @@ internal struct FavoritesTabView: View {
             Image(systemName: TableRowLogic.iconName(for: table.type))
                 .selectionAwareTint(Color.accentColor)
         }
-        .sidebarRowIcon(visible: AppSettingsManager.shared.general.showObjectIcons)
+        .sidebarRowIcon(visible: settingsManager.general.showObjectIcons)
         .accessibilityLabel(
             TableRowLogic.accessibilityLabel(table: table, isPendingDelete: false, isPendingTruncate: false)
         )
@@ -463,7 +484,7 @@ internal struct FavoritesTabView: View {
                 break
             }
         case .teamQuery(let id, _, _):
-            guard let query = TeamLibrarySyncCoordinator.shared.library.queries.first(where: { $0.id == id })
+            guard let query = teamLibrarySync.library.queries.first(where: { $0.id == id })
             else { return }
             coordinator?.runFavoriteInNewTab(teamFavorite(from: query))
         }
@@ -535,6 +556,8 @@ internal struct FavoritesTabView: View {
             }
         case .deleteFavorite(let favorite):
             viewModel.deleteFavorite(favorite)
+        case .showFavoriteHistory(let favorite):
+            coordinator?.showVersionHistory(of: favorite)
         case .openLinkedFavorite(let favorite):
             coordinator?.openLinkedFavorite(favorite)
         case .editLinkedMetadata(let favorite):
@@ -547,6 +570,10 @@ internal struct FavoritesTabView: View {
         case .trashLinkedFavorite(let favorite):
             linkedFileToTrash = favorite
             showTrashLinkedFileAlert = true
+        case .showLinkedFileHistory(let favorite):
+            coordinator?.showVersionHistory(of: favorite)
+        case .discardLinkedFileChanges(let favorite):
+            discardChanges(to: favorite)
         case .revealLinkedFolder(let folder):
             viewModel.revealLinkedFolder(folder)
         case .setLinkedFolderEnabled(let folder, let isEnabled):
@@ -560,6 +587,8 @@ internal struct FavoritesTabView: View {
             showRemoveLinkedFolderAlert = true
         case .renameFolder(let folder):
             viewModel.startRenameFolder(folder)
+        case .setFolderGlobal(let folder, let isGlobal):
+            viewModel.setFolderGlobal(folder, isGlobal)
         case .newFavorite(let folderId):
             viewModel.createFavorite(folderId: folderId)
         case .newFolder(let parentId):
@@ -571,6 +600,21 @@ internal struct FavoritesTabView: View {
             coordinator?.commandActions?.newTab()
         case .publishSavedQueriesToTeam:
             publishSavedQueriesToTeam()
+        }
+    }
+
+    private func discardChanges(to favorite: LinkedSQLFavorite) {
+        let keepsStagedChanges = gitStatusStore.state(for: favorite)?.status?.hasStagedChanges == true
+        Task { @MainActor in
+            await coordinator?.discardChanges(to: favorite) {
+                await AlertHelper.confirmDestructive(
+                    title: String(format: String(localized: "Discard changes to \"%@\"?"), favorite.fileURL.lastPathComponent),
+                    message: keepsStagedChanges
+                        ? String(localized: "The file goes back to its staged version. You can't undo this action.")
+                        : String(localized: "The file goes back to its last committed version. You can't undo this action."),
+                    confirmButton: String(localized: "Discard Changes")
+                )
+            }
         }
     }
 

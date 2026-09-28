@@ -177,14 +177,53 @@ final class FileColumnLayoutPersister: ColumnLayoutPersisting, TableScopedSettin
         }
     }
 
-    func purgeConnections(_ connectionIds: Set<UUID>) {
-        var deletedCategories: [String] = []
+    func dropTable(_ scope: TableScope) {
+        guard let database = scope.database else { return }
+        clear(for: ColumnLayoutTableKey(
+            connectionId: scope.connectionId,
+            databaseName: database,
+            schemaName: scope.schema,
+            tableName: scope.table
+        ))
+    }
+
+    /// Drops every table's layout under a container. The sync deletions go out after the file is
+    /// written, not before, so a sync fired by the notification cannot read the entries back off a
+    /// stale file and re-upload them.
+    func dropContainer(connectionId: UUID, database: String, schema: String?) {
+        let prefix = TableScope.storagePrefix(connectionId: connectionId, database: database, schema: schema)
+        var entries = loadEntries(for: connectionId)
+        let dropping = entries.keys.filter { $0.hasPrefix(prefix) }
+        guard !dropping.isEmpty else { return }
+        for key in dropping {
+            entries.removeValue(forKey: key)
+        }
+
+        if entries.isEmpty {
+            cache[connectionId] = [:]
+            removeFile(for: connectionId)
+        } else {
+            cache[connectionId] = entries
+            writeEntries(entries, for: connectionId)
+        }
+        syncTracker.markDeleted(.settings, ids: dropping.map(Self.syncCategory(for:)))
+    }
+
+    func purgeConnections(_ connectionIds: Set<UUID>, leavesTombstones: Bool) {
+        var categories: [String] = []
         for connectionId in connectionIds {
-            deletedCategories += loadEntries(for: connectionId).keys.map(Self.syncCategory(for:))
+            categories += loadEntries(for: connectionId).keys.map(Self.syncCategory(for:))
             cache[connectionId] = [:]
             removeFile(for: connectionId)
         }
-        syncTracker.markDeleted(.settings, ids: deletedCategories)
+        /// The dirty marks go either way. A tombstone from a remote delete would push the sender's
+        /// own deletion back at it, but leaving the ids dirty means the next push looks for entries
+        /// that are gone and never drains them.
+        if leavesTombstones {
+            syncTracker.markDeleted(.settings, ids: categories)
+        } else {
+            syncTracker.discardDirty(.settings, ids: categories)
+        }
     }
 
     func clear(for key: ColumnLayoutTableKey) {

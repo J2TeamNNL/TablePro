@@ -9,7 +9,6 @@ import Testing
 
 @testable import TablePro
 
-@Suite("Favorites contextual menu")
 struct FavoritesMenuSpecTests {
     private func context(
         clicked: FavoritesOutlineNode.Kind?,
@@ -36,8 +35,30 @@ struct FavoritesMenuSpecTests {
         }
     }
 
-    private func favorite(folderId: UUID? = nil) -> SQLFavorite {
-        SQLFavorite(id: UUID(), name: "Report", query: "SELECT 1", keyword: nil, folderId: folderId)
+    private func favorite(folderId: UUID? = nil, connectionId: UUID? = nil) -> SQLFavorite {
+        SQLFavorite(
+            id: UUID(),
+            name: "Report",
+            query: "SELECT 1",
+            keyword: nil,
+            folderId: folderId,
+            connectionId: connectionId
+        )
+    }
+
+    private func isOnStates(_ sections: [FavoritesMenuSection], for command: FavoritesMenuCommand) -> [Bool?] {
+        entries(sections.flatMap(\.items))
+            .filter { $0.command == command }
+            .map(\.isOn)
+    }
+
+    private func entries(_ items: [FavoritesMenuItem]) -> [SidebarMenuEntry<FavoritesMenuCommand>] {
+        items.flatMap { item -> [SidebarMenuEntry<FavoritesMenuCommand>] in
+            switch item {
+            case .command(let entry): return [entry]
+            case .submenu(_, let nested): return entries(nested.flatMap(\.items))
+            }
+        }
     }
 
     private func table() -> TableInfo {
@@ -157,6 +178,72 @@ struct FavoritesMenuSpecTests {
         #expect(!moveTargets(issued).contains(home.id))
     }
 
+    /// Issue #3045. A folder belonging to one connection cannot hold a query every connection is
+    /// meant to see: the folder is absent everywhere else, and the query was drawn nowhere.
+    @Test("A global favourite is not offered a folder belonging to one connection")
+    func moveToHidesScopedFoldersFromAGlobalFavourite() {
+        let connectionId = UUID()
+        let scoped = SQLFavoriteFolder(name: "This connection", connectionId: connectionId)
+        let global = SQLFavoriteFolder(name: "Everywhere", connectionId: nil)
+        let issued = commands(FavoritesMenuSpec.sections(
+            for: context(
+                clicked: .query(.favorite(favorite(connectionId: nil))),
+                allFolders: [scoped, global]
+            )
+        ))
+
+        #expect(moveTargets(issued).contains(global.id))
+        #expect(!moveTargets(issued).contains(scoped.id))
+    }
+
+    /// A container is allowed to be the wider of the two, so a query belonging to one connection
+    /// can go in a global folder.
+    @Test("A favourite belonging to one connection is offered both its own folders and global ones")
+    func moveToOffersEveryFolderAScopedFavouriteCanUse() {
+        let connectionId = UUID()
+        let scoped = SQLFavoriteFolder(name: "This connection", connectionId: connectionId)
+        let global = SQLFavoriteFolder(name: "Everywhere", connectionId: nil)
+        let issued = commands(FavoritesMenuSpec.sections(
+            for: context(
+                clicked: .query(.favorite(favorite(connectionId: connectionId))),
+                allFolders: [scoped, global]
+            )
+        ))
+
+        #expect(moveTargets(issued).contains(scoped.id))
+        #expect(moveTargets(issued).contains(global.id))
+    }
+
+    /// A query re-homed to the root because its folder belongs to another connection still names
+    /// that folder. On a connection holding no folders of its own there was nothing to detach it
+    /// with, because the submenu was skipped whenever the folder list was empty.
+    @Test("A favourite still naming an unreachable folder is offered Root Level with no folders present")
+    func moveToOffersRootLevelWithNoFolders() {
+        let issued = commands(FavoritesMenuSpec.sections(
+            for: context(clicked: .query(.favorite(favorite(folderId: UUID(), connectionId: nil))), allFolders: [])
+        ))
+
+        #expect(moveTargets(issued).contains(nil))
+    }
+
+    // MARK: - Folder scope
+
+    @Test("A folder belonging to one connection offers to become global")
+    func aScopedFolderOffersGlobal() {
+        let folder = SQLFavoriteFolder(name: "Reports", connectionId: UUID())
+        let sections = FavoritesMenuSpec.sections(for: context(clicked: .query(.folder(folder, children: []))))
+
+        #expect(isOnStates(sections, for: .setFolderGlobal(folder, true)) == [false])
+    }
+
+    @Test("A global folder shows a checked item that turns it off")
+    func aGlobalFolderShowsItsStateChecked() {
+        let folder = SQLFavoriteFolder(name: "Reports", connectionId: nil)
+        let sections = FavoritesMenuSpec.sections(for: context(clicked: .query(.folder(folder, children: []))))
+
+        #expect(isOnStates(sections, for: .setFolderGlobal(folder, false)) == [true])
+    }
+
     @Test("A favourite in a folder can be moved back to the root")
     func rootLevelOfferedFromInsideAFolder() {
         let home = SQLFavoriteFolder(name: "Home")
@@ -190,5 +277,65 @@ struct FavoritesMenuSpecTests {
 
         #expect(enabled.contains(.setLinkedFolderEnabled(folder, false)) == false)
         #expect(disabled.contains(.setLinkedFolderEnabled(folder, true)))
+    }
+
+    @Test("A saved query offers its history")
+    func savedQueryOffersHistory() {
+        let query = favorite()
+        let issued = commands(FavoritesMenuSpec.sections(for: context(clicked: .query(.favorite(query)))))
+        #expect(issued.contains(.showFavoriteHistory(query)))
+    }
+
+    private func linkedFile() -> LinkedSQLFavorite {
+        LinkedSQLFavorite(
+            folderId: UUID(),
+            fileURL: URL(fileURLWithPath: "/tmp/queries/orders.sql"),
+            relativePath: "orders.sql",
+            name: "orders",
+            mtime: Date(),
+            fileSize: 10
+        )
+    }
+
+    private func linkedCommands(_ file: LinkedSQLFavorite, gitState: LinkedFileGitState?) -> [FavoritesMenuCommand] {
+        let states = gitState.map { [file.id: $0] } ?? [:]
+        return commands(FavoritesMenuSpec.sections(for: FavoritesMenuContext(
+            clicked: .query(.linkedFavorite(file)),
+            linkedFileGitStates: states
+        )))
+    }
+
+    @Test("A linked file outside a repository offers no Git commands")
+    func linkedFileOutsideRepository() {
+        let file = linkedFile()
+        let issued = linkedCommands(file, gitState: nil)
+        #expect(!issued.contains(.showLinkedFileHistory(file)))
+        #expect(!issued.contains(.discardLinkedFileChanges(file)))
+        #expect(issued.contains(.openLinkedFavorite(file)))
+    }
+
+    @Test("A clean tracked file offers history but nothing to discard")
+    func cleanTrackedFile() {
+        let file = linkedFile()
+        let issued = linkedCommands(file, gitState: .clean)
+        #expect(issued.contains(.showLinkedFileHistory(file)))
+        #expect(!issued.contains(.discardLinkedFileChanges(file)))
+    }
+
+    @Test("A modified file offers history and Discard Changes")
+    func modifiedFile() {
+        let file = linkedFile()
+        let issued = linkedCommands(file, gitState: .changed(GitFileStatus(staged: .unmodified, unstaged: .modified)))
+        #expect(issued.contains(.showLinkedFileHistory(file)))
+        #expect(issued.contains(.discardLinkedFileChanges(file)))
+    }
+
+    @Test("An untracked file offers neither history nor Discard Changes")
+    func untrackedFile() {
+        let file = linkedFile()
+        let issued = linkedCommands(file, gitState: .changed(.untracked))
+        #expect(!issued.contains(.showLinkedFileHistory(file)))
+        #expect(!issued.contains(.discardLinkedFileChanges(file)))
+        #expect(issued.contains(.trashLinkedFavorite(file)))
     }
 }

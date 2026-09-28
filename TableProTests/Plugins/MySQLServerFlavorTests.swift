@@ -6,7 +6,6 @@
 import TableProPluginKit
 import Testing
 
-@Suite("MySQL server flavor")
 struct MySQLServerFlavorTests {
     private static let databendBanner = "8.0.90-v1.2.881-ca29960f5c(rust-1.94.0-nightly-2026-04-17T02:30:29.281093406Z)"
 
@@ -26,6 +25,18 @@ struct MySQLServerFlavorTests {
     @Test("No banner reads as MySQL")
     func missingBannerIsMySQL() {
         #expect(MySQLServerFlavor.fromBanner(nil) == .mysql)
+    }
+
+    /// Measured with the app's own libmariadb against MySQL 5.5.62 and 8.4.11, MariaDB 5.5.64 and
+    /// 11.4.13 and TiDB v8.5.1. Databend and OceanBase are unmeasured, and an engine that may never
+    /// set the flag must not be read as reporting no transaction.
+    @Test("Only the flavours measured to carry the session status flags report them")
+    func statusFlagReportingIsPerFlavor() {
+        #expect(MySQLServerFlavor.mysql.reportsSessionStatusFlags)
+        #expect(MySQLServerFlavor.mariadb.reportsSessionStatusFlags)
+        #expect(MySQLServerFlavor.tidb(version: nil).reportsSessionStatusFlags)
+        #expect(MySQLServerFlavor.databend.reportsSessionStatusFlags == false)
+        #expect(MySQLServerFlavor.oceanbase(version: nil).reportsSessionStatusFlags == false)
     }
 
     @Test("TiDB's release information carries the real version when the banner was overridden")
@@ -166,10 +177,25 @@ struct MySQLServerFlavorTests {
         #expect(MySQLServerFlavor.oceanbase(version: nil).preparesOnServer)
     }
 
-    @Test("A read-write transaction declares the access mode so a read-only session default is overridden")
-    func readWriteDeclaresAccessMode() {
-        #expect(MySQLServerFlavor.mysql.beginTransactionStatement(mode: .readWrite) == "START TRANSACTION READ WRITE")
-        #expect(MySQLServerFlavor.tidb(version: nil).beginTransactionStatement(mode: .readWrite) == "START TRANSACTION READ WRITE")
+    @Test(
+        "MySQL and MariaDB declare the access mode in a comment only 5.6.5 and later execute",
+        arguments: [MySQLServerFlavor.mysql, .mariadb]
+    )
+    func readWriteDeclaresAccessModeForServersThatParseIt(flavor: MySQLServerFlavor) {
+        #expect(flavor.beginTransactionStatement(mode: .readWrite) == "START TRANSACTION /*!50605 READ WRITE */")
+    }
+
+    @Test(
+        "TiDB and OceanBase declare the access mode as plain syntax",
+        arguments: [
+            MySQLServerFlavor.tidb(version: nil),
+            .tidb(version: MySQLEngineVersion(major: 8, minor: 5, patch: 0)),
+            .oceanbase(version: nil),
+            .oceanbase(version: MySQLEngineVersion(major: 4, minor: 3, patch: 5)),
+        ]
+    )
+    func readWriteDeclaresAccessModeAsSyntax(flavor: MySQLServerFlavor) {
+        #expect(flavor.beginTransactionStatement(mode: .readWrite) == "START TRANSACTION READ WRITE")
     }
 
     @Test("A server-default transaction inherits the session access mode")
@@ -252,14 +278,16 @@ struct MySQLServerFlavorTests {
     @Test("CHECK constraints are read on TiDB from 7.2, whatever the 8.0.11 banner says")
     func tidbCheckConstraints() {
         let banner = "8.0.11-TiDB-v7.5.1"
-        #expect(MySQLServerVersion.hasCheckConstraints(
+        #expect(MySQLCheckConstraints.source(
             banner: banner, flavor: .tidb(version: MySQLEngineVersion(major: 7, minor: 5, patch: 1))
-        ))
-        #expect(!MySQLServerVersion.hasCheckConstraints(
+        ) == .createTableStatement)
+        #expect(MySQLCheckConstraints.source(
             banner: banner, flavor: .tidb(version: MySQLEngineVersion(major: 7, minor: 1, patch: 5))
-        ))
-        #expect(!MySQLServerVersion.hasCheckConstraints(banner: banner, flavor: .tidb(version: nil)))
-        #expect(!MySQLServerVersion.hasCheckConstraints(banner: Self.databendBanner, flavor: .databend))
+        ) == .unavailable)
+        #expect(MySQLCheckConstraints.source(banner: banner, flavor: .tidb(version: nil)) == .unavailable)
+        #expect(MySQLCheckConstraints.source(
+            banner: Self.databendBanner, flavor: .databend
+        ) == .databendCatalog)
     }
 
     @Test("Databend's 8.0.90 banner does not unlock MySQL catalog columns it lacks")
@@ -276,7 +304,8 @@ struct MySQLServerFlavorTests {
     ])
     func oceanbaseCatalogGates(version: MySQLEngineVersion?, readsCheckConstraints: Bool) {
         let flavor = MySQLServerFlavor.oceanbase(version: version)
-        #expect(MySQLServerVersion.hasCheckConstraints(banner: "5.7.25", flavor: flavor) == readsCheckConstraints)
+        let source = MySQLCheckConstraints.source(banner: "5.7.25", flavor: flavor)
+        #expect((source == .informationSchema) == readsCheckConstraints)
         #expect(MySQLServerVersion.hasGenerationExpression(banner: "5.7.25", flavor: flavor))
         #expect(!MySQLServerVersion.quotesColumnDefault(banner: "5.7.25", flavor: flavor))
     }

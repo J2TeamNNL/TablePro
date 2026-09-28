@@ -1,6 +1,7 @@
 import CMariaDB
 import Foundation
 import os
+import TableProCoreTypes
 import TableProDatabase
 import TableProModels
 import TableProMSSQLCore
@@ -57,6 +58,17 @@ nonisolated final class MySQLDriver: DatabaseDriver, @unchecked Sendable {
         return MySQLServerFlavor.oceanbase(version: nil).queryTimeoutStatements(seconds: 0)
     }
 
+    static func serverFlavor(for databaseType: DatabaseType, banner: String?) -> MySQLServerFlavor {
+        switch databaseType {
+        case .tidb:
+            return .tidb(version: banner.flatMap(MySQLServerFlavor.tidbVersion(fromBanner:)))
+        case .oceanbase:
+            return .oceanbase(version: banner.flatMap(MySQLServerFlavor.oceanbaseVersion(fromServerVersion:)))
+        default:
+            return MySQLServerFlavor.fromBanner(banner)
+        }
+    }
+
     func connect() async throws {
         try await LocalNetworkPermission.shared.ensureAccess(for: host)
         try await actor.connect(
@@ -69,7 +81,7 @@ nonisolated final class MySQLDriver: DatabaseDriver, @unchecked Sendable {
                 _ = try await actor.execute(statement)
             } catch {
                 Self.logger.warning(
-                    "Session setup failed with \(statement, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                    "Session setup failed with \(statement, privacy: .public): \(error.localizedDescription, privacy: .private)"
                 )
                 break
             }
@@ -168,24 +180,29 @@ nonisolated final class MySQLDriver: DatabaseDriver, @unchecked Sendable {
     func fetchColumns(table: String, schema: String?) async throws -> [ColumnInfo] {
         let safe = table.replacingOccurrences(of: "`", with: "``")
         let raw = try await actor.execute("SHOW FULL COLUMNS FROM `\(safe)`")
+        let source = MySQLColumnListing.defaultSource(
+            flavor: Self.serverFlavor(for: databaseType, banner: serverVersion),
+            banner: serverVersion
+        )
+        let catalog = await catalogDefaults(table: table, source: source)
+        return MySQLColumnListing.columns(fromShowFullColumns: raw.rows, catalogDefaults: catalog, source: source)
+    }
 
-        return raw.rows.enumerated().compactMap { index, row in
-            guard row.count >= 9, let name = row[0], let dataType = row[1] else { return nil }
-            let isPK = row[4]?.uppercased().contains("PRI") == true
-            let isNullable = row[3]?.uppercased() == "YES"
-            let extra = row[6]
-            return ColumnInfo(
-                name: name,
-                typeName: dataType,
-                isPrimaryKey: isPK,
-                isNullable: isNullable,
-                defaultValue: row[5],
-                comment: row[8],
-                characterMaxLength: nil,
-                ordinalPosition: index,
-                isAutoIncrement: ColumnMetadataRules.mySQLIsAutoIncrement(extra: extra),
-                isGenerated: ColumnMetadataRules.mySQLIsGenerated(extra: extra)
+    /// A catalog that refuses leaves every default on what `SHOW FULL COLUMNS` reported, as it does on
+    /// the Mac, rather than taking the column list down with it.
+    private func catalogDefaults(
+        table: String,
+        source: MySQLColumnListing.DefaultSource
+    ) async -> [String: MySQLCatalogDefault] {
+        guard let query = MySQLColumnListing.catalogDefaultsQuery(table: table, source: source) else { return [:] }
+        do {
+            let raw = try await actor.execute(query)
+            return MySQLColumnListing.catalogDefaults(fromRows: raw.rows, source: source)
+        } catch {
+            Self.logger.warning(
+                "Column default catalog read failed: \(error.localizedDescription, privacy: .private)"
             )
+            return [:]
         }
     }
 
@@ -277,7 +294,12 @@ nonisolated final class MySQLDriver: DatabaseDriver, @unchecked Sendable {
     func fetchSchemas() async throws -> [String] { [] }
 
     func beginTransaction() async throws {
-        _ = try await actor.execute("START TRANSACTION")
+        try await beginTransaction(mode: .serverDefault)
+    }
+
+    func beginTransaction(mode: PluginTransactionAccessMode) async throws {
+        let flavor = Self.serverFlavor(for: databaseType, banner: serverVersion)
+        _ = try await actor.execute(flavor.beginTransactionStatement(mode: mode))
     }
 
     func commitTransaction() async throws {
@@ -286,6 +308,18 @@ nonisolated final class MySQLDriver: DatabaseDriver, @unchecked Sendable {
 
     func rollbackTransaction() async throws {
         _ = try await actor.execute("ROLLBACK")
+    }
+
+    func sessionTransactionState() async -> DriverTransactionState {
+        await actor.transactionState()
+    }
+}
+
+nonisolated enum MySQLSessionTransaction {
+    static func state(infoResult: my_bool, serverStatus: UInt32) -> DriverTransactionState {
+        guard infoResult == 0 else { return .unknown }
+        guard serverStatus & UInt32(SERVER_STATUS_IN_TRANS) != 0 else { return .idle }
+        return serverStatus & UInt32(SERVER_STATUS_AUTOCOMMIT) != 0 ? .explicitTransaction : .implicitTransaction
     }
 }
 
@@ -422,6 +456,13 @@ private actor MySQLActor {
     func serverVersion() -> String? {
         guard let mysql else { return nil }
         return String(cString: mysql_get_server_info(mysql))
+    }
+
+    func transactionState() -> DriverTransactionState {
+        guard let mysql else { return .unknown }
+        var serverStatus: UInt32 = 0
+        let infoResult = mariadb_get_info(mysql, MARIADB_CONNECTION_SERVER_STATUS, &serverStatus)
+        return MySQLSessionTransaction.state(infoResult: infoResult, serverStatus: serverStatus)
     }
 
     func execute(_ query: String) throws -> RawMySQLResult {

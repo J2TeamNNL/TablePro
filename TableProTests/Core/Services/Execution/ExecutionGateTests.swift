@@ -46,7 +46,6 @@ final class StubAuthenticating: OperationAuthenticating, @unchecked Sendable {
 }
 
 @MainActor
-@Suite("ExecutionGate")
 struct ExecutionGateTests {
     private func makeGate(
         level: SafeModeLevel,
@@ -206,6 +205,45 @@ struct ExecutionGateTests {
         #expect(confirm.callCount == 1)
     }
 
+    @Test("A Cancel at the confirmation is told apart from a refusal")
+    func cancelCarriesItsCause() async {
+        let gate = makeGate(level: .silent, confirm: StubConfirming(answer: false), auth: StubAuthenticating(answer: true))
+
+        let decision = await gate.authorize(makeRequest(sql: "TRUNCATE t", kind: .destructiveQuery))
+
+        guard case .denied(_, let cause) = decision else {
+            Issue.record("A Cancel must deny")
+            return
+        }
+        #expect(cause == .cancelledByUser)
+        guard case .cancelledByUser = decision.denialError else {
+            Issue.record("A Cancel must throw as a Cancel, got \(String(describing: decision.denialError))")
+            return
+        }
+    }
+
+    @Test("Read-Only and a declined Touch ID are refusals, not a Cancel")
+    func refusalsCarryThePolicyCause() async {
+        let readOnly = await makeGate(
+            level: .readOnly, confirm: StubConfirming(answer: true), auth: StubAuthenticating(answer: true)
+        ).authorize(makeRequest(sql: "DELETE FROM t WHERE id = 1", kind: .writeQuery))
+        let declined = await makeGate(
+            level: .safeMode, confirm: StubConfirming(answer: true), auth: StubAuthenticating(answer: false)
+        ).authorize(makeRequest(sql: "DELETE FROM t WHERE id = 1", kind: .writeQuery))
+
+        for decision in [readOnly, declined] {
+            guard case .denied(_, let cause) = decision else {
+                Issue.record("Expected a denial")
+                continue
+            }
+            #expect(cause == .policy)
+            guard case .denied = decision.denialError else {
+                Issue.record("A refusal must throw as a refusal, got \(String(describing: decision.denialError))")
+                continue
+            }
+        }
+    }
+
     @Test("Unqualified DELETE is treated as destructive even when declared a write")
     func unqualifiedDeleteForcesConfirm() async {
         let confirm = StubConfirming(answer: true)
@@ -262,6 +300,74 @@ struct ExecutionGateTests {
         let gate = makeGate(level: .readOnly, confirm: confirm, auth: auth)
 
         let decision = await gate.authorize(makeRequest(sql: "\u{0008}SELECT 1", kind: .readQuery))
+
+        #expect(decision.isAuthorized)
+        #expect(confirm.callCount == 0)
+    }
+
+    /// SQL Server rejected a text holding a `GO` line outright, so nothing after one ever ran. A script is now cut at
+    /// its `GO` lines and each batch runs, so the gate has to see the statement behind one.
+    @Test("Read-only denies a DROP that a GO line puts in a batch of its own")
+    func readOnlyDeniesDropBehindGoLine() async {
+        let confirm = StubConfirming(answer: true)
+        let auth = StubAuthenticating(answer: true)
+        let gate = makeGate(level: .readOnly, confirm: confirm, auth: auth)
+        let script = "SELECT 1\nGO\nDROP TABLE t"
+
+        let declared = await gate.authorize(makeRequest(
+            sql: script,
+            kind: OperationKind.worst(
+                of: QueryClassifier.statements(of: script, grammar: DatabaseType.mssql.lexicalGrammar),
+                databaseType: .mssql
+            ),
+            databaseType: .mssql
+        ))
+        let understated = await gate.authorize(makeRequest(sql: script, kind: .readQuery, databaseType: .mssql))
+
+        #expect(!declared.isAuthorized)
+        #expect(!understated.isAuthorized)
+        #expect(confirm.callCount == 0)
+    }
+
+    /// T-SQL needs no `;` between statements, and Azure SQL Edge 15.0 ran the second statement of each text whole.
+    @Test("Read-only denies a statement SQL Server runs without a terminator", arguments: [
+        "SELECT 1\nDROP TABLE t",
+        "SELECT 1 DELETE FROM t",
+        "PRINT 'x' UPDATE t SET c = 1",
+        "SELECT 1DELETE FROM t",
+        "SELECT 1 EXEC('DELETE FROM t')",
+        "SELECT 1\nUPDATE [t] SET c = 1",
+        "PRINT 1\nSELECT [a], [b] INTO x FROM t",
+    ])
+    func readOnlyDeniesUnterminatedStatement(sql: String) async {
+        let confirm = StubConfirming(answer: true)
+        let auth = StubAuthenticating(answer: true)
+        let gate = makeGate(level: .readOnly, confirm: confirm, auth: auth)
+        let statements = QueryClassifier.statements(of: sql, grammar: DatabaseType.mssql.lexicalGrammar)
+
+        let declared = await gate.authorize(makeRequest(
+            sql: sql,
+            kind: OperationKind.worst(of: statements, databaseType: .mssql),
+            databaseType: .mssql
+        ))
+        let understated = await gate.authorize(makeRequest(sql: sql, kind: .readQuery, databaseType: .mssql))
+
+        #expect(declared.deniedReason?.contains("read-only") == true)
+        #expect(understated.deniedReason?.contains("read-only") == true)
+        #expect(confirm.callCount == 0)
+    }
+
+    @Test("Read-only runs a SQL Server read that only names a statement keyword", arguments: [
+        "SELECT deleted_at, last_update FROM t WHERE id IN (SELECT id FROM s)",
+        "SELECT 1\nSELECT 2",
+        "SELECT CASE WHEN a = 1 THEN 'x' ELSE 'y' END FROM t OPTION (MERGE JOIN)",
+    ])
+    func readOnlyRunsUnterminatedRead(sql: String) async {
+        let confirm = StubConfirming(answer: true)
+        let auth = StubAuthenticating(answer: true)
+        let gate = makeGate(level: .readOnly, confirm: confirm, auth: auth)
+
+        let decision = await gate.authorize(makeRequest(sql: sql, kind: .readQuery, databaseType: .mssql))
 
         #expect(decision.isAuthorized)
         #expect(confirm.callCount == 0)
@@ -429,6 +535,25 @@ struct ExecutionGateTests {
                 sql: "DROP TABLE t",
                 kind: .destructiveQuery,
                 capabilities: [.mayWrite],
+                caller: .mcpClient(label: nil)
+            )
+        )
+
+        #expect(decision.deniedReason?.contains("Destructive") == true)
+    }
+
+    @Test("A DROP written after a read without a terminator is destructive for a caller that may only write")
+    func unterminatedDropNeedsTheDestructiveCapability() async {
+        let confirm = StubConfirming(answer: true)
+        let auth = StubAuthenticating(answer: true)
+        let gate = makeGate(level: .silent, confirm: confirm, auth: auth)
+
+        let decision = await gate.authorize(
+            makeRequest(
+                sql: "SELECT 1 DROP TABLE t",
+                kind: .readQuery,
+                capabilities: [.mayWrite],
+                databaseType: .mssql,
                 caller: .mcpClient(label: nil)
             )
         )

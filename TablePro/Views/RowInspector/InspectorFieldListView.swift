@@ -16,6 +16,11 @@ internal struct InspectorFieldListView: View {
     internal let isEditable: Bool
     internal let databaseType: DatabaseType
     internal let userDefinedTypeScope: DatabaseScope?
+    internal var offersDatabaseValues = true
+
+    private var offersFieldRemoval: Bool {
+        offersDatabaseValues && PluginManager.shared.supportsFieldRemoval(for: databaseType)
+    }
     internal var onPopOut: ((FieldEditState, String, FieldEditorKind) -> Void)?
 
     @State private var searchText = ""
@@ -152,6 +157,9 @@ internal struct InspectorFieldListView: View {
             onSetDefault: { editState.setFieldToDefault(at: field.columnIndex) },
             onSetEmpty: { editState.setFieldToEmpty(at: field.columnIndex) },
             onSetFunction: { editState.setFieldToFunction(at: field.columnIndex, function: $0) },
+            onRemoveField: offersFieldRemoval && !field.isSchemaField
+                ? { editState.removeField(at: field.columnIndex) }
+                : nil,
             onToggleExpand: FieldEditorContent.canExpand(kind: kind, state: FieldValueState.resolve(field))
                 ? { expandedFieldID = expandedFieldID == field.id ? nil : field.id }
                 : nil,
@@ -167,14 +175,20 @@ internal struct InspectorFieldListView: View {
         isEditable: Bool
     ) -> FieldEditorContext {
         let state = FieldValueState.resolve(field)
+        let columnIndex = field.columnIndex
         return FieldEditorContext(
             columnName: field.columnName,
             columnType: field.columnTypeEnum,
             isLongText: field.isLongText,
+            /// The getter reads the store, not the `state` resolved above. That value is a copy
+            /// taken when this context was built, so a getter closing over it answers whatever the
+            /// field held during that render, and an `onChange` action, which belongs to the
+            /// render that registered it, is a render behind again. An editor comparing its text
+            /// against that answer sees the value it had just replaced and puts it back (#3051).
             value: isEditable
                 ? Binding(
-                    get: { state.editableText },
-                    set: { editState.updateField(at: field.columnIndex, value: $0) }
+                    get: { editState.currentText(at: columnIndex) },
+                    set: { editState.updateField(at: columnIndex, value: $0) }
                 )
                 : .constant(state.editableText),
             originalValue: field.originalValue,
@@ -184,7 +198,7 @@ internal struct InspectorFieldListView: View {
                 ? { editState.setFieldToBytes(at: field.columnIndex, data: $0) }
                 : nil,
             editor: kind,
-            allowsNullAndDefault: !field.isSchemaField,
+            allowsNullAndDefault: offersDatabaseValues && !field.isSchemaField,
             showsTypeBadge: !field.isSchemaField,
             userDefinedTypeScope: field.isSchemaField ? userDefinedTypeScope : nil
         )
@@ -215,6 +229,7 @@ internal struct InspectorFieldListView: View {
 
     private func applyStateShortcut(_ key: Character) -> KeyPressResultCompat {
         guard isEditable,
+              offersDatabaseValues,
               let focusedField,
               let field = editState.fields.first(where: { $0.id == focusedField }),
               !field.isSchemaField,

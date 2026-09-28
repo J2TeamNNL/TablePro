@@ -7,7 +7,6 @@ import Foundation
 @testable import TablePro
 import Testing
 
-@Suite("RowCountPlan")
 @MainActor
 struct RowCountPlanTests {
     private func filtered() -> TabFilterState {
@@ -73,6 +72,31 @@ struct RowCountPlanTests {
         #expect(plan == .approximate)
     }
 
+    @Test("An engine whose count is a billed scan is never counted automatically")
+    func billedScanEngineIsCountedOnlyOnRequest() {
+        let countsAutomatically = PluginManager.shared.countsRowsAutomatically(for: .dynamodb)
+
+        let unfiltered = QueryExecutionCoordinator.rowCountPlan(
+            isNonSQL: false, filterState: TabFilterState(), approximateRowCount: 100, threshold: 100_000,
+            countsAutomatically: countsAutomatically
+        )
+        let filteredPlan = QueryExecutionCoordinator.rowCountPlan(
+            isNonSQL: false, filterState: filtered(), approximateRowCount: 100, threshold: 100_000,
+            countsAutomatically: countsAutomatically
+        )
+
+        #expect(!countsAutomatically)
+        #expect(unfiltered == .skip)
+        #expect(filteredPlan == .clear)
+    }
+
+    @Test("An engine that can seek and counts cheaply is still counted automatically")
+    func ordinaryEngineIsCountedAutomatically() {
+        #expect(PluginManager.shared.countsRowsAutomatically(for: .postgresql))
+        #expect(!PluginManager.shared.exactRowCountIsBilledScan(for: .postgresql))
+        #expect(PluginManager.shared.exactRowCountIsBilledScan(for: .dynamodb))
+    }
+
     @Test("Non-SQL filtered defers to the driver filtered count")
     func nonSQLFiltered() {
         let state = filtered()
@@ -83,7 +107,6 @@ struct RowCountPlanTests {
     }
 }
 
-@Suite("RowCountOutcome")
 struct RowCountOutcomeTests {
     @Test("A positive estimate is applied and stays marked approximate")
     func positiveEstimateApplies() throws {

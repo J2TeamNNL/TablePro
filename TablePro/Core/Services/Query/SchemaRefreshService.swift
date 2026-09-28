@@ -165,11 +165,11 @@ final class SchemaRefreshService {
                 scope: scope,
                 workload: .bulk
             ) { [schemaService] driver in
-                await schemaService.loadSchemaObjects(connectionId: connectionId, schema: schema, driver: driver)
+                await schemaService.loadSchemaObjects(schema: schema, in: scope, driver: driver)
             }
         } catch {
             Self.logger.warning(
-                "[schema] browsed schema load failed connId=\(connectionId, privacy: .public) schema=\(schema, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                "[schema] browsed schema load failed connId=\(connectionId, privacy: .public) schema=\(schema, privacy: .private(mask: .hash)) error=\(error.publicLogShape, privacy: .public)"
             )
             return false
         }
@@ -212,7 +212,7 @@ final class SchemaRefreshService {
             providerRegistry.notePopulatedExternally(scope: browseScope)
         } catch {
             Self.logger.warning(
-                "[schema] autocomplete sync failed connId=\(connectionId, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                "[schema] autocomplete sync failed connId=\(connectionId, privacy: .public) error=\(error.publicLogShape, privacy: .public)"
             )
         }
     }
@@ -277,7 +277,7 @@ final class SchemaRefreshService {
             return
         } catch {
             Self.logger.warning(
-                "[schema] routine refresh after schema switch failed connId=\(connectionId, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                "[schema] routine refresh after schema switch failed connId=\(connectionId, privacy: .public) error=\(error.publicLogShape, privacy: .public)"
             )
         }
         await syncAutocompleteProvider(connectionId: connectionId)
@@ -294,10 +294,12 @@ final class SchemaRefreshService {
             await schemaService.prepareForReload(connectionId: connectionId)
         }
 
+        let browseScope = metadataDriverProvider.browseScope(for: connectionId)
         do {
-            guard let scope = metadataDriverProvider.browseScope(for: connectionId) else {
+            guard let scope = browseScope else {
                 throw DatabaseError.notConnected
             }
+            let awaitedSchemas = schemasAwaitingJudgement(in: scope)
             try await metadataDriverProvider.withMetadataDriver(
                 scope: scope,
                 workload: .bulk
@@ -309,7 +311,8 @@ final class SchemaRefreshService {
                     scope: scope
                 )
                 await schemaService.refreshLoadedSchemaObjects(
-                    connectionId: connectionId,
+                    in: scope,
+                    fetchingNow: awaitedSchemas,
                     driver: driver
                 )
             }
@@ -317,15 +320,33 @@ final class SchemaRefreshService {
             return
         } catch {
             Self.logger.warning(
-                "[schema] refresh failed connId=\(connectionId, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                "[schema] refresh failed connId=\(connectionId, privacy: .public) error=\(error.publicLogShape, privacy: .public)"
             )
-            schemaService.markLoadFailed(connectionId: connectionId, message: error.localizedDescription)
+            schemaService.markLoadFailed(
+                connectionId: connectionId,
+                message: error.localizedDescription,
+                scope: browseScope
+            )
         }
 
         if refreshesLoadedTreeTables {
             await treeMetadataService.refreshLoadedTables(connectionId: connectionId, database: database)
         }
         await syncAutocompleteProvider(connectionId: connectionId)
+    }
+
+    /// The schemas judged against the refreshed catalog as soon as it settles: the browsed one, and
+    /// every one holding a queued truncate or drop, which a catalog change prunes when it finishes.
+    private func schemasAwaitingJudgement(in scope: DatabaseScope) -> Set<String> {
+        var schemas = Set([scope.schema].compactMap { $0 })
+        guard let session = databaseManager?.session(for: scope.connectionId) else { return schemas }
+        for ref in session.pendingTruncates.union(session.pendingDeletes) {
+            guard (ref.database ?? scope.database) == scope.database, let schema = ref.qualifyingSchema else {
+                continue
+            }
+            schemas.insert(schema)
+        }
+        return schemas
     }
 }
 

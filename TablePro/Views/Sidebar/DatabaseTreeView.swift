@@ -12,7 +12,7 @@ struct DatabaseTreeRoutineRef: Identifiable, Equatable {
     let routine: RoutineInfo
 
     var id: String {
-        "\(database ?? "")|\(schema ?? "")|\(routine.id)"
+        IdentityPath.joined([database ?? "", schema ?? "", routine.id], separator: "|")
     }
 
     var objectRef: DatabaseObjectRef {
@@ -26,7 +26,7 @@ struct DatabaseTreeTriggerRef: Identifiable, Equatable {
     let trigger: TriggerInfo
 
     var id: String {
-        "\(database ?? "")|\(schema ?? "")|\(trigger.id)"
+        IdentityPath.joined([database ?? "", schema ?? "", trigger.id], separator: "|")
     }
 
     var objectRef: DatabaseObjectRef {
@@ -40,7 +40,7 @@ struct DatabaseTreeUserTypeRef: Identifiable, Equatable {
     let type: UserDefinedTypeInfo
 
     var id: String {
-        "\(database ?? "")|\(schema ?? "")|\(type.id)"
+        IdentityPath.joined([database ?? "", schema ?? "", type.id], separator: "|")
     }
 
     var objectRef: DatabaseObjectRef {
@@ -49,6 +49,7 @@ struct DatabaseTreeUserTypeRef: Identifiable, Equatable {
 }
 
 struct DatabaseTreeView: View {
+    @ObservedObject private var databaseManager = DatabaseManager.shared
     @ObservedObject private var treeService = DatabaseTreeMetadataService.shared
 
     let connectionId: UUID
@@ -78,7 +79,7 @@ struct DatabaseTreeView: View {
     }
 
     private var isConnected: Bool {
-        DatabaseManager.shared.session(for: connectionId)?.status == .connected
+        databaseManager.session(for: connectionId)?.status == .connected
     }
 
     private var databases: [DatabaseMetadata] {
@@ -197,6 +198,7 @@ struct DatabaseTreeView: View {
             selectedTables: windowState.selectedTables,
             showRecentTables: settingsManager.general.showRecentTables,
             showSystemContainers: showsSystemContainers,
+            showsPartitions: settingsManager.general.showPartitions,
             rowSizePreference: settingsManager.general.sidebarRowSize
         )
     }

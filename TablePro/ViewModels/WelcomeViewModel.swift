@@ -100,6 +100,7 @@ final class WelcomeViewModel: ObservableObject {
     @Published private(set) var outline: LibraryOutline = .empty
     @Published private(set) var outlineRevision = 0
     @Published private(set) var sortMode: LibrarySortMode
+    private(set) var showsRecent: Bool
     @Published var expandedGroupIds: Set<UUID> = [] {
         didSet { groupExpansionStore.save(expandedGroupIds) }
     }
@@ -140,9 +141,11 @@ final class WelcomeViewModel: ObservableObject {
 
     private var connectionUpdatedCancellable: AnyCancellable?
     private var listStateCancellable: AnyCancellable?
+    private var showsRecentCancellable: AnyCancellable?
     private var linkedFoldersCancellable: AnyCancellable?
     private var teamLibraryCancellable: AnyCancellable?
     private var licenseCancellable: AnyCancellable?
+    private var connectionStatusCancellable: AnyCancellable?
     private var welcomeRouterTask: Task<Void, Never>?
     private var searchDebounceTask: Task<Void, Never>?
     private let importableAppDetector: @MainActor () -> Bool
@@ -168,6 +171,7 @@ final class WelcomeViewModel: ObservableObject {
         self.recentConnections = recentConnections
         self.listPreferences = listPreferences
         self.sortMode = listPreferences.sortMode
+        self.showsRecent = listPreferences.showsRecent
         let storedExpansion = groupExpansionStore.load()
         self.hasStoredGroupExpansion = storedExpansion != nil
         self.expandedGroupIds = storedExpansion ?? []
@@ -283,6 +287,7 @@ final class WelcomeViewModel: ObservableObject {
             query: query,
             favoritesOrder: listPreferences.favoritesOrder,
             lastConnected: recentConnections.lastConnected,
+            includesRecent: showsRecent,
             externalSections: [
                 LibraryExternalSection(kind: .linkedFolders, entries: presentableLinkedConnections.map(\.libraryEntry)),
                 LibraryExternalSection(kind: .teamLibrary, entries: presentableTeamLibraryConnections.map(\.libraryEntry)),
@@ -371,6 +376,12 @@ final class WelcomeViewModel: ObservableObject {
         rebuildOutline()
     }
 
+    private func showsRecentDidChange(_ showsRecent: Bool) {
+        guard showsRecent != self.showsRecent else { return }
+        self.showsRecent = showsRecent
+        rebuildOutline()
+    }
+
     // MARK: - Setup
 
     func refreshImportableApp() {
@@ -400,6 +411,12 @@ final class WelcomeViewModel: ObservableObject {
                 self?.listStateDidChange()
             }
 
+        showsRecentCancellable = listPreferences.$showsRecent
+            .dropFirst()
+            .sink { [weak self] showsRecent in
+                self?.showsRecentDidChange(showsRecent)
+            }
+
         linkedFoldersCancellable = services.appEvents.linkedFoldersDidUpdate
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
@@ -417,6 +434,16 @@ final class WelcomeViewModel: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.teamLibraryConnections = Self.buildTeamLibraryConnections()
+            }
+
+        /// A row's status badge reads `DatabaseManager.activeSessions`, which is not observable, and
+        /// the row is only rewritten when the outline revision moves. Nothing here listened for a
+        /// connection coming up or going away, so a row that said Connected went on saying it after
+        /// a Disconnect, for as long as the window stayed open.
+        connectionStatusCancellable = services.appEvents.connectionStatusChanged
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.outlineRevision += 1
             }
 
         loadConnections()
@@ -619,7 +646,7 @@ final class WelcomeViewModel: ObservableObject {
 
     // MARK: - Connection Errors
 
-    private func handleConnectError(_ error: Error, connection: DatabaseConnection) {
+    func handleConnectError(_ error: Error, connection: DatabaseConnection) {
         if error is CancellationError {
             Self.logger.info("Connection attempt cancelled for \(connection.name, privacy: .public)")
             return
@@ -627,7 +654,7 @@ final class WelcomeViewModel: ObservableObject {
 
         if !WindowManager.shared.hasOpenWindow(for: connection.id) {
             Self.logger.info(
-                "Connection failed after window was closed: \(error.localizedDescription, privacy: .public)")
+                "Connection failed after window was closed: \(error.publicLogShape, privacy: .public)")
             return
         }
 
@@ -638,7 +665,7 @@ final class WelcomeViewModel: ObservableObject {
             return
         }
 
-        Self.logger.error("Failed to connect: \(error.localizedDescription, privacy: .public)")
+        Self.logger.error("Failed to connect: \(error.publicLogShape, privacy: .public)")
         WindowManager.shared.closeWindow(for: connection.id)
         presentConnectionFailure(error, connection: connection)
     }

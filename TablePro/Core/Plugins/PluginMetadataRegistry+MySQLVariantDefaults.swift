@@ -12,6 +12,13 @@ extension PluginMetadataRegistry {
         ExplainVariant(id: "explain-analyze", label: "EXPLAIN ANALYZE", sqlPrefix: "EXPLAIN ANALYZE", format: .plainText),
     ]
 
+    /// Redshift's EXPLAIN takes VERBOSE and nothing else: no FORMAT, no ANALYZE. It answers one
+    /// text row per plan line.
+    static let redshiftExplainVariants: [ExplainVariant] = [
+        ExplainVariant(id: "explain", label: "EXPLAIN", sqlPrefix: "EXPLAIN", format: .plainText),
+        ExplainVariant(id: "verbose", label: "EXPLAIN VERBOSE", sqlPrefix: "EXPLAIN VERBOSE", format: .plainText),
+    ]
+
     static let oceanbaseExplainVariants: [ExplainVariant] = [
         ExplainVariant(id: "explain", label: "EXPLAIN", sqlPrefix: "EXPLAIN", format: .plainText),
     ]
@@ -97,6 +104,7 @@ extension PluginMetadataRegistry {
                 supportsRoutines: false,
                 supportsDatabaseTriggerBrowse: false,
                 defaultSSLMode: .preferred,
+                browsingRequiresSelectedDatabase: true,
                 supportsPrincipalConnectionLimit: false
             ),
             schema: PluginMetadataSnapshot.SchemaInfo(
@@ -238,6 +246,7 @@ extension PluginMetadataRegistry {
                 supportsRoutines: true,
                 supportsDatabaseTriggerBrowse: true,
                 defaultSSLMode: .preferred,
+                browsingRequiresSelectedDatabase: true,
                 supportsPrincipalConnectionLimit: true
             ),
             schema: PluginMetadataSnapshot.SchemaInfo(

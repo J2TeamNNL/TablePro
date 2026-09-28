@@ -10,7 +10,6 @@ import Foundation
 @testable import TablePro
 import Testing
 
-@Suite("File tab baseline")
 @MainActor
 struct FileTabBaselineTests {
     private func makeFile(contents: String) throws -> URL {
@@ -36,7 +35,7 @@ struct FileTabBaselineTests {
         FileTabBaseline.hydrate(&tab)
 
         #expect(tab.content.savedFileContent == "SELECT 1")
-        #expect(tab.content.loadMtime != nil)
+        #expect(tab.content.savedFileStamp != nil)
         #expect(tab.content.isFileDirty == false)
     }
 
@@ -92,14 +91,45 @@ struct FileTabBaselineTests {
         #expect(tabs[2].content.savedFileContent == "SELECT 2")
     }
 
-    @Test("The loader reports when the file it read was last written")
-    func loaderCarriesTheModificationDate() throws {
+    @Test("The loader reports what the file it read was")
+    func loaderCarriesTheFileStamp() throws {
         let url = try makeFile(contents: "SELECT 1")
         defer { try? FileManager.default.removeItem(at: url) }
 
         let loaded = try #require(FileTextLoader.load(url))
 
         #expect(loaded.content == "SELECT 1")
-        #expect(loaded.modifiedAt != nil)
+        #expect(loaded.stamp != nil)
+    }
+
+    @Test("A rebuilt tab learns how its file is encoded, so a save writes it back the same way")
+    func hydratesTheEncoding() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("baseline-\(UUID().uuidString).sql")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let fixture = EncodedSQLFileFixture.utf16BigEndianWithByteOrderMark
+        try fixture.write(fixture.original, to: url)
+        var tab = fileTab(query: fixture.original, url: url)
+
+        FileTabBaseline.hydrate(&tab)
+
+        #expect(tab.content.sourceFileEncoding == FileTextEncoding(encoding: .utf16, byteOrderMark: .utf16BigEndian))
+        #expect(tab.content.isFileDirty == false)
+    }
+
+    @Test("A Save As write replaces the encoding the tab was opened with")
+    func recordingAWriteReplacesTheEncoding() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("baseline-\(UUID().uuidString).sql")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let fixture = EncodedSQLFileFixture.utf16BigEndianWithByteOrderMark
+        try fixture.write(fixture.original, to: url)
+        var tab = fileTab(query: fixture.original, url: url)
+        FileTabBaseline.hydrate(&tab)
+        #expect(tab.content.sourceFileEncoding?.byteOrderMark == .utf16BigEndian)
+
+        FileTabBaseline.recordWrite(of: fixture.original, to: url, as: .utf8, in: &tab.content)
+
+        #expect(tab.content.sourceFileEncoding == .utf8)
     }
 }

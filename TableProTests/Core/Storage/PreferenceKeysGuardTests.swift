@@ -7,7 +7,6 @@ import Foundation
 @testable import TablePro
 import Testing
 
-@Suite("Preference key registry & guard")
 struct PreferenceKeysGuardTests {
     @Test("Registered keys are unique and namespaced")
     func registryIsCleanlyNamespaced() {
@@ -39,7 +38,7 @@ struct PreferenceKeysGuardTests {
     /// main for a value no preference has ever read. Naming the calls that are not preferences keeps
     /// the baseline for the keys that genuinely are.
     private static let nonPreferenceCalls: Set<String> = [
-        "removeValue", "updateValue", "add", "animation", "removeAnimation",
+        "removeValue", "updateValue", "add", "animation", "removeAnimation", "values",
     ]
 
     private static let grandfatheredForKey: [String: String] = [

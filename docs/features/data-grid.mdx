@@ -14,7 +14,7 @@ A narrow window trims that bar rather than cutting it off. The Columns and Filte
 
 ## Sorting
 
-Click a header to cycle through the first direction, its opposite, and off. `Shift`-click a second header to sort by both. Sorting re-runs the query with a new `ORDER BY`, so it orders the whole table rather than the page in front of you.
+Click a header to cycle through the first direction, its opposite, and off. `Shift`-click a second header to sort by both. Sorting re-runs the query with a new `ORDER BY`, so it orders the whole table rather than the page in front of you. In a query tab that query is the one statement behind the result, never the rest of the script.
 
 **Sort direction** in [Settings > Data](/customization/data-settings) decides which way that first click goes. It is Ascending out of the box; set it to Descending to open on the newest rows and reach them in one click.
 
@@ -33,6 +33,8 @@ The header menu carries two filters that answer different questions.
 | **Filter Values…**, or the funnel icon on hover | The rows already loaded, without a re-query |
 | **Filter with column** | The whole table. It adds a row to the [filter bar](/features/filtering) and opens it |
 
+The cell menu has a third: **Filter** turns the clicked cell's value into a condition such as `status = “paid”` and runs it against the whole table. [Filter by cell value](/features/filtering#filter-by-cell-value) lists what it offers.
+
 **Filter Values…** lists every value in the column with its count, NULL and empty among them. Select the values to keep and click **Apply**. Filter several columns and a row has to match all of them; **Clear Value Filter** and **Clear All Value Filters** are on the same menu.
 
 <Frame caption="Filter a column by its values">
@@ -46,14 +48,14 @@ A value filter lives as long as the result does: switching view mode or tab keep
 
 Right-click a cell and open **Highlight**. A color under **Rows Where status = “paid”** tints every row holding that value; a color under **Cells Where status = “paid”** tints only that cell. The palette marks the color a matching rule already uses, and **Remove Highlight** takes the rule away.
 
-For anything other than an exact match, click the highlighter button in the status bar or choose **View > Highlight Rules**. A rule is a column, an operator from the [filter bar](/features/filtering), a value, a color, and **Row** or **Cell**. **Highlight Values…** in the header menu starts a rule on that column. A rule left without a value is dropped when the popover closes.
+For anything other than an exact match, click the highlighter button in the status bar or choose **View > Highlight Rules**. A rule is a column, an operator from the [filter bar](/features/filtering), a value, a color, and **Row** or **Cell**. **Highlight Values…** in the header menu starts a rule on that column. A rule left without a value is dropped when the popover closes. A rule is marked in the popover, and colors nothing, when its column is not in this result or when its regular expression will not compile.
 
 <Frame caption="US invoices in green, Canadian in blue, and customer IDs under 10 in orange">
   <img className="block dark:hidden" src="/images/highlight-rules.png" alt="Highlight Rules popover listing three rules over an Invoice grid with tinted rows and cells" />
   <img className="hidden dark:block" src="/images/highlight-rules-dark.png" alt="Highlight Rules popover listing three rules over an Invoice grid with tinted rows and cells" />
 </Frame>
 
-Rules run top to bottom and the first match colors the row, so drag the rule that should win to the top. A rule picked from the cell menu goes in first. A cell rule tints its own cell over the row's color. Rules read the stored value rather than the text a **Display As** format shows: a numeric column compares as numbers, a boolean column accepts `true`, `1`, `t` and `yes` alike, and `NULL` never satisfies a comparison: match it with **is NULL** or **is empty**.
+Rules run top to bottom and the first match colors the row, so drag the rule that should win to the top. A new rule picked from the cell menu goes in first. Picking a color for a rule that is already in the list changes its color and leaves it where it is. A cell rule tints its own cell over the row's color. Rules read the stored value rather than the text a **Display As** format shows: a numeric column compares as numbers, a boolean column accepts `true`, `1`, `t` and `yes` alike, and `NULL` never satisfies a comparison: match it with **is NULL** or **is empty**.
 
 A row waiting to be inserted or deleted keeps its [change tracking](/features/change-tracking) tint over any rule, and a selected row shows the selection. On a table you edit, give row rules a color other than the green and red those tints use, so a highlight never reads as a pending change.
 
@@ -84,18 +86,18 @@ Clicking an arrow that points back into the table the tab already shows re-filte
 
 Double-click a foreign key cell, press `Return` on it, or open its right-click menu to pick the key rather than type it. The picker lists rows from the referenced table, each key with a label beside it, and narrows as you type. `Return` in the search field commits the text as typed, which covers a key the search has not turned up. **Set NULL** appears on a nullable column.
 
-**Label** at the foot of the picker chooses the column that reads as the row's name, or **None** to list keys on their own. Either choice is remembered for the referenced table, so every column pointing at it shows the same one. A search fetches the first 50 matches, which keeps the list quick on a large table.
+**Label** at the foot of the picker opens the referenced table's columns. Tick one or several: a parent whose rows are unique only on `descrizione` and `marchio` together reads as six identical rows under either column alone. Ticked columns show beside the key in the table's own order, and the search matches any of them. **None** clears them and lists keys on their own. A date or a number shows beside the key but carries no text search, so a picker with no text column to search says so rather than reporting no matches. The choice is remembered for the referenced table, so every column pointing at it shows the same ones. A search fetches the first 50 matches, which keeps the list quick on a large table.
 
 A column of a foreign key that spans several columns keeps the text editor. The picker sets one column, and a key it offered might not pair with the values the row holds in the constraint's other columns. Type the key, or open the referenced table and read the pair off it.
 
-<Frame caption="Every artist the key can point at, with its name">
-  <img className="block dark:hidden" src="/images/fk-value-picker.png" alt="Foreign key value picker over a data grid cell" />
-  <img className="hidden dark:block" src="/images/fk-value-picker-dark.png" alt="Foreign key value picker over a data grid cell" />
+<Frame caption="Two label columns, so every employee reads as a name">
+  <img className="block dark:hidden" src="/images/fk-value-picker.png" alt="Foreign key value picker listing employee ids with a last and first name beside each" />
+  <img className="hidden dark:block" src="/images/fk-value-picker-dark.png" alt="Foreign key value picker listing employee ids with a last and first name beside each" />
 </Frame>
 
 The inspector's **JSON** view follows a key without leaving the row: see [Row as JSON](/features/json-viewer#row-as-json).
 
-Step back with the Back and Forward buttons at the leading edge of the toolbar, or **View > Back** (`Ctrl+Cmd+[`) and **View > Forward** (`Ctrl+Cmd+]`). Back restores the table you came from as you left it: same filters, sort, page, and selected row. Each tab keeps its own history and Back never closes a tab. With unsaved edits in the tab, Back asks to discard them first; with a staged structure edit it stands down, because that work cannot be discarded from here.
+Step back with **View > Back** (`Ctrl+Cmd+[`) and **View > Forward** (`Ctrl+Cmd+]`), or with the same pair under **Actions** in the toolbar. Add the buttons to the toolbar with [Customize Toolbar](/features/connection-window#add-a-control-back) to keep them in reach. Back restores the table you came from as you left it: same filters, sort, page, and selected row. Each tab keeps its own history and Back never closes a tab. With unsaved edits in the tab, Back asks to discard them first; with a staged structure edit it stands down, because that work cannot be discarded from here.
 
 <Frame caption="Foreign key lookup">
   <img className="block dark:hidden" src="/images/fk-lookup-popover.png" alt="Foreign key lookup" />
@@ -104,7 +106,7 @@ Step back with the Back and Forward buttons at the leading edge of the toolbar, 
 
 ## Inspector
 
-Press `Cmd+Option+I`, or click the button at the trailing end of the toolbar, to open the inspector beside the grid. Its header names the table and which row of how many is selected, and a **Fields** / **JSON** control switches between two renderings of that row. [Cell and Row Viewers](/features/json-viewer) covers both. Turn on **Auto-show inspector on row select** in [Settings > Data](/customization/data-settings) to open it whenever a row is picked, in a query result as well as a table.
+Press `Cmd+Option+I`, or click the button at the trailing end of the toolbar, to open the inspector beside the grid. The table and which row of how many is selected sit under the [pane's header](/features/connection-window#the-trailing-pane), and **Fields** and **JSON** are the two renderings of that row, picked from the header's ellipsis menu. [Cell and Row Viewers](/features/json-viewer) covers both. Turn on **Auto-show inspector on row select** in [Settings > Data](/customization/data-settings) to open it whenever a row is picked, in a query result as well as a table.
 
 Short values sit on one line, label leading and value trailing. Long text, JSON, PHP, binary and images take the full width. Long text and JSON carry a resize handle; PHP, binary and images draw at a fixed height. `Tab` and `Shift+Tab` move between fields; the menu at the trailing edge of each field carries **Set NULL**, **Set DEFAULT**, **Set EMPTY** and **SQL Functions**, with `Ctrl+Option+N` and `Ctrl+Option+D` as shortcuts for the first two. Search filters the list by column name or stored value, and the pencil button narrows it to fields already edited.
 
@@ -144,6 +146,8 @@ Some engines cannot skip rows and return a fixed maximum from one query. On thos
 
 On a table tab, sorting, filtering, and changing page or page size start at the first row. The horizontal scroll position stays.
 
+Saving edits, importing rows, **Insert Document…**, a structure change and **Refresh Materialized View…** reload every tab showing the table they changed, in every window of the connection. The tab in front reloads at once and keeps its place. A tab behind it reloads when you switch to it. A tab with a cell open or unsaved edits is not interrupted. It reloads as soon as the cell is closed and its edits are saved, undone or discarded. Tabs on other tables stay as they are. A SQL file import reaches every table tab of the connection the same way. A statement run from the SQL editor reloads nothing, so press `Cmd+R` on the tabs it touched.
+
 ## Copying
 
 Click a cell to select it, drag or `Shift`-click for a range, and click a row number for a whole row. The row-number gutter stays at the left edge on a table wider than the window, so whole rows are still selectable when the columns have scrolled past it. `Shift+Space` widens whatever is selected to every row it touches. Copy acts on the whole selection.
@@ -161,7 +165,7 @@ Every copy follows the grid as shown: hidden columns are left out, columns keep 
 
 ## View modes
 
-Switch between **Data**, **Structure**, **JSON**, **Chart**, and **Map** with the switcher at the leading edge of the status bar, or from **View > Result View**. Query tabs have no Structure mode, Map appears only while the result holds a column of drawable geometry, the mode is remembered per tab, and [Cell and Row Viewers](/features/json-viewer) covers JSON mode.
+Switch between **Data**, **Structure**, **JSON**, **Chart**, **Map**, and **Output** with the switcher at the leading edge of the status bar, or from **View > Result View**. Query tabs have no Structure mode, Map appears only while the result holds a column of drawable geometry, Output appears only when the statement printed something on the server (see [Server output](/features/query-results#server-output)), the mode is remembered per tab, and [Cell and Row Viewers](/features/json-viewer) covers JSON mode.
 
 ### Chart mode
 

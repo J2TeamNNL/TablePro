@@ -15,6 +15,7 @@ import SwiftUI
 import TableProPluginKit
 
 struct RowImportSheet: View {
+    @ObservedObject private var pluginManager = PluginManager.shared
     private static let logger = Logger(subsystem: "com.TablePro", category: "RowImportSheet")
 
     @Binding var isPresented: Bool
@@ -90,6 +91,7 @@ struct RowImportSheet: View {
 
     @State private var importService: ImportService?
     @State private var importResult: PluginImportResult?
+    @State private var importedRows: DatabaseObjectChange?
     @State private var importError: (any Error)?
     @State private var showProgressDialog = false
     @State private var showSuccessDialog = false
@@ -109,8 +111,9 @@ struct RowImportSheet: View {
     // MARK: - Derived catalog state
 
     /// Tables alone, because they are the only objects the existing-table branch can insert into.
+    /// A partitioned table is one of them: the server routes an INSERT to the right partition.
     private var availableTables: [TableInfo] {
-        databaseObjects.filter { $0.type == .table }
+        databaseObjects.filter(\.type.acceptsImportedRows)
     }
 
     /// A table this sheet created is not in the way of this sheet: a failed import leaves its table
@@ -200,7 +203,9 @@ struct RowImportSheet: View {
             ) {
                 showSuccessDialog = false
                 isPresented = false
-                AppCommands.shared.refreshData.send(DataRefreshRequest(connectionId: connection.id))
+                if let importedRows {
+                    AppCommands.shared.objectChanged.send(importedRows)
+                }
             }
         }
         .onChange(of: showErrorDialog) { isShowing in
@@ -641,7 +646,7 @@ struct RowImportSheet: View {
     // MARK: - Plugin
 
     private var currentPlugin: (any ImportFormatPlugin)? {
-        PluginManager.shared.importPlugin(forFormat: formatId)
+        pluginManager.importPlugin(forFormat: formatId)
     }
 
     private var canImport: Bool {
@@ -686,7 +691,7 @@ struct RowImportSheet: View {
         } catch {
             catalogNameKeys = nil
             tableListError = error.localizedDescription
-            Self.logger.warning("Failed to load tables: \(error.localizedDescription, privacy: .public)")
+            Self.logger.warning("Failed to load tables: \(error.publicLogShape, privacy: .public)")
         }
     }
 
@@ -751,7 +756,7 @@ struct RowImportSheet: View {
             newColumnsLoaded = true
         } catch {
             loadError = error.localizedDescription
-            Self.logger.warning("Failed to read import fields: \(error.localizedDescription, privacy: .public)")
+            Self.logger.warning("Failed to read import fields: \(error.publicLogShape, privacy: .public)")
         }
     }
 
@@ -776,7 +781,7 @@ struct RowImportSheet: View {
             }
         } catch {
             loadError = error.localizedDescription
-            Self.logger.warning("Failed to read import fields: \(error.localizedDescription, privacy: .public)")
+            Self.logger.warning("Failed to read import fields: \(error.publicLogShape, privacy: .public)")
         }
     }
 
@@ -795,22 +800,31 @@ struct RowImportSheet: View {
     // MARK: - Import
 
     private func performImport() {
+        guard let scope = DatabaseManager.shared.browseScope(for: connection.id) else {
+            importError = DatabaseError.notConnected
+            showErrorDialog = true
+            return
+        }
         switch destination {
         case .existingTable:
             guard let table = selectedTargetTable else { return }
-            runImport(targetTable: table, mapping: existingMapping(), createTableSQL: nil)
+            runImport(targetTable: table, mapping: existingMapping(), newTable: nil, scope: scope)
         case .newTable:
             let name = newTableName.trimmingCharacters(in: .whitespaces)
-            guard !name.isEmpty, let sql = buildCreateTableSQL(tableName: name) else {
-                importError = NSError(
-                    domain: "RowImport", code: -1,
-                    userInfo: [NSLocalizedDescriptionKey: String(localized: "Could not build the CREATE TABLE statement")]
-                )
+            guard !name.isEmpty, let definition = newTableDefinition(tableName: name) else {
+                importError = Self.createTableStatementError
                 showErrorDialog = true
                 return
             }
-            runImport(targetTable: name, mapping: newTableMapping(), createTableSQL: sql)
+            runImport(targetTable: name, mapping: newTableMapping(), newTable: definition, scope: scope)
         }
+    }
+
+    private static var createTableStatementError: NSError {
+        NSError(
+            domain: "RowImport", code: -1,
+            userInfo: [NSLocalizedDescriptionKey: String(localized: "Could not build the CREATE TABLE statement")]
+        )
     }
 
     private func existingMapping() -> [String: String] {
@@ -831,7 +845,7 @@ struct RowImportSheet: View {
         return mapping
     }
 
-    private func buildCreateTableSQL(tableName: String) -> String? {
+    private func newTableDefinition(tableName: String) -> PluginCreateTableDefinition? {
         let included = newColumns.filter {
             $0.include
                 && !$0.name.trimmingCharacters(in: .whitespaces).isEmpty
@@ -839,7 +853,7 @@ struct RowImportSheet: View {
         }
         guard !included.isEmpty else { return nil }
 
-        let definition = PluginCreateTableDefinition(
+        return PluginCreateTableDefinition(
             tableName: tableName,
             columns: included.map { column in
                 PluginColumnDefinition(
@@ -858,25 +872,28 @@ struct RowImportSheet: View {
             },
             primaryKeyColumns: included.filter(\.isPrimaryKey).map(\.name)
         )
-
-        let pluginDriver = (DatabaseManager.shared.driver(for: connection.id) as? PluginDriverAdapter)?.schemaPluginDriver
-        return pluginDriver?.generateCreateTableSQL(definition: definition)
     }
 
-    private func runImport(targetTable: String, mapping: [String: String], createTableSQL: String?) {
+    private func runImport(
+        targetTable: String,
+        mapping: [String: String],
+        newTable: PluginCreateTableDefinition?,
+        scope: DatabaseScope
+    ) {
         let service = ImportService(connection: connection)
         importService = service
         showProgressDialog = true
 
         importTask = Task {
             do {
-                if let createTableSQL {
-                    try await prepareTable(named: targetTable, sql: createTableSQL)
+                if let newTable {
+                    try await prepareTable(newTable, scope: scope)
                 }
                 let result = try await service.importFile(
                     from: fileURL,
                     formatId: formatId,
                     encoding: .utf8,
+                    scope: scope,
                     targetTable: targetTable,
                     columnMapping: mapping
                 )
@@ -884,6 +901,12 @@ struct RowImportSheet: View {
                     showProgressDialog = false
                     importSucceeded = true
                     importResult = result
+                    importedRows = DatabaseObjectChange(
+                        connectionId: connection.id,
+                        scope: scope,
+                        name: targetTable,
+                        kind: .rows
+                    )
                     showSuccessDialog = true
                 }
             } catch is PluginImportCancellationError {
@@ -905,15 +928,29 @@ struct RowImportSheet: View {
     }
 
     @MainActor
-    private func prepareTable(named tableName: String, sql: String) async throws {
+    private func prepareTable(_ definition: PluginCreateTableDefinition, scope: DatabaseScope) async throws {
+        guard ImportDataSinkAdapter.canWriteRows(into: connection.type) else {
+            throw PluginImportError.importFailed(String(
+                format: String(localized: "%@ cannot take rows from this file, so no table was created."),
+                connection.type.rawValue
+            ))
+        }
+        let tableName = definition.tableName
+        let statements = try await DatabaseManager.shared.createTableStatements(
+            definition: definition,
+            scope: scope,
+            route: DatabaseManager.shared.executionRoute(for: scope)
+        )
+        guard !statements.isEmpty else { throw Self.createTableStatementError }
+        let sql = statements.joined(separator: "\n")
         switch NewTableImportPlanner.plan(
             forTable: tableName, createTableSQL: sql, alreadyCreated: createdTables
         ) {
         case .create:
-            try await createTable(sql: sql)
+            try await createTable(statements: statements, scope: scope)
             createdTables[tableName] = sql
         case .reuseAfterClearing:
-            try await clearRows(of: tableName)
+            try await clearRows(of: tableName, scope: scope)
         case .nameTakenWithDifferentColumns:
             throw PluginImportError.importFailed(
                 String(
@@ -925,7 +962,7 @@ struct RowImportSheet: View {
     }
 
     @MainActor
-    private func clearRows(of tableName: String) async throws {
+    private func clearRows(of tableName: String, scope: DatabaseScope) async throws {
         let generator = try SQLStatementGenerator(
             tableName: tableName,
             columns: [],
@@ -936,15 +973,22 @@ struct RowImportSheet: View {
         try await authorize(
             sql: sql, kind: .destructiveQuery, description: String(localized: "Clear Table")
         )
-        try await runOnLeasedDriver(sql)
+        try await runOnLeasedDriver(sql, scope: scope)
     }
 
-    private func createTable(sql: String) async throws {
+    /// One call per statement the driver wrote, because an engine that runs one statement per call refuses a table
+    /// and its indexes sent together.
+    private func createTable(statements: [String], scope: DatabaseScope) async throws {
+        let script = SQLScriptText(databaseType: connection.type).script(statements)
         try await authorize(
-            sql: sql, kind: .schemaMutation, description: String(localized: "Create Table")
+            sql: script, kind: .schemaMutation, description: String(localized: "Create Table")
         )
-        try await runOnLeasedDriver(sql)
-        CatalogChangeService.post(.changed(CatalogChange(connectionId: connection.id, kinds: .tables)))
+        for statement in statements {
+            try await runOnLeasedDriver(statement, scope: scope)
+        }
+        CatalogChangeService.post(
+            .changed(CatalogChange(connectionId: connection.id, database: scope.database, kinds: .tables))
+        )
     }
 
     /// The sheet's own statements take the same lease the import does, one at a time and always
@@ -952,10 +996,7 @@ struct RowImportSheet: View {
     /// across a safe-mode confirmation the user has not answered yet, and the gate is not
     /// reentrant, so the import that follows would then wait on a sheet waiting on the user.
     @MainActor
-    private func runOnLeasedDriver(_ sql: String) async throws {
-        guard let scope = DatabaseManager.shared.browseScope(for: connection.id) else {
-            throw DatabaseError.notConnected
-        }
+    private func runOnLeasedDriver(_ sql: String, scope: DatabaseScope) async throws {
         let route = DatabaseManager.shared.executionRoute(for: scope)
         _ = try await DatabaseManager.shared.withScopedDriver(
             scope: scope,

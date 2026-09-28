@@ -19,6 +19,15 @@ enum StatusBarChrome {
     static let clusterSpacing: CGFloat = 8
 }
 
+struct StatusBarSeparator: View {
+    var body: some View {
+        Text(verbatim: "·")
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+            .accessibilityHidden(true)
+    }
+}
+
 /// `NSVisualEffectView` rather than a flat colour because a bar is window chrome: AppKit desaturates
 /// the material when the window stops being key, and a `Color` never does.
 private struct StatusBarMaterial: NSViewRepresentable {

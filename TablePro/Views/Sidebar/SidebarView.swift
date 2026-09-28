@@ -9,11 +9,14 @@ import SwiftUI
 import TableProPluginKit
 
 struct SidebarView: View {
+    @ObservedObject private var licenseManager = LicenseManager.shared
+    @ObservedObject private var databaseManager = DatabaseManager.shared
     @StateObject private var viewModel: SidebarViewModel
     @ObservedObject private var settingsManager = AppSettingsManager.shared
     @State private var showsSchemaProgress = false
 
     @ObservedObject private var schemaService = SchemaService.shared
+    @ObservedObject private var treeMetadata = DatabaseTreeMetadataService.shared
 
     @ObservedObject var sidebarState: SharedSidebarState
     @ObservedObject var windowState: WindowSidebarState
@@ -42,7 +45,33 @@ struct SidebarView: View {
     private var hasAnyMatch: Bool {
         SidebarObjectKind.allCases.contains { kind in
             countFor(kind: kind) > 0
-        }
+        } || !otherSchemaMatches.isEmpty
+    }
+
+    /// The schemas the flat outline lists below its own sections. Counted here too, or a search
+    /// whose only matches are in another schema is shown as "No Results" and the outline that would
+    /// have listed them is never drawn.
+    private var otherSchemaMatches: [String] {
+        guard rootShape == .flat, !viewModel.filterQuery.isEmpty, let database = activeDatabase,
+              DatabaseTreeMetadataService.listsTablesPerSchema(groupingStrategy) else { return [] }
+        let searchText = viewModel.filterQuery
+        let systemSchemas = Set(PluginManager.shared.systemSchemaNames(for: viewModel.databaseType))
+        return DatabaseTreeFilter.otherSchemaMatches(
+            database: database,
+            browsedSchema: coordinator?.toolbarState.currentSchema,
+            searchText: searchText,
+            hiddenSchemas: settingsManager.general.showSystemContainers ? [] : systemSchemas,
+            allSchemaTables: treeMetadata.allSchemaTablesLoadState(connectionId: connectionId, database: database),
+            loadedContent: { schema in
+                DatabaseTreeFilter.loadedObjectBuckets(
+                    in: treeMetadata,
+                    connectionId: connectionId,
+                    database: database,
+                    schema: schema,
+                    searchText: searchText
+                )
+            }
+        )
     }
 
     private var groupingStrategy: GroupingStrategy {
@@ -173,7 +202,7 @@ struct SidebarView: View {
 
     @ViewBuilder
     private var sidebarFooter: some View {
-        if showsSchemaPicker || LicenseManager.shared.supportAudience == .prospect {
+        if showsSchemaPicker || licenseManager.supportAudience == .prospect {
             VStack(spacing: 0) {
                 Divider()
                 HStack(spacing: 8) {
@@ -236,6 +265,8 @@ struct SidebarView: View {
                 errorState(message: message)
             case .loading:
                 loadingState
+            case .noDatabaseSelected:
+                noDatabaseSelectedState
             case .noMatch, .list:
                 SidebarTreeView(
                     connectionId: connectionId,
@@ -259,8 +290,13 @@ struct SidebarView: View {
             state: schemaService.state(for: connectionId),
             hasActiveFilter: !viewModel.filterQuery.isEmpty,
             hasAnyMatch: hasAnyMatch,
-            hasOutlastedGrace: showsSchemaProgress
+            hasOutlastedGrace: showsSchemaProgress,
+            needsDatabaseSelection: needsDatabaseSelection
         )
+    }
+
+    private var needsDatabaseSelection: Bool {
+        viewModel.databaseType.browsingRequiresSelectedDatabase && activeDatabase == nil
     }
 
     /// Asked above the switch rather than inside its loading branch, so which of the two the
@@ -277,6 +313,8 @@ struct SidebarView: View {
                 loadingState
             case .failed(let message):
                 errorState(message: message)
+            case .noDatabaseSelected:
+                noDatabaseSelectedState
             case .noMatch:
                 noMatchState
             case .list:
@@ -312,6 +350,19 @@ struct SidebarView: View {
         .padding()
     }
 
+    private var noDatabaseSelectedState: some View {
+        UnavailableStateView {
+            Label(String(localized: "No Database Selected"), systemImage: "cylinder")
+        } description: {
+            Text("Open a database to browse its tables.")
+        } actions: {
+            Button(String(localized: "Open Database…")) {
+                coordinator?.commandActions?.openDatabaseSwitcher()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     private var noMatchState: some View {
         UnavailableStateView.search(text: viewModel.searchText)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -325,7 +376,7 @@ struct SidebarView: View {
     }
 
     private var isConnected: Bool {
-        DatabaseManager.shared.session(for: connectionId)?.status == .connected
+        databaseManager.session(for: connectionId)?.status == .connected
     }
 
     private var tableList: some View {
@@ -345,6 +396,7 @@ struct SidebarView: View {
             selectedTables: windowState.selectedTables,
             showRecentTables: settingsManager.general.showRecentTables,
             showSystemContainers: settingsManager.general.showSystemContainers,
+            showsPartitions: settingsManager.general.showPartitions,
             rowSizePreference: settingsManager.general.sidebarRowSize
         )
     }

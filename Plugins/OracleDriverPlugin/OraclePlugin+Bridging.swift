@@ -1,4 +1,5 @@
 import Foundation
+import os
 import OSLog
 import TableProOracleCore
 import TableProPluginKit
@@ -40,6 +41,18 @@ extension OracleRawCell {
         case .string(let value): return .text(value)
         case .bytes(let data): return .bytes(data)
         }
+    }
+}
+
+extension OracleColumnRow {
+    var pluginColumnInfo: PluginColumnInfo {
+        PluginColumnInfo(
+            name: name,
+            dataType: displayType,
+            isNullable: isNullable,
+            isPrimaryKey: isPrimaryKey,
+            defaultValue: defaultValue
+        )
     }
 }
 

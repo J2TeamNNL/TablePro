@@ -121,4 +121,82 @@ struct PushOutcomeTests {
         #expect(first.savedRecords.count == 2)
         #expect(first.failures.count == 1)
     }
+
+    @Test("Deleting a record the server never had counts as deleted, and only for deletions")
+    func missingDeletionCountsAsDeleted() {
+        var outcome = PushOutcome()
+        let missing = recordID("Connection_Missing")
+        let missingSave = recordID("Connection_MissingSave")
+        let rejected = recordID("Connection_Rejected")
+        let notFound = SyncItemFailure(code: .unknownItem, serverRecord: nil, clientRecord: nil, message: "not found")
+        outcome.recordFailure(notFound, for: missing)
+        outcome.recordFailure(notFound, for: missingSave)
+        outcome.recordFailure(
+            SyncItemFailure(code: .permissionFailure, serverRecord: nil, clientRecord: nil, message: "denied"),
+            for: rejected
+        )
+
+        outcome.acceptMissingDeletions(of: [missing, rejected])
+
+        #expect(outcome.didDelete(missing))
+        #expect(outcome.failures[missing] == nil)
+        #expect(outcome.failures[missingSave] != nil)
+        #expect(outcome.failures[rejected] != nil)
+        #expect(!outcome.didDelete(rejected))
+    }
+
+    @Test("A push that stopped after saving some records carries those saves with the error")
+    func interruptionKeepsWhatWasSaved() throws {
+        var completed = PushOutcome()
+        let saved = makeRecord("Connection_Saved")
+        completed.recordSave(saved)
+
+        let error = SyncPushInterruption.after(completed, failingWith: CKError(.networkFailure))
+
+        let interruption = try #require(error as? SyncPushInterruption)
+        #expect(interruption.completed.didSave(saved.recordID))
+        #expect((interruption.cause as? CKError)?.code == .networkFailure)
+    }
+
+    @Test("A push that stopped before saving anything throws its own error unchanged")
+    func interruptionWithoutProgressIsTheRawError() {
+        let error = SyncPushInterruption.after(PushOutcome(), failingWith: CKError(.networkFailure))
+
+        #expect(!(error is SyncPushInterruption))
+        #expect((error as? CKError)?.code == .networkFailure)
+    }
+
+    @Test("An interruption from a later batch keeps the saves of the batches before it")
+    func nestedInterruptionsMerge() throws {
+        var earlier = PushOutcome()
+        let first = makeRecord("Connection_First")
+        earlier.recordSave(first)
+        var later = PushOutcome()
+        let second = makeRecord("Connection_Second")
+        later.recordSave(second)
+        let inner = SyncPushInterruption(completed: later, cause: CKError(.networkFailure))
+
+        let error = SyncPushInterruption.after(earlier, failingWith: inner)
+
+        let interruption = try #require(error as? SyncPushInterruption)
+        #expect(interruption.completed.didSave(first.recordID))
+        #expect(interruption.completed.didSave(second.recordID))
+    }
+
+    @Test("An interrupted push reports the error that stopped it")
+    func interruptionMapsToItsCause() {
+        let interruption = SyncPushInterruption(completed: PushOutcome(), cause: CKError(.networkFailure))
+
+        #expect(SyncError.from(interruption) == .networkUnavailable)
+    }
+
+    @Test("An outcome with nothing saved, deleted or rejected is empty")
+    func emptyOutcome() {
+        var outcome = PushOutcome()
+        #expect(outcome.isEmpty)
+
+        outcome.recordDeletion(recordID("Connection_Gone"))
+
+        #expect(!outcome.isEmpty)
+    }
 }

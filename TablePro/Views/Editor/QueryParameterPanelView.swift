@@ -58,6 +58,7 @@ struct QueryParameterPanelView: View {
             }
             .buttonStyle(.borderless)
             .help(String(localized: "Close parameter panel"))
+            .accessibilityLabel(String(localized: "Close parameter panel"))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -113,6 +114,7 @@ struct QueryParameterRowView: View {
                 .textFieldStyle(.roundedBorder)
                 .controlSize(.small)
                 .disabled(parameter.isNull)
+                .accessibilityIdentifier("query-parameter-value-\(parameter.name)")
 
             Picker("", selection: $parameter.type) {
                 ForEach(QueryParameterType.allCases, id: \.self) { paramType in

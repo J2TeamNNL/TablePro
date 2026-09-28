@@ -68,15 +68,13 @@ struct QueryContainerPicker: View {
                 Text(scopeLabel)
                     .font(.callout)
                     .lineLimit(1)
-                Image(systemName: "chevron.down")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
             }
             .foregroundStyle(.secondary)
+            .accessibilityLabel(scopeAccessibilityLabel)
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
         .fixedSize()
-        .accessibilityLabel(scopeAccessibilityLabel)
     }
 
     private func containerButton(_ container: DatabaseMetadata) -> some View {

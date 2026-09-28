@@ -11,7 +11,7 @@ import Foundation
 /// One plugin serves MySQL and MariaDB, and they gained these catalogs at different releases.
 /// Reading one that does not exist is not a soft failure: the structure load surfaces the error
 /// and the whole Structure tab refuses to open, so each read is gated before it runs.
-enum MySQLServerVersion {
+nonisolated internal enum MySQLServerVersion {
     /// `(major, minor, patch)` from a version banner such as `8.0.36` or `10.6.16-MariaDB`.
     static func components(from banner: String) -> (major: Int, minor: Int, patch: Int)? {
         let leading = banner.prefix { $0.isNumber || $0 == "." }
@@ -27,22 +27,28 @@ enum MySQLServerVersion {
         return version.patch >= target.2
     }
 
-    /// MySQL parsed and ignored CHECK before 8.0.16; MariaDB enforces it from 10.2.1.
-    /// `INFORMATION_SCHEMA.CHECK_CONSTRAINTS` appears with that support on both.
-    static func hasCheckConstraints(banner: String?, flavor: MySQLServerFlavor) -> Bool {
+    /// True only when the banner parses and names a version below `target`. An unreadable banner is
+    /// not an old server, so a gate that picks legacy syntax asks this rather than `!isAtLeast`.
+    static func isKnownBelow(_ target: (Int, Int, Int), banner: String?) -> Bool {
+        guard let banner, components(from: banner) != nil else { return false }
+        return !isAtLeast(target, banner: banner)
+    }
+
+    /// Whether the server has a statement timeout at all. MySQL gained `max_execution_time` in
+    /// 5.7.8 and MariaDB `max_statement_time` in 10.1.1; measured, everything below answers
+    /// `ERROR 1193 Unknown system variable` to both spellings.
+    ///
+    /// This is the floor the tests and `scripts/check-mysql-query-timeout.sh` assert, not the
+    /// runtime gate: `applyQueryTimeout` runs the statement and reads the server's own answer,
+    /// which is right for a fork, a proxy or a release no image exists for.
+    static func hasStatementTimeout(banner: String?, flavor: MySQLServerFlavor) -> Bool {
         switch flavor {
         case .mysql:
-            return isAtLeast((8, 0, 16), banner: banner)
+            return isAtLeast((5, 7, 8), banner: banner)
         case .mariadb:
-            return isAtLeast((10, 2, 1), banner: banner)
-        case .tidb(let version):
-            guard let version else { return false }
-            return version >= MySQLEngineVersion(major: 7, minor: 2, patch: 0)
-        case .oceanbase(let version):
-            guard let version else { return false }
-            return version >= MySQLEngineVersion(major: 4, minor: 0, patch: 0)
-        case .databend:
-            return false
+            return isAtLeast((10, 1, 1), banner: banner)
+        case .tidb, .oceanbase, .databend:
+            return true
         }
     }
 
@@ -61,12 +67,46 @@ enum MySQLServerVersion {
         }
     }
 
-    /// Whether a literal default comes back from the catalog already quoted.
+    /// What `REFERENTIAL_CONSTRAINTS` reports for a foreign key whose `CREATE TABLE` names no
+    /// `ON DELETE` or `ON UPDATE`, so a key parsed out of `SHOW CREATE TABLE` reads the same as the
+    /// catalog would have answered.
+    ///
+    /// Measured on a key declared with no action clause: MySQL 5.5.62, 5.6.51 and 5.7.44 and MariaDB
+    /// 5.5.64 and 11.4.13 all answer `RESTRICT`, while MySQL 8.0.11, 8.0.12, 8.0.13, 8.0.15, 8.0.16
+    /// and 8.4.11 answer `NO ACTION`.
+    ///
+    /// What the DDL prints was measured on one table carrying all three declarations. 5.7.44 and
+    /// MariaDB 11.4.13 print an explicit `NO ACTION` and omit an explicit `RESTRICT`; 8.0.13, 8.0.15,
+    /// 8.0.16 and 8.4.11 print an explicit `RESTRICT` and omit an explicit `NO ACTION`. Either way
+    /// the omitted spelling is the one this returns, so the parse is exact.
+    ///
+    /// 8.0.11 and 8.0.12 print neither spelling, so an explicit `RESTRICT` cannot be told from a key
+    /// that names no action at all and reads back as `NO ACTION`. It stays `NO ACTION` there: that is
+    /// what those servers report for the omitted clause, which is the common one, and `RESTRICT`
+    /// would mislabel it instead. Only the DDL path is affected, so a connection whose catalog
+    /// answers is exact on those versions too.
+    static func omittedForeignKeyAction(banner: String?, flavor: MySQLServerFlavor) -> String {
+        guard !flavor.isMariaDB else { return "RESTRICT" }
+        return isAtLeast((8, 0, 0), banner: banner) ? "NO ACTION" : "RESTRICT"
+    }
+
+    /// Whether a literal default comes back from `INFORMATION_SCHEMA.COLUMNS` already quoted.
     ///
     /// MariaDB began quoting `COLUMN_DEFAULT` in 10.2.7, alongside expression defaults. Before that,
     /// and on every MySQL, a literal arrives bare and is indistinguishable from an expression by its
     /// text alone. MySQL never quotes, and marks an expression `DEFAULT_GENERATED` in `EXTRA` instead.
+    ///
+    /// It describes that catalog table and nothing else. MariaDB's `SHOW FULL COLUMNS` kept the old
+    /// bare form, so a `SHOW` answer is never read this way whatever the server version.
     static func quotesColumnDefault(banner: String?, flavor: MySQLServerFlavor) -> Bool {
         flavor.isMariaDB && isAtLeast((10, 2, 7), banner: banner)
+    }
+
+    /// Whether a MariaDB default can be an expression other than `CURRENT_TIMESTAMP`, which MariaDB
+    /// allows from 10.2.1. From then on its `SHOW FULL COLUMNS` reports `uuid()` and the string
+    /// `'uuid()'` alike, so the bare form alone cannot recreate a default. An unreadable banner is
+    /// not an old server.
+    static func mariaDBDefaultsCanBeExpressions(banner: String?, flavor: MySQLServerFlavor) -> Bool {
+        flavor.isMariaDB && !isKnownBelow((10, 2, 1), banner: banner)
     }
 }

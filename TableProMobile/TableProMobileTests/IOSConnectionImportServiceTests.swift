@@ -68,6 +68,73 @@ struct IOSConnectionImportServiceTests {
         #expect(try store.retrieve(forKey: "com.TablePro.password.\(id.uuidString)") == nil)
     }
 
+    private func importedSSH(_ ssh: ExportableSSHConfig) throws -> SSHConfiguration {
+        let fixture = try AppStateFixture()
+        let appState = fixture.makeState(syncEnabled: false, secureStore: MockSecureStore())
+        let imported = ExportableConnection(
+            name: "Bastion", host: "db-1", port: 5_432, database: "", username: "",
+            type: DatabaseType.postgresql.rawValue, sshConfig: ssh, sslConfig: nil, color: nil, tagName: nil,
+            groupName: nil, sshProfileId: nil, safeModeLevel: nil, aiPolicy: nil, additionalFields: nil,
+            redisDatabase: nil, startupCommands: nil, localOnly: nil
+        )
+        let item = ImportItem(connection: imported, status: .ready)
+        let envelope = ConnectionExportEnvelope(
+            formatVersion: 1, exportedAt: Date(), appVersion: "Tests",
+            connections: [imported], groups: nil, tags: nil, credentials: nil
+        )
+
+        let result = IOSConnectionImportService.performImport(
+            ConnectionImportPreview(envelope: envelope, items: [item]),
+            resolutions: [item.id: .importNew],
+            appState: appState
+        )
+
+        #expect(result.importedCount == 1)
+        return try #require(appState.connections.first?.sshConfiguration)
+    }
+
+    @Test("an imported jump host keeps its port, auth method and key path")
+    func importKeepsJumpHostFields() throws {
+        let config = try importedSSH(ExportableSSHConfig(
+            enabled: true, host: "db-1", port: 22, username: "deploy",
+            authMethod: "Password", privateKeyPath: "", agentSocketPath: "",
+            jumpHosts: [
+                ExportableJumpHost(
+                    host: "bastion-1", port: nil, username: "ops",
+                    authMethod: "Private Key", privateKeyPath: "~/.ssh/id_ed25519"
+                )
+            ],
+            totpMode: nil, totpAlgorithm: nil, totpDigits: nil, totpPeriod: nil
+        ))
+
+        let hop = try #require(config.jumpHosts.first)
+        #expect(hop.host == "bastion-1")
+        #expect(hop.port == nil)
+        #expect(hop.macAuthMethod == .privateKey)
+        #expect(hop.macPrivateKeyPath == "~/.ssh/id_ed25519")
+    }
+
+    @Test("A file a shipped iOS build wrote imports with an unset port and a hop macOS can read")
+    func importNormalizesLegacyIOSFile() throws {
+        let config = try importedSSH(ExportableSSHConfig(
+            enabled: true, host: "db-1", port: nil, username: "deploy",
+            authMethod: "sshAgent", privateKeyPath: "", agentSocketPath: "",
+            jumpHosts: [
+                ExportableJumpHost(
+                    host: "bastion-1", port: nil, username: "ops",
+                    authMethod: "sshAgent", privateKeyPath: ""
+                )
+            ],
+            totpMode: nil, totpAlgorithm: nil, totpDigits: nil, totpPeriod: nil
+        ))
+
+        #expect(config.port == nil)
+        #expect(config.resolvedPort == 22)
+        #expect(config.authMethod == .sshAgent)
+        let hop = try #require(config.jumpHosts.first)
+        #expect(hop.macAuthMethod == .sshAgent)
+    }
+
     @Test("suggested filename uses the connection name for a single export")
     func suggestedFilenameSingle() {
         let connection = DatabaseConnection(name: "Prod DB", type: .postgresql, host: "db", port: 5_432)
@@ -79,5 +146,79 @@ struct IOSConnectionImportServiceTests {
         let a = DatabaseConnection(name: "A", type: .mysql, host: "a", port: 3_306)
         let b = DatabaseConnection(name: "B", type: .mysql, host: "b", port: 3_306)
         #expect(IOSConnectionExportService.suggestedFilename(for: [a, b]) == "TablePro Connections.tablepro")
+    }
+}
+
+@MainActor
+@Suite("iOS connection import replace")
+struct IOSConnectionImportReplaceTests {
+    private let fixture: AppStateFixture
+    private let store = MockSecureStore()
+    private let appState: AppState
+    private let existing = DatabaseConnection(
+        name: "Bastion",
+        type: .postgresql,
+        host: "db.example.com",
+        port: 5_432,
+        sshEnabled: true,
+        sshConfiguration: SSHConfiguration(host: "bastion.example.com", username: "deploy", authMethod: .privateKey)
+    )
+
+    init() throws {
+        fixture = try AppStateFixture()
+        appState = fixture.makeState(syncEnabled: false, secureStore: store)
+    }
+
+    private var keyAccount: String {
+        ConnectionSecretKind.sshPrivateKey.account(for: existing.id)
+    }
+
+    private func tunnel(authMethod: String, keyPath: String = "") -> ExportableSSHConfig {
+        ExportableSSHConfig(
+            enabled: true, host: "bastion.example.com", port: 22, username: "deploy",
+            authMethod: authMethod, privateKeyPath: keyPath, agentSocketPath: "", jumpHosts: nil,
+            totpMode: nil, totpAlgorithm: nil, totpDigits: nil, totpPeriod: nil
+        )
+    }
+
+    private func replaceExisting(with ssh: ExportableSSHConfig?) -> Int {
+        let imported = ExportableConnection(
+            name: existing.name, host: existing.host, port: existing.port, database: "", username: "",
+            type: DatabaseType.postgresql.rawValue, sshConfig: ssh, sslConfig: nil, color: nil, tagName: nil,
+            groupName: nil, sshProfileId: nil, safeModeLevel: nil, aiPolicy: nil, additionalFields: nil,
+            redisDatabase: nil, startupCommands: nil, localOnly: nil
+        )
+        let item = ImportItem(
+            connection: imported,
+            status: .duplicate(existingId: existing.id, existingName: existing.name)
+        )
+        let envelope = ConnectionExportEnvelope(
+            formatVersion: 1, exportedAt: Date(), appVersion: "Tests",
+            connections: [imported], groups: nil, tags: nil, credentials: nil
+        )
+        return IOSConnectionImportService.performImport(
+            ConnectionImportPreview(envelope: envelope, items: [item]),
+            resolutions: [item.id: .replace(existingId: existing.id)],
+            appState: appState
+        ).importedCount
+    }
+
+    @Test("Replacing a connection keeps its pasted key, whatever tunnel the import brings")
+    func replaceKeepsPastedKey() throws {
+        #expect(appState.addConnection(existing))
+        let incoming: [ExportableSSHConfig?] = [
+            tunnel(authMethod: "privateKey"),
+            tunnel(authMethod: "privateKey", keyPath: "~/.ssh/id_ed25519"),
+            tunnel(authMethod: "password"),
+            nil
+        ]
+
+        for ssh in incoming {
+            store.seed(keyAccount, "PASTED KEY")
+
+            #expect(replaceExisting(with: ssh) == 1)
+
+            #expect(try store.retrieve(forKey: keyAccount) == "PASTED KEY", "\(ssh?.authMethod ?? "no tunnel")")
+        }
     }
 }

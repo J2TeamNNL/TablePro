@@ -12,7 +12,6 @@ import Foundation
 @testable import TablePro
 import Testing
 
-@Suite("SQLTokenBoundary")
 struct SQLTokenBoundaryTests {
     @Test("Segment start covers the whole typed word")
     func segmentStartPlainWord() {
@@ -95,6 +94,33 @@ struct SQLTokenBoundaryTests {
             in: text, cursor: 7, fallback: NSRange(location: 3, length: 2)
         )
         #expect(range == NSRange(location: 7, length: 0))
+    }
+
+    // MARK: - Match text
+
+    @Test(
+        "Match text drops the identifier quotes the segment carries",
+        arguments: [
+            ("`cat", "cat"),
+            ("\"cat", "cat"),
+            ("`category`", "category"),
+            ("\"category\"", "category"),
+            ("`", ""),
+            ("\"", ""),
+            ("cat", "cat"),
+            ("", "")
+        ]
+    )
+    func matchTextDropsQuotes(segment: String, expected: String) {
+        #expect(SQLTokenBoundary.matchText(of: segment) == expected)
+    }
+
+    /// The segment keeps its quote so the replacement covers it; only the match text drops it.
+    @Test("Match text does not change what the segment covers")
+    func matchTextLeavesTheSegmentAlone() {
+        let text = "SELECT \"mess" as NSString
+        #expect(SQLTokenBoundary.segmentStart(in: text, endingAt: 12) == 7)
+        #expect(SQLTokenBoundary.matchText(of: text.substring(from: 7)) == "mess")
     }
 
     // MARK: - Non-ASCII identifiers

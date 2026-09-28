@@ -10,22 +10,22 @@ extension MainContentCoordinator {
         queryExecutionCoordinator.runAllStatements(extraCapabilities: extraCapabilities)
     }
 
-    internal func dispatchStatements(
-        _ statements: [SQLStatementScanner.ExecutableStatement],
+    internal func dispatchBatches(
+        _ batches: [ExecutableBatch],
         tabIndex index: Int,
         bypassRowLimit: Bool = false
     ) {
-        queryExecutionCoordinator.dispatchStatements(statements, tabIndex: index, bypassRowLimit: bypassRowLimit)
+        queryExecutionCoordinator.dispatchBatches(batches, tabIndex: index, bypassRowLimit: bypassRowLimit)
     }
 
-    internal func dispatchParameterizedStatements(
-        _ statements: [SQLStatementScanner.ExecutableStatement],
+    internal func dispatchParameterizedBatches(
+        _ batches: [ExecutableBatch],
         parameters: [QueryParameter],
         tabIndex index: Int,
         bypassRowLimit: Bool = false
     ) {
-        queryExecutionCoordinator.dispatchParameterizedStatements(
-            statements,
+        queryExecutionCoordinator.dispatchParameterizedBatches(
+            batches,
             parameters: parameters,
             tabIndex: index,
             bypassRowLimit: bypassRowLimit

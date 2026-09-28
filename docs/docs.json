@@ -45,6 +45,10 @@
   },
   "redirects": [
     {
+      "source": "/features/csv-inspector",
+      "destination": "/features/data-files"
+    },
+    {
       "source": "/features/php-viewer",
       "destination": "/features/json-viewer"
     },
@@ -204,7 +208,7 @@
               "features/filtering",
               "features/change-tracking",
               "features/json-viewer",
-              "features/csv-inspector"
+              "features/data-files"
             ]
           },
           {
@@ -236,7 +240,9 @@
             "icon": "sparkles",
             "pages": [
               "features/ai-assistant",
-              "features/mcp"
+              "features/agent-mode",
+              "features/mcp",
+              "features/mcp-outside-servers"
             ]
           },
           {
@@ -244,6 +250,7 @@
             "icon": "window-maximize",
             "pages": [
               "features/overview",
+              "features/connection-window",
               "features/tabs",
               "features/workspace-rail",
               "features/open-quickly",

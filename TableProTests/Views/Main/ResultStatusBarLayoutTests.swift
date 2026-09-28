@@ -6,6 +6,7 @@
 import AppKit
 import Foundation
 import SwiftUI
+import TableProPluginKit
 import Testing
 
 @testable import TablePro
@@ -21,7 +22,6 @@ import Testing
 /// context, which cannot touch a static on a `@MainActor` suite.
 private let statusBarHostWidths: [CGFloat] = [1_400, 1_200, 900, 720, 600, 500, 440, 400, 380, 320, 300]
 
-@Suite("ResultStatusBar Layout")
 @MainActor
 struct ResultStatusBarLayoutTests {
     private func makeBar(
@@ -71,7 +71,7 @@ struct ResultStatusBarLayoutTests {
                 isPersisted: tabType == .table,
                 presentationRequest: 0,
                 onChange: { _ in },
-                onDismiss: {}
+                onDismiss: { _ in }
             ),
             paginationCallbacks: PaginationCallbacks(
                 onFirst: {},
@@ -209,6 +209,199 @@ struct ResultStatusBarLayoutTests {
         #expect(ResultsViewMode.json.showsRowFilters)
         #expect(!ResultsViewMode.chart.showsRowFilters)
         #expect(!ResultsViewMode.structure.showsRowFilters)
+    }
+
+    @Test("A first run's spinner stays on screen when its result lands and drops the bar a tier")
+    func revealedSpinnerOutlivesATierChangeAtTheLanding() async throws {
+        let tab = QueryTab(title: "Query 1", query: "SELECT 1", tabType: .query)
+        var registry = TabExecutionRegistry()
+        let host = NSHostingView(rootView: queryBar(tab: tab, rows: TableRows(), registry: registry))
+        let window = hostingWindow(for: host, width: Self.widthThatDropsAResultATier)
+        defer { window.contentView = nil }
+
+        #expect(spinners(in: host).isEmpty, "An idle tab showed a spinner")
+
+        let claim = registry.claim(tab.id)
+        host.rootView = queryBar(tab: tab, rows: TableRows(), registry: registry)
+        #expect(await settle(host) { !spinners(in: host).isEmpty }, "The first run never revealed a spinner")
+
+        let landed = queryBar(tab: tab, rows: Self.resultRows, registry: registry)
+        host.rootView = landed
+        host.layoutSubtreeIfNeeded()
+
+        #expect(landed.model.controls.showsModeSwitcher)
+        #expect(
+            views(NSSegmentedControl.self, in: host).isEmpty,
+            "The result did not drop the bar to the narrow tier, so no tier change was tested"
+        )
+        #expect(
+            !spinners(in: host).isEmpty,
+            "The tier the result brought in started unrevealed and hid a run that is still going"
+        )
+
+        let settled = registry.settle(claim)
+        #expect(settled)
+        let timing = PluginQueryTiming(total: 0.6)
+        host.rootView = queryBar(tab: tab, rows: Self.resultRows, registry: registry, timing: timing)
+        #expect(await settle(host) { spinners(in: host).isEmpty }, "The spinner outlived its dwell")
+    }
+
+    @Test("A spinner revealed on one query tab is not shown on the tab switched to")
+    func revealedSpinnerStaysWithItsTab() async throws {
+        let running = QueryTab(title: "Query 1", query: "SELECT 1", tabType: .query)
+        let idle = QueryTab(title: "Query 2", query: "SELECT 2", tabType: .query)
+        var registry = TabExecutionRegistry()
+        _ = registry.claim(running.id)
+        let host = NSHostingView(rootView: queryBar(tab: running, rows: TableRows(), registry: registry))
+        let window = hostingWindow(for: host, width: 900)
+        defer { window.contentView = nil }
+
+        #expect(await settle(host) { !spinners(in: host).isEmpty }, "The running tab never revealed a spinner")
+
+        host.rootView = queryBar(tab: idle, rows: TableRows(), registry: registry)
+        host.layoutSubtreeIfNeeded()
+
+        #expect(spinners(in: host).isEmpty, "The tab switched to showed the other tab's Executing and Stop")
+    }
+
+    @Test("A tab already running past the grace shows its spinner as soon as it is switched to")
+    func longRunningTabRevealsWithoutASecondGrace() async throws {
+        let idle = QueryTab(title: "Query 1", query: "SELECT 1", tabType: .query)
+        let running = QueryTab(title: "Query 2", query: "SELECT 2", tabType: .query)
+        var registry = TabExecutionRegistry()
+        _ = registry.claim(running.id, startedAt: .now.advanced(by: .seconds(-2)))
+        let host = NSHostingView(rootView: queryBar(tab: idle, rows: TableRows(), registry: registry))
+        let window = hostingWindow(for: host, width: 900)
+        defer { window.contentView = nil }
+
+        let switchedAt = ContinuousClock.now
+        host.rootView = queryBar(tab: running, rows: TableRows(), registry: registry)
+        #expect(await settle(host) { !spinners(in: host).isEmpty }, "The running tab never revealed a spinner")
+        #expect(
+            switchedAt.duration(to: .now) < LoadingRevealPolicy.grace,
+            "The grace restarted at the switch instead of counting from when the run began"
+        )
+    }
+
+    @Test("Structure mode keeps its segmented switcher at the narrowest pane the window allows")
+    func structureModeKeepsItsSegmentedSwitcherAtThePaneFloor() {
+        let bar = makeBar(
+            rowCount: 1_000,
+            hasColumns: true,
+            tabType: .table,
+            viewMode: .structure,
+            structureFooter: StructureFooterCapability(
+                canAdd: true,
+                canRemove: true,
+                addLabel: "Add Column",
+                removeLabel: "Remove Column"
+            )
+        )
+        let host = NSHostingView(rootView: bar)
+        host.sizingOptions = []
+        host.frame = NSRect(x: 0, y: 0, width: MainSplitViewController.defaultDetailMinThickness, height: 28)
+        host.layoutSubtreeIfNeeded()
+
+        let modeCount = bar.snapshot.availableModes.count
+        #expect(modeCount > 1)
+        #expect(
+            views(NSSegmentedControl.self, in: host).contains { $0.segmentCount == modeCount },
+            "Structure mode reserved room for a readout it cannot show and fell back to the pull-down"
+        )
+    }
+
+    private static let widthThatDropsAResultATier: CGFloat = 300
+
+    private static let resultRows = TableRows.from(
+        queryRows: [[.text("1"), .text("a")]],
+        columns: ["id", "name"],
+        columnTypes: [.text(rawType: "INTEGER"), .text(rawType: "TEXT")]
+    )
+
+    private func queryBar(
+        tab: QueryTab,
+        rows: TableRows,
+        registry: TabExecutionRegistry,
+        timing: PluginQueryTiming? = nil
+    ) -> ResultStatusBar {
+        let snapshot = StatusBarSnapshot(tab: tab, tableRows: rows, isFetching: registry.isBusy(tab.id))
+        return ResultStatusBar(
+            model: ResultStatusModel(snapshot: snapshot, viewMode: .data, selectedRowCount: 0),
+            snapshot: snapshot,
+            filterState: TabFilterState(),
+            columnState: StatusBarColumnState(
+                hidden: [],
+                columns: [],
+                onToggle: { _ in },
+                onShowAll: {},
+                onHideAll: { _ in },
+                onReset: {},
+                onJumpToColumn: nil
+            ),
+            highlightState: StatusBarHighlightState(
+                rules: [],
+                columns: rows.columns,
+                isPersisted: false,
+                presentationRequest: 0,
+                onChange: { _ in },
+                onDismiss: { _ in }
+            ),
+            paginationCallbacks: PaginationCallbacks(
+                onFirst: {},
+                onPrevious: {},
+                onNext: {},
+                onLast: {},
+                onPageSizeChange: { _ in },
+                onShowAll: {},
+                onGoToPage: { _ in },
+                onRequestExactCount: {}
+            ),
+            structureFooter: StructureFooterCapability(),
+            execution: ExecutionReadout(tabId: tab.id, execution: registry, lastTiming: timing, onCancel: {}),
+            isRefreshingSchema: false,
+            viewMode: .constant(.data),
+            resultSetMenu: ResultSetMenuModel(entries: [], activeOrdinal: 0, total: 0),
+            onActivateResultSet: { _ in },
+            onToggleResultSetPin: { _ in },
+            onCloseResultSet: { _ in },
+            onCloseOtherResultSets: { _ in },
+            onToggleFilters: {},
+            onFetchAll: {},
+            onStructureAdd: {},
+            onStructureRemove: {}
+        )
+    }
+
+    private func hostingWindow(for host: NSView, width: CGFloat) -> NSWindow {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: width, height: StatusBarChrome.height),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        return window
+    }
+
+    private func settle(_ host: NSView, until condition: () -> Bool) async -> Bool {
+        for _ in 0 ..< 150 {
+            host.layoutSubtreeIfNeeded()
+            if condition() { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        host.layoutSubtreeIfNeeded()
+        return condition()
+    }
+
+    private func spinners(in view: NSView) -> [NSProgressIndicator] {
+        views(NSProgressIndicator.self, in: view)
+    }
+
+    private func views<Kind: NSView>(_ kind: Kind.Type, in view: NSView) -> [Kind] {
+        let own = (view as? Kind).map { [$0] } ?? []
+        return own + view.subviews.flatMap { views(kind, in: $0) }
     }
 
     // MARK: - Width

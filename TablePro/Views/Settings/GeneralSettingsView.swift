@@ -9,7 +9,10 @@ import SwiftUI
 struct GeneralSettingsView: View {
     @Binding var settings: GeneralSettings
     @Binding var tabSettings: TabSettings
-    var updater: SoftwareUpdater
+    /// Observed, because this view reads `canCheckForUpdates`, `lastUpdateCheckDate` and the button
+    /// title off it. Held as a plain property, Last checked and Check for Updates… kept whatever they
+    /// said when Settings opened, however many checks ran behind them.
+    @ObservedObject var updater: SoftwareUpdater
     var onResetAll: () -> Void
 
     @State private var initialLanguage: AppLanguage?
@@ -105,6 +108,13 @@ struct GeneralSettingsView: View {
                         in the sidebar tree and the database filter. Switchers always list them.
                         """))
 
+                Toggle("Show partitions", isOn: $settings.showPartitions)
+                    .accessibilityIdentifier("show-partitions-toggle")
+                    .help(String(localized: """
+                        Lists a partitioned table's partitions under it in the sidebar, with how many \
+                        it holds. Turn it off to keep partitioned tables as single rows.
+                        """))
+
                 Picker("Row size:", selection: $settings.sidebarRowSize) {
                     ForEach(SidebarRowSizePreference.allCases, id: \.self) { size in
                         Text(size.title).tag(size)
@@ -122,21 +132,7 @@ struct GeneralSettingsView: View {
                 .help(String(localized: "Layout for new connections on servers that support a database tree. Switch the current connection from the View menu."))
             }
 
-            Section("Connections") {
-                Picker("Check connections:", selection: $settings.connectionHealthCheck) {
-                    ForEach(ConnectionHealthCheck.allCases) { option in
-                        Text(option.title).tag(option)
-                    }
-                }
-                .accessibilityIdentifier("connection-health-check-picker")
-                .help(String(localized: """
-                    TablePro runs a small query on each open connection so it can notice a dropped \
-                    one and reconnect before you hit it. Only when I use the connection stops that \
-                    background traffic, which is what a database that sleeps when idle, or bills \
-                    per query, needs; TablePro then checks the connection the first time you use \
-                    it after a pause.
-                    """))
-            }
+            ConnectionsSettingsSection(healthCheck: $settings.connectionHealthCheck)
 
             Section("Query Execution") {
                 Picker("Query timeout:", selection: $settings.queryTimeoutSeconds) {

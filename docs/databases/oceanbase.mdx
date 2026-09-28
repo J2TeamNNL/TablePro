@@ -11,7 +11,7 @@ The tenant goes in the user name: `root@test` on an observer's port 2881, `root@
 |-------|---------|-------|
 | **Port** | `2881` | The observer's MySQL port. OBProxy listens on `2883` |
 | **Username** | empty | `user@tenant` on an observer, `user@tenant#cluster` through OBProxy. The sys tenant's administrator is `root@sys` |
-| **Database** | empty | Optional. Leave it empty to browse every database in the tenant |
+| **Database** | empty | Optional. Leave it empty and open one in the tenant with `Cmd+K` |
 | **SSL Mode** | Preferred | TLS first, plain text if the server refuses |
 
 **Release the Server Connection After** is available under Advanced. AWS IAM, Cloud SQL Auth Proxy and Unix socket are not offered; reach a private cluster through an [SSH tunnel](/connections/ssh-tunneling).
@@ -34,6 +34,7 @@ Write the `@` in the user name as `%40` and the `#` as `%23`. `oceanbase+ssh://`
 - Triggers appear in the Structure tab. Adding one from there is not offered.
 - `EXPLAIN` shows the plan as text. `EXPLAIN FORMAT=JSON` and `EXPLAIN ANALYZE` are not offered.
 - Table Maintenance offers `ANALYZE TABLE` on OceanBase 4.2.2 and later, and nothing on earlier versions.
+- External tables list as external tables, and system and virtual tables as system tables. All three are read-only kinds, so their menus drop **Truncate** and **Import**.
 
 A connection saved as **MySQL** that reaches an OceanBase server gets none of the above, because the MySQL handshake reports `5.7.25` or `5.6.25` and names no engine. Choose **OceanBase** as the connection type.
 

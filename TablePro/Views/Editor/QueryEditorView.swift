@@ -9,6 +9,7 @@ import TableProPluginKit
 
 /// The SQL editor, its command bar, and the banners that belong to the document it holds.
 struct QueryEditorView: View {
+    @ObservedObject private var settingsManager = AppSettingsManager.shared
     @Binding var queryText: String
     @Binding var cursorPositions: [CursorPosition]
     @Binding var parameters: [QueryParameter]
@@ -17,7 +18,6 @@ struct QueryEditorView: View {
     var databaseType: DatabaseType?
     var databaseScope: DatabaseScope?
     var connectionId: UUID?
-    var connectionAIPolicy: AIConnectionPolicy?
     var tabID: UUID?
     var claimFocusOnAppear: Bool = false
     var onFocusClaimed: (() -> Void)?
@@ -30,8 +30,8 @@ struct QueryEditorView: View {
     var onExecuteQuery: (() -> Void)?
     var onRunStatement: ((String, Int) -> Bool)?
     var isExecuting: Bool = false
-    var onAIExplain: ((String) -> Void)?
-    var onAIOptimize: ((String) -> Void)?
+    var currentAIAvailability: (() -> AIQueryActionAvailability)?
+    var onAIAction: ((AIQueryAction, AIQueryTarget) -> Void)?
     var onSaveAsFavorite: ((String) -> Void)?
 
     let scope: QueryScopeBarModel
@@ -56,8 +56,9 @@ struct QueryEditorView: View {
                 scope: scope,
                 commands: commands,
                 isExecuting: isExecuting,
-                vimMode: AppSettingsManager.shared.editor.vimModeEnabled ? vimMode : nil,
+                vimMode: settingsManager.editor.vimModeEnabled ? vimMode : nil,
                 showsHistoryTip: showsHistoryTip,
+                onAIAction: { action in onAIAction?(action, .selectionOrStatementAtCursor) },
                 onRun: onRun,
                 onRunAllStatements: onRunAllStatements,
                 onRunWithoutLimit: onRunWithoutLimit,
@@ -87,7 +88,6 @@ struct QueryEditorView: View {
                 databaseType: databaseType,
                 databaseScope: databaseScope,
                 connectionId: connectionId,
-                connectionAIPolicy: connectionAIPolicy,
                 tabID: tabID,
                 claimFocusOnAppear: claimFocusOnAppear,
                 onFocusClaimed: onFocusClaimed,
@@ -101,8 +101,8 @@ struct QueryEditorView: View {
                 onExecuteQuery: onExecuteQuery,
                 onRunStatement: onRunStatement,
                 isExecuting: isExecuting,
-                onAIExplain: onAIExplain,
-                onAIOptimize: onAIOptimize,
+                currentAIAvailability: currentAIAvailability,
+                onAIAction: onAIAction,
                 onSaveAsFavorite: onSaveAsFavorite
             )
             .frame(minHeight: 100)

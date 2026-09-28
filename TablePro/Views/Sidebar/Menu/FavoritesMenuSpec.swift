@@ -12,19 +12,22 @@ internal struct FavoritesMenuContext {
     internal let teamLibraryAvailable: Bool
     internal let databaseEntityName: String
     internal let activeDatabase: String?
+    internal let linkedFileGitStates: [UUID: LinkedFileGitState]
 
     internal init(
         clicked: FavoritesOutlineNode.Kind?,
         allFolders: [SQLFavoriteFolder] = [],
         teamLibraryAvailable: Bool = false,
         databaseEntityName: String = "Database",
-        activeDatabase: String? = nil
+        activeDatabase: String? = nil,
+        linkedFileGitStates: [UUID: LinkedFileGitState] = [:]
     ) {
         self.clicked = clicked
         self.allFolders = allFolders
         self.teamLibraryAvailable = teamLibraryAvailable
         self.databaseEntityName = databaseEntityName
         self.activeDatabase = activeDatabase
+        self.linkedFileGitStates = linkedFileGitStates
     }
 }
 
@@ -100,7 +103,7 @@ internal enum FavoritesMenuSpec {
         case .favorite(let favorite):
             return favoriteSections(favorite, context: context)
         case .linkedFavorite(let linked):
-            return linkedFavoriteSections(linked)
+            return linkedFavoriteSections(linked, gitState: context.linkedFileGitStates[linked.id])
         case .folder(let folder):
             return folderSections(folder)
         case .linkedFolder(let folder):
@@ -118,7 +121,8 @@ internal enum FavoritesMenuSpec {
     ) -> [FavoritesMenuSection] {
         var edits: [FavoritesMenuItem] = [
             .command(String(localized: "Copy Query"), .copyText(favorite.query)),
-            .command(String(localized: "Edit…"), .editFavorite(favorite))
+            .command(String(localized: "Edit…"), .editFavorite(favorite)),
+            .command(String(localized: "Show History"), .showFavoriteHistory(favorite))
         ]
         if let moveTo = moveToSubmenu(favorite, folders: context.allFolders) {
             edits.append(moveTo)
@@ -133,11 +137,18 @@ internal enum FavoritesMenuSpec {
         ]
     }
 
+    /// A folder is never narrower than what it holds, so a global query is offered only the folders
+    /// that are themselves global. A query belonging to one connection can go anywhere that
+    /// connection can see, a global folder included: a container is allowed to be the wider of the
+    /// two.
+    ///
+    /// Root Level alone is enough to offer the submenu. A query re-homed to the root because its
+    /// folder belongs to another connection still names that folder, and on a connection holding no
+    /// folders of its own there would otherwise be no way to detach it.
     private static func moveToSubmenu(
         _ favorite: SQLFavorite,
         folders: [SQLFavoriteFolder]
     ) -> FavoritesMenuItem? {
-        guard !folders.isEmpty else { return nil }
         var root: [FavoritesMenuItem] = []
         if favorite.folderId != nil {
             root.append(.command(
@@ -147,6 +158,7 @@ internal enum FavoritesMenuSpec {
         }
         let targets: [FavoritesMenuItem] = folders
             .filter { $0.id != favorite.folderId }
+            .filter { SQLFavoriteScopeRule.folder($0.connectionId, canHold: favorite.connectionId) }
             .map { .command($0.name, .moveFavorite(id: favorite.id, toFolder: $0.id)) }
         guard !root.isEmpty || !targets.isEmpty else { return nil }
         return .submenu(
@@ -155,12 +167,16 @@ internal enum FavoritesMenuSpec {
         )
     }
 
-    private static func linkedFavoriteSections(_ favorite: LinkedSQLFavorite) -> [FavoritesMenuSection] {
+    private static func linkedFavoriteSections(
+        _ favorite: LinkedSQLFavorite,
+        gitState: LinkedFileGitState?
+    ) -> [FavoritesMenuSection] {
         [
             FavoritesMenuSection([
                 .command(String(localized: "Open in Editor"), .openLinkedFavorite(favorite)),
                 .command(String(localized: "Edit Metadata…"), .editLinkedMetadata(favorite))
             ]),
+            FavoritesMenuSection(gitItems(favorite, gitState: gitState)),
             FavoritesMenuSection([
                 .command(String(localized: "Copy Query"), .copyLinkedFavoriteQuery(favorite)),
                 .command(String(localized: "Show in Finder"), .revealLinkedFavorite(favorite))
@@ -169,6 +185,18 @@ internal enum FavoritesMenuSpec {
                 .command(String(localized: "Move File to Trash"), .trashLinkedFavorite(favorite))
             ])
         ]
+    }
+
+    private static func gitItems(_ favorite: LinkedSQLFavorite, gitState: LinkedFileGitState?) -> [FavoritesMenuItem] {
+        guard let gitState else { return [] }
+        var items: [FavoritesMenuItem] = []
+        if gitState.hasCommittedHistory {
+            items.append(.command(String(localized: "Show History"), .showLinkedFileHistory(favorite)))
+        }
+        if gitState.canDiscardChanges {
+            items.append(.command(String(localized: "Discard Changes…"), .discardLinkedFileChanges(favorite)))
+        }
+        return items
     }
 
     private static func linkedFolderSections(_ folder: LinkedSQLFolder) -> [FavoritesMenuSection] {
@@ -192,12 +220,20 @@ internal enum FavoritesMenuSpec {
     }
 
     private static func folderSections(_ folder: SQLFavoriteFolder) -> [FavoritesMenuSection] {
-        [
+        let isGlobal = folder.connectionId == nil
+        return [
             FavoritesMenuSection([
                 .command(String(localized: "New Favorite…"), .newFavorite(folderId: folder.id)),
                 .command(String(localized: "New Subfolder"), .newFolder(parentId: folder.id))
             ]),
-            FavoritesMenuSection([.command(String(localized: "Rename"), .renameFolder(folder))]),
+            FavoritesMenuSection([
+                .command(String(localized: "Rename"), .renameFolder(folder)),
+                .command(SidebarMenuEntry(
+                    title: String(localized: "Global"),
+                    command: .setFolderGlobal(folder, !isGlobal),
+                    isOn: isGlobal
+                ))
+            ]),
             FavoritesMenuSection([.command(String(localized: "Delete Folder"), .deleteFolder(folder))])
         ]
     }

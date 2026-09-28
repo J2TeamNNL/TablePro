@@ -316,24 +316,9 @@ enum ConnectionExportService {
         )
     }
 
-    static func exportEncryptedData(_ connections: [DatabaseConnection], passphrase: String) throws -> Data {
+    static func exportEncryptedData(_ connections: [DatabaseConnection], passphrase: String) async throws -> Data {
         let jsonData = try encode(buildEnvelopeWithCredentials(for: connections))
-        return try ConnectionExportCrypto.encrypt(data: jsonData, passphrase: passphrase)
-    }
-
-    static func exportConnectionsEncrypted(
-        _ connections: [DatabaseConnection],
-        to url: URL,
-        passphrase: String
-    ) throws {
-        let encryptedData = try exportEncryptedData(connections, passphrase: passphrase)
-
-        do {
-            try encryptedData.write(to: url, options: .atomic)
-            logger.info("Exported \(connections.count) encrypted connections to \(url.path)")
-        } catch {
-            throw ConnectionExportError.fileWriteFailed(url.path)
-        }
+        return try await ConnectionExportCrypto.encrypt(data: jsonData, passphrase: passphrase)
     }
 
     // MARK: - Import
@@ -435,7 +420,7 @@ enum ConnectionExportService {
                 do {
                     try GroupStorage.shared.addGroup(group)
                 } catch {
-                    Self.logger.error("Skipped importing group: \(error.localizedDescription, privacy: .public)")
+                    Self.logger.error("Skipped importing group: \(error.publicLogShape, privacy: .public)")
                 }
             }
         }
@@ -457,7 +442,7 @@ enum ConnectionExportService {
                 do {
                     try TagStorage.shared.addTag(tag)
                 } catch {
-                    Self.logger.error("Skipped importing tag: \(error.localizedDescription, privacy: .public)")
+                    Self.logger.error("Skipped importing tag: \(error.publicLogShape, privacy: .public)")
                 }
             }
         }
@@ -763,7 +748,7 @@ enum ConnectionExportService {
             config.host = ssh.host
             config.port = ssh.port
             config.username = ssh.username
-            config.authMethod = SSHAuthMethod(rawValue: ssh.authMethod) ?? .password
+            config.authMethod = SSHAuthMethod(carrying: ssh.authMethod)
             config.privateKeyPath = PathPortability.expandHome(ssh.privateKeyPath)
             config.agentSocketPath = PathPortability.expandHome(ssh.agentSocketPath)
             config.jumpHosts = (ssh.jumpHosts ?? []).map { jump in
@@ -771,7 +756,7 @@ enum ConnectionExportService {
                     host: jump.host,
                     port: jump.port,
                     username: jump.username,
-                    authMethod: SSHJumpAuthMethod(rawValue: jump.authMethod) ?? .sshAgent,
+                    authMethod: SSHJumpAuthMethod(carrying: jump.authMethod),
                     privateKeyPath: PathPortability.expandHome(jump.privateKeyPath)
                 )
             }

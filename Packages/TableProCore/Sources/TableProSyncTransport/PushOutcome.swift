@@ -42,6 +42,10 @@ public struct PushOutcome: Sendable {
 
     public var hasFailures: Bool { !failures.isEmpty }
 
+    public var isEmpty: Bool {
+        savedRecords.isEmpty && deletedRecordIDs.isEmpty && failures.isEmpty
+    }
+
     public var conflicts: [CKRecord.ID: SyncItemFailure] {
         failures.filter(\.value.isConflict)
     }
@@ -69,6 +73,13 @@ public struct PushOutcome: Sendable {
         failures[recordID] = failure
     }
 
+    public mutating func acceptMissingDeletions(of deletions: [CKRecord.ID]) {
+        for recordID in deletions where failures[recordID]?.code == .unknownItem {
+            failures[recordID] = nil
+            deletedRecordIDs.insert(recordID)
+        }
+    }
+
     public mutating func merge(_ other: PushOutcome) {
         savedRecords.merge(other.savedRecords) { _, new in new }
         deletedRecordIDs.formUnion(other.deletedRecordIDs)
@@ -81,5 +92,25 @@ public struct PushOutcome: Sendable {
             guard let recordID = itemID as? CKRecord.ID else { continue }
             recordFailure(SyncItemFailure(error: itemError), for: recordID)
         }
+    }
+}
+
+public struct SyncPushInterruption: Error, Sendable {
+    public let completed: PushOutcome
+    public let cause: any Error
+
+    public init(completed: PushOutcome, cause: any Error) {
+        self.completed = completed
+        self.cause = cause
+    }
+
+    public static func after(_ completed: PushOutcome, failingWith error: any Error) -> any Error {
+        if let interruption = error as? SyncPushInterruption {
+            var merged = completed
+            merged.merge(interruption.completed)
+            return SyncPushInterruption(completed: merged, cause: interruption.cause)
+        }
+        guard !completed.isEmpty else { return error }
+        return SyncPushInterruption(completed: completed, cause: error)
     }
 }

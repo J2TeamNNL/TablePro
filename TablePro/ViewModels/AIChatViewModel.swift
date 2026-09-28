@@ -50,6 +50,7 @@ final class AIChatViewModel: ObservableObject {
 
     @Published var currentQuery: String?
     @Published var queryResults: String?
+    var editorTarget: AssistantEditorTarget?
 
     var isStreaming: Bool {
         switch streamingState {
@@ -57,6 +58,17 @@ final class AIChatViewModel: ObservableObject {
             return true
         case .idle, .awaitingApproval, .pausedAtToolLimit, .failed:
             return false
+        }
+    }
+
+    var isBusy: Bool {
+        switch streamingState {
+        case .loading, .streaming, .awaitingApproval:
+            return true
+        case .idle, .pausedAtToolLimit, .failed:
+            return prepTask != nil
+                || heldTurnAwaitsConnection
+                || ToolApprovalCenter.shared.hasPending(sessionId: sessionId)
         }
     }
 
@@ -82,6 +94,8 @@ final class AIChatViewModel: ObservableObject {
     }
 
     var pendingWalkthroughBeforeSQL: String?
+    var pendingWalkthroughSource: QueryEditorAnchor?
+    var queryContextMetadata: any ScopedMetadataProviding
     var inFlightColumnFetches: [String: Task<Void, Never>] = [:]
     var inFlightSchemaLoad: Task<Void, Never>?
     nonisolated(unsafe) var streamingTask: Task<Void, Never>?
@@ -89,14 +103,68 @@ final class AIChatViewModel: ObservableObject {
 
     let services: AppServices
     var chatStorage: AIChatStorage { services.aiChatStorage }
-    @Published var sessionApprovedConnections: Set<UUID> = []
     var cachedSavedQueries: [UUID: SQLFavorite] = [:]
+    private var savedQueryCancellables: Set<AnyCancellable> = []
 
     static let maxMessageCount = 200
 
-    init(services: AppServices = .live) {
+    /// The session this engine belongs to.
+    ///
+    /// Injected rather than minted here, because a restored session has to be the same session:
+    /// identity derived inside the engine cannot round-trip, so every guarantee keyed on it
+    /// (reopening by id, the rail's selection, per-session provider state) silently degraded to
+    /// "make another one".
+    let sessionId: UUID
+
+    /// The conversation to pull in when this engine is first looked at, if it is resuming one.
+    ///
+    /// Restore is lazy on purpose: reading every stored conversation at launch is quadratic in the
+    /// number of sessions, and `init` used to call `loadConversations()`, so opening any connection
+    /// window read the whole chat history off disk even with the assistant never revealed.
+    private var conversationToRestore: UUID?
+    private var didRestoreConversation = false
+
+    var pendingConversationToRestore: UUID? { conversationToRestore }
+    var hasRestoredConversation: Bool { didRestoreConversation }
+
+    /// Whether the connection this session names is still being opened.
+    ///
+    /// Agent mode draws its composer over a connect on purpose, so a turn can be submitted before
+    /// there is a session to run its tools against. Every such turn used to open a stream anyway,
+    /// which reached the tools with no connection behind them and answered the user's first
+    /// question with a row of failures. The turn is appended to the transcript as usual and the
+    /// stream is held until the connect lands, which is what a live composer during a connect
+    /// promises.
+    var isAwaitingConnection = false {
+        didSet {
+            guard oldValue, !isAwaitingConnection else { return }
+            releaseHeldTurn()
+        }
+    }
+
+    /// A turn that was submitted during a connect and has not been streamed yet.
+    var heldTurnAwaitsConnection = false
+
+    private func releaseHeldTurn() {
+        guard heldTurnAwaitsConnection else { return }
+        heldTurnAwaitsConnection = false
+        startStreaming()
+    }
+
+    func markConversationRestored() {
+        didRestoreConversation = true
+    }
+
+    init(
+        services: AppServices = .live,
+        sessionId: UUID = UUID(),
+        restoringConversation conversationId: UUID? = nil
+    ) {
         self.services = services
-        loadConversations()
+        self.sessionId = sessionId
+        self.conversationToRestore = conversationId
+        self.queryContextMetadata = services.databaseManager
+        observeSavedQueryUpdates()
     }
 
     deinit {
@@ -163,11 +231,6 @@ final class AIChatViewModel: ObservableObject {
         startStreaming()
     }
 
-    func sendWithWalkthroughContext(prompt: String, beforeSQL: String) {
-        pendingWalkthroughBeforeSQL = beforeSQL
-        sendWithContext(prompt: prompt)
-    }
-
     func attach(_ item: ContextItem) {
         guard !attachedContext.contains(where: { $0.stableKey == item.stableKey }) else { return }
         attachedContext.append(item)
@@ -183,12 +246,12 @@ final class AIChatViewModel: ObservableObject {
     }
 
     func cancelStream() {
-        pendingWalkthroughBeforeSQL = nil
+        clearPendingWalkthrough()
         prepTask?.cancel()
         prepTask = nil
         streamingTask?.cancel()
         streamingTask = nil
-        ToolApprovalCenter.shared.cancelAll()
+        ToolApprovalCenter.shared.cancelAll(sessionId: sessionId)
 
         if case .streaming(let assistantID) = streamingState,
            let idx = messages.firstIndex(where: { $0.id == assistantID }) {
@@ -221,7 +284,7 @@ final class AIChatViewModel: ObservableObject {
               let lastAssistantIndex = messages.lastIndex(where: { $0.role == .assistant })
         else { return }
 
-        AIProviderFactory.copilotDeleteLastTurn()
+        AIProviderFactory.copilotDeleteLastTurn(sessionId: sessionId)
         messages.remove(at: lastAssistantIndex)
         clearError()
         startStreaming()
@@ -235,7 +298,7 @@ final class AIChatViewModel: ObservableObject {
     }
 
     func startNewConversation() {
-        AIProviderFactory.resetCopilotConversation()
+        AIProviderFactory.resetCopilotConversation(sessionId: sessionId)
         cancelStream()
         persistCurrentConversation()
         messages.removeAll()
@@ -245,7 +308,7 @@ final class AIChatViewModel: ObservableObject {
 
     func switchConversation(to id: UUID) {
         guard let conversation = conversations.first(where: { $0.id == id }) else { return }
-        AIProviderFactory.resetCopilotConversation()
+        AIProviderFactory.resetCopilotConversation(sessionId: sessionId)
         cancelStream()
         persistCurrentConversation()
         messages = conversation.messages.map { ChatTurn(wire: $0) }
@@ -253,8 +316,20 @@ final class AIChatViewModel: ObservableObject {
         clearError()
     }
 
+    /// Releases everything this conversation holds, keeping what the user typed.
+    ///
+    /// Window close, disconnect and a lost session all reach here, and none of them is the user
+    /// throwing a conversation away. It used to empty `messages` with nothing written to disk while
+    /// `cancelStream()` next door persisted first, so the three ordinary ways a window goes away
+    /// each dropped a reply that was still arriving.
+    ///
+    /// Cancelling the task is also not enough on its own to release a turn parked on an approval
+    /// card: a `CheckedContinuation` is not resumed by cancellation, so the suspended turn held the
+    /// provider and its open stream for the life of the process.
     func clearSessionData() {
-        AIProviderFactory.resetCopilotConversation()
+        ToolApprovalCenter.shared.cancelAll(sessionId: sessionId)
+        persistCurrentConversation()
+        AIProviderFactory.resetCopilotConversation(sessionId: sessionId)
         prepTask?.cancel()
         prepTask = nil
         streamingTask?.cancel()
@@ -269,11 +344,11 @@ final class AIChatViewModel: ObservableObject {
         inFlightSchemaLoad = nil
         currentQuery = nil
         queryResults = nil
-        pendingWalkthroughBeforeSQL = nil
+        editorTarget = nil
+        clearPendingWalkthrough()
         messages = []
         errorMessage = nil
         activeConversationID = nil
-        sessionApprovedConnections = []
         streamingState = .idle
         for image in attachedImages {
             if case .cacheFile(let filename, _) = image.source {
@@ -283,11 +358,9 @@ final class AIChatViewModel: ObservableObject {
         attachedImages = []
     }
 
-    func handleFixError(query: String, error: String) {
-        startNewConversation()
-        let databaseType = connection?.type ?? .mysql
-        let prompt = AIPromptTemplates.fixError(query: query, error: error, databaseType: databaseType)
-        sendWithWalkthroughContext(prompt: prompt, beforeSQL: query)
+    func clearPendingWalkthrough() {
+        pendingWalkthroughBeforeSQL = nil
+        pendingWalkthroughSource = nil
     }
 
     func loadAvailableModels() async {
@@ -338,12 +411,32 @@ final class AIChatViewModel: ObservableObject {
         }
     }
 
+    /// The list is read once per connection and then kept current from the app-wide favorites
+    /// event, the same signal the sidebar, the Quick Switcher and the editor's keyword expansion
+    /// already follow. Without it a query saved from the editor during a session was offered by
+    /// every one of those and by nothing in the assistant, for as long as the window stayed open.
+    ///
+    /// A nil payload means a global record moved, which is every connection's business.
+    internal func observeSavedQueryUpdates() {
+        AppEvents.shared.sqlFavoritesDidUpdate
+            .receive(on: RunLoop.main)
+            .sink { [weak self] payload in
+                guard let self else { return }
+                guard payload == nil || payload == self.connection?.id else { return }
+                Task { await self.loadSavedQueries() }
+            }
+            .store(in: &savedQueryCancellables)
+    }
+
     func loadSavedQueries() async {
         guard let connectionId = connection?.id else {
             savedQueries = []
             return
         }
         let favorites = await services.sqlFavoriteManager.fetchFavorites(connectionId: connectionId)
+        /// The connection can be switched while the read is in flight, and the list belongs to the
+        /// connection that is on screen now, not the one that asked.
+        guard connection?.id == connectionId else { return }
         savedQueries = favorites
         for favorite in favorites {
             cachedSavedQueries[favorite.id] = favorite

@@ -25,6 +25,10 @@ protocol DatabaseDriver: AnyObject, Sendable {
     /// Optional - not all drivers may implement this
     var serverVersion: String? { get }
 
+    /// The lexical facts the server decided for this session and the driver has read. See
+    /// `PluginDatabaseDriver.sessionLexicalState`.
+    var sessionLexicalState: PluginSessionLexicalState? { get }
+
     // MARK: - Connection Management
 
     /// Connect to the database
@@ -88,6 +92,14 @@ protocol DatabaseDriver: AnyObject, Sendable {
     /// rest of the fetch, which for some drivers cancels the statement on the server.
     func executeBoundedQuery(query: String, rowCap: Int) async throws -> QueryResult?
 
+    /// Whether ``executeBatch(query:rowCap:parameters:)`` sends a text to the server whole and answers with every
+    /// result set it produced.
+    var supportsResultSetBatches: Bool { get }
+
+    /// Send `query` as one batch and read it to the end. Returns nil when the driver cannot, and the caller runs the
+    /// text statement by statement instead. A server error inside the batch is part of the answer, not a throw.
+    func executeBatch(query: String, rowCap: Int?, parameters: [Any?]?) async throws -> QueryBatchResult?
+
     // MARK: - Schema Operations
 
     /// Fetch all tables in the database
@@ -95,8 +107,14 @@ protocol DatabaseDriver: AnyObject, Sendable {
 
     func fetchTables(schema: String?) async throws -> [TableInfo]
 
-    /// Fetch the direct partitions of one partitioned table
-    func fetchPartitions(table: String, schema: String?) async throws -> [TableInfo]
+    /// Every schema's tables in one call, or nil when the engine has no such call and the caller
+    /// has to ask each schema itself. `CatalogTableListing` is the caller that does.
+    func fetchTablesInAllSchemas() async throws -> [TableInfo]?
+
+    /// Fetch the direct partitions of one partitioned table, with each one's bound, position and
+    /// row estimate. A partition is not a table on every engine, so this cannot answer `TableInfo`:
+    /// a MySQL or Oracle partition name is unique only within its own table.
+    func fetchPartitionDetails(table: String, schema: String?) async throws -> [PartitionInfo]
 
     /// Fetch columns for a specific table
     func fetchColumns(table: String) async throws -> [ColumnInfo]
@@ -146,6 +164,33 @@ protocol DatabaseDriver: AnyObject, Sendable {
 
     var unsupportedStructureColumnFields: Set<StructureColumnField> { get }
     var unsupportedIndexTypes: Set<String> { get }
+
+    /// Why the connected server has no check constraints to list or edit, or nil when it has.
+    var checkConstraintRefusal: String? { get }
+
+    /// The save-level questions of a Structure save. See `PluginDatabaseDriver` for each. The
+    /// defaults approve every save, find every save finished and keep nothing to forget.
+    func reviewSchemaChange(
+        table: String,
+        schema: String?,
+        operations: [PluginSchemaOperation]
+    ) async throws -> PluginSchemaChangeReview
+
+    func schemaChangeRefusalBeforeWriting(
+        table: String,
+        schema: String?,
+        operations: [PluginSchemaOperation],
+        review: PluginSchemaChangeReview
+    ) async throws -> String?
+
+    func schemaChangeShortfallAfterWriting(
+        table: String,
+        schema: String?,
+        operations: [PluginSchemaOperation],
+        review: PluginSchemaChangeReview
+    ) async throws -> String?
+
+    func tableDefinitionDidChange(table: String, schema: String?)
 
     /// Fetch foreign keys for all tables in the current database/schema in bulk.
     /// Default implementation falls back to per-table fetchForeignKeys.
@@ -243,6 +288,10 @@ protocol DatabaseDriver: AnyObject, Sendable {
 
     func createDatabase(_ request: CreateDatabaseRequest) async throws
 
+    func createTableFormSpec(schema: String?) -> PluginCreateTableFormSpec?
+
+    func createTableStatements(for request: PluginCreateTableRequest, schema: String?) throws -> [String]
+
     func dropDatabase(name: String) async throws
 
     func dropSchema(name: String) async throws
@@ -252,6 +301,12 @@ protocol DatabaseDriver: AnyObject, Sendable {
     func renameDatabase(name: String, to newName: String) async throws
 
     func renameSchema(name: String, to newName: String) async throws
+
+    func documentWriteStatement(_ write: PluginDocumentWrite) throws -> String?
+
+    func executeDocumentWrite(_ write: PluginDocumentWrite) async throws
+
+    func fetchDocument(table: String, schema: String?, locator: String) async throws -> String?
 
     func createSchemaStatements(_ definition: PluginSchemaDefinition) -> [String]?
 
@@ -323,6 +378,13 @@ protocol DatabaseDriver: AnyObject, Sendable {
     /// Rollback the current transaction
     func rollbackTransaction() async throws
 
+    /// What the session is holding, so nothing the app owns opens, commits or rolls back a
+    /// transaction over one the user already has open on the same session.
+    func sessionTransactionState() async -> PluginSessionTransactionState
+
+    /// Reads and consumes what the session printed on the server since the last read.
+    func fetchServerOutput() async throws -> PluginServerOutput
+
     /// Access to the underlying plugin driver for query building dispatch
     var queryBuildingPluginDriver: (any PluginDatabaseDriver)? { get }
 
@@ -379,11 +441,17 @@ extension DatabaseDriver {
     /// Override in drivers that support version querying
     var serverVersion: String? { nil }
 
+    var sessionLexicalState: PluginSessionLexicalState? { nil }
+
     func connectReporting(stage report: @escaping ConnectionStageReporter) async throws {
         try await connect()
     }
 
     func executeBoundedQuery(query: String, rowCap: Int) async throws -> QueryResult? { nil }
+
+    var supportsResultSetBatches: Bool { false }
+
+    func executeBatch(query: String, rowCap: Int?, parameters: [Any?]?) async throws -> QueryBatchResult? { nil }
 
     func fetchIndexDDL(table: String) async throws -> [String] { [] }
 
@@ -401,6 +469,10 @@ extension DatabaseDriver {
     func beginTransaction(mode: PluginTransactionAccessMode) async throws {
         try await beginTransaction()
     }
+
+    func sessionTransactionState() async -> PluginSessionTransactionState { .unknown }
+
+    func fetchServerOutput() async throws -> PluginServerOutput { .none }
 
     func quoteIdentifier(_ name: String) -> String {
         SQLEscaping.quoteIdentifier(name)
@@ -453,7 +525,7 @@ extension DatabaseDriver {
         try await fetchCommentDDL(table: table)
     }
 
-    func fetchPartitions(table: String, schema: String?) async throws -> [TableInfo] { [] }
+    func fetchPartitionDetails(table: String, schema: String?) async throws -> [PartitionInfo] { [] }
 
     func fetchTriggers(table: String) async throws -> [TriggerInfo] { [] }
 
@@ -467,6 +539,35 @@ extension DatabaseDriver {
 
     var unsupportedStructureColumnFields: Set<StructureColumnField> { [] }
     var unsupportedIndexTypes: Set<String> { [] }
+    var checkConstraintRefusal: String? { nil }
+
+    func reviewSchemaChange(
+        table: String,
+        schema: String?,
+        operations: [PluginSchemaOperation]
+    ) async throws -> PluginSchemaChangeReview {
+        PluginSchemaChangeReview()
+    }
+
+    func schemaChangeRefusalBeforeWriting(
+        table: String,
+        schema: String?,
+        operations: [PluginSchemaOperation],
+        review: PluginSchemaChangeReview
+    ) async throws -> String? {
+        nil
+    }
+
+    func schemaChangeShortfallAfterWriting(
+        table: String,
+        schema: String?,
+        operations: [PluginSchemaOperation],
+        review: PluginSchemaChangeReview
+    ) async throws -> String? {
+        nil
+    }
+
+    func tableDefinitionDidChange(table: String, schema: String?) {}
 
     func ping() async throws {
         _ = try await execute(query: "SELECT 1")
@@ -504,6 +605,18 @@ extension DatabaseDriver {
         throw PluginDriverUnsupportedOperation.renameSchema
     }
 
+    func documentWriteStatement(_ write: PluginDocumentWrite) throws -> String? {
+        throw PluginDriverUnsupportedOperation.writeDocument
+    }
+
+    func executeDocumentWrite(_ write: PluginDocumentWrite) async throws {
+        throw PluginDriverUnsupportedOperation.writeDocument
+    }
+
+    func fetchDocument(table: String, schema: String?, locator: String) async throws -> String? {
+        throw PluginDriverUnsupportedOperation.writeDocument
+    }
+
     func createSchemaStatements(_ definition: PluginSchemaDefinition) -> [String]? { nil }
 
     func renameSchemaStatements(name: String, to newName: String) -> [String]? { nil }
@@ -516,6 +629,12 @@ extension DatabaseDriver {
     func fetchSchemaDetails(name: String) async throws -> PluginSchemaDetails? { nil }
 
     func createDatabaseFormSpec() async throws -> CreateDatabaseFormSpec? { nil }
+
+    func createTableFormSpec(schema: String?) -> PluginCreateTableFormSpec? { nil }
+
+    func createTableStatements(for request: PluginCreateTableRequest, schema: String?) throws -> [String] {
+        throw PluginCreateTableFormError(message: String(localized: "This database has no Create Table form"))
+    }
 
     func fetchSessionContexts() async throws -> [PluginSessionContext]? { nil }
 
@@ -681,6 +800,8 @@ extension DatabaseDriver {
         try await fetchTables()
     }
 
+    func fetchTablesInAllSchemas() async throws -> [TableInfo]? { nil }
+
     func fetchRoutines(schema: String?) async throws -> [RoutineInfo] { [] }
 
     func fetchRoutineDDL(_ routine: RoutineInfo) async throws -> String {
@@ -728,6 +849,12 @@ extension DatabaseDriver {
     }
 }
 
+/// Which of the app's connections a driver is, so a plugin can name it to the server.
+enum DriverPurpose: String, Sendable {
+    case session
+    case metadata
+}
+
 /// Factory for creating database drivers via plugin lookup
 @MainActor
 enum DatabaseDriverFactory {
@@ -738,15 +865,17 @@ enum DatabaseDriverFactory {
     static func createDriver(
         for connection: DatabaseConnection,
         passwordOverride: String? = nil,
-        awaitPlugins: Bool
+        awaitPlugins: Bool,
+        purpose: DriverPurpose = .session
     ) async throws -> DatabaseDriver {
         try await PluginManager.shared.prepareForConnecting(to: connection.type)
-        return try await createDriverFromPlugin(for: connection, passwordOverride: passwordOverride)
+        return try await createDriverFromPlugin(for: connection, passwordOverride: passwordOverride, purpose: purpose)
     }
 
     private static func createDriverFromPlugin(
         for connection: DatabaseConnection,
-        passwordOverride: String? = nil
+        passwordOverride: String?,
+        purpose: DriverPurpose
     ) async throws -> DatabaseDriver {
         guard let plugin = PluginManager.shared.driverPlugin(for: connection.type) else {
             throw PluginManager.shared.driverUnavailableError(for: connection.type)
@@ -765,6 +894,8 @@ enum DatabaseDriverFactory {
         }
         additionalFields["queryTimeoutSeconds"] = String(AppSettingsManager.shared.general.queryTimeoutSeconds)
         additionalFields["connectionId"] = connection.id.uuidString
+        additionalFields["connectionPurpose"] = purpose.rawValue
+        additionalFields = try LoadableExtensionGate.authorizedFields(additionalFields, for: connection)
         let config = DriverConnectionConfig(
             host: connection.host,
             port: connection.port,
@@ -841,7 +972,7 @@ enum DatabaseDriverFactory {
             fields["mongoReadPreference"] = connection.mongoReadPreference ?? ""
             fields["mongoWriteConcern"] = connection.mongoWriteConcern ?? ""
         case .redis:
-            fields["redisDatabase"] = String(connection.redisDatabase ?? 0)
+            fields[RedisDatabaseIndex.fieldName] = String(connection.redisDatabaseIndex)
         case .mssql:
             fields["mssqlSchema"] = connection.mssqlSchema ?? "dbo"
         case .oracle:

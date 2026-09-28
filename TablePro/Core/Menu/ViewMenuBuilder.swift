@@ -37,17 +37,22 @@ enum ViewMenuBuilder {
                 shortcut: .toggleWorkspaceRail,
                 keyboard: keyboard
             ),
+            modeSubmenu(keyboard: keyboard),
             MenuItemFactory.separator,
-            /// The segmented control in the toolbar was the only route to either of these, so a
-            /// window whose toolbar was narrow, hidden or customized could not switch what the
-            /// sidebar lists. The HIG asks that every toolbar item also be a menu-bar command.
+            /// The sidebar's own scope control is the pointer route to these, and it is on screen
+            /// only while the sidebar is. These reveal a collapsed sidebar and switch its list in
+            /// one step, and they write the state the control reads, so the two move together.
             MenuItemFactory.item(
                 String(localized: "Show Tables"),
-                action: #selector(MainSplitViewController.showTablesSidebarTab(_:))
+                action: #selector(MainSplitViewController.showTablesSidebarTab(_:)),
+                shortcut: .showTablesList,
+                keyboard: keyboard
             ),
             MenuItemFactory.item(
                 String(localized: "Show Favorites"),
-                action: #selector(MainSplitViewController.showFavoritesSidebarTab(_:))
+                action: #selector(MainSplitViewController.showFavoritesSidebarTab(_:)),
+                shortcut: .showFavoritesList,
+                keyboard: keyboard
             ),
             connectionSortSubmenu(),
             MenuItemFactory.separator,
@@ -168,6 +173,33 @@ enum ViewMenuBuilder {
                 modifiers: [.command, .control]
             )
         ])
+    }
+
+    /// Browse and Agent as a checked pair sharing one selector, the shape the Result View submenu
+    /// already uses. The toolbar's Actions pull-down offers the same pair, built by
+    /// `ContentModeMenuDelegate` with the same selector and the same `representedObject`, so the
+    /// checkmark and the action cannot differ between the two.
+    private static func modeSubmenu(keyboard: KeyboardSettings) -> NSMenuItem {
+        let items = ConnectionWorkspaceContentMode.allCases.map { mode -> NSMenuItem in
+            let item = MenuItemFactory.item(
+                mode.localizedTitle,
+                action: #selector(MainSplitViewController.setContentModeFromMenu(_:))
+            )
+            item.representedObject = mode.rawValue
+            return item
+        }
+        /// The shortcut lives on the container so one chord toggles rather than naming one arm of a
+        /// radio pair, which would leave the other arm unreachable from the keyboard.
+        let container = MenuItemFactory.submenu(String(localized: "Mode"), items: items)
+        let toggle = MenuItemFactory.item(
+            String(localized: "Toggle Agent Mode"),
+            action: #selector(MainSplitViewController.toggleContentModeFromMenu(_:)),
+            shortcut: .toggleAgentMode,
+            keyboard: keyboard
+        )
+        container.submenu?.addItem(.separator())
+        container.submenu?.addItem(toggle)
+        return container
     }
 
     private static func resultViewSubmenu() -> NSMenuItem {

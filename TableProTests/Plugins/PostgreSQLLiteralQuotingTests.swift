@@ -16,7 +16,6 @@ import Testing
 /// `PostgreSQLObjectQueries.quoteLiteral` is the single answer, and these cases pin both halves of
 /// it: an `E''` string whenever the value holds a backslash, and output byte-identical to plain
 /// quote doubling whenever it does not.
-@Suite("PostgreSQL literal quoting")
 struct PostgreSQLLiteralQuotingTests {
     private static let caps = PostgreSQLCapabilities.assumingModernWhenUnknown(170_000)
 
@@ -26,7 +25,7 @@ struct PostgreSQLLiteralQuotingTests {
     /// which is what makes that safe.
     private static func statements(schema: String, table: String) -> [String] {
         [
-            PostgreSQLSchemaQueries.fetchTables(
+            PostgreSQLTableListing.query(
                 schema: schema, includeMaterializedViews: true, includeForeignTables: true
             ),
             PostgreSQLSchemaQueries.fetchPartitions(schema: schema, table: table),
@@ -40,7 +39,10 @@ struct PostgreSQLLiteralQuotingTests {
             PostgreSQLObjectQueries.triggerList(schema: schema, table: table),
             PostgreSQLObjectQueries.routineDefinitionByName(name: table, schema: schema, arguments: nil),
             PostgreSQLObjectQueries.userDefinedTypeList(schema: schema, identity: nil, capabilities: caps),
-            PostgreSQLIndexQueries.indexList(schema: schema, table: table),
+            PostgreSQLIndexQueries.indexList(schema: schema, table: table, capabilities: caps),
+            PostgreSQLIndexQueries.indexDDLQuery(schema: schema, table: table),
+            PostgreSQLIndexQueries.standaloneIndexQuery(schema: schema, table: table),
+            PostgreSQLSchemaQueries.tableDDLConstraintsQuery(schema: schema, table: table),
             PostgreSQLForeignKeyQueries.foreignKeyList(schema: schema, table: table, capabilities: caps),
             PostgreSQLSequenceQueries.sequenceList(
                 schema: schema, dependentOnTable: table, source: .sequencesView
@@ -136,7 +138,6 @@ struct PostgreSQLLiteralQuotingTests {
 /// literal: `''E'a\\b''` is valid SQL that matches nothing, and a plain `'\(name)'` only misbehaves
 /// on a server running the legacy setting. So the guard is a source scan, the same shape
 /// `IndexDDLOwnershipTests` and `SyncMapperFieldAccessTests` use.
-@Suite("PostgreSQL literal quoting source scan")
 struct PostgreSQLLiteralQuotingSourceScanTests {
     /// `PostgreSQLObjectQueries` owns the quoting and is the one file allowed to write the quotes
     /// itself. `LibPQConnectionString` builds a libpq conninfo string, whose quoting rules are

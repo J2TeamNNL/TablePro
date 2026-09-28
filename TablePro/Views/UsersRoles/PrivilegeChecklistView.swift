@@ -66,8 +66,10 @@ struct PrivilegeChecklistView: View {
             Button(String(localized: "Revoke All")) { setAll(false) }
         } label: {
             Image(systemName: "ellipsis.circle")
+                .accessibilityLabel(String(localized: "Bulk actions"))
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
         .menuIndicator(.hidden)
         .fixedSize()
         .disabled(viewModel.privilegeSections.isEmpty)

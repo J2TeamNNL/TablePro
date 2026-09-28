@@ -11,7 +11,6 @@ import Foundation
 @testable import TablePro
 import Testing
 
-@Suite("App activation policy")
 struct AppActivationPolicyTests {
     @Test("The bridge's launch flag makes the session a machine's")
     func launchFlagResolvesOrigin() {
@@ -31,7 +30,7 @@ struct AppActivationPolicyTests {
         #expect(LaunchIntent.openConnection(UUID()).impliesUserInterface)
         #expect(LaunchIntent.openQuery(connectionId: UUID(), sql: "SELECT 1").impliesUserInterface)
         #expect(LaunchIntent.openSQLFile(URL(fileURLWithPath: "/tmp/q.sql")).impliesUserInterface)
-        #expect(LaunchIntent.openInspectorFile(URL(fileURLWithPath: "/tmp/rows.csv")).impliesUserInterface)
+        #expect(LaunchIntent.openDataFile(URL(fileURLWithPath: "/tmp/rows.csv")).impliesUserInterface)
         #expect(LaunchIntent.openConnectionShare(URL(string: "tablepro://share")!).impliesUserInterface)
         #expect(LaunchIntent.installPlugin(URL(string: "tablepro://plugin")!).impliesUserInterface)
         #expect(

@@ -41,6 +41,7 @@ final class MockDatabaseDriver: DatabaseDriver, SchemaSwitchable, @unchecked Sen
     var pingDelaySeconds: Double = 0
     var connectDelaySeconds: Double = 0
     var switchSchemaDelaySeconds: Double = 0
+    var onSwitchSchema: (@Sendable () async -> Void)?
     var executeDelaySeconds: Double = 0
     var hangsUntilDisconnect = false
     var schemasToReturn: [String] = []
@@ -49,6 +50,14 @@ final class MockDatabaseDriver: DatabaseDriver, SchemaSwitchable, @unchecked Sen
     var fetchDatabasesError: Error?
     var fetchTablesError: Error?
     private var hangContinuation: CheckedContinuation<Void, Never>?
+
+    var serverOutputToReturn: PluginServerOutput = .none
+    var fetchServerOutputCallCount = 0
+
+    func fetchServerOutput() async throws -> PluginServerOutput {
+        fetchServerOutputCallCount += 1
+        return serverOutputToReturn
+    }
 
     init(connection: DatabaseConnection = TestFixtures.makeConnection()) {
         self.connection = connection
@@ -94,10 +103,38 @@ final class MockDatabaseDriver: DatabaseDriver, SchemaSwitchable, @unchecked Sen
     }
 
     func execute(query: String) async throws -> QueryResult {
+        executedQueries.append(query)
         if executeDelaySeconds > 0 {
             try await Task.sleep(nanoseconds: UInt64(executeDelaySeconds * 1_000_000_000))
         }
         return QueryResult(columns: [], columnTypes: [], rows: [], rowsAffected: 0, executionTime: 0, error: nil)
+    }
+
+    private(set) var executedQueries: [String] = []
+    var schemaChangeRefusalToReturn: String?
+    var schemaChangeShortfallToReturn: String?
+    private(set) var changedTableDefinitions: [String] = []
+
+    func schemaChangeRefusalBeforeWriting(
+        table: String,
+        schema: String?,
+        operations: [PluginSchemaOperation],
+        review: PluginSchemaChangeReview
+    ) async throws -> String? {
+        schemaChangeRefusalToReturn
+    }
+
+    func schemaChangeShortfallAfterWriting(
+        table: String,
+        schema: String?,
+        operations: [PluginSchemaOperation],
+        review: PluginSchemaChangeReview
+    ) async throws -> String? {
+        schemaChangeShortfallToReturn
+    }
+
+    func tableDefinitionDidChange(table: String, schema: String?) {
+        changedTableDefinitions.append(table)
     }
 
     func executeParameterized(query: String, parameters: [Any?]) async throws -> QueryResult {
@@ -142,7 +179,40 @@ final class MockDatabaseDriver: DatabaseDriver, SchemaSwitchable, @unchecked Sen
         }
         guard let schema else { return tablesToReturn }
         fetchSchemaTablesCalls.append(schema)
+        if let error = schemaTablesErrors[schema] {
+            throw error
+        }
         return schemaTablesToReturn[schema] ?? tablesToReturn
+    }
+
+    /// Nil leaves the driver without a single call, so the host lists each schema itself.
+    var allSchemaTablesToReturn: [TableInfo]?
+    var allSchemaTablesError: Error?
+    var schemaTablesErrors: [String: Error] = [:]
+    var fetchTablesInAllSchemasCallCount = 0
+    var pausesNextAllSchemaTablesFetch = false
+    var onAllSchemaTablesFetchPaused: (@Sendable () -> Void)?
+    private var allSchemaTablesGate: CheckedContinuation<Void, Never>?
+
+    func resumeAllSchemaTablesFetch() {
+        allSchemaTablesGate?.resume()
+        allSchemaTablesGate = nil
+    }
+
+    func fetchTablesInAllSchemas() async throws -> [TableInfo]? {
+        fetchTablesInAllSchemasCallCount += 1
+        if let allSchemaTablesError {
+            throw allSchemaTablesError
+        }
+        let snapshot = allSchemaTablesToReturn
+        if pausesNextAllSchemaTablesFetch {
+            pausesNextAllSchemaTablesFetch = false
+            await withCheckedContinuation { continuation in
+                allSchemaTablesGate = continuation
+                onAllSchemaTablesFetchPaused?()
+            }
+        }
+        return snapshot
     }
 
     func fetchColumns(table: String) async throws -> [ColumnInfo] {
@@ -151,14 +221,34 @@ final class MockDatabaseDriver: DatabaseDriver, SchemaSwitchable, @unchecked Sen
         return columnsToReturn[table.lowercased()] ?? []
     }
 
+    var fetchAllColumnsError: Error?
+
     func fetchAllColumns() async throws -> [String: [ColumnInfo]] {
         fetchAllColumnsCallCount += 1
+        if let fetchAllColumnsError {
+            throw fetchAllColumnsError
+        }
         return allColumnsToReturn
     }
 
     func fetchIndexes(table: String) async throws -> [IndexInfo] { [] }
     func fetchForeignKeys(table: String) async throws -> [ForeignKeyInfo] { [] }
     func fetchApproximateRowCount(table: String) async throws -> Int? { nil }
+
+    var concurrentRefreshAvailabilityToReturn: PluginConcurrentRefreshAvailability?
+    var concurrentRefreshAvailabilityError: Error?
+    var concurrentRefreshAvailabilityCalls: [(name: String, schema: String?)] = []
+
+    func concurrentRefreshAvailability(
+        materializedView: String,
+        schema: String?
+    ) async throws -> PluginConcurrentRefreshAvailability? {
+        concurrentRefreshAvailabilityCalls.append((materializedView, schema))
+        if let concurrentRefreshAvailabilityError {
+            throw concurrentRefreshAvailabilityError
+        }
+        return concurrentRefreshAvailabilityToReturn
+    }
 
     func fetchTableDDL(table: String) async throws -> String { "" }
     func fetchViewDefinition(view: String) async throws -> String { "" }
@@ -191,6 +281,7 @@ final class MockDatabaseDriver: DatabaseDriver, SchemaSwitchable, @unchecked Sen
     func rollbackTransaction() async throws {}
 
     func switchSchema(to schema: String) async throws {
+        await onSwitchSchema?()
         if switchSchemaDelaySeconds > 0 {
             try await Task.sleep(nanoseconds: UInt64(switchSchemaDelaySeconds * 1_000_000_000))
         }
@@ -201,7 +292,6 @@ final class MockDatabaseDriver: DatabaseDriver, SchemaSwitchable, @unchecked Sen
 
 // MARK: - Tests
 
-@Suite("SQLSchemaProvider")
 @MainActor
 struct SQLSchemaProviderTests {
     @Test("loadSchema fetches tables without bulk column loading")
@@ -222,6 +312,22 @@ struct SQLSchemaProviderTests {
         let tables = await provider.getTables()
         #expect(tables.count == 2)
         #expect(driver.fetchColumnsCallCount == 0)
+    }
+
+    /// A failed catalog fetch leaves the provider empty and reports through the log. Recovery is
+    /// `SchemaProviderRegistry`'s: its `markLoadFailed` clears the scope so the next `prepare`
+    /// refetches.
+    @Test("A failed loadSchema leaves the provider empty and does not throw")
+    func loadSchemaFailureLeavesTheProviderEmpty() async {
+        let driver = MockDatabaseDriver()
+        driver.fetchTablesError = DatabaseError.queryFailed("connection lost")
+
+        let provider = SQLSchemaProvider()
+        await provider.loadSchema(using: driver, connection: TestFixtures.makeConnection())
+
+        let tables = await provider.getTables()
+        #expect(tables.isEmpty)
+        #expect(driver.fetchTablesCallCount == 1)
     }
 
     @Test("getColumns fetches from driver on cache miss")

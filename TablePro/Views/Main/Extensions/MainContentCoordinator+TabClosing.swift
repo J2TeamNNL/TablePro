@@ -20,6 +20,11 @@ extension MainContentCoordinator {
         dataTabDelegate?.tableViewCoordinator?.flushPendingColumnLayoutPersistence()
         for id in ids {
             guard let tab = tabManager.tabs.first(where: { $0.id == id }) else { continue }
+            /// The closing tab's own save point. A tab switch saves the tab it leaves, but a close
+            /// removes the tab before the selection moves, so nothing else writes the rows the
+            /// reader left in the filter bar. An applied filter was written when it was applied;
+            /// rows that were never applied have only this.
+            saveLastFilters(of: tab)
             RecentlyClosedTabStore.shared.push(tab: tab, connection: connection)
             releaseResources(of: tab)
             releaseExecution(of: tab)
@@ -33,6 +38,16 @@ extension MainContentCoordinator {
     /// Closed Tab, which could only reopen onto an error, and the saved tab set is never cleared,
     /// because an emptied tab list is not consent to forget it.
     func closeTabsForRemovedObjects(ids: [UUID]) {
+        /// Discarded rather than flushed, which is what the user-close path does. The object is
+        /// gone and the adoption has already cleared its saved settings, so a write from the
+        /// teardown would put the layout back after the clear.
+        ///
+        /// Only when the closed tabs include the selected one, because that is the only tab with a
+        /// mounted grid: a pending width belongs to it, and dropping an unrelated table would
+        /// otherwise throw away a resize the reader had just made somewhere else.
+        if let selectedId = tabManager.selectedTabId, ids.contains(selectedId) {
+            dataTabDelegate?.tableViewCoordinator?.discardPendingColumnLayoutPersistence()
+        }
         for id in ids {
             guard let tab = tabManager.tabs.first(where: { $0.id == id }) else { continue }
             releaseResources(of: tab)
@@ -116,13 +131,12 @@ extension MainContentCoordinator {
     /// the restored tab the id it had before, which is enough for the orphan to be mistaken for the
     /// reopened tab's own load and for that load to be refused as a duplicate.
     ///
-    /// The window's query handle is only retired when it belongs to this tab: one handle serves
-    /// every tab, so cancelling it blindly would take another tab's query down.
+    /// The query handle is this tab's own, so it goes down with the tab. No ownership check is
+    /// needed any more: a handle keyed by tab cannot belong to another one.
     internal func releaseExecution(of tab: QueryTab) {
         reportEndedExecutions(tabExecution.invalidate(tab.id, reason: .abandoned).map { [$0] } ?? [])
         cancelTableLoad(for: tab.id)
         cancelRowCountTask(for: tab.id)
-        guard currentQueryTaskOwner?.tabId == tab.id else { return }
-        cancelInFlightQueryTask(reach: .supersededNavigation)
+        cancelQueryTask(for: tab.id, delivery: .background)
     }
 }

@@ -27,6 +27,8 @@ final class ConnectionStorage {
     /// In-memory cache to avoid re-decoding JSON from file on every access
     private var cachedConnections: [DatabaseConnection]?
 
+    private(set) var lastLoadFailed = false
+
     /// Whether the file on disk is the one TablePro last wrote. False once it has been edited by
     /// something else, which is the signal to refuse to run a connection's password source.
     var storeIsTrusted: Bool { file.isTrusted }
@@ -44,13 +46,15 @@ final class ConnectionStorage {
         syncTracker: SyncChangeTracker = .shared,
         appSettings: @escaping @autoclosure () -> AppSettingsStorage = .shared,
         keychain: any KeychainStoring = AppStorageEnvironment.shared.keychain,
-        appEvents: @escaping @autoclosure () -> AppEvents = .shared
+        appEvents: @escaping @autoclosure () -> AppEvents = .shared,
+        integrity: ConnectionStoreIntegrity = .shared
     ) {
         self.file = IntegrityStampedFileStore(
             fileURL: fileURL,
             label: "connections.json",
             logger: Self.logger,
-            userSaveEstablishesTrust: true
+            userSaveEstablishesTrust: true,
+            integrity: integrity
         )
         self.defaults = userDefaults
         self.syncTracker = syncTracker
@@ -88,7 +92,11 @@ final class ConnectionStorage {
     func loadConnections() -> [DatabaseConnection] {
         if let cached = cachedConnections { return cached }
 
-        guard let storedConnections = file.load() else { return [] }
+        guard let storedConnections = file.load() else {
+            lastLoadFailed = true
+            return []
+        }
+        lastLoadFailed = false
 
         let connections = storedConnections.map { stored in
             stored.toConnection()
@@ -350,12 +358,6 @@ final class ConnectionStorage {
             origin: .local,
             appSettings: appSettingsProvider()
         )
-        Task {
-            await SQLFavoriteManager.shared.removeFavoritesAndFolders(for: connection.id)
-            await QueryHistoryManager.shared.clear(
-                matching: QueryHistoryFilter(scope: .connection(connection.id))
-            )
-        }
         return true
     }
 
@@ -390,14 +392,6 @@ final class ConnectionStorage {
             origin: .local,
             appSettings: appSettingsProvider()
         )
-        Task {
-            for conn in connectionsToDelete {
-                await SQLFavoriteManager.shared.removeFavoritesAndFolders(for: conn.id)
-                await QueryHistoryManager.shared.clear(
-                    matching: QueryHistoryFilter(scope: .connection(conn.id))
-                )
-            }
-        }
         return true
     }
 
@@ -505,6 +499,7 @@ final class ConnectionStorage {
                 savePluginSecureField(value, fieldId: fieldId, for: newId)
             }
         }
+        LoadableExtensionApprovalStore.shared.copyApprovals(from: connection.id, to: newId)
 
         appEventsProvider().connectionUpdated.send(nil)
         return placedDuplicate

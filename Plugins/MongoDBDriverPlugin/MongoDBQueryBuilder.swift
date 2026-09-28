@@ -235,8 +235,9 @@ struct MongoDBQueryBuilder {
             guard ignoresCase else {
                 return MongoDBFilterClause(key: field, body: "{\"$ne\": \(typed(value, kind))}")
             }
-            let body = Self.regexBody(pattern: anchoredPattern(value), ignoresCase: true)
-            return MongoDBFilterClause(key: field, body: "{\"$not\": \(body)}")
+            return MongoDBFilterClause(
+                key: field, body: Self.negatedRegexBody(pattern: anchoredPattern(value), ignoresCase: true)
+            )
         case ">":
             return MongoDBFilterClause(key: field, body: "{\"$gt\": \(typed(value, kind))}")
         case ">=":
@@ -250,8 +251,9 @@ struct MongoDBQueryBuilder {
                 key: field, body: Self.regexBody(pattern: escapeRegexChars(value), ignoresCase: ignoresCase)
             )
         case "NOT CONTAINS":
-            let body = Self.regexBody(pattern: escapeRegexChars(value), ignoresCase: ignoresCase)
-            return MongoDBFilterClause(key: field, body: "{\"$not\": \(body)}")
+            return MongoDBFilterClause(
+                key: field, body: Self.negatedRegexBody(pattern: escapeRegexChars(value), ignoresCase: ignoresCase)
+            )
         case "STARTS WITH":
             let pattern = "^\(escapeRegexChars(value))"
             return MongoDBFilterClause(
@@ -353,6 +355,13 @@ struct MongoDBQueryBuilder {
         return "{\"$regex\": \"\(escapeJsonString(pattern))\", \"$options\": \"i\"}"
     }
 
+    /// `$not` takes a `$regex` operator document only from MongoDB 4.0.7, and a regular expression
+    /// value on every server, so the negated arms send the value.
+    private static func negatedRegexBody(pattern: String, ignoresCase: Bool) -> String {
+        let regex = "{\"pattern\": \"\(escapeJsonString(pattern))\", \"options\": \"\(ignoresCase ? "i" : "")\"}"
+        return "{\"$not\": {\"$regularExpression\": \(regex)}}"
+    }
+
     private func anchoredPattern(_ value: String) -> String {
         "^\(escapeRegexChars(value))$"
     }
@@ -380,18 +389,18 @@ struct MongoDBQueryBuilder {
     static func escapeJsonString(_ value: String) -> String {
         var result = ""
         result.reserveCapacity((value as NSString).length)
-        for char in value {
-            switch char {
+        for scalar in value.unicodeScalars {
+            switch scalar {
             case "\\": result += "\\\\"
             case "\"": result += "\\\""
             case "\n": result += "\\n"
             case "\r": result += "\\r"
             case "\t": result += "\\t"
             default:
-                if let ascii = char.asciiValue, ascii < 0x20 {
-                    result += String(format: "\\u%04X", ascii)
+                if scalar.value < 0x20 {
+                    result += String(format: "\\u%04X", scalar.value)
                 } else {
-                    result.append(char)
+                    result.unicodeScalars.append(scalar)
                 }
             }
         }

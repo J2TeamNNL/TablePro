@@ -13,6 +13,7 @@ import SwiftUI
 /// and invisible to anyone who does not happen to hover. It is drawn unconditionally now, which is
 /// what Postico does and what a control that is the only way to reach a command has to do.
 internal struct InspectorFieldRow: View {
+    @ObservedObject private var themeEngine = ThemeEngine.shared
     internal let context: FieldEditorContext
     internal let layout: InspectorFieldLayout
     internal let kind: FieldEditorKind
@@ -25,6 +26,7 @@ internal struct InspectorFieldRow: View {
     internal let onSetDefault: () -> Void
     internal let onSetEmpty: () -> Void
     internal let onSetFunction: (String) -> Void
+    internal var onRemoveField: (() -> Void)?
     internal var onToggleExpand: (() -> Void)?
     internal var onPopOut: ((String) -> Void)?
 
@@ -133,13 +135,14 @@ internal struct InspectorFieldRow: View {
     }
 
     /// The unsaved-edit marker sits at the trailing end rather than in front of the name, so
-    /// recording an edit cannot shift the name it belongs to.
+    /// recording an edit cannot shift the name it belongs to. It is the glyph the filter bar's
+    /// Show edited fields only toggle draws, so the two read as one idea, and not a coloured dot.
     @ViewBuilder
     private var modifiedGlyph: some View {
         if isModified {
-            Circle()
-                .fill(Color.accentColor)
-                .frame(width: 5, height: 5)
+            Image(systemName: "pencil.line")
+                .font(.caption2)
+                .foregroundStyle(Color.accentColor)
                 .accessibilityHidden(true)
         }
     }
@@ -156,19 +159,23 @@ internal struct InspectorFieldRow: View {
     // MARK: - Value menu
 
     /// Always drawn, never hover-gated.
+    ///
+    /// The button's own disclosure chevron is the whole control. A chevron supplied as the label
+    /// would be its icon and would render beside that one, which is why the hand-drawn version had
+    /// to hide the real indicator to look right at all. The `Label` carries a title with no icon so
+    /// the control still has a name: `.accessibilityLabel` on a `Menu` does not add one, it
+    /// replaces whatever the label was providing with nothing.
     private var valueMenu: some View {
         Menu {
             menuContent
         } label: {
-            Label(String(localized: "Value Options"), systemImage: "chevron.down")
+            Label { Text("Value Options") } icon: { EmptyView() }
         }
         .labelStyle(.iconOnly)
-        .font(.caption2)
-        .foregroundStyle(.tertiary)
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
+        .menuIndicator(.visible)
         .fixedSize()
-        .frame(minWidth: 12)
         .help(String(localized: "Value Options"))
         .accessibilityIdentifier("inspector-value-menu")
     }
@@ -181,10 +188,13 @@ internal struct InspectorFieldRow: View {
             canMutate: context.canMutate,
             isPendingNull: context.valueState == .pendingNull,
             isPendingDefault: context.valueState == .pendingDefault,
+            isPendingRemoval: context.valueState == .pendingRemoval,
             onSetNull: onSetNull,
             onSetDefault: onSetDefault,
             onSetEmpty: onSetEmpty,
             onSetFunction: onSetFunction,
+            onRemoveField: context.valueState == .absent || context.valueState == .pendingRemoval
+                ? nil : onRemoveField,
             onClear: { context.value.wrappedValue = context.originalValue ?? "" }
         )
     }

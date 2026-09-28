@@ -1,4 +1,6 @@
 import Foundation
+import os
+import TableProLogRedaction
 import TableProPluginKit
 
 extension MySQLPluginDriver {
@@ -195,7 +197,7 @@ private extension MySQLPluginDriver {
             return value
         } catch {
             Self.logger.warning(
-                "Failed to read session variable \(variable.rawValue, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                "Failed to read session variable \(variable.rawValue, privacy: .public): \(LogRedaction.publicDescription(of: error), privacy: .public) \(error.localizedDescription, privacy: .private)"
             )
             return nil
         }

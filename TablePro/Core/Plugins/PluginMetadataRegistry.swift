@@ -51,6 +51,8 @@ struct PluginMetadataSnapshot: Sendable {
         var supportsRenameView: Bool = false
         var supportsRenameDatabase: Bool = false
         var supportsRenameSchema: Bool = false
+        var supportsDocumentEditing: Bool = false
+        var supportsFieldRemoval: Bool = false
         // `var` with defaults so existing call sites compile without passing these fields
         var supportsDropSchema: Bool = false
         var supportsCreateSchema: Bool = false
@@ -82,7 +84,20 @@ struct PluginMetadataSnapshot: Sendable {
         /// behalf of one entry selects it for all of them.
         var pooledDriversShareOneSession: Bool = false
         var authenticationIsDatabaseScoped: Bool = false
+        /// Whether a connection that names no database has nothing to browse until one is chosen. A
+        /// MySQL session opened without one has no current database: `SHOW TABLES` there is
+        /// `ERROR 1046 No database selected`. An engine whose session falls back to a default
+        /// database, such as ClickHouse's `default`, leaves this false.
+        var browsingRequiresSelectedDatabase: Bool = false
         var pagination: PaginationCapability = .offset
+        /// Whether an exact count reads the whole table and the engine bills that read, while its query language
+        /// has no `COUNT(*)`. DynamoDB is the case: a count is a `Scan` of every item. Such an engine is counted
+        /// only when the user asks, and only by its driver.
+        var exactRowCountIsBilledScan: Bool = false
+        /// Whether a table's columns are a sample of its rows rather than a declared schema. A
+        /// MongoDB collection lists the fields found in its first documents, so a field missing from
+        /// one side's list says nothing about whether that side holds it.
+        var columnsAreSampled: Bool = false
         var isEngineReadOnly: Bool = false
 
         /// Which connection field carries the path of the local database file this driver opens,
@@ -496,6 +511,7 @@ final class PluginMetadataRegistry: @unchecked Sendable {
             resolved = resolved.withIsDownloadable(registryDefault.isDownloadable)
             Self.adoptCuratedCaseSensitivity(&resolved, registryDefault: registryDefault)
             Self.adoptCuratedSystemNames(&resolved, registryDefault: registryDefault)
+            Self.adoptCuratedExplainVariants(&resolved, registryDefault: registryDefault)
             if Self.declaresLegacySchemaOnlyRouting(resolved, registryDefault: registryDefault) {
                 Logger(subsystem: "com.TablePro", category: "PluginMetadataRegistry").notice(
                     "Plugin '\(typeId, privacy: .public)' declares legacy two-tier switching for a schema-only engine; applying the app's switch routing"
@@ -671,6 +687,8 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                 supportsRenameView: driverType.supportsRenameView,
                 supportsRenameDatabase: driverType.supportsRenameDatabase,
                 supportsRenameSchema: driverType.supportsRenameSchema,
+                supportsDocumentEditing: driverType.supportsDocumentEditing,
+                supportsFieldRemoval: driverType.supportsFieldRemoval,
                 supportsDropSchema: driverType.supportsDropSchema,
                 supportsCreateSchema: driverType.supportsCreateSchema,
                 supportsSchemaOwner: driverType.supportsSchemaOwner,
@@ -699,7 +717,11 @@ final class PluginMetadataRegistry: @unchecked Sendable {
                     .pooledDriversShareOneSession ?? false,
                 authenticationIsDatabaseScoped: existingSnapshot?.capabilities
                     .authenticationIsDatabaseScoped ?? false,
+                browsingRequiresSelectedDatabase: existingSnapshot?.capabilities
+                    .browsingRequiresSelectedDatabase ?? false,
                 pagination: existingSnapshot?.capabilities.pagination ?? .offset,
+                exactRowCountIsBilledScan: existingSnapshot?.capabilities.exactRowCountIsBilledScan ?? false,
+                columnsAreSampled: existingSnapshot?.capabilities.columnsAreSampled ?? false,
                 isEngineReadOnly: existingSnapshot?.capabilities.isEngineReadOnly ?? false,
                 localFilePathField: existingSnapshot?.capabilities.localFilePathField,
                 supportsRemoteDatabaseFile: existingSnapshot?.capabilities

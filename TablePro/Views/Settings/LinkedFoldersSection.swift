@@ -11,10 +11,11 @@ import SwiftUI
 import TableProImport
 
 struct LinkedFoldersSection: View {
+    @ObservedObject private var licenseManager = LicenseManager.shared
     @State private var folders: [LinkedFolder] = LinkedFolderStorage.shared.loadFolders()
 
     private var isLicensed: Bool {
-        LicenseManager.shared.isFeatureAvailable(.linkedFolders)
+        licenseManager.isFeatureAvailable(.linkedFolders)
     }
 
     var body: some View {
@@ -72,6 +73,7 @@ struct LinkedFoldersSection: View {
             .toggleStyle(.switch)
             .controlSize(.mini)
             .labelsHidden()
+            .accessibilityLabel(folder.name)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(folder.name)

@@ -61,14 +61,17 @@ internal final class TabRouter {
         case .openConnection(let id):
             try await openConnection(id: id)
 
-        case .openTable(let id, let database, let schema, let table, let isView):
+        case .openTable(let id, let database, let schema, let table, let isView, let objectType):
             try await openTable(
                 connectionId: id, transientConnection: nil,
-                database: database, schema: schema, table: table, isView: isView
+                database: database, schema: schema, table: table, isView: isView, objectType: objectType
             )
 
         case .openQuery(let id, let sql):
             try await openQuery(connectionId: id, sql: sql)
+
+        case .openAgentSession(let id, let prompt):
+            try await openAgentSession(connectionId: id, prompt: prompt)
 
         case .openDatabaseURL(let url):
             try await openDatabaseURL(url)
@@ -94,7 +97,7 @@ internal final class TabRouter {
             .first(where: { $0.id == entry.connectionId }) else {
             throw TabRouterError.connectionNotFound(entry.connectionId)
         }
-        try await runPreConnectScriptIfNeeded(connection)
+        try await confirmConnectConsent(connection)
         try await DatabaseManager.shared.ensureConnected(connection)
         RecentlyClosedTabReopener.reopen(entry)
         WindowOpener.shared.closeWelcome()
@@ -169,7 +172,7 @@ internal final class TabRouter {
             if let host, host.workspaces.contains(id) {
                 host.reconnectWorkspace(id)
             } else {
-                try await runPreConnectScriptIfNeeded(connection)
+                try await confirmConnectConsent(connection)
                 try await DatabaseManager.shared.ensureConnected(connection)
             }
             return
@@ -183,11 +186,38 @@ internal final class TabRouter {
         WindowOpener.shared.closeWelcome()
     }
 
+    /// Opens a connection and hands its window to the agent.
+    ///
+    /// The same reuse-or-open path every other connection intent takes, rather than a second route
+    /// into a window: a connection already open is switched into Agent mode where it stands, and one
+    /// that is not is opened the ordinary way and switched once its workspace exists.
+    private func openAgentSession(connectionId: UUID, prompt: String?) async throws {
+        try await openConnection(id: connectionId)
+        await MainActor.run {
+            let session = AgentSessionRegistry.shared.resolveSession(
+                for: connectionId,
+                startingIfNeeded: true
+            )
+            /// Held rather than sent. The connect may still be in flight, and what the user typed is
+            /// what they are waiting with; the conversation column sends it once the session can.
+            if let prompt, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                session?.pendingPrompt = prompt
+            }
+            /// Through the setter alone. Assigning `contentMode` first made the setter's
+            /// unchanged-mode guard skip the pane rebuild, the toolbar refresh and the floor, so a
+            /// connection that was already open stayed visibly in Browse with nothing to repair it.
+            guard let host = WindowManager.shared.window(for: connectionId)?
+                .contentViewController as? MainSplitViewController else { return }
+            host.setContentMode(.agent, for: connectionId)
+        }
+    }
+
     // MARK: - Table
 
     private func openTable(
         connectionId: UUID, transientConnection: DatabaseConnection? = nil,
         database: String?, schema: String?, table: String, isView: Bool,
+        objectType: TableInfo.TableType? = nil,
         passwordOverride: String? = nil, sshPasswordOverride: String? = nil
     ) async throws {
         let connection: DatabaseConnection
@@ -204,7 +234,7 @@ internal final class TabRouter {
             return
         }
 
-        try await runPreConnectScriptIfNeeded(connection)
+        try await confirmConnectConsent(connection)
 
         let payload = EditorTabPayload(
             connectionId: connectionId,
@@ -212,7 +242,8 @@ internal final class TabRouter {
             tableName: table,
             databaseName: database,
             schemaName: schema,
-            isView: isView
+            isView: isView,
+            objectType: objectType
         )
         DatabaseManager.shared.registerPendingSession(connection)
         WindowManager.shared.openTab(payload: payload)
@@ -275,7 +306,7 @@ internal final class TabRouter {
             return
         }
 
-        try await runPreConnectScriptIfNeeded(connection)
+        try await confirmConnectConsent(connection)
 
         let payload = EditorTabPayload(
             connectionId: connectionId,
@@ -367,7 +398,7 @@ internal final class TabRouter {
             return
         }
 
-        try await runPreConnectScriptIfNeeded(connection)
+        try await confirmConnectConsent(connection)
         let payload = EditorTabPayload(connectionId: connection.id, intent: .restoreOrDefault)
         DatabaseManager.shared.registerPendingSession(connection)
         WindowManager.shared.openTab(payload: payload)
@@ -457,24 +488,32 @@ internal final class TabRouter {
         }
 
         if let session = DatabaseManager.shared.lastActiveSession {
-            let content = await Task.detached(priority: .userInitiated) { () -> String? in
-                try? String(contentsOf: url, encoding: .utf8)
-            }.value
-            guard let content else {
-                Self.logger.error("Failed to read SQL file: \(url.lastPathComponent, privacy: .public)")
-                return
-            }
-            let payload = EditorTabPayload(
-                connectionId: session.connection.id,
-                tabType: .query,
-                initialQuery: content,
-                sourceFileURL: url
-            )
+            let payload = try await Self.sqlFileTabPayload(for: url, connectionId: session.connection.id)
             WindowManager.shared.openTab(payload: payload)
             AppActivationPolicyController.shared.activate(ignoringOtherApps: true)
         } else {
             WelcomeRouter.shared.enqueueSQLFile(url)
         }
+    }
+
+    internal static func sqlFileTabPayload(for url: URL, connectionId: UUID) async throws -> EditorTabPayload {
+        let read: FileTextLoader.LoadedText
+        do {
+            read = try await Task.detached(priority: .userInitiated) {
+                try FileTextLoader.read(url)
+            }.value
+        } catch {
+            logger.error("Failed to read SQL file: \(url.lastPathComponent, privacy: .private(mask: .hash))")
+            throw error
+        }
+        return EditorTabPayload(
+            connectionId: connectionId,
+            tabType: .query,
+            initialQuery: read.content,
+            sourceFileURL: url,
+            sourceFileStamp: read.stamp,
+            sourceFileEncoding: read.textEncoding
+        )
     }
 
     // MARK: - Helpers
@@ -494,8 +533,8 @@ internal final class TabRouter {
         await coordinator.switchContainers(database: database, schema: schema)
     }
 
-    private func runPreConnectScriptIfNeeded(_ connection: DatabaseConnection) async throws {
-        guard await PreConnectScriptPrompt.confirmIfNeeded(for: connection) else {
+    private func confirmConnectConsent(_ connection: DatabaseConnection) async throws {
+        guard await ConnectConsent.confirmIfNeeded(for: connection) else {
             throw TabRouterError.userCancelled
         }
     }

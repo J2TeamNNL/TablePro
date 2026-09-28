@@ -35,11 +35,55 @@ Instead of hardcoding a value, write `:name` and fill it in when the query runs.
 
 To run the whole tab, press `Cmd+Shift+Enter`, choose **Run All Statements** from the **Run** button's menu, or use **Query > Execute All Statements**. Nothing needs to be selected first. Select text and `Cmd+Enter` runs the selection instead.
 
-A batch runs top to bottom:
+A batch runs top to bottom and stops at the first statement that fails. The error names its place in the run: "Statement 3/5 failed: …". Each statement gets its own result, and each is recorded separately in [query history](/features/query-history).
 
-- On engines with transactions, the batch runs inside one. A failure stops it and rolls back everything before it. Engines without transactions run each statement as-is, with nothing to roll back.
-- The error names its place in the run: "Statement 3/5 failed: …".
-- Each statement gets its own result, and each is recorded separately in [query history](/features/query-history).
+A SQL Server script runs a batch at a time instead, cut at its `GO` lines, so a `DECLARE`d variable reaches every statement after it. See [Scripts and batches](/databases/mssql#scripts-and-batches).
+
+### Which transaction the batch runs in
+
+| The batch | Runs in | A failure or Stop |
+|---|---|---|
+| Ordinary statements | A transaction TablePro opens and commits | Everything rolls back |
+| One that manages its own: `BEGIN`, `START TRANSACTION`, `XA START`, `SET autocommit`, `SAVEPOINT` on SQLite, `SET TRANSACTION` on Oracle | The script's own transaction | The transaction it left open is rolled back |
+| One holding a [statement a transaction cannot hold](#statements-a-transaction-cannot-hold) | No transaction | Each statement that ran stays applied, and the banner counts them |
+| A script on SQL Server | No transaction, unless the script opens one with `BEGIN TRAN` | What ran stays applied, and a transaction the script left open is reported |
+| Anything, on a connection that already has a transaction open | That transaction | The transaction stays open and the message says so |
+
+The last row wins over the rest. The open transaction comes from a `BEGIN` you ran with `Cmd+Enter`, a `SET autocommit = 0`, `LOCK TABLES` on MySQL or MariaDB, a `SET TRANSACTION`, `SAVEPOINT` or `LOCK TABLE` on Oracle, or an [MCP client's](/external-api/mcp-tools) `begin`, and a batch that joins it sends no `BEGIN`, `COMMIT` or `ROLLBACK` at all: the script's own text decides, so a script ending in `COMMIT` commits. Where a failed statement has left the transaction unable to commit, the message says to roll it back rather than offering the choice. A `BEGIN` left running here reaches the rest of the window too, so a grid save and a **Users & Roles** apply land inside it.
+
+PostgreSQL, Redshift, CockroachDB, MySQL, MariaDB, TiDB, SQLite, DuckDB, SQL Server and Oracle report what their session holds. Anywhere else there is no answer to be had, so a plain batch is wrapped as it always was and a self-managed script is left alone after a failure, since the transaction its text opened may well predate the run.
+
+Two things survive a rollback in any of those four cases. MySQL, MariaDB and Oracle commit a `CREATE`, `ALTER` or `DROP` the moment it runs, along with everything before it, and CockroachDB commits the open transaction before it processes any DDL at all.
+
+### Statements a transaction cannot hold
+
+One of these anywhere in the batch leaves the whole of it unwrapped. The engine either refuses the statement inside a block, as PostgreSQL refuses `VACUUM`, or applies it and quietly throws it away, as SQLite does with `PRAGMA foreign_keys`.
+
+| Engine | Statements |
+|---|---|
+| PostgreSQL, Redshift, CockroachDB | `VACUUM`, `CREATE INDEX CONCURRENTLY`, `REINDEX SCHEMA`, `ALTER SYSTEM`, `CREATE DATABASE`, `DISCARD ALL`, `ALTER TYPE … ADD VALUE` |
+| MySQL, MariaDB, TiDB, OceanBase | `SET TRANSACTION`, `SET sql_log_bin`, `SET binlog_format`, `SET GLOBAL gtid_mode`, `STOP REPLICA` |
+| SQLite, libSQL | `VACUUM`, `DETACH`, `PRAGMA journal_mode`, `PRAGMA foreign_keys`, `PRAGMA wal_checkpoint` |
+| DuckDB | `CHECKPOINT`, `FORCE CHECKPOINT`, `DETACH` |
+| SQL Server | `CREATE`, `ALTER` and `DROP DATABASE`, `BACKUP`, `RESTORE`, `RECONFIGURE` |
+
+The MySQL row covers the preamble a `mysqldump` or `mariadb-dump` file carries, so a dump pasted into the editor runs the way `mysql` runs it. CockroachDB adds `SET CLUSTER SETTING`, `BACKUP`, `RESTORE` and `IMPORT`, and Redshift adds `CREATE EXTERNAL TABLE`, `CREATE LIBRARY` and `ALTER TABLE … APPEND`.
+
+A `CLUSTER` or `REINDEX` naming one table, and a `CALL` of a procedure that commits inside itself, depend on the object rather than on the text, so the batch around them keeps its transaction. Run those on their own.
+
+Redis has no transaction TablePro can open, so every command runs and answers as sent. A `MULTI` in the script opens a block of its own: each command after it answers `QUEUED` until `EXEC`, and a batch that fails or is stopped inside the block discards it. See [Redis](/databases/redis).
+
+### Stopping a batch
+
+Stop (`Cmd+.`) acts between statements. The run halts before the next one goes out, and a transaction TablePro or the script opened is rolled back. A batch running outside a transaction keeps what it already wrote and shows no result for it, so refresh the table to see where it stands.
+
+The commit is the point of no return. While it is on the wire Stop is dimmed and says why, and nothing else reaches it either: closing the tab releases the tab and nothing more, and disconnecting queues behind the commit, so the server finishes it either way. A script's own `COMMIT` counts the same, and the statements after it become stoppable again.
+
+If the connection dies while the commit is in flight, the result says the statements may or may not be saved and query history records them the same way. There is nothing left to ask, so no rollback is sent. Check the table before running them again.
+
+### Each tab runs its own queries
+
+Stop and `Cmd+.` act on the tab you are looking at. A query started in another tab, or on the same connection in another window, waits for the running one rather than stopping it: the waiting tab shows the ordinary **Executing…** spinner and a live Stop for as long as the other one runs, and a table opened in a new tab shows an empty grid with a spinner. Stopping the waiting tab leaves the running batch alone.
 
 ## Statement markers
 
@@ -49,7 +93,7 @@ The editor marks which statement it is about to send.
 - Move the pointer over the gutter and a run button appears beside every statement. Click one to run that statement while the cursor is elsewhere. Their column is reserved at all times, so revealing them never shifts the text.
 - A run button takes the same [safe mode](/features/safe-mode) checks and [parameter](/features/query-parameters) prompts as any other run, and dims while a query is running.
 - VoiceOver reads each button as a button naming the line its statement starts on.
-- A `BEGIN … END` body counts as one statement, so a trigger or stored procedure gets one button rather than one per line inside it. `BEGIN;` and `BEGIN TRANSACTION;` are statements of their own.
+- A `BEGIN … END` body counts as one statement, so a trigger or stored procedure gets one button rather than one per line inside it. `BEGIN;` and `BEGIN TRANSACTION;` are statements of their own. On Oracle, a whole [PL/SQL block or unit](/databases/oracle#pl%2Fsql) is one statement.
 
 Turn either marker off in **Settings > Editor** with **Highlight current statement** and **Run button beside each statement**.
 
@@ -185,7 +229,7 @@ To hide the marks in the editor, turn off **Show invisible characters** in **Set
 
 ## AI assistance
 
-**Explain with AI** (`Cmd+L`) explains the query at the cursor and **Optimize with AI** (`Cmd+Option+L`) suggests improvements. When a query fails, **Fix with AI** in the error banner rewrites it. Inline suggestions complete your SQL as ghost text: `Tab` accepts, `Escape` dismisses. See [AI Assistant](/features/ai-assistant) for setup.
+**Review** in the query bar sends the statement at the cursor, with the structure of the tables it names, for a review. Its menu holds **Explain with AI** (`Cmd+L`) and **Optimize with AI** (`Cmd+Option+L`), which send the same statement. When a query fails, **Fix with AI** in the error banner rewrites it. Inline suggestions complete your SQL as ghost text: `Tab` accepts, `Escape` dismisses. See [AI Assistant](/features/ai-assistant#review-explain-optimize-and-fix) for what each action sends.
 
 For the execution plan rather than an opinion, press `Cmd+Option+E` and see [Explain Visualization](/features/explain-visualization).
 

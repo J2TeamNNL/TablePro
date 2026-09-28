@@ -25,6 +25,8 @@ internal enum DatabaseTreeMenuSpec {
             ]
         case .table(let ref):
             return tableSections(ref, context: context)
+        case .partition(let ref):
+            return partitionSections(ref, context: context)
         case .database(let metadata):
             return containerSections(.database(metadata.name, isSystem: metadata.isSystemDatabase), context: context)
         case .schema(let database, let schema):
@@ -56,7 +58,9 @@ internal enum DatabaseTreeMenuSpec {
             return hierarchicalSchemaSections(schema, context: context)
         case .redisNode(let node):
             return redisSections(node)
-        case .status, .recentSection, .redisKeysSection:
+        case .redisKeysSection:
+            return [DatabaseTreeMenuSection([.command(String(localized: "Refresh"), .refreshRedisKeys)])]
+        case .status, .recentSection:
             return backgroundSections(context)
         }
     }
@@ -229,6 +233,26 @@ internal enum DatabaseTreeMenuSpec {
             title: String(localized: "Import"),
             items: formats.map { .command($0.submenuLabel, .importTables(formatId: $0.id, ref: ref)) }
         )]
+    }
+
+    /// A partition that is a relation of its own gets the full table menu, because everything on it
+    /// works: it can be opened, truncated and dropped by name. One that is not gets copy commands
+    /// alone, because every write on it goes through its parent.
+    private static func partitionSections(
+        _ ref: DatabaseTreePartitionRef,
+        context: DatabaseTreeMenuContext
+    ) -> [DatabaseTreeMenuSection] {
+        if let tableRef = ref.tableRef {
+            return tableSections(tableRef, context: context)
+        }
+        var copies: [DatabaseTreeMenuItem] = [
+            .command(String(localized: "Copy Name"), .copyText(ref.partition.name))
+        ]
+        if let bound = ref.partition.bound, !bound.isEmpty {
+            copies.append(.command(String(localized: "Copy Bound"), .copyText(bound)))
+        }
+        copies.append(.command(String(localized: "Copy Table Name"), .copyText(ref.parent.table.name)))
+        return [DatabaseTreeMenuSection(copies)]
     }
 
     private static func routineSections(_ ref: DatabaseTreeRoutineRef) -> [DatabaseTreeMenuSection] {
@@ -485,7 +509,9 @@ internal enum DatabaseTreeMenuSpec {
         case .table, .partitionedTable: return .table
         case .view: return .view
         case .materializedView: return .materializedView
-        case .foreignTable, .systemTable, .externalTable: return nil
+        /// Copy Object reads sequences through `fetchSequences`, which the MySQL driver leaves at
+        /// the PluginKit default of `[]`, so a sequence offered here would copy nothing.
+        case .foreignTable, .systemTable, .externalTable, .sequence: return nil
         }
     }
 
@@ -575,7 +601,9 @@ internal enum DatabaseTreeMenuSpec {
     private static func backgroundSections(_ context: DatabaseTreeMenuContext) -> [DatabaseTreeMenuSection] {
         var creation: [DatabaseTreeMenuItem] = []
         if !context.isReadOnly {
-            creation.append(.command(String(localized: "New Table…"), .createTable))
+            if context.canCreateTable {
+                creation.append(.command(String(localized: "New Table…"), .createTable))
+            }
             creation.append(.command(String(localized: "New View…"), .createView))
         }
         creation += newSchemaItems(database: context.activeDatabase, context: context)

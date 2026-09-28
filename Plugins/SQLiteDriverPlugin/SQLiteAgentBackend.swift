@@ -33,7 +33,10 @@ actor SQLiteAgentBackend: SQLiteExecutionBackend {
         self.canceller = SQLiteRemoteCanceller(connection: connection)
     }
 
-    func open() async throws {
+    /// Extensions are files on this Mac and the statements run on the server, so a list here has
+    /// nothing it could load into.
+    func open(loading extensions: [LoadableExtension]) async throws {
+        guard extensions.isEmpty else { throw LoadableExtensionError.remoteSession }
         try connection.connect(token: token)
         let ready = try await connection.hello(
             path: path,
@@ -480,7 +483,7 @@ final class SQLiteAgentConnection: @unchecked Sendable {
     private func startHeartbeat() {
         let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global())
         timer.schedule(deadline: .now() + Self.heartbeatInterval, repeating: Self.heartbeatInterval)
-        timer.setEventHandler { [weak self] in
+        timer.setEventHandler { @Sendable [weak self] in
             self?.sendHeartbeat()
         }
         heartbeatTimer = timer

@@ -9,7 +9,6 @@ import Testing
 
 @testable import TablePro
 
-@Suite("Connection Export Data")
 @MainActor
 struct ConnectionExportDataTests {
     private func makeConnection(name: String = "Dev") -> DatabaseConnection {
@@ -31,26 +30,25 @@ struct ConnectionExportDataTests {
     }
 
     @Test("exportEncryptedData decrypts with the right passphrase")
-    func testEncryptedRoundTrip() throws {
+    func testEncryptedRoundTrip() async throws {
         let connections = [makeConnection(name: "Secret")]
-        let data = try ConnectionExportService.exportEncryptedData(connections, passphrase: "correct horse")
+        let data = try await ConnectionExportService.exportEncryptedData(connections, passphrase: "correct horse")
 
         #expect(ConnectionExportCrypto.isEncrypted(data))
-        let envelope = try ConnectionImportDecoder.decodeEncryptedData(data, passphrase: "correct horse")
+        let envelope = try await ConnectionImportDecoder.decodeEncryptedData(data, passphrase: "correct horse")
         #expect(envelope.connections.map(\.name) == ["Secret"])
     }
 
     @Test("exportEncryptedData fails to decrypt with the wrong passphrase")
-    func testEncryptedWrongPassphrase() throws {
-        let data = try ConnectionExportService.exportEncryptedData([makeConnection()], passphrase: "right-one")
+    func testEncryptedWrongPassphrase() async throws {
+        let data = try await ConnectionExportService.exportEncryptedData([makeConnection()], passphrase: "right-one")
 
-        #expect(throws: (any Error).self) {
-            try ConnectionImportDecoder.decodeEncryptedData(data, passphrase: "wrong-one")
+        await #expect(throws: (any Error).self) {
+            try await ConnectionImportDecoder.decodeEncryptedData(data, passphrase: "wrong-one")
         }
     }
 }
 
-@Suite("Connection Export Passphrase State")
 struct ConnectionExportPassphraseStateTests {
     @Test("empty passphrase is not exportable")
     func testEmpty() {

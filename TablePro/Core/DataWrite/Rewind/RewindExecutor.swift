@@ -40,14 +40,22 @@ struct RewindExecutor {
         )
         let queries = planner.readQueries()
         let route = DatabaseManager.shared.executionRoute(for: scope)
+        let recordedColumns = record.operations.first?.columns ?? []
+        let matchingByName = PluginManager.shared.supportsFieldRemoval(for: connection.type)
+        /// Untracked: nothing offers a Stop for a rewind plan, so registering it only exposed the
+        /// read to whatever else on the connection was being cancelled.
         let currentRows = try await DatabaseManager.shared.withScopedDriver(
             scope: scope,
             route: route,
-            cancellation: .cancellableRead
+            cancellation: .untracked
         ) { driver in
-            var rows: [[PluginCellValue]] = []
+            var rows: [RewindCurrentRow] = []
             for query in queries {
-                rows.append(contentsOf: try await driver.execute(query: query).rows)
+                rows.append(contentsOf: RewindCurrentRow.rows(
+                    of: try await driver.execute(query: query),
+                    alignedTo: recordedColumns,
+                    matchingByName: matchingByName
+                ))
             }
             return rows
         }
@@ -88,7 +96,9 @@ struct RewindExecutor {
                 preImage: source.postImage,
                 postImage: source.preImage,
                 writtenColumns: source.writtenColumns,
-                refusal: nil
+                refusal: nil,
+                preImageAbsentColumns: source.postImageAbsentColumns,
+                postImageAbsentColumns: source.preImageAbsentColumns
             )
         }
         guard !operations.isEmpty else { return }

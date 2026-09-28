@@ -5,17 +5,17 @@
 
 import Foundation
 import TableProPluginKit
+import TableProSQLGrammar
 import Testing
 
 @testable import TablePro
 
-@Suite("Leading-rows statements")
 @MainActor
 struct LeadingRowsStatementTests {
-    private let dialect = SqlDialect.from(databaseTypeId: DatabaseType.cloudflareR2SQL.rawValue)
+    private let grammar = DatabaseType.cloudflareR2SQL.lexicalGrammar
 
     private func bound(_ sql: String, rowCap: Int?, style: AutoLimitStyle = .limit) -> LeadingRowsStatement {
-        LeadingRowsStatement.bound(sql, rowCap: rowCap, maximumRows: 10_000, autoLimitStyle: style, lexicalDialect: dialect)
+        LeadingRowsStatement.bound(sql, rowCap: rowCap, maximumRows: 10_000, autoLimitStyle: style, grammar: grammar)
     }
 
     @Test("A capped read fetches one row past the cap, so a trimmed result is still detected")

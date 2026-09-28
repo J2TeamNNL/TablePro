@@ -106,6 +106,7 @@ final class WelcomeViewModelTests: XCTestCase {
             favoriteDatabasesStorage: live.favoriteDatabasesStorage,
             aiChatStorage: live.aiChatStorage,
             aiKeyStorage: live.aiKeyStorage,
+            aiAccessApprovals: live.aiAccessApprovals,
             groupStorage: groupStorage,
             tagStorage: live.tagStorage,
             sshProfileStorage: live.sshProfileStorage,
@@ -441,6 +442,37 @@ final class WelcomeViewModelTests: XCTestCase {
         viewModel.loadConnections()
 
         XCTAssertEqual(viewModel.outline.connectionIds(in: .recent), [second.id, first.id])
+    }
+
+    func testHidingRecentTakesEffectInTheOpenWindowAndKeepsTheHistory() {
+        let first = DatabaseConnection(name: "First", type: .mysql, sortOrder: 0)
+        save([first])
+        recents.record(first.id, at: Date(timeIntervalSince1970: 1))
+        viewModel.setUp()
+        viewModel.loadConnections()
+        XCTAssertEqual(viewModel.outline.connectionIds(in: .recent), [first.id])
+
+        preferences.setShowsRecent(false)
+
+        XCTAssertNil(viewModel.outline.section(.recent), "Hiding Recent must rebuild the open list")
+        XCTAssertEqual(viewModel.outline.connectionIds(in: .connections), [first.id])
+        XCTAssertFalse(recents.ledger.isEmpty, "Hiding Recent must not clear the history")
+
+        preferences.setShowsRecent(true)
+
+        XCTAssertEqual(viewModel.outline.connectionIds(in: .recent), [first.id])
+    }
+
+    func testAListOpenedWhileRecentIsHiddenStartsWithoutIt() {
+        let first = DatabaseConnection(name: "First", type: .mysql, sortOrder: 0)
+        save([first])
+        recents.record(first.id, at: Date(timeIntervalSince1970: 1))
+        preferences.setShowsRecent(false)
+
+        let reopened = makeViewModel()
+        reopened.loadConnections()
+
+        XCTAssertNil(reopened.outline.section(.recent))
     }
 
     func testChangingTheSortModeReordersTheTree() {

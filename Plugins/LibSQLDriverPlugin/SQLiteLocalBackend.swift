@@ -3,10 +3,11 @@
 //  TablePro
 //
 
+import CSQLite
 import Foundation
 import os
-import SQLite3
 import TableProPluginKit
+import TableProSQLiteCore
 
 struct LibSQLLocalRawResult: Sendable {
     let columns: [String]
@@ -24,7 +25,7 @@ actor SQLiteLocalBackend {
 
     var isConnected: Bool { db != nil }
 
-    func open(path: String) throws {
+    func open(path: String, loading extensions: [LoadableExtension]) throws {
         let result = sqlite3_open(path, &db)
 
         if result != SQLITE_OK {
@@ -32,6 +33,25 @@ actor SQLiteLocalBackend {
                 ?? "Unknown SQLite error"
             throw LibSQLError(message: errorMessage)
         }
+        guard let db else { throw LibSQLError.notConnected }
+        do {
+            try loadExtensions(extensions, into: db)
+        } catch {
+            close()
+            throw error
+        }
+        SQLiteAuthorizer.install(on: db)
+    }
+
+    private func loadExtensions(_ extensions: [LoadableExtension], into db: OpaquePointer) throws {
+        guard !extensions.isEmpty else { return }
+        let loading = SQLiteExtensionLoading(db: db)
+        try LoadableExtensionLoader.load(
+            extensions,
+            setLoadingEnabled: loading.setEnabled,
+            loadExtension: loading.load(file:entryPoint:)
+        )
+        Self.logger.info("Loaded \(extensions.count, privacy: .public) SQLite extension(s)")
     }
 
     func close() {
@@ -76,20 +96,23 @@ actor SQLiteLocalBackend {
 
         try bind(parameters, to: statement, db: db)
 
-        let columnCount = sqlite3_column_count(statement)
-        let columns = columnNames(of: statement, count: columnCount)
-        let columnTypeNames = columnDeclaredTypes(of: statement, count: columnCount)
+        let firstStep = SQLiteResultColumns.stepFirst(statement)
+        let columnCount = firstStep.count
+        let columns = firstStep.names
+        let columnTypeNames = firstStep.typeNames
 
         var rows: [[PluginCellValue]] = []
         var rowsAffected = 0
         var truncated = false
 
-        while sqlite3_step(statement) == SQLITE_ROW {
+        var stepResult = firstStep.result
+        while stepResult == SQLITE_ROW {
             if rows.count >= PluginRowLimits.emergencyMax {
                 truncated = true
                 break
             }
             rows.append(rowValues(of: statement, count: columnCount))
+            stepResult = sqlite3_step(statement)
         }
 
         if columns.isEmpty {
@@ -122,10 +145,11 @@ actor SQLiteLocalBackend {
             throw LibSQLError(message: errorMessage)
         }
 
-        let columnCount = sqlite3_column_count(statement)
+        let firstStep = SQLiteResultColumns.stepFirst(statement)
+        let columnCount = firstStep.count
         continuation.yield(.header(PluginStreamHeader(
-            columns: columnNames(of: statement, count: columnCount),
-            columnTypeNames: columnDeclaredTypes(of: statement, count: columnCount),
+            columns: firstStep.names,
+            columnTypeNames: firstStep.typeNames,
             estimatedRowCount: nil
         )))
 
@@ -133,7 +157,8 @@ actor SQLiteLocalBackend {
         var batch: [PluginRow] = []
         batch.reserveCapacity(batchSize)
 
-        while sqlite3_step(statement) == SQLITE_ROW {
+        var stepResult = firstStep.result
+        while stepResult == SQLITE_ROW {
             if Task.isCancelled {
                 if !batch.isEmpty {
                     continuation.yield(.rows(batch))
@@ -148,6 +173,7 @@ actor SQLiteLocalBackend {
                 continuation.yield(.rows(batch))
                 batch.removeAll(keepingCapacity: true)
             }
+            stepResult = sqlite3_step(statement)
         }
 
         if !batch.isEmpty {
@@ -187,18 +213,6 @@ actor SQLiteLocalBackend {
                 let errorMessage = String(cString: sqlite3_errmsg(db))
                 throw LibSQLError(message: "Failed to bind parameter \(index): \(errorMessage)")
             }
-        }
-    }
-
-    private func columnNames(of statement: OpaquePointer?, count: Int32) -> [String] {
-        (0..<count).map { index in
-            sqlite3_column_name(statement, index).map { String(cString: $0) } ?? "column_\(index)"
-        }
-    }
-
-    private func columnDeclaredTypes(of statement: OpaquePointer?, count: Int32) -> [String] {
-        (0..<count).map { index in
-            sqlite3_column_decltype(statement, index).map { String(cString: $0) } ?? ""
         }
     }
 

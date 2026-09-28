@@ -19,56 +19,6 @@
 import Foundation
 import TableProPluginKit
 
-/// One row of `SHOW INDEX` or `INFORMATION_SCHEMA.STATISTICS`, in the fields both spell the same.
-struct MySQLIndexRow {
-    let table: String
-    let index: String
-    let column: String
-    let isNonUnique: Bool
-    let type: String
-    let prefixLength: Int?
-}
-
-enum MySQLIndexGrouping {
-    /// Rows must arrive in index-position order: a composite index takes its column order from the
-    /// order they are appended, which is what the caller's `ORDER BY … SEQ_IN_INDEX` provides.
-    static func group(_ rows: [MySQLIndexRow]) -> [String: [PluginIndexInfo]] {
-        var byTable: [String: [String: (columns: [String], isUnique: Bool, type: String, prefixes: [String: Int])]] = [:]
-
-        for row in rows {
-            var indexes = byTable[row.table] ?? [:]
-            if var existing = indexes[row.index] {
-                existing.columns.append(row.column)
-                if let prefix = row.prefixLength {
-                    existing.prefixes[row.column] = prefix
-                }
-                indexes[row.index] = existing
-            } else {
-                var prefixes: [String: Int] = [:]
-                if let prefix = row.prefixLength {
-                    prefixes[row.column] = prefix
-                }
-                indexes[row.index] = (
-                    columns: [row.column], isUnique: !row.isNonUnique, type: row.type, prefixes: prefixes
-                )
-            }
-            byTable[row.table] = indexes
-        }
-
-        return byTable.mapValues { indexes in
-            indexes
-                .map { name, info in
-                    PluginIndexInfo(
-                        name: name, columns: info.columns, isUnique: info.isUnique,
-                        isPrimary: name == "PRIMARY", type: info.type,
-                        columnPrefixes: info.prefixes.isEmpty ? nil : info.prefixes
-                    )
-                }
-                .sorted { $0.isPrimary && !$1.isPrimary }
-        }
-    }
-}
-
 extension MySQLPluginDriver {
     var providesBulkIndexFetch: Bool { true }
 
@@ -78,29 +28,44 @@ extension MySQLPluginDriver {
     /// would depend on how the driver rendered an integer cell.
     func fetchAllIndexes(schema: String?) async throws -> [String: [PluginIndexInfo]] {
         guard !flavor.isDatabend else { return [:] }
-        let escapedDb = mysqlEscapeStringLiteral(routineSchema(schema))
+        let database = routineSchema(schema)
+        return try await catalogOrShow(
+            database: database,
+            catalog: { try await self.catalogIndexes(database: database) },
+            show: { try await self.showIndexesByTable(database: database) }
+        )
+    }
+
+    private func catalogIndexes(database: String) async throws -> [String: [PluginIndexInfo]] {
+        let escapedDb = mysqlEscapeStringLiteral(database)
+        let identity = serverIdentity
+        let expression = MySQLFunctionalKeyParts.catalogReportsExpressions(
+            banner: identity.banner, flavor: identity.flavor
+        ) ? "EXPRESSION" : "NULL"
         let query = """
             SELECT
                 TABLE_NAME, INDEX_NAME, COLUMN_NAME,
-                CAST(NON_UNIQUE AS CHAR), INDEX_TYPE, CAST(SUB_PART AS CHAR)
+                CAST(NON_UNIQUE AS CHAR), INDEX_TYPE, CAST(SUB_PART AS CHAR),
+                COLLATION, \(expression)
             FROM INFORMATION_SCHEMA.STATISTICS
             WHERE TABLE_SCHEMA = '\(escapedDb)'
             ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX
             """
 
-        let result = try await execute(query: query)
+        let result = try await execute(ownStatement: query)
         let rows = result.rows.compactMap { row -> MySQLIndexRow? in
             guard let table = row[safe: 0]?.asText,
-                  let index = row[safe: 1]?.asText,
-                  let column = row[safe: 2]?.asText
+                  let index = row[safe: 1]?.asText
             else { return nil }
             return MySQLIndexRow(
                 table: table,
                 index: index,
-                column: column,
+                column: row[safe: 2]?.asText,
+                catalogExpression: row[safe: 7]?.asText,
+                prefixLength: (row[safe: 5]?.asText).flatMap { Int($0) },
+                collation: row[safe: 6]?.asText,
                 isNonUnique: (row[safe: 3]?.asText) == "1",
-                type: (row[safe: 4]?.asText) ?? "BTREE",
-                prefixLength: (row[safe: 5]?.asText).flatMap { Int($0) }
+                type: (row[safe: 4]?.asText) ?? "BTREE"
             )
         }
         return MySQLIndexGrouping.group(rows)

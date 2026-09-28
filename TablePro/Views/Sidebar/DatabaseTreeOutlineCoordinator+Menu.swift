@@ -84,6 +84,7 @@ extension DatabaseTreeOutlineCoordinator: NSMenuDelegate {
             showObjectIcons: settings.showObjectIcons,
             showObjectComments: settings.showObjectComments,
             showSystemContainers: settings.showSystemContainers,
+            showPartitions: settings.showPartitions,
             rowSize: settings.sidebarRowSize,
             canFilterDatabases: PluginManager.shared.supportsDatabaseTree(for: databaseType)
                 && sidebarState?.sidebarLayout == .tree,
@@ -104,6 +105,7 @@ extension DatabaseTreeOutlineCoordinator: NSMenuDelegate {
             ),
             canBackUp: backupIsAvailable(),
             canCreateType: DatabaseManager.shared.driver(for: connectionId)?.createTypeTemplate(schema: nil) != nil,
+            canCreateTable: CreateTableEligibility.canCreateTable(with: DatabaseManager.shared.driver(for: connectionId)),
             objectToolSupport: .of(DatabaseManager.shared.driver(for: connectionId))
         )
     }

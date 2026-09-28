@@ -4,7 +4,7 @@ import os
 import TableProDatabase
 import TableProModels
 
-nonisolated final class RedisDriver: DatabaseDriver, @unchecked Sendable {
+nonisolated final class RedisDriver: DatabaseDriver, KeyContentsBrowsing, @unchecked Sendable {
     private let actor = RedisActor()
     private let host: String
     private let port: Int
@@ -71,9 +71,9 @@ nonisolated final class RedisDriver: DatabaseDriver, @unchecked Sendable {
             throw RedisError.queryFailed("Empty command")
         }
 
-        let reply = try await actor.command(args)
+        let reply = try await send(args)
         let elapsed = Date().timeIntervalSince(start)
-        return formatReply(reply, executionTime: elapsed)
+        return try RedisQueryResultBuilder.result(for: reply, executionTime: elapsed)
     }
 
     func cancelCurrentQuery() async throws {
@@ -83,43 +83,13 @@ nonisolated final class RedisDriver: DatabaseDriver, @unchecked Sendable {
     // MARK: - Schema (Redis key space mapped to tables)
 
     func fetchTables(schema: String?) async throws -> [TableInfo] {
-        var keys: [String] = []
-        var cursor = "0"
-
-        repeat {
-            let reply = try await actor.command(["SCAN", cursor, "MATCH", "*", "COUNT", "1000"])
-            guard case .array(let parts) = reply, parts.count == 2 else { break }
-
-            if case .string(let nextCursor) = parts[0] {
-                cursor = nextCursor
-            } else {
-                break
-            }
-
-            if case .array(let keyReplies) = parts[1] {
-                for kr in keyReplies {
-                    if case .string(let k) = kr { keys.append(k) }
-                }
-            }
-
-            if keys.count >= 100_000 { break }
-        } while cursor != "0"
-
-        return keys.sorted().map {
+        try await RedisKeyspaceReads.keys(sending: send).sorted().map {
             TableInfo(name: $0, type: .table, rowCount: nil, dataSize: nil, comment: nil)
         }
     }
 
     func fetchColumns(table: String, schema: String?) async throws -> [ColumnInfo] {
-        let reply = try await actor.command(["TYPE", table])
-        let typeName: String
-        if case .status(let s) = reply {
-            typeName = s
-        } else if case .string(let s) = reply {
-            typeName = s
-        } else {
-            typeName = "unknown"
-        }
+        let typeName = try await RedisKeyspaceReads.typeName(ofKey: table, sending: send)
 
         return [
             ColumnInfo(
@@ -143,6 +113,10 @@ nonisolated final class RedisDriver: DatabaseDriver, @unchecked Sendable {
                 ordinalPosition: 1
             )
         ]
+    }
+
+    func keyContentsPage(ofKey key: String, limit: Int, offset: Int) async throws -> KeyContentsPage {
+        try await RedisKeyBrowse.page(ofKey: key, limit: limit, offset: offset, sending: send)
     }
 
     func fetchIndexes(table: String, schema: String?) async throws -> [IndexInfo] {
@@ -174,10 +148,7 @@ nonisolated final class RedisDriver: DatabaseDriver, @unchecked Sendable {
             throw RedisError.queryFailed("Invalid database name: \(name). Expected db0, db1, etc.")
         }
 
-        let reply = try await actor.command(["SELECT", dbNum])
-        if case .error(let msg) = reply {
-            throw RedisError.queryFailed(msg)
-        }
+        try await send(["SELECT", dbNum]).throwIfError().throwIfQueued("SELECT")
     }
 
     func switchSchema(to name: String) async throws {
@@ -199,6 +170,10 @@ nonisolated final class RedisDriver: DatabaseDriver, @unchecked Sendable {
     }
 
     // MARK: - Private Helpers
+
+    private func send(_ arguments: [String]) async throws -> RedisReplyValue {
+        try await actor.command(arguments)
+    }
 
     private func parseRedisCommand(_ input: String) -> [String] {
         var args: [String] = []
@@ -239,122 +214,6 @@ nonisolated final class RedisDriver: DatabaseDriver, @unchecked Sendable {
         }
         if !current.isEmpty { args.append(current) }
         return args
-    }
-
-    private func formatReply(_ reply: RedisReplyValue, executionTime: TimeInterval) -> QueryResult {
-        switch reply {
-        case .string(let s):
-            return QueryResult(
-                columns: [ColumnInfo(name: "value", typeName: "string", ordinalPosition: 0)],
-                rows: [[s]],
-                rowsAffected: 0,
-                executionTime: executionTime,
-                statusMessage: nil
-            )
-        case .integer(let i):
-            return QueryResult(
-                columns: [ColumnInfo(name: "value", typeName: "integer", ordinalPosition: 0)],
-                rows: [[String(i)]],
-                rowsAffected: 0,
-                executionTime: executionTime,
-                statusMessage: nil
-            )
-        case .status(let s):
-            return QueryResult(
-                columns: [ColumnInfo(name: "status", typeName: "string", ordinalPosition: 0)],
-                rows: [[s]],
-                rowsAffected: 0,
-                executionTime: executionTime,
-                statusMessage: s
-            )
-        case .error(let msg):
-            return QueryResult(
-                columns: [ColumnInfo(name: "error", typeName: "string", ordinalPosition: 0)],
-                rows: [[msg]],
-                rowsAffected: 0,
-                executionTime: executionTime,
-                statusMessage: nil
-            )
-        case .array(let items):
-            if isHashResult(items) {
-                var rows: [[String?]] = []
-                for i in stride(from: 0, to: items.count - 1, by: 2) {
-                    let key = items[i].stringRepresentation
-                    let value = items[i + 1].stringRepresentation
-                    rows.append([key, value])
-                }
-                return QueryResult(
-                    columns: [
-                        ColumnInfo(name: "key", typeName: "string", ordinalPosition: 0),
-                        ColumnInfo(name: "value", typeName: "string", ordinalPosition: 1)
-                    ],
-                    rows: rows,
-                    rowsAffected: 0,
-                    executionTime: executionTime,
-                    isTruncated: rows.count >= 100_000,
-                    statusMessage: nil
-                )
-            }
-
-            let rows: [[String?]] = items.prefix(100_000).enumerated().map { index, item in
-                [String(index), item.stringRepresentation]
-            }
-            return QueryResult(
-                columns: [
-                    ColumnInfo(name: "index", typeName: "integer", ordinalPosition: 0),
-                    ColumnInfo(name: "value", typeName: "string", ordinalPosition: 1)
-                ],
-                rows: rows,
-                rowsAffected: 0,
-                executionTime: executionTime,
-                isTruncated: items.count > 100_000,
-                statusMessage: nil
-            )
-        case .null:
-            return QueryResult(
-                columns: [ColumnInfo(name: "value", typeName: "string", ordinalPosition: 0)],
-                rows: [[nil]],
-                rowsAffected: 0,
-                executionTime: executionTime,
-                statusMessage: nil
-            )
-        }
-    }
-
-    private func isHashResult(_ items: [RedisReplyValue]) -> Bool {
-        guard items.count >= 2, items.count % 2 == 0 else { return false }
-        for i in stride(from: 0, to: items.count, by: 2) {
-            if case .string = items[i] { continue }
-            return false
-        }
-        return true
-    }
-}
-
-// MARK: - Redis Reply Value
-
-nonisolated private enum RedisReplyValue: Sendable {
-    case string(String)
-    case integer(Int64)
-    case array([RedisReplyValue])
-    case status(String)
-    case error(String)
-    case null
-
-    var stringRepresentation: String? {
-        switch self {
-        case .string(let s): return s
-        case .integer(let i): return String(i)
-        case .status(let s): return s
-        case .error(let s): return s
-        case .null: return nil
-        case .array(let items): return "[\(items.compactMap(\.stringRepresentation).joined(separator: ", "))]"
-        }
-    }
-
-    var errorMessage: String? {
-        guard case .error(let message) = self else { return nil }
-        return message
     }
 }
 
@@ -530,9 +389,9 @@ private actor RedisActor {
         guard let rawReply = redisCommandArgv(ctx, argc, &argv, &argvlen) else {
             if ctx.pointee.err != 0 {
                 let msg = withUnsafePointer(to: &ctx.pointee.errstr.0) { String(cString: $0) }
-                throw RedisError.queryFailed(msg)
+                throw RedisError.connectionFailed(msg)
             }
-            throw RedisError.queryFailed("No reply from server")
+            throw RedisError.connectionFailed("No reply from server")
         }
 
         let reply = rawReply.assumingMemoryBound(to: redisReply.self)
@@ -590,12 +449,15 @@ private actor RedisActor {
 
 // MARK: - Errors
 
-nonisolated enum RedisError: Error, LocalizedError {
+nonisolated enum RedisError: Error, LocalizedError, Equatable {
     case connectionFailed(String)
     case authenticationFailed(serverMessage: String, failure: RedisAuthCommand.Failure)
     case sessionUnverified(RedisConnectProbe.Outcome)
     case notConnected
     case queryFailed(String)
+    case commandQueued(String)
+    case keyNotFound(String)
+    case keyTypeNotBrowsable(String)
     case unsupported(String)
 
     var errorDescription: String? {
@@ -616,6 +478,16 @@ nonisolated enum RedisError: Error, LocalizedError {
             return "\(message) \(hint)"
         case .notConnected: return "Not connected to Redis"
         case .queryFailed(let msg): return "Redis command failed: \(msg)"
+        case .commandQueued(let command):
+            let message = String(format: String(localized: "Redis queued %@ instead of running it."), command)
+            let hint = String(
+                localized: "A MULTI block is open on this connection. Run EXEC to apply it, or DISCARD to drop it."
+            )
+            return "\(message) \(hint)"
+        case .keyNotFound(let key):
+            return String(format: String(localized: "The key %@ no longer exists."), key)
+        case .keyTypeNotBrowsable(let typeName):
+            return String(format: String(localized: "Keys of type %@ cannot be opened here."), typeName)
         case .unsupported(let msg): return msg
         }
     }

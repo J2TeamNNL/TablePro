@@ -36,11 +36,14 @@ Nothing is written until **Apply**. Until then the strip along the top reads **C
 | Kind | Compared as |
 |---|---|
 | Tables | Parsed columns, indexes, foreign keys, storage engine and collation |
-| Views, materialized views | Normalized definition text |
+| Views | Normalized definition text |
+| Materialized views | Normalized definition text, plus parsed indexes on PostgreSQL and PGlite |
 | Procedures, functions | Normalized definition text, matched on name and argument list |
 | Triggers | Normalized definition text, per table |
 
-Tables are never compared as DDL text. Driver-rendered DDL varies by formatting and by system-generated constraint names, which reports identical tables as different. A routine has no parsed form to compare instead, so its body is the definition, and the normalizer folds line endings, trailing semicolons and, when the options say so, whitespace and identifier case.
+Tables are never compared as DDL text. Driver-rendered DDL varies by formatting and by system-generated constraint names, which reports identical tables as different. A routine has no parsed form to compare instead, so its body is the definition. The normalizer compares the text each side would run and folds line endings and, when the options say so, whitespace and identifier case. A semicolon that only separates statements is not a difference. The one after an Oracle unit's `END` is, because Oracle stores the unit INVALID without it.
+
+A column's type is compared as the server declares it, so `character varying(10)` against `character varying(50)` and `numeric(10,2)` against `numeric(12,4)` are differences, and so are two different enum types. The schema a type was found in is not part of the comparison: two schemas that each carry their own `status` enum compare equal, and a PostGIS column matches whichever schema each side installed the extension into. A type the target does not have at all is still written, and its `ALTER … TYPE` fails there with `type "…" does not exist`.
 
 ### What is ignored
 
@@ -52,8 +55,10 @@ These drift between environments by design, so they are ignored by default. Turn
 | Column order | The same columns in a different order |
 | Whitespace in text | Indentation inside default values, comments and routine bodies |
 | Auto-increment seed | The counter's current value |
-| Collation and character set | A table-level or column-level collation difference |
+| Collation and character set | A table-level or column-level collation difference. A column changed for another reason keeps the target's collation, unless its type changes |
 | Comments, owners, definers | Descriptive metadata with no runtime effect |
+
+With **Collation and character set** off, a PostgreSQL column whose collation differs is retyped to the type it already has, `ALTER COLUMN … TYPE text COLLATE …`. That rebuilds the column's indexes, and PostgreSQL refuses it on a column a view or a generated column reads: drop the view or the generated column first, or leave the option on.
 
 ## Reading the results
 
@@ -61,9 +66,13 @@ Each object lands in one of four states: **only in source**, **only in target**,
 
 Every row carries an **Include** checkbox, and a group header carries one for everything under it. **Select > All** covers everything the pane is currently showing, so the search field and **Show Identical Objects** narrow what it reaches. Nothing is included until it is checked.
 
-An object whose metadata could not be read keeps its own **Could Not Compare** section with the driver's reason. One unreadable object never stops the rest of the comparison.
+An object that could not be read keeps its own **Could Not Compare** section with the reason, and no script touches it. A view, procedure, function or trigger lands there when the server refuses its definition, returns an empty one, or returns a body rather than a `CREATE` statement. On MySQL, an account without the `SHOW VIEW` privilege lists every view and is refused each definition. One unreadable object never stops the rest of the comparison.
 
-The detail pane on the right has three tabs. **Definitions** shows the source and target side by side, split or unified, rendered from the same function so a formatting difference cannot appear as a real one. **Rows** is the data comparison. **Script** is the generated SQL.
+A procedure, function or trigger list that cannot be read stops the comparison and names the connection. To compare everything else, deselect that kind under **Objects to Compare** in **Options**.
+
+On MySQL a list that is short is not an error. An account without `EXECUTE` lists no procedures or functions, and one without `TRIGGER` lists no triggers, so the other side's copies show as only on that side. Compare from accounts that hold both privileges.
+
+The detail pane on the right has three tabs. **Definitions** shows the source and target side by side, split or unified, rendered from the same function so a formatting difference cannot appear as a real one. A PostgreSQL or PGlite materialized view shows its indexes under its definition, and one whose text matches but whose indexes differ is listed as **different**. **Rows** is the data comparison. **Script** is the generated SQL.
 
 ## Comparing rows
 
@@ -115,6 +124,23 @@ A data comparison needs both sides open at once. On an engine that pools connect
 
 Statements are ordered by foreign key dependency, not alphabetically. Tables are created parent-first and dropped child-first; row inserts run parent-first and row deletes child-first.
 
+A view, routine or trigger that differs is dropped and created again. On Oracle it is replaced by its own `CREATE OR REPLACE` instead, with no `DROP` first, so a definition the server refuses leaves the target's object in place.
+
+A PostgreSQL or PGlite materialized view whose definition matches and whose indexes differ keeps its rows: only its indexes are dropped and created. One whose definition differs is dropped, created again and computed again, then given the source's indexes. Its comments and privileges are not recreated. A change that leaves it with no unique index `REFRESH MATERIALIZED VIEW CONCURRENTLY` can use is listed among the warnings. The script stops at a materialized view whose indexes would be written into a schema other than the one its definition names: exclude it, or compare two schemas with the same name.
+
+A saved script is written for the target engine's own client, so each statement ends the way that client reads it:
+
+| Target | A plain statement ends with | A routine, trigger or block ends with |
+|---|---|---|
+| Oracle, Dameng | `;` | a line holding only `/` |
+| MySQL, MariaDB | `;` | its body inside `DELIMITER //` and `//`, then `DELIMITER ;` |
+| SQL Server | `;` and a `GO` line | `;` and a `GO` line |
+| PostgreSQL, SQLite and every other engine | `;` | `;` |
+
+Run the Oracle script in SQL*Plus or SQLcl, the Dameng script in DISQL, the MySQL script in the `mysql` client, and the SQL Server script in `sqlcmd` or SQL Server Management Studio. The query editor reads the Oracle, PostgreSQL and SQLite forms as saved, but sends a `DELIMITER` or `GO` line to the server as a statement: remove those lines before running a MySQL or SQL Server script there.
+
+SQL*Plus ends a plain statement at a blank line and reports `SP2-0734: unknown command` for the rest of it. When a view's definition holds a blank line, run `SET SQLBLANKLINES ON` before the script.
+
 A data script is built from a fresh read of both sides. An included table that has not been compared with its current scope holds the script back until it is compared or excluded, and a table whose rows changed since the comparison stops the script with that table named. Compare again, then generate.
 
 A structure script is checked the same way. Both schemas are read again, and an object whose structure moved since the comparison stops the script with that object named rather than writing DDL against a schema that no longer exists.
@@ -124,6 +150,8 @@ Script generation needs matching database types, with MySQL and MariaDB counting
 ## Applying
 
 Anything that would destroy data is generated, listed, and held back. Dropping a table, dropping a column, narrowing a type, adding NOT NULL, changing a primary key and deleting a row each need an explicit allowance, and that allowance covers one run and is never saved.
+
+A type narrows when the new one holds less: a shorter length, a length where there was none, fewer decimal places, fewer digits before the point, fewer fractional-second digits, or an enum or set label removed. An integer's display width and the order of enum labels are not a narrowing.
 
 **Apply…** opens a sheet with the script, a summary, and the warnings, building the script first when **Generate Script** has not run. **Cancel** is the default button and **Apply** is marked destructive. Allow a held-back statement in the sheet or in the **Script** pane; the sheet's **Apply** stays disabled while any included statement is still held back.
 

@@ -43,6 +43,8 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
     var lockedColumns: Set<String> = []
     var checkboxColumns: Set<Int> = []
     var supportsColumnCommands = true
+    var supportsValueFilter = true
+    var filterMenuColumnTypes: [ColumnType]?
     var valueFilteredIDs: [RowID]? { didSet { bumpDisplayRevision() } }
     /// Ticks whenever the displayed row order or the value filter changes.
     ///
@@ -253,6 +255,8 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
         lockedColumns = configuration.lockedColumns
         checkboxColumns = configuration.checkboxColumns
         supportsColumnCommands = configuration.supportsColumnCommands
+        supportsValueFilter = configuration.supportsValueFilter
+        filterMenuColumnTypes = configuration.filterMenuColumnTypes
         tableView?.toolTip = isEditable ? nil : configuration.editRefusalMessage
         dropdownColumns = configuration.dropdownColumns
         typePickerColumns = configuration.typePickerColumns
@@ -1121,6 +1125,10 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
         invalidateDisplayCache(forDisplayRow: row)
         repaintRows(IndexSet(integer: row))
         refreshRowVisualState(at: row)
+    }
+
+    var hasOpenCellOverlay: Bool {
+        overlayEditor?.isActive == true || overlayViewer?.isActive == true
     }
 
     func commitActiveCellEdit() {

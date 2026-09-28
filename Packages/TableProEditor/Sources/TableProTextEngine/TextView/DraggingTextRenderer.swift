@@ -28,14 +28,20 @@ final class DraggingTextRenderer: NSView {
     ///   - fragmentRenderer: The renderer the text view draws its own line fragments with.
     /// - Returns: `nil` when no rect has an area to draw into, which is also the case when none of the selection
     ///            is on screen.
+    ///
+    /// Every call that can fail is made before a stored property is set. `map` is `rethrows`, and made after the
+    /// assignments its error edge has to destroy both properties and partially deallocate `self` on the way out of
+    /// a failable initializer. Swift 6.3.1's CopyPropagation pass crashes on that shape in a Release build ("Invalid
+    /// SIL provided to OSSACompleteLifetime"), which is what stopped the v0.75.0 app build.
     init?(fillRects: [TextSelectionManager.FillRect], fragmentRenderer: LineFragmentRenderer) {
         let drawableRects = fillRects.filter { !$0.rect.isNull && !$0.rect.isEmpty }
         guard !drawableRects.isEmpty else { return nil }
+        let frame = drawableRects.map(\.rect).boundingRect()
 
         self.fillRects = drawableRects
         self.fragmentRenderer = fragmentRenderer
 
-        super.init(frame: drawableRects.map(\.rect).boundingRect())
+        super.init(frame: frame)
     }
 
     required init?(coder: NSCoder) {

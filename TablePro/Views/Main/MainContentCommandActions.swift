@@ -29,6 +29,9 @@ final class MainContentCommandActions: ObservableObject {
 
     internal weak var coordinator: MainContentCoordinator?
     private let connection: DatabaseConnection
+    internal var chooseSaveURL: @MainActor (String) async -> URL? = { suggestedName in
+        await SQLFileService.showSavePanel(suggestedName: suggestedName)
+    }
 
     // MARK: - Bindings
 
@@ -57,6 +60,11 @@ final class MainContentCommandActions: ObservableObject {
     let textInputFocusObserver = OSAllocatedUnfairLock<(any NSObjectProtocol)?>(uncheckedState: nil)
 
     var isTextInputFocusCheckScheduled = false
+
+    /// Asks whether to save a tab being closed. The alert by default, a scripted answer in a test.
+    var confirmSaveChanges: (String, NSWindow?) async -> AlertHelper.SaveConfirmationResult = { message, window in
+        await AlertHelper.confirmSaveChanges(message: message, window: window)
+    }
 
     /// Task handles for async notification observers; cancelled on deinit.
     private var notificationTasks: [Task<Void, Never>] = []
@@ -139,12 +147,8 @@ final class MainContentCommandActions: ObservableObject {
         _ publisher: PassthroughSubject<Payload, Never>,
         handler: @escaping @MainActor (Payload) -> Void
     ) {
-        publisher
-            .receive(on: RunLoop.main)
-            .sink { [weak self] payload in
-                guard self?.isVisibleInKeyWindow() == true else { return }
-                handler(payload)
-            }
+        KeyWindowCommandSubscription
+            .sink(publisher, when: { [weak self] in self?.isVisibleInKeyWindow() == true }, perform: handler)
             .store(in: &eventCancellables)
     }
 
@@ -221,6 +225,15 @@ final class MainContentCommandActions: ObservableObject {
 
     private var dataGridOwnsSelection: Bool { selectionOwner == .dataGrid }
 
+    /// The display position of the one data-grid row a single-row command acts on, or nil when the
+    /// data grid does not own the selection or it holds other than one row.
+    var singleSelectedDataGridRow: Int? {
+        guard dataGridOwnsSelection else { return nil }
+        let indices = resolvedRowSelection()
+        guard indices.count == 1 else { return nil }
+        return indices.first
+    }
+
     func deleteSelectedRows(rowIndices: Set<Int>? = nil) {
         let fromDataGrid = rowIndices != nil
 
@@ -280,7 +293,10 @@ final class MainContentCommandActions: ObservableObject {
     /// existing proves nothing: it is kept alive across a lost session so a reconnect can restore
     /// the user's tabs.
     var isConnected: Bool { coordinator?.splitViewController?.isConnected ?? false }
-    var isQueryExecuting: Bool { coordinator?.tabExecution.isAnyExecuting ?? false }
+    var isQueryExecuting: Bool { coordinator?.isSelectedTabBusy ?? false }
+    /// Separate from `isQueryExecuting` because `Cmd+.` has to dim while a batch commits, which is
+    /// running work nothing can interrupt.
+    var isQueryStoppable: Bool { coordinator?.isSelectedTabStoppable ?? false }
 
     var safeModeLevel: SafeModeLevel { coordinator?.toolbarState.safeModeLevel ?? connection.safeModeLevel }
 
@@ -540,7 +556,7 @@ final class MainContentCommandActions: ObservableObject {
     }
 
     var hasQueryText: Bool {
-        !(coordinator?.tabManager.selectedTab?.content.query.isEmpty ?? true)
+        coordinator?.tabManager.selectedTab?.hasQueryText ?? false
     }
 
     /// Whether there are pending data changes that the SQL preview can show.
@@ -610,6 +626,10 @@ final class MainContentCommandActions: ObservableObject {
         coordinator?.insertQueryFromAI(query)
     }
 
+    func applyAISuggestion(_ afterSQL: String, replacing beforeSQL: String, source: QueryEditorAnchor?) {
+        coordinator?.applyAISuggestion(afterSQL, replacing: beforeSQL, source: source)
+    }
+
     // MARK: - Tab Operations (Group A — Called Directly)
 
     /// A new tab joins the connection's own tab list. It used to open another window whenever
@@ -637,8 +657,8 @@ final class MainContentCommandActions: ObservableObject {
     ///
     /// Save proceeds with the close, per `NSDocument.canCloseDocumentWithDelegate`: "shouldClose
     /// will be YES if ... the user chose to discard modifications, or chose to save and the saving
-    /// was successful". `saveSelectedTabWork` returns false for the one case where saving cannot
-    /// finish on its own, staged principals, whose review sheet is now up and owns the decision.
+    /// was successful". `saveSelectedTabWork` returns false whenever the work is still unsaved
+    /// after the attempt, and the tab stays open.
     func closeTabAwaiting(id: UUID) async {
         guard let coordinator,
               let tab = coordinator.tabManager.tabs.first(where: { $0.id == id }) else { return }
@@ -652,18 +672,30 @@ final class MainContentCommandActions: ObservableObject {
         let previousSelection = coordinator.tabManager.selectedTabId
         revealTab(id)
 
-        switch await AlertHelper.confirmSaveChanges(
-            message: String(localized: "Your changes will be lost if you don't save them."),
-            window: closeAnchorWindow
+        switch await confirmSaveChanges(
+            String(localized: "Your changes will be lost if you don't save them."),
+            closeAnchorWindow
         ) {
         case .save:
             guard await saveSelectedTabWork() else { return }
-            coordinator.closeTabsByUser(ids: [id])
+            closeRevealedTab(id, returningTo: previousSelection)
         case .dontSave:
-            coordinator.closeTabsByUser(ids: [id])
+            closeRevealedTab(id, returningTo: previousSelection)
         case .cancel:
+            guard coordinator.tabManager.selectedTabId == id else { return }
             restoreSelection(previousSelection)
         }
+    }
+
+    /// The selection goes back only while the closing tab still holds it. A save can wait on the
+    /// server with the strip still live, and a tab the user picked in the meantime is a newer choice
+    /// than the one this close set aside.
+    private func closeRevealedTab(_ id: UUID, returningTo previousSelection: UUID?) {
+        guard let coordinator else { return }
+        let stillShowsClosingTab = coordinator.tabManager.selectedTabId == id
+        coordinator.closeTabsByUser(ids: [id])
+        guard stillShowsClosingTab else { return }
+        restoreSelection(previousSelection)
     }
 
     /// Shown, then asked. The save and discard machinery reads the selected tab, so the tab being
@@ -674,8 +706,11 @@ final class MainContentCommandActions: ObservableObject {
         coordinator.tabManager.selectedTabId = id
     }
 
-    /// Cancel puts everything back, including a selection that only moved so the sheet had
-    /// somewhere honest to point.
+    /// Every answer puts the selection back where the user had it, unless they have since picked
+    /// another tab, because it only moved so the alert had somewhere honest to point. After a close that is the tab they were working in, not
+    /// the neighbour of the one that went: closing a tab in the background leaves the one in front
+    /// alone whether or not it had anything to save. Closing the tab in front lands on its
+    /// neighbour as before, since the tab it would restore is gone.
     private func restoreSelection(_ id: UUID?) {
         guard let coordinator,
               let id,
@@ -804,8 +839,9 @@ final class MainContentCommandActions: ObservableObject {
     /// False comes back whenever the work is still staged after the attempt, because the caller
     /// goes on to close and closing destroys it. User and role changes can only be applied after
     /// the SQL is reviewed, so Save opens the review sheet and stands the close down; a schema
-    /// change that Safe Mode refused, that the user cancelled at the destructive prompt, or that
-    /// the server rejected stands it down for the same reason.
+    /// change that Safe Mode refused, that the user cancelled at the gate's confirmation, or that
+    /// the server rejected stands it down for the same reason, and so does a file that changed on
+    /// disk, whose conflict sheet is now up, or a Save As the user cancelled.
     func saveSelectedTabWork() async -> Bool {
         guard let coordinator = coordinator else { return true }
 
@@ -845,8 +881,7 @@ final class MainContentCommandActions: ObservableObject {
 
         // File save (query editor with source file)
         if coordinator.tabManager.selectedTab?.content.isFileDirty == true {
-            saveFileToSourceURL()
-            return true
+            return await saveSelectedFileAwaiting()
         }
 
         return true
@@ -875,14 +910,6 @@ final class MainContentCommandActions: ObservableObject {
             tab.id != selectedId && coordinator.structureSessions[tab.id]?.changeManager.hasChanges == true
         }
         guard !victims.isEmpty else { return true }
-
-        /// Every apply broadcasts a data refresh for its scope, and a mounted structure view on the
-        /// same database answers that by asking whether to discard its own staged edits. Mid-close
-        /// that question is both unanswerable and destructive, so the views stand down while this
-        /// runs. Scoped by `defer` rather than latched, because a flag with no exit is how this
-        /// area has gone deaf before.
-        coordinator.isApplyingStagedStructureEdits = true
-        defer { coordinator.isApplyingStagedStructureEdits = false }
 
         for tab in victims {
             guard let session = coordinator.structureSessions[tab.id] else { continue }
@@ -933,7 +960,7 @@ final class MainContentCommandActions: ObservableObject {
 
     var supportsServerDashboard: Bool {
         guard let type = coordinator?.connection.type else { return false }
-        return ServerDashboardQueryProviderFactory.provider(for: type) != nil
+        return ServerDashboardQueryProviderFactory.supportsDashboard(for: type)
     }
 
     func showUsersAndRoles() {
@@ -1046,48 +1073,53 @@ final class MainContentCommandActions: ObservableObject {
         }
         // Save As: untitled query tab with content
         else if let tab = coordinator?.tabManager.selectedTab,
-                tab.tabType == .query, tab.content.sourceFileURL == nil,
-                !tab.content.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                tab.tabType == .query, tab.content.sourceFileURL == nil, tab.hasQueryText {
             saveFileAs()
         }
     }
 
     func saveFileAs() {
+        Task { await saveFileAsAwaiting() }
+    }
+
+    @discardableResult
+    func saveFileAsAwaiting() async -> Bool {
         guard let tab = coordinator?.tabManager.selectedTab,
-              tab.tabType == .query else { return }
+              tab.tabType == .query else { return false }
         let content = tab.content.query
         let suggestedName = tab.content.sourceFileURL?.lastPathComponent ?? "\(tab.title).sql"
         let tabId = tab.id
-        Task {
-            guard let url = await SQLFileService.showSavePanel(suggestedName: suggestedName) else { return }
-            do {
-                try await SQLFileService.writeFile(content: content, to: url)
-                coordinator?.tabManager.mutate(tabId: tabId) { mutTab in
-                    mutTab.content.sourceFileURL = url
-                    mutTab.content.savedFileContent = content
-                    mutTab.title = url.deletingPathExtension().lastPathComponent
-                }
-                coordinator?.tabManager.markTabRenamed(tabId)
-            } catch {
-                Self.logger.error("Failed to save file: \(error.localizedDescription)")
-            }
+        guard let url = await chooseSaveURL(suggestedName) else { return false }
+        do {
+            try await SQLFileService.writeFile(content: content, to: url, encoding: .utf8)
+        } catch {
+            Self.logger.error("Failed to save file: \(error.publicLogShape, privacy: .public)")
+            reportFileSaveFailures([Self.saveFailureMessage(for: error, fileName: url.lastPathComponent)])
+            return false
         }
+        coordinator?.tabManager.mutate(tabId: tabId) { mutTab in
+            mutTab.content.sourceFileURL = url
+            FileTabBaseline.recordWrite(of: content, to: url, as: .utf8, in: &mutTab.content)
+            mutTab.title = url.deletingPathExtension().lastPathComponent
+        }
+        coordinator?.tabManager.markTabRenamed(tabId)
+        return true
+    }
+
+    var supportsExplain: Bool {
+        !connection.type.explainVariants.isEmpty
     }
 
     func explainQuery() {
         coordinator?.runExplain()
     }
 
-    func aiExplainQuery() {
-        guard let query = coordinator?.tabManager.selectedTab?.content.query, !query.isEmpty else { return }
-        coordinator?.showAssistant()
-        coordinator?.aiViewModel?.handleExplainSelection(query)
+    var aiQueryActionAvailability: AIQueryActionAvailability {
+        coordinator?.aiQueryActionAvailability ?? .hidden
     }
 
-    func aiOptimizeQuery() {
-        guard let query = coordinator?.tabManager.selectedTab?.content.query, !query.isEmpty else { return }
-        coordinator?.showAssistant()
-        coordinator?.aiViewModel?.handleOptimizeSelection(query)
+    func runAIQueryAction(_ action: AIQueryAction) {
+        coordinator?.runAIQueryAction(action, target: .selectionOrStatementAtCursor)
     }
 
     func previewFKReference() {
@@ -1108,6 +1140,10 @@ final class MainContentCommandActions: ObservableObject {
 
     func exportQueryResults() {
         coordinator?.openExportQueryResultsDialog()
+    }
+
+    func importData() {
+        coordinator?.openImportPanel()
     }
 
     func importTables(formatId: String) {
@@ -1205,7 +1241,7 @@ final class MainContentCommandActions: ObservableObject {
 
     var canSaveAsFavorite: Bool {
         guard let tab = coordinator?.tabManager.selectedTab else { return false }
-        return tab.tabType == .query && !tab.content.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return tab.tabType == .query && tab.hasQueryText
     }
 
     func previewSQL() {
@@ -1312,10 +1348,6 @@ final class MainContentCommandActions: ObservableObject {
         state.isVisible.toggle()
     }
 
-    func toggleRightSidebar() {
-        coordinator?.trailingPaneProxy?.toggleInspector()
-    }
-
     func goToPreviousPage() {
         coordinator?.goToPreviousPage()
     }
@@ -1388,71 +1420,6 @@ final class MainContentCommandActions: ObservableObject {
         coordinator.closeResultSet(id: activeId)
     }
 
-    // MARK: - Database Operations (Group A — Called Directly)
-
-    func openDatabaseSwitcher() {
-        openScopeSwitcher(nil)
-    }
-
-    /// The one way into the container chooser, for either scope. It used to have two, and the
-    /// second skipped the session gate the first applies: the centred toolbar chip opened the
-    /// chooser over a session the health monitor had given up on, while the button 200pt away and
-    /// the menu command were both correctly disabled. A chooser with one entry point cannot drift
-    /// from itself.
-    ///
-    /// `nil` means the engine's primary container, which is what a command with no scope named can
-    /// mean.
-    func openScopeSwitcher(_ target: ContainerSwitchTarget?) {
-        guard let coordinator, canSwitchContainer(target, on: coordinator) else { return }
-        /// Clearing first responder is what lets the popover's search field take focus.
-        coordinator.contentWindow?.makeFirstResponder(nil)
-        presentDatabaseSwitcher(on: coordinator, target: target)
-    }
-
-    private func canSwitchContainer(
-        _ target: ContainerSwitchTarget?,
-        on coordinator: MainContentCoordinator
-    ) -> Bool {
-        let type = coordinator.connection.type
-        guard MainWindowToolbar.hasLiveSession(coordinator.toolbarState.connectionState) else { return false }
-        guard PluginManager.shared.connectionMode(for: type) != .fileBased else { return false }
-        guard let target else { return PluginManager.shared.supportsContainerSwitching(for: type) }
-        return PluginManager.shared.switchableContainers(for: type).contains(target)
-    }
-
-    func openQuickSwitcher() {
-        coordinator?.showQuickSwitcher()
-    }
-
-    func showColumnJump() {
-        guard canJumpToColumn else { return }
-        coordinator?.showColumnJump()
-    }
-
-    /// The window presents this one. It is a window command wherever it is invoked from, and
-    /// keeping a copy of the presentation here would give one window two owners for one popover.
-    func openConnectionSwitcher() {
-        coordinator?.splitViewController?.openConnectionSwitcher()
-    }
-
-    func dismissScopeSwitcher() {
-        coordinator?.switcherPresenter?.dismiss()
-    }
-
-    /// Anchored to the Database subitem, which is the capsule the user pressed. The group is two
-    /// capsules wide, so anchoring to it points the chooser at the seam between them; the presenter
-    /// falls back to the group by itself once AppKit clips it into the overflow menu.
-    private func presentDatabaseSwitcher(on coordinator: MainContentCoordinator, target: ContainerSwitchTarget?) {
-        coordinator.switcherPresenter?.present(
-            from: coordinator.contentWindow,
-            anchoredTo: MainWindowToolbar.database,
-            subject: .container(target),
-            contentSize: DatabaseSwitcherPopover.contentSize
-        ) { dismiss in
-            DatabaseSwitcherPopoverHost(coordinator: coordinator, target: target, dismiss: dismiss)
-        }
-    }
-
     // MARK: - Group B Broadcast Subscribers
 
     // MARK: Data Broadcasts
@@ -1478,27 +1445,16 @@ final class MainContentCommandActions: ObservableObject {
         AppCommands.shared.refreshData
             .receive(on: RunLoop.main)
             .sink { [weak self] request in
-                guard let self, request.connectionId == self.connection.id,
-                      let coordinator = self.coordinator else { return }
-                if request.reaches(tabScope: coordinator.selectedTabScope) {
-                    coordinator.reloadActiveTableData(
-                        hasPendingTableOps: self.hasPendingTableOps,
-                        onDiscard: { [weak self] in self?.clearPendingTableOps() }
-                    )
-                }
+                guard let self, request.connectionId == self.connection.id else { return }
+                self.coordinator?.applyDataRefresh(request)
             }
             .store(in: &eventCancellables)
 
         AppCommands.shared.objectChanged
             .receive(on: RunLoop.main)
             .sink { [weak self] change in
-                guard let self, change.connectionId == self.connection.id,
-                      let coordinator = self.coordinator else { return }
-                coordinator.applyObjectChange(
-                    change,
-                    hasPendingTableOps: self.hasPendingTableOps,
-                    onDiscard: { [weak self] in self?.clearPendingTableOps() }
-                )
+                guard let self, change.connectionId == self.connection.id else { return }
+                self.coordinator?.applyObjectChange(change)
             }
             .store(in: &eventCancellables)
 
@@ -1534,8 +1490,6 @@ final class MainContentCommandActions: ObservableObject {
     private func handleDatabaseDidConnect() {
         Task { [weak coordinator] in
             guard let coordinator, !coordinator.isTearingDown else { return }
-            if let driver = DatabaseManager.shared.driver(for: coordinator.connection.id) {
-            }
             if case .loading = SchemaService.shared.state(for: coordinator.connection.id) {
                 coordinator.initRedisKeyTreeIfNeeded()
                 return
@@ -1571,7 +1525,15 @@ final class MainContentCommandActions: ObservableObject {
     private func handleOpenSQLFiles(_ urls: [URL]) {
         Task {
             for url in urls {
-                try? await TabRouter.shared.route(.openSQLFile(url))
+                do {
+                    try await TabRouter.shared.route(.openSQLFile(url))
+                } catch {
+                    coordinator?.presentError(
+                        String(localized: "Could Not Open File"),
+                        error.localizedDescription,
+                        closeAnchorWindow
+                    )
+                }
             }
         }
     }

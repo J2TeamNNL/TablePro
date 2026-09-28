@@ -40,14 +40,21 @@ final class KeyHandlingTableView: NSTableView {
         )
     }
 
+    /// A reload changes which rows the pinned row gutter numbers, and the gutter is not a subview of
+    /// the table, so nothing the reload redraws reaches it. Its frame follows the table's only once
+    /// the rows outgrow the viewport, so a result with fewer rows than the one before it left the
+    /// old numbers painted beside rows that were gone.
+    override func reloadData() {
+        super.reloadData()
+        coordinator?.repaintRowGutter()
+    }
+
     override func didAddSubview(_ subview: NSView) {
         super.didAddSubview(subview)
         guard !isRaisingOverlay else { return }
         isRaisingOverlay = true
         defer { isRaisingOverlay = false }
         raiseSelectionOverlayIfNeeded(subview: subview)
-        raiseOverlayIfNeeded(coordinator?.overlayEditor, subview: subview)
-        raiseOverlayIfNeeded(coordinator?.overlayViewer, subview: subview)
     }
 
     private func raiseSelectionOverlayIfNeeded(subview: NSView) {
@@ -56,16 +63,6 @@ final class KeyHandlingTableView: NSTableView {
               subview !== selectionOverlay,
               subviews.last !== selectionOverlay else { return }
         addSubview(selectionOverlay)
-    }
-
-    private func raiseOverlayIfNeeded(_ overlay: CellOverlayBase?, subview: NSView) {
-        guard let overlay,
-              overlay.isActive,
-              let container = overlay.containerView,
-              container !== subview,
-              container.superview === self,
-              subviews.last !== container else { return }
-        overlay.raiseToFront()
     }
 
     var selection = TableSelection() {
@@ -353,9 +350,10 @@ final class KeyHandlingTableView: NSTableView {
         coordinator?.delegate?.dataGridPasteRows()
     }
 
-    /// The cell a paste would land in. Deliberately looser than `focusedDataCell()`, which also
-    /// requires a single selected row: a paste anchors on the focused cell alone.
-    private func pasteAnchorCell() -> (row: Int, column: Int)? {
+    /// The cell a paste would land in, and the cell a command about "this cell" acts on.
+    /// Deliberately looser than `focusedDataCell()`, which also requires a single selected row: a
+    /// paste anchors on the focused cell alone.
+    func pasteAnchorCell() -> (row: Int, column: Int)? {
         guard focusedRow >= 0,
               presentsDataColumn(at: focusedColumn),
               let schema = coordinator?.identitySchema,

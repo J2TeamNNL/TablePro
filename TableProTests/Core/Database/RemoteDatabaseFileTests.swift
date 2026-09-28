@@ -9,7 +9,6 @@ import Testing
 
 @testable import TablePro
 
-@Suite("Remote database file")
 struct RemoteDatabaseFileTests {
     // MARK: - Identity
 
@@ -84,6 +83,12 @@ struct RemoteDatabaseFileTests {
         #expect(suffixes.contains("-wal"))
         #expect(suffixes.contains("-journal"))
         #expect(!suffixes.contains("-shm"))
+    }
+
+    @Test("Replacing a SQLite file clears its rollback journal, write-ahead log and shared-memory index")
+    func sqliteStaleSidecarsIncludeTheRollbackJournal() {
+        let suffixes = Set(DatabaseFileLayout.sqliteFamily.staleAfterReplaceSuffixes)
+        #expect(suffixes == ["-journal", "-wal", "-shm"])
     }
 
     /// DuckDB writes `app.duckdb.wal`, with a dot. Taking SQLite's hyphen to it fetches nothing and

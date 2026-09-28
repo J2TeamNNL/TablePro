@@ -45,7 +45,17 @@ final class LibPQDriverCore: @unchecked Sendable {
     }
     var serverVersionNumber: Int32 { libpqConnection?.serverVersionNumber() ?? 0 }
     var standardConformingStrings: Bool { libpqConnection?.standardConformingStrings ?? true }
-    var isInsideTransactionBlock: Bool { libpqConnection?.isInsideTransactionBlock ?? false }
+
+    /// Whether a backslash escapes in a plain string literal on this session, which is exactly what
+    /// `standard_conforming_strings` decides. The connection re-reads it from every `ParameterStatus` the server
+    /// sends, so a `SET standard_conforming_strings` the user runs is reflected once it has run.
+    var sessionLexicalState: PluginSessionLexicalState? {
+        guard let connection = libpqConnection else { return nil }
+        return PluginSessionLexicalState(
+            determined: .backslashEscapesInSingleQuotes,
+            enabled: connection.standardConformingStrings ? [] : .backslashEscapesInSingleQuotes
+        )
+    }
 
     init(
         config: DriverConnectionConfig,
@@ -68,6 +78,9 @@ final class LibPQDriverCore: @unchecked Sendable {
             database: config.database,
             sslConfig: config.ssl,
             options: config.additionalFields["connectionOptions"],
+            applicationName: LibPQConnectionString.applicationName(
+                forPurpose: config.additionalFields["connectionPurpose"]
+            ),
             suppressServerSideCancel: singleConnectionMode
         )
 
@@ -151,6 +164,20 @@ final class LibPQDriverCore: @unchecked Sendable {
         )
     }
 
+    func executeTransactionScopedRead(_ statement: String) async throws -> PluginQueryResult {
+        let pqConn = try connection()
+        let startTime = Date()
+        let result = try await pqConn.executeTransactionScopedRead(statement)
+        return PluginQueryResult(
+            columns: result.columns,
+            columnTypeNames: result.columnTypeNames,
+            rows: result.rows,
+            rowsAffected: result.affectedRows,
+            executionTime: Date().timeIntervalSince(startTime),
+            isTruncated: result.isTruncated
+        )
+    }
+
     func executeParameterized(query: String, parameters: [PluginCellValue]) async throws -> PluginQueryResult {
         let pqConn = try connection()
         let startTime = Date()
@@ -206,6 +233,14 @@ final class LibPQDriverCore: @unchecked Sendable {
         _ = try await execute(query: "SET statement_timeout = \(ms)")
     }
 
+    /// A connection that has gone away answers `.unknown` rather than `.idle`: a caller that reads
+    /// "nothing open" opens a transaction of its own, and this is the one answer that must never be
+    /// a guess.
+    func sessionTransactionState() async -> PluginSessionTransactionState {
+        guard let pqConn = libpqConnection else { return .unknown }
+        return await pqConn.transactionState().sessionTransactionState
+    }
+
     private func connection() throws -> LibPQPluginConnection {
         guard let pqConn = libpqConnection else {
             throw LibPQPluginError.notConnected
@@ -226,6 +261,10 @@ protocol LibPQBackedDriver: PluginDatabaseDriver {
 }
 
 extension LibPQBackedDriver {
+    var sessionLexicalState: PluginSessionLexicalState? {
+        core.sessionLexicalState
+    }
+
     /// The new name must be bare. Every libpq engine here rejects a qualified one, because this
     /// statement renames in place and never moves the object; `SET SCHEMA` is the separate verb.
     ///
@@ -293,6 +332,10 @@ extension LibPQBackedDriver {
 
     func applyQueryTimeout(_ seconds: Int) async throws {
         try await core.applyQueryTimeout(seconds)
+    }
+
+    func sessionTransactionState() async -> PluginSessionTransactionState {
+        await core.sessionTransactionState()
     }
 
     func switchSchema(to schema: String) async throws {

@@ -11,6 +11,7 @@ import Combine
 import os
 import TableProEditorKit
 import TableProPluginKit
+import TableProSQLGrammar
 import TableProTextEngine
 
 /// Coordinator for the SQL editor — manages find panel, horizontal scrolling, and scroll-to-match
@@ -31,8 +32,7 @@ final class SQLEditorCoordinator: ObservableObject, TextViewCoordinator, TextVie
     private let statementRunController = StatementRunController()
     /// Shared schema provider for inline AI suggestions (avoids duplicate schema fetches)
     var schemaProvider: SQLSchemaProvider?
-    /// Connection-level AI policy for inline suggestions
-    var connectionAIPolicy: AIConnectionPolicy?
+    private let inlineAccessGate: AIConnectionAccessGate = .live
     private var contextMenu: AIEditorContextMenu?
     private var inlineSuggestionManager: InlineSuggestionManager?
     private var aiChatInlineSource: AIChatInlineSource?
@@ -40,7 +40,8 @@ final class SQLEditorCoordinator: ObservableObject, TextViewCoordinator, TextVie
     private var copilotInlineSource: CopilotInlineSource?
     private var editorSettingsCancellable: AnyCancellable?
     private var aiSettingsCancellable: AnyCancellable?
-    private var lastInlineSourceKind: InlineSourceKind = .off
+    private var connectionAccessCancellable: AnyCancellable?
+    private var lastInlineSourceKind: InlineSuggestionSourceKind = .off
     /// Debounce work item for frame-change notification to avoid
     /// triggering syntax highlight viewport recalculation on every keystroke.
     private var frameChangeTask: Task<Void, Never>?
@@ -106,8 +107,8 @@ final class SQLEditorCoordinator: ObservableObject, TextViewCoordinator, TextVie
     var onCloseTab: (() -> Void)?
     var onExecuteQuery: (() -> Void)?
     var onRunStatement: ((String, Int) -> Bool)?
-    var onAIExplain: ((String) -> Void)?
-    var onAIOptimize: ((String) -> Void)?
+    var currentAIAvailability: (() -> AIQueryActionAvailability)?
+    var onAIAction: ((AIQueryAction, AIQueryTarget) -> Void)?
     var onSaveAsFavorite: ((String) -> Void)?
     var databaseType: DatabaseType?
     var tabID: UUID?
@@ -130,6 +131,7 @@ final class SQLEditorCoordinator: ObservableObject, TextViewCoordinator, TextVie
     private func cleanupMonitors() {
         editorSettingsCancellable = nil
         aiSettingsCancellable = nil
+        connectionAccessCancellable = nil
         frameChangeTask?.cancel()
         frameChangeTask = nil
     }
@@ -219,7 +221,8 @@ final class SQLEditorCoordinator: ObservableObject, TextViewCoordinator, TextVie
             self?.vimCursorManager?.updatePosition()
         }
 
-        if !isLargeDocument, !didDestroy, let tabID, let sync = copilotDocumentSync {
+        if !isLargeDocument, !didDestroy, let tabID, let sync = copilotDocumentSync,
+           resolvedInlineSourceKind == .copilot {
             let text = textView.string
             Task { await sync.didChangeText(tabID: tabID, newText: text) }
         }
@@ -290,7 +293,7 @@ final class SQLEditorCoordinator: ObservableObject, TextViewCoordinator, TextVie
         didDestroy = true
         focusClaimPending = false
 
-        uninstallVimKeyInterceptor()
+        removeVimKeyInterceptor()
 
         if let tabID, let sync = copilotDocumentSync {
             let id = tabID
@@ -312,8 +315,8 @@ final class SQLEditorCoordinator: ObservableObject, TextViewCoordinator, TextVie
         statementRunController.onRun = nil
         statementRunController.clear(in: controller)
         diagnosticsController.clear(in: controller)
-        onAIExplain = nil
-        onAIOptimize = nil
+        currentAIAvailability = nil
+        onAIAction = nil
         onSaveAsFavorite = nil
         schemaProvider = nil
         controller?.textView?.menu = nil
@@ -336,7 +339,7 @@ final class SQLEditorCoordinator: ObservableObject, TextViewCoordinator, TextVie
     }
 
     private func installStatementRunControls(controller: TextViewController) {
-        statementRunController.dialect = SqlDialect.from(databaseTypeId: (databaseType ?? .mysql).rawValue)
+        statementRunController.grammar = (databaseType ?? .mysql).lexicalGrammar
         statementRunController.statementModel = QueryStatementModel.forDatabaseType(databaseType ?? .mysql)
         statementRunController.isHighlightEnabled = AppSettingsManager.shared.editor.highlightCurrentStatement
         statementRunController.onRun = { [weak self] sql, offset in
@@ -376,7 +379,7 @@ final class SQLEditorCoordinator: ObservableObject, TextViewCoordinator, TextVie
         guard let range = anchor.resolve(
             in: textView.string,
             model: statementRunController.statementModel,
-            dialect: statementRunController.dialect
+            grammar: statementRunController.grammar
         ) else {
             return false
         }
@@ -404,27 +407,37 @@ final class SQLEditorCoordinator: ObservableObject, TextViewCoordinator, TextVie
     private func installAIContextMenu(controller: TextViewController) {
         guard controller.textView != nil else { return }
         let menu = AIEditorContextMenu(title: "")
-        menu.hasSelection = { [weak controller] in
-            guard let controller else { return false }
-            return controller.cursorPositions.contains { $0.range.length > 0 }
-        }
-        menu.selectedText = { [weak controller] in
-            guard let controller, let textView = controller.textView else { return nil }
-            let range = textView.selectedRange()
-            guard range.length > 0 else { return nil }
-            return (textView.string as NSString).substring(with: range)
-        }
         menu.fullText = { [weak controller] in
             controller?.textView?.string
         }
-        menu.onExplainWithAI = { [weak self] text in self?.onAIExplain?(text) }
-        menu.onOptimizeWithAI = { [weak self] text in self?.onAIOptimize?(text) }
+        menu.selection = { [weak controller] in
+            Self.contextSelection(of: controller?.textView)
+        }
+        menu.aiAvailability = { [weak self] in self?.currentAIAvailability?() ?? .hidden }
+        menu.onAIAction = { [weak self, weak controller] action in
+            self?.onAIAction?(action, Self.aiTarget(for: controller?.textView))
+        }
         menu.onSaveAsFavorite = { [weak self] text in self?.onSaveAsFavorite?(text) }
-        menu.onFormatSQL = { [weak self] in self?.performFormatSQL() }
+        menu.onFormatSQL = { [weak self] range in self?.formatSQL(selectedRange: range) }
         menu.foldStateAtCursor = { [weak controller] in controller?.foldStateAtCursor() }
         menu.onToggleFold = { [weak controller] in controller?.toggleFoldAtCursor() }
         contextMenu = menu
         controller.textView?.menu = menu
+    }
+
+    static func aiTarget(for textView: TextView?) -> AIQueryTarget {
+        guard let textView else { return .selectionOrStatementAtCursor }
+        return .contextMenu(selectedRange: textView.selectedRange(), contextClickWord: textView.contextClickWordRange)
+    }
+
+    static func contextSelection(of textView: TextView?) -> EditorContextSelection {
+        guard let textView else {
+            return EditorContextSelection(selectedRange: NSRange(location: 0, length: 0), contextClickWord: nil)
+        }
+        return EditorContextSelection(
+            selectedRange: textView.selectedRange(),
+            contextClickWord: textView.contextClickWordRange
+        )
     }
 
     private let foldPreview = FoldPreviewController()
@@ -448,10 +461,15 @@ final class SQLEditorCoordinator: ObservableObject, TextViewCoordinator, TextVie
 
     func performFormatSQL() {
         guard let textView = controller?.textView else { return }
+        formatSQL(selectedRange: textView.selectedRange())
+    }
+
+    private func formatSQL(selectedRange: NSRange) {
+        guard let textView = controller?.textView else { return }
         let formatter = QueryFormatterFactory.make(for: databaseType)
         let scope = FormatScopeResolver.resolve(
             fullText: textView.string,
-            selectedRange: textView.selectedRange()
+            selectedRange: selectedRange
         )
 
         do {
@@ -469,7 +487,7 @@ final class SQLEditorCoordinator: ObservableObject, TextViewCoordinator, TextVie
             }
             controller?.setCursorPositions([CursorPosition(range: NSRange(location: caretLocation, length: 0))])
         } catch {
-            Self.logger.error("SQL Formatting error: \(error.localizedDescription, privacy: .public)")
+            Self.logger.error("SQL Formatting error: \(error.publicLogShape, privacy: .public)")
         }
     }
 
@@ -483,18 +501,11 @@ final class SQLEditorCoordinator: ObservableObject, TextViewCoordinator, TextVie
         inlineSuggestionManager = manager
     }
 
-    private enum InlineSourceKind {
-        case off
-        case copilot
-        case ai
-    }
-
-    private var resolvedInlineSourceKind: InlineSourceKind {
-        let ai = AppSettingsManager.shared.ai
-        guard ai.enabled, ai.inlineSuggestionsEnabled, let active = ai.activeProvider else {
-            return .off
-        }
-        return active.type == .copilot ? .copilot : .ai
+    private var resolvedInlineSourceKind: InlineSuggestionSourceKind {
+        InlineSuggestionSourceKind.resolve(
+            settings: AppSettingsManager.shared.ai,
+            accessAllowed: inlineAccessGate.allowsUnpromptedAccess(to: connectionId)
+        )
     }
 
     private func resolveInlineSource() -> InlineSuggestionSource? {
@@ -511,14 +522,16 @@ final class SQLEditorCoordinator: ObservableObject, TextViewCoordinator, TextVie
                 installCopilotInlineSource()
             }
             return copilotInlineSource
-        case .ai:
+        case .chatCompletion:
             if aiChatInlineSource == nil {
                 aiChatInlineSource = AIChatInlineSource(
                     schemaProvider: schemaProvider,
-                    connectionPolicy: connectionAIPolicy
+                    connectionId: connectionId,
+                    accessGate: inlineAccessGate
                 )
             }
             aiChatInlineSource?.schemaProvider = schemaProvider
+            aiChatInlineSource?.connectionId = connectionId
             return aiChatInlineSource
         }
     }
@@ -536,13 +549,16 @@ final class SQLEditorCoordinator: ObservableObject, TextViewCoordinator, TextVie
             DatabaseManager.shared.session(for: $0)?.resolvedBrowseDatabase
         } ?? "database"
 
-        Task {
+        Task { [weak self] in
             if let provider = capturedSchemaProvider, let dbType = capturedDBType {
                 await sync.preambleBuilder.buildPreamble(
                     schemaProvider: provider,
                     databaseName: dbName,
                     databaseType: dbType
                 )
+            }
+            guard let self, self.copilotDocumentSync === sync, self.resolvedInlineSourceKind == .copilot else {
+                return
             }
             if let tabID = capturedTabID {
                 sync.ensureDocumentOpen(tabID: tabID, text: capturedText)
@@ -551,7 +567,7 @@ final class SQLEditorCoordinator: ObservableObject, TextViewCoordinator, TextVie
         }
     }
 
-    private func teardownInlineSources(except kind: InlineSourceKind) {
+    private func teardownInlineSources(except kind: InlineSuggestionSourceKind) {
         if kind != .copilot {
             if let tabID, let sync = copilotDocumentSync {
                 let id = tabID
@@ -560,7 +576,7 @@ final class SQLEditorCoordinator: ObservableObject, TextViewCoordinator, TextVie
             copilotDocumentSync = nil
             copilotInlineSource = nil
         }
-        if kind != .ai {
+        if kind != .chatCompletion {
             aiChatInlineSource = nil
         }
     }
@@ -607,12 +623,25 @@ final class SQLEditorCoordinator: ObservableObject, TextViewCoordinator, TextVie
     }
 
     private func uninstallVimKeyInterceptor() {
+        removeVimKeyInterceptor()
+        vimMode = .normal
+    }
+
+    /// Takes Vim out of the editor without touching `vimMode`, which is what teardown needs.
+    ///
+    /// `destroy()` runs from `dismantleNSViewController`, and when the editor goes because its
+    /// `NSHostingView` is deallocated, SwiftUI calls that while `GraphHost.invalidate()` holds exclusive
+    /// access to the host. A `@Published` write there reaches a view in the same host, whose subscriber
+    /// asks that host for a transaction, and Swift aborts with "Fatal access conflict detected". That
+    /// shipped as a crash on switching away from a query tab on macOS 26, where the write happened even
+    /// with Vim mode off because `@Published` notifies on every assignment. Nothing reads the mode of an
+    /// editor that is being destroyed.
+    private func removeVimKeyInterceptor() {
         vimKeyInterceptor?.uninstall()
         vimCursorManager?.uninstall()
         vimCursorManager = nil
         vimKeyInterceptor = nil
         vimEngine = nil
-        vimMode = .normal
     }
 
     private func handleVimSettingsChange(controller: TextViewController) {
@@ -684,6 +713,13 @@ final class SQLEditorCoordinator: ObservableObject, TextViewCoordinator, TextVie
                 self.vimCursorManager?.updatePosition()
             }
         aiSettingsCancellable = AppEvents.shared.aiSettingsChanged
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.handleInlineProviderChange()
+            }
+        connectionAccessCancellable = AppEvents.shared.connectionUpdated
+            .map { _ in () }
+            .merge(with: AppEvents.shared.connectionStatusChanged.map { _ in () })
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.handleInlineProviderChange()

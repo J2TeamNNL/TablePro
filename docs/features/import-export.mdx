@@ -45,7 +45,11 @@ SQL exports more than tables. A database holding more than one kind of object gr
 | Events | `CREATE EVENT` | MySQL, MariaDB |
 | Privileges | `GRANT`, one principal per row | engines with user management |
 
+An Oracle or Dameng routine or trigger is followed by a `/` line, and a MySQL or MariaDB routine, trigger or event with a body sits in a `DELIMITER` block, the same form a [saved sync script](/features/compare-sync#the-script) uses. Restore those dumps with SQL*Plus, DISQL or the `mysql` client. A SQL Server dump ends every statement with a `GO` line, so each one runs as its own batch in `sqlcmd` and SQL Server Management Studio.
+
 A database with only tables lists them flat, with no group to open first.
+
+On an engine that groups by database, each database is listed from what the server says it holds. One the account can list but not open is left out, so the rest of the tree still opens.
 
 Arrow keys move through the tree, Left and Right close and open a group, and Space ticks every selected row. Ticking a group ticks everything under it.
 
@@ -120,7 +124,7 @@ As SQL, a results export writes `INSERT` statements only. A result set is the ou
 
     Structure (CREATE TABLE), Drop (DROP TABLE IF EXISTS), and Data (INSERT statements) are per-table checkboxes, and a multi-table export can mix them.
 
-    Structure carries the table's indexes. They are written after the rows, next to the deferred foreign keys, which is where `pg_dump` and `sqlite3 .dump` put them: a bulk load into an indexed table pays to maintain an index the restore is about to build anyway. On MySQL, MariaDB, ClickHouse, Trino and CockroachDB the server writes them inside `CREATE TABLE`, so they arrive with the table instead. A materialized view's indexes follow the view.
+    Structure carries the table's indexes. They are written after the rows and before the deferred foreign keys, the order `pg_dump` uses, so the rows load without index upkeep and a foreign key that references a unique index finds it in place. On MySQL, MariaDB, ClickHouse, Trino and CockroachDB the server writes them inside `CREATE TABLE`, so they arrive with the table instead. A materialized view's indexes follow the view. An invalid PostgreSQL index, which a failed `CREATE INDEX CONCURRENTLY` leaves behind, is left out, as `pg_dump` leaves it out.
 
     On PostgreSQL, Structure carries comments as well. Each table, view and materialized view gets its own `COMMENT ON` and one `COMMENT ON COLUMN` per commented column, directly after its `CREATE`. A foreign table is the exception: its comments are dropped, because the dump writes `CREATE TABLE` for it and PostgreSQL then refuses `COMMENT ON FOREIGN TABLE`. Where the server's own `CREATE TABLE` already carries the comment, MySQL and MariaDB among them, it arrives with the table instead.
 
@@ -169,6 +173,8 @@ As SQL, a results export writes `INSERT` statements only. A result set is the ou
     ```
 
     Top-level values keep their type: `ObjectId`, `ISODate`, `BinData` with its real subtype. A typed value nested inside a subdocument or array is written as a string, so re-importing gives you a string where the original held an ObjectId, date, or binary. Export those collections as JSON, or use `mongodump`.
+
+    **Indexes** writes each index as a `createIndex()` call and the collection's validator as a `collMod` command. Any other statement in the collection's DDL is left out, and the line `// Skipped a statement that is not an index or a validator` marks where it stood.
   </Tab>
   <Tab title="XLSX">
     | Option | Default |
@@ -253,7 +259,11 @@ Select a row in the data grid and press `Cmd+V` to paste tabular data straight i
 
 ## Import data
 
-**File > Import > Import Data…** (`Cmd+Shift+I`) takes `.sql` and `.sql.gz` files, whose statements execute directly against the database, and `.json`, `.jsonl`, `.ndjson`, `.csv`, and `.tsv` files, which load into a table you pick or one TablePro creates.
+**File > Import > Import Data…** (`Cmd+Shift+I`) takes `.sql` and `.sql.gz` files, whose statements execute directly against the database, and `.json`, `.jsonl`, `.ndjson`, `.csv`, `.tsv`, and `.xlsx` files, which load into a table you pick or one TablePro creates.
+
+The extension picks the format, so one command covers all of them. A file no format reads is refused in the file panel, which names the extensions this connection takes. Only a SQL dump is read compressed here. To import a `.csv.gz`, open it as a [data file](/features/data-files) and choose **Edit > Data > Import into Table…**, which also carries any edits you made first.
+
+**File > Import > Import Data From** beside it names the format instead and offers every file, which is the route for a CSV saved as `orders.txt` or with no extension at all. **Actions** in the toolbar carries the same pair.
 
 <Steps>
   <Step title="Pick the file">
@@ -289,7 +299,9 @@ Select a row in the data grid and press `Cmd+V` to paste tabular data straight i
 
 **UTF-16** reads the byte order from the mark at the start of the file and falls back to big-endian, which is what a file with no mark means. Pick **UTF-16 LE** or **UTF-16 BE** for a file that has no mark and is not big-endian. Latin-1 and Windows-1252 differ over the bytes `0x80` to `0x9F`: a dump written by MySQL keeps its curly quotes, en dashes and euro sign there, so Windows-1252 is the one to pick for it.
 
-Skip and Continue collects up to 1,000 failures with their line numbers and messages, and the summary counts successes against failures behind a **Copy Details** button. **Save Report…** writes them all to a CSV with a line, a statement and the database's own error per row, so a large import's failures can be sorted and searched rather than scrolled. A stop shows the line, the database's own message, and the failing statement, with the dialog still open behind it, ready for a changed setting and another run.
+On SQL Server a file that holds a `GO` line runs a batch at a time, cut at its `GO` lines the way `sqlcmd` cuts it, so every count and failure here is a batch rather than a statement. A file with no `GO` line runs a statement at a time. See [Scripts and batches](/databases/mssql#scripts-and-batches).
+
+Skip and Continue collects up to 1,000 failures with their line numbers and messages, and the summary counts successes against failures behind a **Copy Details** button. **Save Report…** writes them all to a CSV with a line, a statement and the database's own error per row, so a large import's failures can be sorted and searched rather than scrolled. A stop shows the line, the database's own message, and the failing statement, with the dialog still open behind it, ready for a changed setting and another run. The alert shows the first 10,000 characters of a longer statement and the first five errors of a batch that raised more, and **Copy Details** copies all of them.
 
 ### Disabling foreign key checks
 
@@ -308,7 +320,7 @@ A server that rejects the statement stops the import with that error, so clear t
 
 The sheet accepts an array of objects `[{…}, {…}]`, newline-delimited JSON streamed a line at a time, and TablePro's own export shape `{ "table": [ {…} ] }`, so an export round-trips. Then choose a destination:
 
-- **Existing table**: map each JSON field to a column. Fields auto-match by name; switch one off to skip it. A column with no matching field keeps its default or NULL.
+- **Existing table**: map each JSON field to a column. Fields auto-match by name; switch one off to skip it. A column with no matching field keeps its default or NULL. The list holds tables and partitioned tables, and the server routes each row to the right partition.
 - **New table**: the name field opens on a name derived from the file, already selected, so one keystroke replaces it. Review the inferred columns underneath. Name, type, primary key, nullable flag, and default are all editable before the table is created.
 
 The proposed name drops the extension, turns spaces and punctuation into underscores, and lowercases the result. Letters from any script are kept as they are. On Oracle the name comes through in upper case instead, and is cut to 30 bytes rather than 63. A name an existing table or view already holds gains a numeric suffix, so re-importing `users.csv` next to a `users` table proposes `users_2`. Whatever you type over it is held to the same rules: a name already taken, one longer than the engine allows, or one starting with a prefix the engine keeps for itself is reported in the sheet, with **Import** off until it changes.

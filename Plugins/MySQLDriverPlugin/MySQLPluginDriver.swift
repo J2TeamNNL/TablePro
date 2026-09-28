@@ -12,7 +12,7 @@ import TableProPluginKit
 final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     private let config: DriverConnectionConfig
     private var mariadbConnection: MariaDBPluginConnection?
-    internal var _serverVersion: String?
+    private var _serverVersion: String?
     private var _activeDatabase: String
 
     /// The database a metadata read is scoped to. MySQL has no schema level, so this is what a
@@ -25,6 +25,11 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     }
 
     internal var cachedPrivilegeCatalog: PluginPrivilegeCatalog?
+
+    /// One verdict per database about whether `information_schema` describes it, learned from the
+    /// reads the driver already makes. It survives a reconnect, because the server on the other end
+    /// is the same one, and `disconnect()` clears it because the next one may not be.
+    internal let catalogVisibility = MySQLCatalogVisibilityLedger()
 
     private var _flavor: MySQLServerFlavor
 
@@ -68,14 +73,45 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     internal static let logger = Logger(subsystem: "com.TablePro", category: "MySQLPluginDriver")
 
     var currentSchema: String? { nil }
-    var serverVersion: String? { _serverVersion }
+    var serverVersion: String? { sessionLock.withLock { _serverVersion } }
+
+    /// The banner and the flavor together, taken under one lock. `connect()` writes both in the
+    /// same block, so reading them separately can pair a new banner with the old flavor: a
+    /// `10.1.48-MariaDB` banner under `.mysql` clears an 8.0.16 floor, because 10 is above 8.
+    internal var serverIdentity: (banner: String?, flavor: MySQLServerFlavor) {
+        sessionLock.withLock { (_serverVersion, _flavor) }
+    }
 
     internal var catalogQuotesDefaults: Bool {
-        MySQLServerVersion.quotesColumnDefault(banner: _serverVersion, flavor: flavor)
+        let identity = serverIdentity
+        return MySQLServerVersion.quotesColumnDefault(banner: identity.banner, flavor: identity.flavor)
     }
     var supportsSchemas: Bool { false }
     var supportsTransactions: Bool { true }
     var requiresBackslashEscapingInLiterals: Bool { true }
+
+    /// `NO_BACKSLASH_ESCAPES` from the status flags of the last reply the connection read. Databend reports no such
+    /// flag, so it says nothing.
+    var sessionLexicalState: PluginSessionLexicalState? {
+        guard !flavor.isDatabend else { return nil }
+        return MySQLLexicalFeatures.sessionState(noBackslashEscapes: noBackslashEscapes)
+    }
+
+    /// The features this session's statements are split with when the plugin reads them itself.
+    private var lexicalFeatures: SQLLexicalFeatures {
+        MySQLLexicalFeatures.features(for: flavor, noBackslashEscapes: noBackslashEscapes)
+    }
+
+    private var noBackslashEscapes: Bool? {
+        sessionLock.withLock { mariadbConnection }?.noBackslashEscapes
+    }
+
+    /// How this session reads a quoted literal. Databend reports no `NO_BACKSLASH_ESCAPES` flag and
+    /// always reads backslash escapes.
+    var literalSpelling: MySQLLiteralSpelling {
+        guard !flavor.isDatabend else { return .backslashEscapes }
+        return MySQLLiteralSpelling(noBackslashEscapes: noBackslashEscapes)
+    }
 
     var capabilities: PluginCapabilities {
         guard !flavor.isDatabend else { return Self.databendCapabilities }
@@ -100,8 +136,6 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     func escapeStringLiteral(_ value: String) -> String {
         mysqlEscapeStringLiteral(value)
     }
-
-    private static let tableNameRegex = try? NSRegularExpression(pattern: "(?i)\\bFROM\\s+[`\"']?([\\w]+)[`\"']?")
 
     init(config: DriverConnectionConfig) {
         self.config = config
@@ -143,8 +177,9 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         }
         conn.adopt(flavor: resolvedFlavor, killTarget: await killTarget(for: resolvedFlavor, on: conn))
         mariadbConnection = conn
-        _serverVersion = conn.serverVersion()
+        let banner = conn.serverVersion()
         sessionLock.withLock {
+            _serverVersion = banner
             _flavor = resolvedFlavor
             isReleased = false
             isDisconnected = false
@@ -158,9 +193,10 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         Task { await timer.stop() }
         mariadbConnection?.disconnect()
         mariadbConnection = nil
-        _serverVersion = nil
+        catalogVisibility.clear()
         let initialFlavor = Self.initialFlavor(for: config)
         let inFlight = sessionLock.withLock { () -> Task<Void, Error>? in
+            _serverVersion = nil
             _flavor = initialFlavor
             isReleased = false
             isDisconnected = true
@@ -208,10 +244,33 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         _ = try await execute(query: flavor.beginTransactionStatement(mode: mode))
     }
 
+    /// No round trip: the transaction is the flag the server put in the reply to the last statement,
+    /// and the table lock is what the footprint saw go past. The connection's flags are read before
+    /// the lock is taken, which is the order `endOperation` writes them in.
+    ///
+    /// A released connection answers `.idle` rather than `.unknown`, because a release only happens
+    /// over a footprint that is holding nothing at all. A flavour whose replies may not carry the
+    /// status flags answers `.unknown`, which leaves the caller deciding as if it had not asked.
+    func sessionTransactionState() async -> PluginSessionTransactionState {
+        guard flavor.reportsSessionStatusFlags else { return .unknown }
+        let state = sessionLock.withLock { (released: isReleased, disconnected: isDisconnected) }
+        guard !state.disconnected else { return .unknown }
+        guard !state.released else { return .idle }
+        guard let conn = mariadbConnection else { return .unknown }
+        let isInTransaction = conn.isInTransaction
+        return sessionLock.withLock { footprint.transactionState(isInTransaction: isInTransaction) }
+    }
+
     // MARK: - Query Execution
 
     func execute(query: String) async throws -> PluginQueryResult {
         try await executeWithReconnect(query: query, isRetry: false)
+    }
+
+    /// A statement the plugin wrote itself, spelled with backslash escapes, run with its literals
+    /// spelled for this session.
+    func execute(ownStatement statement: String) async throws -> PluginQueryResult {
+        try await execute(query: literalSpelling.respelled(statement))
     }
 
     func executeUserQuery(query: String, rowCap: Int?, parameters: [PluginCellValue]?) async throws -> PluginQueryResult {
@@ -223,7 +282,13 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         defer { endOperation(on: conn) }
         noteActivity(query)
         let startTime = Date()
-        let result = try await conn.executeParameterizedQuery(query, parameters: parameters, rowCap: cap)
+        let result: MariaDBPluginQueryResult
+        do {
+            result = try await conn.executeParameterizedQuery(query, parameters: parameters, rowCap: cap)
+        } catch {
+            noteFailure(query)
+            throw error
+        }
         return PluginQueryResult(
             columns: result.columns,
             columnTypeNames: result.columnTypeNames,
@@ -250,7 +315,13 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         noteActivity(query)
 
         let startTime = Date()
-        let result = try await conn.executeParameterizedQuery(query, parameters: parameters)
+        let result: MariaDBPluginQueryResult
+        do {
+            result = try await conn.executeParameterizedQuery(query, parameters: parameters)
+        } catch {
+            noteFailure(query)
+            throw error
+        }
 
         return PluginQueryResult(
             columns: result.columns,
@@ -291,25 +362,6 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         do {
             let result = try await conn.executeQuery(query, rowCap: rowCap)
 
-            if result.columns.isEmpty && result.rows.isEmpty {
-                let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-                let isSelect = trimmed.uppercased().hasPrefix("SELECT")
-                if isSelect, let tableName = extractTableName(from: query) {
-                    let columns = try await fetchColumnNames(for: tableName)
-                    return PluginQueryResult(
-                        columns: columns,
-                        columnTypeNames: Array(repeating: "TEXT", count: columns.count),
-                        rows: [],
-                        rowsAffected: Int(result.affectedRows),
-                        timing: PluginQueryTiming(
-                            total: Date().timeIntervalSince(startTime),
-                            firstRow: result.firstRowTime
-                        ),
-                        isTruncated: result.isTruncated
-                    )
-                }
-            }
-
             return PluginQueryResult(
                 columns: result.columns,
                 columnTypeNames: result.columnTypeNames,
@@ -322,8 +374,9 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
                 isTruncated: result.isTruncated,
                 columnMeta: result.columnMeta
             )
-        } catch let error as MariaDBPluginError
-            where !isRetry && isConnectionLostError(error) && mayReplay(query) {
+        } catch let error as MariaDBPluginError where !isRetry
+            && mysqlConnectionLossMayReplay(code: error.code, outlastedSocketTimeout: error.outlastedSocketTimeout)
+            && mayReplay(query) {
             try await reconnect()
             return try await executeWithReconnect(
                 query: query,
@@ -331,20 +384,31 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
                 rowCap: rowCap,
                 countsAsActivity: countsAsActivity
             )
+        } catch {
+            if countsAsActivity {
+                noteFailure(query)
+            }
+            throw error
         }
-    }
-
-    private func isConnectionLostError(_ error: MariaDBPluginError) -> Bool {
-        [2_006, 2_013, 2_055].contains(Int(error.code))
     }
 
     // MARK: - Idle connection release
 
     private func noteActivity(_ sql: String) {
+        let features = lexicalFeatures
         sessionLock.withLock {
-            footprint.observe(sql)
+            footprint.observe(sql, lexicalFeatures: features)
             lastActivity = ContinuousClock.now
         }
+    }
+
+    /// The footprint reads the statement before it runs, so a statement the server refused has to
+    /// be taken back. Only what a failure provably did not leave behind is cleared, which today is
+    /// the table lock: a `LOCK TABLES` that errors holds nothing, and releases what the session held
+    /// before it.
+    private func noteFailure(_ sql: String) {
+        let features = lexicalFeatures
+        sessionLock.withLock { footprint.observeFailure(of: sql, lexicalFeatures: features) }
     }
 
     private func mayReplay(_ query: String) -> Bool {
@@ -490,88 +554,117 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
     // MARK: - Schema Operations
 
+    /// A session with no database selected has no tables to list, so nothing is asked of the server:
+    /// `SHOW FULL TABLES FROM` an empty name is `ERROR 1102`, not an empty answer.
     func fetchTables(schema: String?) async throws -> [PluginTableInfo] {
-        let query = """
-        SELECT TABLE_NAME, TABLE_TYPE, TABLE_COMMENT
-        FROM information_schema.TABLES
-        WHERE TABLE_SCHEMA = '\(effectiveSchemaLiteral(schema))'
-        """
-        let result = try await execute(query: query)
+        let database = effectiveSchema(schema)
+        let listsSequencesAsTables = flavor.listsSequencesAsTables
+        guard !flavor.isDatabend else {
+            let query = MySQLObjectQueries.tableList(schema: database, includePartitions: false)
+            let result = try await execute(query: query)
+            return MySQLTableListing.tables(from: result.rows, listsSequencesAsTables: listsSequencesAsTables)
+        }
+        guard !database.isEmpty else { return [] }
 
-        return result.rows.compactMap { row -> PluginTableInfo? in
-            guard let name = row[safe: 0]?.asText else { return nil }
-            let typeStr = (row[safe: 1]?.asText) ?? "BASE TABLE"
-            guard flavor.listsSequencesAsTables || typeStr != "SEQUENCE" else { return nil }
-            let isView = typeStr.contains("VIEW")
-            let type = isView ? "VIEW" : "TABLE"
-            let comment = isView ? nil : row[safe: 2]?.asText?.nilIfEmpty
-            return PluginTableInfo(name: name, type: type, comment: comment)
-        }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        let rows = try await MySQLCatalogFallback.list(
+            database: database,
+            ledger: catalogVisibility,
+            catalog: { try await self.catalogTableRows(database: database) },
+            settlesBlindness: Self.settlesBlindness,
+            show: { try await self.listedTableRows(database: database) }
+        )
+        return MySQLTableListing.tables(from: rows, listsSequencesAsTables: listsSequencesAsTables)
+    }
+
+    /// Logged where the server refused, because the answer that stands instead comes from `SHOW` and
+    /// carries neither table comments nor partition counts. The error is rethrown either way: what a
+    /// refusal says about the database is `MySQLCatalogFallback.list`'s to decide, not this read's.
+    private func catalogTableRows(database: String) async throws -> [[PluginCellValue]] {
+        do {
+            let query = MySQLObjectQueries.tableList(schema: database, includePartitions: true)
+            return try await execute(ownStatement: query).rows
+        } catch let error as MariaDBPluginError
+            where MySQLCatalogVisibilityRule.settlesBlindness(code: error.code) {
+            Self.logger.warning(
+                "information_schema table list refused code=\(error.code, privacy: .public) message=\(error.message)"
+            )
+            throw error
+        }
+    }
+
+    private func listedTableRows(database: String) async throws -> [[PluginCellValue]] {
+        try await execute(query: MySQLObjectQueries.showFullTables(schema: database)).rows
+    }
+
+    /// A subpartition arrives as its own row carrying its parent partition's name, so the list is
+    /// returned whole and the tree nests it. `SUBPARTITION_METHOD` states the subpartition's own
+    /// shape, and `PARTITION_DESCRIPTION` on such a row repeats the parent's bound rather than
+    /// describing the subpartition, so a subpartition reports no bound of its own.
+    func fetchPartitionDetails(table: String, schema: String?) async throws -> [PluginPartitionInfo] {
+        guard !flavor.isDatabend else { return [] }
+        let query = MySQLObjectQueries.partitionList(
+            schema: effectiveSchema(schema),
+            table: table
+        )
+        let result = try await execute(ownStatement: query)
+
+        var emittedPartitions: Set<String> = []
+        var ordered: [PluginPartitionInfo] = []
+        for row in result.rows {
+            guard let partitionName = row[safe: 0]?.asText else { continue }
+            let subpartitionName = row[safe: 1]?.asText?.nilIfEmpty
+            let rowCount = row[safe: 6]?.asText.flatMap(Int.init)
+            let isSubpartitionRow = subpartitionName != nil
+
+            if emittedPartitions.insert(partitionName).inserted {
+                ordered.append(
+                    PluginPartitionInfo(
+                        name: partitionName,
+                        bound: MySQLPartitionBound.display(
+                            method: row[safe: 2]?.asText,
+                            description: row[safe: 3]?.asText
+                        ),
+                        ordinalPosition: row[safe: 4]?.asText.flatMap(Int.init),
+                        rowCount: isSubpartitionRow ? nil : rowCount,
+                        relationType: nil,
+                        isSubpartitioned: isSubpartitionRow
+                    )
+                )
+            }
+
+            guard let subpartitionName else { continue }
+            ordered.append(
+                PluginPartitionInfo(
+                    name: subpartitionName,
+                    ordinalPosition: row[safe: 5]?.asText.flatMap(Int.init),
+                    rowCount: rowCount,
+                    relationType: nil,
+                    parentPartitionName: partitionName
+                )
+            )
+        }
+        return ordered
     }
 
     func fetchIndexes(table: String, schema: String?) async throws -> [PluginIndexInfo] {
         guard !flavor.isDatabend else { return [] }
         let result = try await execute(query: "SHOW INDEX FROM \(qualifiedName(table, schema: schema))")
+        let expressionColumn = result.columns.firstIndex(of: "Expression")
 
         let rows = result.rows.compactMap { row -> MySQLIndexRow? in
-            guard let indexName = row[safe: 2]?.asText,
-                  let columnName = row[safe: 4]?.asText
-            else { return nil }
+            guard let indexName = row[safe: 2]?.asText else { return nil }
             return MySQLIndexRow(
                 table: table,
                 index: indexName,
-                column: columnName,
+                column: row[safe: 4]?.asText,
+                catalogExpression: expressionColumn.flatMap { row[safe: $0]?.asText },
+                prefixLength: (row[safe: 7]?.asText).flatMap { Int($0) },
+                collation: row[safe: 5]?.asText,
                 isNonUnique: (row[safe: 1]?.asText) == "1",
-                type: (row[safe: 10]?.asText) ?? "BTREE",
-                prefixLength: (row[safe: 7]?.asText).flatMap { Int($0) }
+                type: (row[safe: 10]?.asText) ?? "BTREE"
             )
         }
         return MySQLIndexGrouping.group(rows)[table] ?? []
-    }
-
-    func fetchForeignKeys(table: String, schema: String?) async throws -> [PluginForeignKeyInfo] {
-        guard !flavor.isDatabend else { return [] }
-        let escapedDb = effectiveSchemaLiteral(schema)
-        let escapedTable = mysqlEscapeStringLiteral(table)
-
-        let query = """
-            SELECT
-                kcu.CONSTRAINT_NAME,
-                kcu.COLUMN_NAME,
-                kcu.REFERENCED_TABLE_NAME,
-                kcu.REFERENCED_COLUMN_NAME,
-                kcu.REFERENCED_TABLE_SCHEMA,
-                rc.DELETE_RULE,
-                rc.UPDATE_RULE
-            FROM information_schema.KEY_COLUMN_USAGE kcu
-            JOIN information_schema.REFERENTIAL_CONSTRAINTS rc
-                ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
-                AND kcu.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA
-            WHERE kcu.TABLE_SCHEMA = '\(escapedDb)'
-                AND kcu.TABLE_NAME = '\(escapedTable)'
-                AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
-            ORDER BY kcu.CONSTRAINT_NAME
-            """
-
-        let result = try await execute(query: query)
-
-        let foreignKeys: [PluginForeignKeyInfo] = result.rows.compactMap { row in
-            guard let name = row[safe: 0]?.asText,
-                  let column = row[safe: 1]?.asText,
-                  let refTable = row[safe: 2]?.asText,
-                  let refColumn = row[safe: 3]?.asText
-            else { return nil }
-
-            return PluginForeignKeyInfo(
-                name: name, column: column,
-                referencedTable: refTable, referencedColumn: refColumn,
-                referencedSchema: row[safe: 4]?.asText,
-                onDelete: (row[safe: 5]?.asText) ?? "NO ACTION",
-                onUpdate: (row[safe: 6]?.asText) ?? "NO ACTION"
-            )
-        }
-        Self.logger.info("[fk] mysql fetchForeignKeys db=\(self.effectiveSchema(schema), privacy: .public) table=\(table, privacy: .public) rows=\(result.rows.count) parsed=\(foreignKeys.count)")
-        return foreignKeys
     }
 
     /// The same builder the schema-wide list uses, with one more predicate.
@@ -598,55 +691,6 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         "DROP TRIGGER \(qualifiedName(name, schema: schema))"
     }
 
-    var providesBulkForeignKeyFetch: Bool { true }
-
-    var tableDDLIncludesForeignKeys: Bool { true }
-
-    func fetchAllForeignKeys(schema: String?) async throws -> [String: [PluginForeignKeyInfo]] {
-        guard !flavor.isDatabend else { return [:] }
-        let escapedDb = effectiveSchemaLiteral(schema)
-
-        let query = """
-            SELECT
-                kcu.TABLE_NAME,
-                kcu.CONSTRAINT_NAME,
-                kcu.COLUMN_NAME,
-                kcu.REFERENCED_TABLE_NAME,
-                kcu.REFERENCED_COLUMN_NAME,
-                kcu.REFERENCED_TABLE_SCHEMA,
-                rc.DELETE_RULE,
-                rc.UPDATE_RULE
-            FROM information_schema.KEY_COLUMN_USAGE kcu
-            JOIN information_schema.REFERENTIAL_CONSTRAINTS rc
-                ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
-                AND kcu.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA
-            WHERE kcu.TABLE_SCHEMA = '\(escapedDb)'
-                AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
-            ORDER BY kcu.TABLE_NAME, kcu.CONSTRAINT_NAME
-            """
-        let result = try await execute(query: query)
-
-        var grouped: [String: [PluginForeignKeyInfo]] = [:]
-        for row in result.rows {
-            guard let tableName = row[safe: 0]?.asText,
-                  let name = row[safe: 1]?.asText,
-                  let column = row[safe: 2]?.asText,
-                  let refTable = row[safe: 3]?.asText,
-                  let refColumn = row[safe: 4]?.asText
-            else { continue }
-
-            let fk = PluginForeignKeyInfo(
-                name: name, column: column,
-                referencedTable: refTable, referencedColumn: refColumn,
-                referencedSchema: row[safe: 5]?.asText,
-                onDelete: (row[safe: 6]?.asText) ?? "NO ACTION",
-                onUpdate: (row[safe: 7]?.asText) ?? "NO ACTION"
-            )
-            grouped[tableName, default: []].append(fk)
-        }
-        return grouped
-    }
-
     func fetchApproximateRowCount(table: String, schema: String?) async throws -> Int? {
         let escapedDb = effectiveSchemaLiteral(schema)
         let escapedTable = mysqlEscapeStringLiteral(table)
@@ -658,7 +702,7 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
               AND TABLE_NAME = '\(escapedTable)'
             """
 
-        let result = try await execute(query: query)
+        let result = try await execute(ownStatement: query)
         guard let firstRow = result.rows.first,
               let value = firstRow[safe: 0]?.asText,
               let count = Int(value)
@@ -683,7 +727,7 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     /// `SHOW CREATE EVENT` is the only thing that produces a runnable definition.
     func fetchEvents(schema: String?) async throws -> [PluginEventInfo] {
         guard !flavor.isDatabend else { return [] }
-        let result = try await execute(query: """
+        let result = try await execute(ownStatement: """
             SELECT EVENT_NAME, EVENT_TYPE, STATUS, EVENT_SCHEMA
             FROM information_schema.EVENTS
             WHERE EVENT_SCHEMA = '\(effectiveSchemaLiteral(schema))'
@@ -724,7 +768,7 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     func fetchTableMetadata(table: String, schema: String?) async throws -> PluginTableMetadata {
         guard !flavor.isDatabend else { return try await databendTableMetadata(table: table, schema: schema) }
         let escapedTable = mysqlEscapeStringLiteral(table)
-        let result = try await execute(query: showTableStatus(matching: escapedTable, schema: schema))
+        let result = try await execute(ownStatement: showTableStatus(matching: escapedTable, schema: schema))
 
         guard let row = result.rows.first else {
             return PluginTableMetadata(tableName: table)
@@ -772,7 +816,7 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
             FROM information_schema.TABLES
             WHERE TABLE_SCHEMA = '\(escapedDb)'
         """
-        let result = try await execute(query: query)
+        let result = try await execute(ownStatement: query)
         let row = result.rows.first
         let tableCount = Int(row?[safe: 0]?.asText ?? "0") ?? 0
         let sizeBytes = Int64(row?[safe: 1]?.asText ?? "0") ?? 0
@@ -872,18 +916,51 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     /// timeout on every connect: the footprint would be dirty before the user ran anything and no
     /// connection would ever be released. It is the driver's own setting and the reconnect puts it
     /// back, so it is not the session's to lose.
+    ///
+    /// Which enforcement the session gets is the server's own answer rather than a reading of its
+    /// banner: the `SET SESSION` runs, and only `ERROR 1193 Unknown system variable` switches the
+    /// session to a client-side deadline. MySQL gained `max_execution_time` in 5.7.8 and MariaDB
+    /// `max_statement_time` in 10.1.1, but a proxy or a fork misreports its version in both
+    /// directions, and ProxySQL defaults its banner to 5.5.30 in front of a modern server.
     func applyQueryTimeout(_ seconds: Int) async throws {
         sessionLock.withLock { appliedQueryTimeoutSeconds = seconds }
+        let sessionFlavor = flavor
+        let deadline = await installServerQueryTimeout(seconds: seconds, flavor: sessionFlavor)
+        adopt(clientDeadline: deadline)
+    }
+
+    /// Sends the flavor's statements in order and answers with the client-side deadline the session
+    /// is left needing, which is `nil` whenever the server is enforcing one of its own.
+    private func installServerQueryTimeout(
+        seconds: Int,
+        flavor: MySQLServerFlavor
+    ) async -> MySQLStatementDeadline? {
+        var installation = MySQLQueryTimeoutInstallation(seconds: seconds, flavor: flavor)
         for statement in flavor.queryTimeoutStatements(seconds: seconds) {
+            let step: MySQLQueryTimeoutInstallation.Step
             do {
                 _ = try await executeWithReconnect(query: statement, isRetry: false, countsAsActivity: false)
+                step = installation.accepted()
+            } catch let error as MariaDBPluginError where mysqlRejectsStatementTimeout(code: error.code) {
+                step = installation.refusedAsUnknownVariable()
             } catch {
                 Self.logger.warning(
                     "Failed to set query timeout with \(statement, privacy: .public): \(error.localizedDescription)"
                 )
-                return
+                step = installation.failed()
             }
+            guard case .adopt(let deadline) = step else { continue }
+            return deadline
         }
+        return nil
+    }
+
+    private func adopt(clientDeadline: MySQLStatementDeadline?) {
+        mariadbConnection?.adopt(statementDeadline: clientDeadline)
+        guard let clientDeadline else { return }
+        Self.logger.info(
+            "Server has no statement timeout; a statement past \(clientDeadline.seconds, privacy: .public)s is stopped with KILL QUERY"
+        )
     }
 
     // MARK: - EXPLAIN
@@ -916,7 +993,7 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
     func generateCreateTableSQL(definition: PluginCreateTableDefinition) -> String? {
         guard !flavor.isDatabend else { return DatabendCatalog.createTableSQL(definition: definition) }
-        return mysqlCreateTableSQL(definition: definition, isMariaDB: flavor.isMariaDB)
+        return mysqlCreateTableSQL(definition: definition, isMariaDB: flavor.isMariaDB).map(literalSpelling.respelled)
     }
 
     // MARK: - Definition SQL (clipboard copy)
@@ -942,7 +1019,7 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         let definition = flavor.isDatabend
             ? DatabendCatalog.columnDefinitionSQL(column)
             : mysqlColumnDefinitionSQL(column, isMariaDB: flavor.isMariaDB)
-        return "ALTER TABLE \(quoteIdentifier(table)) ADD COLUMN \(definition)"
+        return literalSpelling.respelled("ALTER TABLE \(quoteIdentifier(table)) ADD COLUMN \(definition)")
     }
 
     func generateModifyColumnSQL(table: String, oldColumn: PluginColumnDefinition, newColumn: PluginColumnDefinition) -> String? {
@@ -950,10 +1027,13 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
             return DatabendCatalog.modifyColumnSQL(table: table, oldColumn: oldColumn, newColumn: newColumn)
         }
         let tableName = quoteIdentifier(table)
+        let definition = mysqlColumnDefinitionSQL(newColumn, isMariaDB: flavor.isMariaDB)
         if oldColumn.name != newColumn.name {
-            return "ALTER TABLE \(tableName) CHANGE COLUMN \(quoteIdentifier(oldColumn.name)) \(mysqlColumnDefinitionSQL(newColumn, isMariaDB: flavor.isMariaDB))"
+            return literalSpelling.respelled(
+                "ALTER TABLE \(tableName) CHANGE COLUMN \(quoteIdentifier(oldColumn.name)) \(definition)"
+            )
         }
-        return "ALTER TABLE \(tableName) MODIFY COLUMN \(mysqlColumnDefinitionSQL(newColumn, isMariaDB: flavor.isMariaDB))"
+        return literalSpelling.respelled("ALTER TABLE \(tableName) MODIFY COLUMN \(definition)")
     }
 
     func generateDropColumnSQL(table: String, columnName: String) -> String? {
@@ -970,6 +1050,17 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         return "ALTER TABLE \(quoteIdentifier(table)) DROP INDEX \(quoteIdentifier(indexName))"
     }
 
+    func generateModifyIndexSQL(table: String, oldIndexName: String, newIndex: PluginIndexDefinition) -> String? {
+        mysqlModifyIndexSQL(table: table, oldIndexName: oldIndexName, newIndex: newIndex, flavor: flavor)
+    }
+
+    func schemaOperationRefusal(_ operation: PluginSchemaOperation) -> String? {
+        guard case .addIndex(let index) = operation else { return nil }
+        let identity = serverIdentity
+        return mysqlReservedIndexNameRefusal(for: index)
+            ?? MySQLFunctionalKeyParts.refusal(for: index, banner: identity.banner, flavor: identity.flavor)
+    }
+
     func generateAddForeignKeySQL(table: String, fk: PluginForeignKeyDefinition) -> String? {
         guard !flavor.isDatabend else { return nil }
         return "ALTER TABLE \(quoteIdentifier(table)) ADD \(mysqlForeignKeyDefinitionSQL(fk))"
@@ -981,15 +1072,28 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     }
 
     func generateAddCheckConstraintSQL(table: String, constraint: PluginCheckConstraintDefinition) -> String? {
+        let identity = serverIdentity
+        guard MySQLCheckConstraints.supportsEditing(banner: identity.banner, flavor: identity.flavor) else {
+            return nil
+        }
         let expression = constraint.expression.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !expression.isEmpty, !constraint.name.isEmpty else { return nil }
-        return "ALTER TABLE \(quoteIdentifier(table)) ADD CONSTRAINT "
-            + "\(quoteIdentifier(constraint.name)) CHECK (\(expression))"
+        return literalSpelling.respelled(
+            "ALTER TABLE \(quoteIdentifier(table)) ADD CONSTRAINT \(quoteIdentifier(constraint.name)) CHECK (\(expression))"
+        )
     }
 
     func generateDropCheckConstraintSQL(table: String, constraintName: String) -> String? {
-        guard !constraintName.isEmpty else { return nil }
-        return "ALTER TABLE \(quoteIdentifier(table)) DROP CONSTRAINT \(quoteIdentifier(constraintName))"
+        let identity = serverIdentity
+        guard MySQLCheckConstraints.supportsEditing(banner: identity.banner, flavor: identity.flavor),
+              !constraintName.isEmpty
+        else { return nil }
+        return MySQLCheckConstraints.dropStatement(
+            quotedTable: quoteIdentifier(table),
+            quotedName: quoteIdentifier(constraintName),
+            banner: identity.banner,
+            flavor: identity.flavor
+        )
     }
 
     func generateModifyPrimaryKeySQL(table: String, oldColumns: [String], newColumns: [String], constraintName: String?) -> [String]? {
@@ -1016,7 +1120,8 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         /// replaces the whole definition, and the attribute list does not carry
         /// `GENERATED ALWAYS AS`, so moving a generated column with it dropped the expression and
         /// left a plain column of stored defaults behind.
-        return "ALTER TABLE \(tableName) MODIFY COLUMN \(mysqlColumnDefinitionSQL(column, isMariaDB: flavor.isMariaDB)) \(position)"
+        let definition = mysqlColumnDefinitionSQL(column, isMariaDB: flavor.isMariaDB)
+        return literalSpelling.respelled("ALTER TABLE \(tableName) MODIFY COLUMN \(definition) \(position)")
     }
 
     /// `MODIFY COLUMN` replaces the whole definition, so every move restates the column in full.
@@ -1068,7 +1173,7 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
     func allTablesMetadataSQL(schema: String?) -> String? {
         guard !flavor.isDatabend else { return DatabendCatalog.allTablesMetadataSQL }
-        return """
+        return literalSpelling.respelled("""
         SELECT
             TABLE_SCHEMA as `schema`,
             TABLE_NAME as name,
@@ -1085,28 +1190,6 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
             ON TABLE_COLLATION = CCSA.COLLATION_NAME
         WHERE TABLE_SCHEMA = '\(effectiveSchemaLiteral(schema))'
         ORDER BY TABLE_NAME
-        """
-    }
-
-    // MARK: - Private Helpers
-
-    private func extractTableName(from query: String) -> String? {
-        guard let regex = Self.tableNameRegex,
-              let match = regex.firstMatch(in: query, range: NSRange(query.startIndex..., in: query)),
-              let range = Range(match.range(at: 1), in: query)
-        else { return nil }
-        return String(query[range])
-    }
-
-    private func fetchColumnNames(for tableName: String) async throws -> [String] {
-        let result = try await execute(query: "DESCRIBE \(quoteIdentifier(tableName))")
-
-        var columns: [String] = []
-        for row in result.rows {
-            if let columnName = row[safe: 0]?.asText {
-                columns.append(columnName)
-            }
-        }
-        return columns
+        """)
     }
 }

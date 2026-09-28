@@ -43,7 +43,8 @@ nonisolated final class OracleDriver: DatabaseDriver, @unchecked Sendable {
             serviceName: connection.additionalFields[OracleConnectionOptions.AdditionalFieldKey.serviceName] ?? "",
             sid: connection.additionalFields[OracleConnectionOptions.AdditionalFieldKey.sid] ?? "",
             role: OracleConnectionOptions.role(from: connection.additionalFields),
-            tls: ssl.oracleTLSDescription
+            tls: ssl.oracleTLSDescription,
+            networkEncryption: OracleConnectionOptions.networkEncryption(from: connection.additionalFields)
         ))
         host = connection.host
         fallbackSchema = connection.username.uppercased()
@@ -179,7 +180,9 @@ nonisolated final class OracleDriver: DatabaseDriver, @unchecked Sendable {
 
     // MARK: - Transactions
 
-    func beginTransaction() async throws {}
+    func beginTransaction() async throws {
+        core.beginTransaction()
+    }
 
     func commitTransaction() async throws {
         _ = try await runQuery(OracleSchemaQueries.commitTransaction)
@@ -187,6 +190,10 @@ nonisolated final class OracleDriver: DatabaseDriver, @unchecked Sendable {
 
     func rollbackTransaction() async throws {
         _ = try await runQuery(OracleSchemaQueries.rollbackTransaction)
+    }
+
+    func sessionTransactionState() async -> DriverTransactionState {
+        core.holdsTransaction ? .explicitTransaction : .idle
     }
 
     // MARK: - Database & Schema Navigation
@@ -215,6 +222,11 @@ nonisolated final class OracleDriver: DatabaseDriver, @unchecked Sendable {
 
     private var effectiveSchema: String { currentSchema ?? fallbackSchema }
 
+    private func serverRelease() throws -> OracleServerRelease {
+        guard let release = core.serverRelease else { throw ConnectionError.notConnected }
+        return release
+    }
+
     func fetchTables(schema: String?) async throws -> [TableInfo] {
         let rows = try await rawRows(OracleSchemaQueries.tables(schema: schema ?? effectiveSchema))
         return rows.compactMap(OracleSchemaQueries.parseTableRow).map {
@@ -224,7 +236,7 @@ nonisolated final class OracleDriver: DatabaseDriver, @unchecked Sendable {
 
     func fetchColumns(table: String, schema: String?) async throws -> [ColumnInfo] {
         let rows = try await rawRows(
-            OracleSchemaQueries.columns(schema: schema ?? effectiveSchema, table: table)
+            OracleSchemaQueries.columns(schema: schema ?? effectiveSchema, table: table, release: serverRelease())
         )
         return rows.compactMap(OracleSchemaQueries.parseColumnRow).enumerated().map { index, parsed in
             ColumnInfo(
@@ -232,7 +244,7 @@ nonisolated final class OracleDriver: DatabaseDriver, @unchecked Sendable {
                 typeName: parsed.displayType,
                 isPrimaryKey: parsed.isPrimaryKey,
                 isNullable: parsed.isNullable,
-                defaultValue: nil,
+                defaultValue: parsed.defaultValue,
                 characterMaxLength: parsed.dataLength.flatMap { Int($0) },
                 ordinalPosition: index
             )

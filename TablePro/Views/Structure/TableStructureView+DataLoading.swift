@@ -23,15 +23,17 @@ extension TableStructureView {
     /// A genuine refresh still refetches, through `onRefreshData`, which asks before discarding.
     @Sendable
     func loadInitialData() async {
+        session.settleOwedRefetch()
         guard !session.hasLoaded else {
             isInitialLoading = false
             isLoading = false
+            await session.reloadConcurrentRefreshAvailability()
             return
         }
         await loadColumns()
-        await loadTabDataIfNeeded(.indexes)
-        await loadTabDataIfNeeded(.foreignKeys)
-        await loadTabDataIfNeeded(.checkConstraints)
+        for tab in session.tabsFetchedOnMount where tab != .columns {
+            await loadTabDataIfNeeded(tab)
+        }
         loadSchemaForEditing()
         session.hasLoaded = true
         isInitialLoading = false
@@ -63,6 +65,7 @@ extension TableStructureView {
                 columns = try await structureLoader.columns()
             case .indexes:
                 indexes = try await structureLoader.indexes()
+                await session.reloadConcurrentRefreshAvailability()
             case .foreignKeys:
                 foreignKeys = try await structureLoader.foreignKeys()
             case .checkConstraints:
@@ -76,7 +79,7 @@ extension TableStructureView {
                 do {
                     triggers = try await structureLoader.triggers()
                 } catch {
-                    Self.logger.error("Failed to load triggers: \(error.localizedDescription, privacy: .public)")
+                    Self.logger.error("Failed to load triggers: \(error.publicLogShape, privacy: .public)")
                     triggers = []
                 }
             case .parts:
@@ -84,7 +87,7 @@ extension TableStructureView {
             }
             tabData.markFetched(tab)
         } catch {
-            Self.logger.error("Failed to load \(tab.rawValue, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            Self.logger.error("Failed to load \(tab.rawValue, privacy: .public): \(error.publicLogShape, privacy: .public)")
             errorMessage = error.localizedDescription
         }
     }
@@ -172,7 +175,7 @@ extension TableStructureView {
     }
 
     private func reloadAllTabs() async {
-        tabData.markAllStale()
+        session.markEveryTabStale()
         session.gridDelegate.referenceMenus.invalidateTableLists()
         partsReloadToken += 1
         await reloadCoreTabs()
@@ -203,8 +206,9 @@ extension TableStructureView {
                 foreignKeys = reloaded.foreignKeys
                 tabData.markFetched(.foreignKeys)
             }
+            await session.reloadConcurrentRefreshAvailability()
         } catch {
-            Self.logger.error("Failed to reload structure: \(error.localizedDescription, privacy: .public)")
+            Self.logger.error("Failed to reload structure: \(error.publicLogShape, privacy: .public)")
             errorMessage = error.localizedDescription
         }
     }

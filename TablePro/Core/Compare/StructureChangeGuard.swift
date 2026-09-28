@@ -20,6 +20,10 @@
 //  whitespace and drop an AUTO_INCREMENT seed. Guarding the normalized values
 //  would pass exactly the edits the generators would then carry into the target.
 //
+//  The one thing left out is the `id` each column, index and foreign key carries. Every read mints
+//  a fresh one and no generator reads it, so comparing it refused every table the script would
+//  create or alter, even when neither database had changed.
+//
 
 import Foundation
 
@@ -30,6 +34,8 @@ internal struct StructureGenerationInput: Hashable, Sendable {
     internal let changes: [SchemaChange]
     internal let sourceSnapshot: TableStructureSnapshot?
     internal let sourceDefinition: [String]
+    internal let sourceIndexes: [EditableIndexDefinition]?
+    internal let definitionMatches: Bool
 }
 
 internal enum StructureChangeGuard {
@@ -46,11 +52,13 @@ internal enum StructureChangeGuard {
                 qualifiedName: result.identity.qualifiedName,
                 action: action,
                 status: result.status,
-                changes: result.identity.kind == .table ? result.changes : [],
+                changes: result.changes.map { $0.withoutIdentity() },
                 sourceSnapshot: result.identity.kind == .table
-                    ? sourceSnapshots[result.identity.qualifiedName]
+                    ? sourceSnapshots[result.identity.qualifiedName]?.withoutIdentity()
                     : nil,
-                sourceDefinition: result.identity.kind == .table ? [] : result.sourceDefinition
+                sourceDefinition: result.identity.kind == .table ? [] : result.sourceDefinition,
+                sourceIndexes: result.sourceIndexes?.map { $0.withoutIdentity() },
+                definitionMatches: result.definitionMatches
             )
         }
         return inputs
@@ -61,12 +69,23 @@ internal enum StructureChangeGuard {
     /// would make a busy database impossible to sync.
     internal static func refusal(
         expected: [String: StructureGenerationInput],
-        actual: [String: StructureGenerationInput]
+        actual: [String: StructureGenerationInput],
+        unreadable: [String: String] = [:]
     ) -> CompareSyncError? {
         for (id, input) in expected.sorted(by: { $0.key < $1.key }) {
+            if let reason = unreadable[id] { return unreadableAgain(input.qualifiedName, reason: reason) }
             guard let current = actual[id], current == input else { return changed(input.qualifiedName) }
         }
         return nil
+    }
+
+    private static func unreadableAgain(_ name: String, reason: String) -> CompareSyncError {
+        .objectsChangedSinceComparison(
+            String(
+                format: String(localized: "%1$@ could not be read again before generating the script. %2$@"),
+                name, reason
+            )
+        )
     }
 
     private static func changed(_ name: String) -> CompareSyncError {

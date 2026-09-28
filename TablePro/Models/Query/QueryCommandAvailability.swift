@@ -25,6 +25,7 @@ struct QueryCommandAvailability {
     /// moment it was the command the reader wanted.
     let canOpenRunMenu: Bool
     let explainVariants: [ExplainVariant]
+    let aiActions: AIQueryActionAvailability
 
     /// Every hint the bar shows, resolved here so a disabled control can say why rather than just
     /// dimming. A control that dims without explaining is the one thing a reader cannot act on.
@@ -33,19 +34,32 @@ struct QueryCommandAvailability {
     let explainHint: String
     let formatHint: String
     let favoriteHint: String
+    let aiReviewHint: String
 
+    /// `isStoppable` is separate from `isExecuting` because a batch whose `COMMIT` is on the wire is
+    /// still running and can no longer be stopped by anything: the HIG asks not to offer a cancel
+    /// that cannot act.
     init(
         isConnected: Bool,
         hasQueryText: Bool,
         isExecuting: Bool,
+        isStoppable: Bool,
         hasResults: Bool,
         explainVariants: [ExplainVariant],
+        aiActions: AIQueryActionAvailability = .hidden,
         shortcutHint: (String, ShortcutAction) -> String
     ) {
         self.explainVariants = explainVariants
+        self.aiActions = aiActions
+        aiReviewHint = aiActions.hint(base: shortcutHint(AIQueryAction.review.menuTitle, .aiReviewQuery))
         canRun = isConnected && hasQueryText && !isExecuting
-        canStop = isExecuting
-        canExplain = isConnected && hasQueryText && !isExecuting && !explainVariants.isEmpty
+        canStop = isExecuting && isStoppable
+        canExplain = Self.canExplain(
+            isConnected: isConnected,
+            hasQueryText: hasQueryText,
+            isExecuting: isExecuting,
+            supportsExplain: !explainVariants.isEmpty
+        )
         /// Formatting rewrites text the reader already has, so it does not wait for a server.
         canFormat = hasQueryText
         canSaveAsFavorite = hasQueryText
@@ -57,7 +71,12 @@ struct QueryCommandAvailability {
             base: shortcutHint(String(localized: "Run"), .executeQuery),
             reason: Self.blockedReason(isConnected: isConnected, hasQueryText: hasQueryText, isExecuting: isExecuting)
         )
-        stopHint = shortcutHint(String(localized: "Stop"), .cancelQuery)
+        stopHint = Self.hint(
+            base: shortcutHint(String(localized: "Stop"), .cancelQuery),
+            reason: isExecuting && !isStoppable
+                ? String(localized: "The batch is committing and cannot be stopped.")
+                : nil
+        )
         explainHint = Self.hint(
             base: shortcutHint(String(localized: "Explain"), .explainQuery),
             reason: explainVariants.isEmpty
@@ -72,6 +91,12 @@ struct QueryCommandAvailability {
             base: shortcutHint(String(localized: "Save as Favorite"), .saveAsFavorite),
             reason: hasQueryText ? nil : String(localized: "There is nothing to save yet.")
         )
+    }
+
+    /// The one rule for Explain, shared by the editor bar and the Query menu so the button and the
+    /// menu item's shortcut cannot disagree. An engine explains only through a variant it declares.
+    static func canExplain(isConnected: Bool, hasQueryText: Bool, isExecuting: Bool, supportsExplain: Bool) -> Bool {
+        isConnected && hasQueryText && !isExecuting && supportsExplain
     }
 
     private static func blockedReason(isConnected: Bool, hasQueryText: Bool, isExecuting: Bool) -> String? {

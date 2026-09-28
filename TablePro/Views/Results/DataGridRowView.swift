@@ -516,13 +516,7 @@ class DataGridRowView: NSTableRowView {
             menu.addItem(jsonViewItem)
         }
 
-        if dataColumnIndex >= 0,
-           let highlightItem = coordinator.delegate?.dataGridHighlightMenuItem(
-               forRow: rowIndex,
-               dataColumn: dataColumnIndex
-           ) {
-            menu.addItem(highlightItem)
-        }
+        addCellValueMenuItems(to: menu, dataColumnIndex: dataColumnIndex, delegate: coordinator.delegate)
 
         let tableRows = coordinator.tableRowsProvider()
         addForeignKeyMenuItems(to: menu, dataColumnIndex: dataColumnIndex, tableRows: tableRows)
@@ -531,13 +525,7 @@ class DataGridRowView: NSTableRowView {
             menu.addItem(NSMenuItem.separator())
         }
 
-        let namesWritableColumn = dataColumnIndex >= 0 && dataColumnIndex < tableRows.columns.count
-            && coordinator.isColumnWritable(tableRows.columns[dataColumnIndex])
-        if coordinator.isEditable && namesWritableColumn {
-            let setValueItem = NSMenuItem(title: String(localized: "Set Value"), action: nil, keyEquivalent: "")
-            setValueItem.submenu = buildSetValueMenu(dataColumnIndex: dataColumnIndex, tableRows: tableRows)
-            menu.addItem(setValueItem)
-        }
+        addValueEditingItems(to: menu, dataColumnIndex: dataColumnIndex, tableRows: tableRows, coordinator: coordinator)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -570,6 +558,14 @@ class DataGridRowView: NSTableRowView {
                 }
             }
 
+            let documentItems = coordinator.delegate?.dataGridDocumentMenuItems(forRow: rowIndex) ?? []
+            if !documentItems.isEmpty {
+                menu.addItem(NSMenuItem.separator())
+                for item in documentItems {
+                    menu.addItem(item)
+                }
+            }
+
             /// The copy resets the columns the server owns, which only the schema names, so the item
             /// stays away until it has arrived rather than appearing and doing nothing.
             if tableRows.hasAuthoritativeSchema {
@@ -589,6 +585,45 @@ class DataGridRowView: NSTableRowView {
         }
 
         return menu
+    }
+
+    private func addCellValueMenuItems(
+        to menu: NSMenu,
+        dataColumnIndex: Int,
+        delegate: (any DataGridViewDelegate)?
+    ) {
+        guard dataColumnIndex >= 0, let delegate else { return }
+        if let filterItem = delegate.dataGridFilterMenuItem(forRow: rowIndex, dataColumn: dataColumnIndex) {
+            menu.addItem(filterItem)
+        }
+        if let highlightItem = delegate.dataGridHighlightMenuItem(forRow: rowIndex, dataColumn: dataColumnIndex) {
+            menu.addItem(highlightItem)
+        }
+    }
+
+    /// Set Value, and Remove Field on an engine that tells a missing field from NULL while the cell
+    /// still has a field to remove.
+    private func addValueEditingItems(
+        to menu: NSMenu,
+        dataColumnIndex: Int,
+        tableRows: TableRows,
+        coordinator: TableViewCoordinator
+    ) {
+        let namesWritableColumn = dataColumnIndex >= 0 && dataColumnIndex < tableRows.columns.count
+            && coordinator.isColumnWritable(tableRows.columns[dataColumnIndex])
+        guard coordinator.isEditable, namesWritableColumn else { return }
+
+        let setValueItem = NSMenuItem(title: String(localized: "Set Value"), action: nil, keyEquivalent: "")
+        setValueItem.submenu = buildSetValueMenu(dataColumnIndex: dataColumnIndex, tableRows: tableRows)
+        menu.addItem(setValueItem)
+
+        guard coordinator.supportsFieldRemoval,
+              coordinator.displayRow(at: rowIndex)?.isAbsent(dataColumnIndex) == false else { return }
+        let removeFieldItem = NSMenuItem(
+            title: String(localized: "Remove Field"), action: #selector(removeFieldValue(_:)), keyEquivalent: "")
+        removeFieldItem.representedObject = dataColumnIndex
+        removeFieldItem.target = self
+        menu.addItem(removeFieldItem)
     }
 
     private func buildSetValueMenu(dataColumnIndex: Int, tableRows: TableRows) -> NSMenu {
@@ -700,6 +735,11 @@ class DataGridRowView: NSTableRowView {
     @objc private func setNullValue(_ sender: NSMenuItem) {
         guard let columnIndex = sender.representedObject as? Int else { return }
         coordinator?.setCellValueAtColumn(nil, at: rowIndex, columnIndex: columnIndex)
+    }
+
+    @objc private func removeFieldValue(_ sender: NSMenuItem) {
+        guard let columnIndex = sender.representedObject as? Int else { return }
+        coordinator?.removeField(row: rowIndex, columnIndex: columnIndex)
     }
 
     @objc private func setEmptyValue(_ sender: NSMenuItem) {

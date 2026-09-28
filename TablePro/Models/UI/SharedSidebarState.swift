@@ -36,35 +36,79 @@ final class SharedSidebarState: ObservableObject {
         recentTables.filter { $0.database == normalizedDatabase(database) }
     }
 
-    func recordTableOpen(database: String?, schema: String?, name: String, isView: Bool, isPreview: Bool) {
+    /// `objectType` is what the object actually is, where the caller knew it. `isView` stays
+    /// beside it for the callers that know only that much, and is what an older build reads.
+    func recordTableOpen(
+        database: String?,
+        schema: String?,
+        name: String,
+        isView: Bool,
+        objectType: TableInfo.TableType?,
+        isPreview: Bool,
+        connectionSwitchesDatabases: Bool
+    ) {
+        let frecencyKey = Self.tableFrecencyKey(
+            database: database, schema: schema, name: name,
+            connectionSwitchesDatabases: connectionSwitchesDatabases
+        )
         guard isPreview else {
             pendingRecordTask?.cancel()
             pendingRecordTask = nil
-            commitTableOpen(database: database, schema: schema, name: name, isView: isView)
+            commitTableOpen(
+                database: database, schema: schema, name: name,
+                isView: isView, objectType: objectType, frecencyKey: frecencyKey
+            )
             return
         }
         pendingRecordTask?.cancel()
         pendingRecordTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 250_000_000)
             guard let self, !Task.isCancelled else { return }
-            self.commitTableOpen(database: database, schema: schema, name: name, isView: isView)
+            self.commitTableOpen(
+                database: database, schema: schema, name: name,
+                isView: isView, objectType: objectType, frecencyKey: frecencyKey
+            )
         }
     }
 
-    private func commitTableOpen(database: String?, schema: String?, name: String, isView: Bool) {
-        QuickSwitcherFrecencyStore(connectionId: connectionId).recordAccess(
-            itemId: QuickSwitcherItem.tableItemId(name: name, schema: schema)
-        )
-        guard AppSettingsManager.shared.general.showRecentTables else { return }
-        recentTables = RecentTablesStore.shared.record(
-            connectionId: connectionId, database: normalizedDatabase(database),
-            schema: schema, name: name, isView: isView
+    nonisolated static func tableFrecencyKey(
+        database: String?,
+        schema: String?,
+        name: String,
+        connectionSwitchesDatabases: Bool
+    ) -> String {
+        QuickSwitcherFrecencyKey.table(
+            name: name,
+            schema: schema,
+            in: QuickSwitcherFrecencyKey.DatabaseQualifier(
+                database: database,
+                connectionSwitchesDatabases: connectionSwitchesDatabases
+            )
         )
     }
 
+    private func commitTableOpen(
+        database: String?,
+        schema: String?,
+        name: String,
+        isView: Bool,
+        objectType: TableInfo.TableType?,
+        frecencyKey: String
+    ) {
+        QuickSwitcherFrecencyStore(connectionId: connectionId).recordAccess(itemId: frecencyKey)
+        guard AppSettingsManager.shared.general.showRecentTables else { return }
+        recentTables = RecentTablesStore.shared.record(
+            connectionId: connectionId, database: normalizedDatabase(database),
+            schema: schema, name: name, isView: isView, objectType: objectType
+        )
+    }
+
+    /// Removal matches on the entry's id, which is its database, schema and name, so the kind it
+    /// was recorded with is not part of the lookup.
     func removeRecentTable(database: String?, schema: String?, name: String) {
         let entry = RecentTableEntry(
-            database: normalizedDatabase(database), schema: schema, name: name, isView: false, openedAt: Date()
+            database: normalizedDatabase(database), schema: schema, name: name,
+            isView: false, objectType: nil, openedAt: Date()
         )
         recentTables = RecentTablesStore.shared.remove(connectionId: connectionId, entry: entry)
     }

@@ -32,6 +32,7 @@ struct QueryEditorBar: View {
     /// menu, which is the control that produces the history it is telling the reader about.
     let showsHistoryTip: Bool
 
+    let onAIAction: (AIQueryAction) -> Void
     let onRun: () -> Void
     let onRunAllStatements: () -> Void
     let onRunWithoutLimit: () -> Void
@@ -62,6 +63,10 @@ struct QueryEditorBar: View {
 
             editingCommands
 
+            if commands.aiActions.isVisible {
+                aiControl
+            }
+
             explainControl
 
             runControl
@@ -87,6 +92,33 @@ struct QueryEditorBar: View {
         .labelStyle(.iconOnly)
         .controlSize(.small)
         .fixedSize()
+    }
+
+    private var aiControl: some View {
+        ControlGroup {
+            Button(String(localized: "Review"), systemImage: "sparkles") { onAIAction(.review) }
+                .labelStyle(.titleAndIcon)
+                .help(commands.aiReviewHint)
+                .accessibilityLabel(AIQueryAction.review.menuTitle)
+                .accessibilityIdentifier("query-ai-review")
+
+            Menu {
+                ForEach(AIQueryAction.editorActions, id: \.self) { action in
+                    Button(action.menuTitle, systemImage: action.systemImage) { onAIAction(action) }
+                }
+            } label: {
+                Label { Text("AI Actions") } icon: { EmptyView() }
+            }
+            .labelStyle(.iconOnly)
+            .menuIndicator(.visible)
+            .help(String(localized: "AI Actions"))
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(String(localized: "AI Actions"))
+            .accessibilityIdentifier("query-ai-menu")
+        }
+        .controlSize(.small)
+        .fixedSize()
+        .disabled(!commands.aiActions.isEnabled)
     }
 
     /// A plain button when the engine has one plan to offer, and a pull-down when it has several.
@@ -129,6 +161,15 @@ struct QueryEditorBar: View {
     /// and not a `Menu(primaryAction:)`. Clear Query leaves the results standing and makes Run
     /// unavailable, and disabling one control for both would have taken Clear Results down with it
     /// at exactly the moment the reader wanted it.
+    ///
+    /// The menu half draws nothing but the segment's own disclosure chevron. A visible label of any
+    /// kind lands beside that chevron rather than replacing it: `systemImage:` puts a second one
+    /// there, and a bare `Text` survives `.labelStyle(.iconOnly)` and widens the segment from 47pt
+    /// to 115pt. A `Label` whose icon is empty is the one shape that renders as the chevron alone
+    /// and still carries a name: measured, the menu half publishes "Run Options" as its
+    /// accessibility label. `.accessibilityLabel` on a `Menu` names it only beside
+    /// `.accessibilityElement(children: .contain)`, as the AI menu has; on its own it replaces the
+    /// label's name with nothing at all.
     @ViewBuilder
     private var runControl: some View {
         if isExecuting {
@@ -136,6 +177,7 @@ struct QueryEditorBar: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .labelStyle(.titleAndIcon)
+                .disabled(!commands.canStop)
                 .help(commands.stopHint)
                 .accessibilityIdentifier("query-stop")
         } else {
@@ -146,7 +188,7 @@ struct QueryEditorBar: View {
                     .help(commands.runHint)
                     .accessibilityIdentifier("query-run")
 
-                Menu(String(localized: "Run Options"), systemImage: "chevron.down") {
+                Menu {
                     Button(String(localized: "Run All Statements"), action: onRunAllStatements)
                         .disabled(!commands.canRun)
                     Button(String(localized: "Run Without Limit"), action: onRunWithoutLimit)
@@ -156,9 +198,13 @@ struct QueryEditorBar: View {
                         .disabled(!commands.canClearQuery)
                     Button(String(localized: "Clear Results"), action: onClearResults)
                         .disabled(!commands.canClearResults)
+                } label: {
+                    Label { Text("Run Options") } icon: { EmptyView() }
                 }
                 .labelStyle(.iconOnly)
+                .menuIndicator(.visible)
                 .disabled(!commands.canOpenRunMenu)
+                .help(String(localized: "Run Options"))
                 .accessibilityIdentifier("query-run-menu")
                 .historyTipAnchor(isEnabled: showsHistoryTip)
             }

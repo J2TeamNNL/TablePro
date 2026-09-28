@@ -78,9 +78,22 @@ extension DatabaseType {
         PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.supportsConnectionPooling ?? true
     }
 
+    var exactRowCountIsBilledScan: Bool {
+        PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.exactRowCountIsBilledScan ?? false
+    }
+
+    var columnsAreSampled: Bool {
+        PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.columnsAreSampled ?? false
+    }
+
     var authenticationIsDatabaseScoped: Bool {
         PluginMetadataRegistry.shared.snapshot(for: self)?
             .capabilities.authenticationIsDatabaseScoped ?? false
+    }
+
+    var browsingRequiresSelectedDatabase: Bool {
+        PluginMetadataRegistry.shared.snapshot(for: self)?
+            .capabilities.browsingRequiresSelectedDatabase ?? false
     }
 
     var defaultHost: String? {

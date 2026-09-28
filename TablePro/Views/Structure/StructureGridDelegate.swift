@@ -40,6 +40,19 @@ final class StructureGridDelegate: DataGridViewDelegate {
         guard let adding = StructureFooterPolicy.operation(forAdding: selectedTab) else { return false }
         return editGate.allows(adding)
     }
+
+    var canStageRemoveForSelectedTab: Bool {
+        guard let removing = StructureFooterPolicy.operation(forRemoving: selectedTab) else { return false }
+        return editGate.allows(removing)
+    }
+
+    var lockedFieldIndices: Set<Int> {
+        editGate.lockedFieldIndices(
+            on: selectedTab,
+            orderedFields: orderedFields,
+            fieldCount: currentProvider?.columns.count ?? 0
+        )
+    }
     let tableName: String
     /// The lists behind the Foreign Keys grid's reference cells, shared with the Create Table tab.
     let referenceMenus: ForeignKeyReferenceMenus
@@ -88,6 +101,13 @@ final class StructureGridDelegate: DataGridViewDelegate {
         self.referenceMenus = ForeignKeyReferenceMenus(
             connectionId: connection.id, databaseType: connection.type
         )
+        /// The inspector builds its reference pickers from the same menus the grid opens, once per
+        /// revision, so one built while a list was still loading offers only `Loading…` until the
+        /// revision moves. The coordinator is read when the list lands, not captured here, because
+        /// the view hands it over again on every appearance.
+        referenceMenus.onListsChanged = { [weak self] in
+            self?.coordinator?.inspectorRowSourceRevision += 1
+        }
     }
 
     // MARK: - Index Translation
@@ -105,13 +125,17 @@ final class StructureGridDelegate: DataGridViewDelegate {
     }
 
     /// The Foreign Keys grid's Columns, Ref Table and Ref Columns cells offer the database's own
-    /// names, exactly as the Create Table tab does.
+    /// names, exactly as the Create Table tab does, and the Indexes grid's Type cell offers the
+    /// row's own type beside the known ones.
     ///
-    /// `StructureRowProvider` marks those three columns as carrying a chevron for every grid it
-    /// serves, so without this the chevron here would reach the data grid's boolean fallback and
-    /// offer to write `1` into Ref Table. The row is translated first: this grid filters and sorts,
-    /// so a display position is not an index into `workingForeignKeys`.
+    /// `StructureRowProvider` marks those columns as carrying a chevron for every grid it serves, so
+    /// without this the chevron here would reach the data grid's boolean fallback and offer to write
+    /// `1` into Ref Table. The row is translated first: this grid filters and sorts, so a display
+    /// position is not an index into the working rows.
     func dataGridMenuOptions(forRow row: Int, columnIndex: Int) -> [GridMenuOption]? {
+        if selectedTab == .indexes {
+            return indexMenuOptions(forSourceRow: sourceRow(for: row), columnIndex: columnIndex)
+        }
         guard selectedTab == .foreignKeys, canEditForeignKeys else { return nil }
         let sourceRowIndex = sourceRow(for: row)
         guard sourceRowIndex >= 0, sourceRowIndex < structureChangeManager.workingForeignKeys.count else {
@@ -125,6 +149,15 @@ final class StructureGridDelegate: DataGridViewDelegate {
         )
     }
 
+    private func indexMenuOptions(forSourceRow sourceRowIndex: Int, columnIndex: Int) -> [GridMenuOption]? {
+        guard structureChangeManager.workingIndexes.indices.contains(sourceRowIndex) else { return nil }
+        return StructureRowProvider.indexMenuOptions(
+            columnIndex: columnIndex,
+            index: structureChangeManager.workingIndexes[sourceRowIndex],
+            serverSupport: serverSupport
+        )
+    }
+
     // MARK: - DataGridViewDelegate
 
     func dataGridAttach(tableViewCoordinator: TableViewCoordinator) {
@@ -132,7 +165,8 @@ final class StructureGridDelegate: DataGridViewDelegate {
     }
 
     func dataGridDidEditCell(row displayRow: Int, column: Int, newValue: String?) {
-        guard column >= 0 else { return }
+        guard column >= 0,
+              !editGate.locksField(at: column, on: selectedTab, orderedFields: orderedFields) else { return }
         let sourceRowIndex = sourceRow(for: displayRow)
 
         switch selectedTab {
@@ -145,7 +179,12 @@ final class StructureGridDelegate: DataGridViewDelegate {
         case .indexes:
             guard sourceRowIndex < structureChangeManager.workingIndexes.count else { return }
             var idx = structureChangeManager.workingIndexes[sourceRowIndex]
-            StructureEditingSupport.updateIndex(&idx, at: column, with: newValue ?? "")
+            StructureEditingSupport.updateIndex(
+                &idx,
+                at: column,
+                with: newValue ?? "",
+                keys: StructureEditingSupport.indexKeyContext(for: structureChangeManager, on: connection)
+            )
             structureChangeManager.updateIndex(id: idx.id, with: idx)
 
         case .foreignKeys:
@@ -161,8 +200,7 @@ final class StructureGridDelegate: DataGridViewDelegate {
             }
 
         case .checkConstraints:
-            guard editGate.allows(.addCheckConstraint),
-                  sourceRowIndex < structureChangeManager.workingCheckConstraints.count else { return }
+            guard sourceRowIndex < structureChangeManager.workingCheckConstraints.count else { return }
             var constraint = structureChangeManager.workingCheckConstraints[sourceRowIndex]
             StructureEditingSupport.updateCheckConstraint(&constraint, at: column, with: newValue ?? "")
             structureChangeManager.updateCheckConstraint(id: constraint.id, with: constraint)
@@ -228,7 +266,7 @@ final class StructureGridDelegate: DataGridViewDelegate {
                 }
             }
         case .checkConstraints:
-            guard editGate.allows(.addCheckConstraint) else { return }
+            guard editGate.allows(.dropCheckConstraint) else { return }
             structureChangeManager.performAsOneUndoStep {
                 for row in translated.sorted(by: >) {
                     guard row < structureChangeManager.workingCheckConstraints.count else { continue }
@@ -324,6 +362,7 @@ final class StructureGridDelegate: DataGridViewDelegate {
         let item = NSPasteboardItem()
         if let json = jsonString {
             item.setString(json, forType: TableStructureView.structurePasteboardType)
+            item.setString(connection.type.rawValue, forType: TableStructureView.structureSourceTypePasteboardType)
         }
         if !tsvString.isEmpty {
             item.setString(tsvString, forType: .string)
@@ -360,8 +399,11 @@ final class StructureGridDelegate: DataGridViewDelegate {
             guard let indexes = try? decoder.decode([EditableIndexDefinition].self, from: Data(jsonString.utf8)) else {
                 return
             }
+            let source = NSPasteboard.general
+                .string(forType: TableStructureView.structureSourceTypePasteboardType)
+                .map(DatabaseType.init(rawValue:))
             for item in indexes {
-                structureChangeManager.addIndex(item.withNewIdentity())
+                structureChangeManager.addIndex(item.pasted(from: source, into: connection.type))
             }
 
         case .foreignKeys:
@@ -494,7 +536,8 @@ final class StructureGridDelegate: DataGridViewDelegate {
         rowView.coordinator = coordinator
         rowView.rowIndex = row
         rowView.structureTab = selectedTab
-        rowView.isStructureEditable = connection.type.supportsSchemaEditing
+        rowView.canDuplicate = canStageAddForSelectedTab
+        rowView.canDelete = canStageRemoveForSelectedTab
 
         let src = sourceRow(for: row)
 
@@ -741,12 +784,9 @@ final class StructureGridDelegate: DataGridViewDelegate {
                 structureChangeManager.addColumn(copy.withNewIdentity())
             case .indexes:
                 guard row < structureChangeManager.workingIndexes.count else { continue }
-                let copy = structureChangeManager.workingIndexes[row]
-                structureChangeManager.addIndex(EditableIndexDefinition(
-                    id: UUID(), name: copy.name, columns: copy.columns,
-                    type: copy.type, isUnique: copy.isUnique, isPrimary: false, comment: copy.comment,
-                    columnPrefixes: copy.columnPrefixes, whereClause: copy.whereClause
-                ))
+                var copy = structureChangeManager.workingIndexes[row].withNewIdentity()
+                copy.isPrimary = false
+                structureChangeManager.addIndex(copy)
             case .foreignKeys:
                 guard row < structureChangeManager.workingForeignKeys.count else { continue }
                 let copy = structureChangeManager.workingForeignKeys[row]

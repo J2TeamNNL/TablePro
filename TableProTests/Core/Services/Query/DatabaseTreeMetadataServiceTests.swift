@@ -3,7 +3,6 @@ import Foundation
 import TableProPluginKit
 import Testing
 
-@Suite("DatabaseTreeMetadataService")
 @MainActor
 struct DatabaseTreeMetadataServiceTests {
     private typealias ObjectsKey = DatabaseTreeMetadataService.ObjectsKey
@@ -95,7 +94,6 @@ struct DatabaseTreeMetadataServiceTests {
 /// Uses PGlite because it is the one engine that cannot open a pooled connection, so a
 /// metadata read stays on the injected session driver instead of trying to dial a real
 /// server. Every other engine now reaches the tree through the pool.
-@Suite("DatabaseTreeMetadataService refreshLoadedTables")
 @MainActor
 struct DatabaseTreeMetadataServiceRefreshTests {
     @Test("reload drops previously loaded tables and refetches the current list")
@@ -176,7 +174,6 @@ struct DatabaseTreeMetadataServiceRefreshTests {
 
 /// A refresh must never empty the list it is refreshing: the tree renders `.loading`
 /// with no content as a spinner, so clearing first blanks the sidebar mid-refresh.
-@Suite("DatabaseTreeMetadataService refreshDatabases")
 @MainActor
 struct DatabaseTreeMetadataServiceRefreshDatabasesTests {
     @Test("A refresh commits the new list over the old one")
@@ -230,7 +227,6 @@ struct DatabaseTreeMetadataServiceRefreshDatabasesTests {
 /// The sidebar's own Refresh, reached from the database and schema contextual menus. It has to
 /// obey the same rule `refreshDatabases` does: the tree renders a container with no loaded
 /// content as a single spinner row, so clearing first empties the subtree mid-refresh.
-@Suite("DatabaseTreeMetadataService refreshObjects")
 @MainActor
 struct DatabaseTreeMetadataServiceRefreshObjectsTests {
     private func connectedDriver() -> (DatabaseConnection, MockDatabaseDriver) {
@@ -319,5 +315,79 @@ struct DatabaseTreeMetadataServiceRefreshObjectsTests {
 
         await service.handleDisconnect(connectionId: connection.id)
         DatabaseManager.shared.removeSession(for: connection.id)
+    }
+}
+
+/// Every fetch below names its schema itself, so the tree's routine, trigger and type lists for one
+/// database share one pooled connection. A scope per schema took one pooled connection per expanded
+/// schema node, which is how one saved PostgreSQL connection came to hold dozens of server backends
+/// (#3103). They stay on `.bulk`, off the connection a query tab on that database runs its SQL on.
+@Suite("DatabaseTreeMetadataService pooled scope", .serialized)
+@MainActor
+struct DatabaseTreeMetadataServicePooledScopeTests {
+    private let schemas = ["public", "sales", "hr"]
+
+    private func pooledSession() -> (DatabaseConnection, MockDatabaseDriver) {
+        let connection = TestFixtures.makeConnection(database: "shop", type: .postgresql)
+        var session = ConnectionSession(connection: connection, driver: MockDatabaseDriver(connection: connection))
+        session.status = .connected
+        session.browseDatabase = "shop"
+        session.browseSchema = "public"
+        DatabaseManager.shared.injectSession(session, for: connection.id)
+        let pooled = MockDatabaseDriver(connection: connection)
+        MetadataConnectionPool.shared.injectEntry(
+            pooled,
+            scope: DatabaseScope(connectionId: connection.id, database: "shop", schema: "public"),
+            workload: .bulk
+        )
+        return (connection, pooled)
+    }
+
+    private func tearDown(_ connection: DatabaseConnection) async {
+        await DatabaseTreeMetadataService.shared.handleDisconnect(connectionId: connection.id)
+        DatabaseManager.shared.removeSession(for: connection.id)
+    }
+
+    @Test("Routines for every schema of a database load on the database's one pooled connection")
+    func routinesShareTheDatabaseConnection() async {
+        let (connection, _) = pooledSession()
+        let service = DatabaseTreeMetadataService.shared
+
+        for schema in schemas {
+            await service.loadRoutines(connectionId: connection.id, database: "shop", schema: schema)
+        }
+
+        for schema in schemas {
+            let state = service.routinesLoadState(connectionId: connection.id, database: "shop", schema: schema)
+            if case .loaded = state {} else {
+                Issue.record("Routines for \(schema) did not load on the database's pooled connection")
+            }
+        }
+        #expect(MetadataConnectionPool.shared.pooledDriverCount(for: connection.id) == 1)
+        await tearDown(connection)
+    }
+
+    @Test("Triggers and types for every schema of a database load on the database's one pooled connection")
+    func triggersAndTypesShareTheDatabaseConnection() async {
+        let (connection, _) = pooledSession()
+        let service = DatabaseTreeMetadataService.shared
+
+        for schema in schemas {
+            await service.loadTriggers(connectionId: connection.id, database: "shop", schema: schema)
+            await service.loadUserDefinedTypes(connectionId: connection.id, database: "shop", schema: schema)
+        }
+
+        for schema in schemas {
+            let triggers = service.triggersLoadState(connectionId: connection.id, database: "shop", schema: schema)
+            if case .loaded = triggers {} else {
+                Issue.record("Triggers for \(schema) did not load on the database's pooled connection")
+            }
+            let types = service.typesLoadState(connectionId: connection.id, database: "shop", schema: schema)
+            if case .loaded = types {} else {
+                Issue.record("Types for \(schema) did not load on the database's pooled connection")
+            }
+        }
+        #expect(MetadataConnectionPool.shared.pooledDriverCount(for: connection.id) == 1)
+        await tearDown(connection)
     }
 }

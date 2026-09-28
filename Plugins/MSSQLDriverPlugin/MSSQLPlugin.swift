@@ -5,6 +5,7 @@
 
 import Foundation
 import os
+import TableProCoreTypes
 import TableProMSSQLCore
 import TableProPluginKit
 
@@ -28,7 +29,67 @@ private extension MSSQLRawResult {
             rows: rows.map { row in row.map { $0.asPluginCell } },
             rowsAffected: affectedRows,
             executionTime: executionTime,
-            isTruncated: isTruncated
+            isTruncated: isTruncated,
+            statusMessage: resultSetsNotShownNote
+        )
+    }
+
+    /// A statement run on its own returns one result, so T-SQL written without semicolons, where several statements
+    /// read as one, shows only the first of what it returned. The note says so rather than letting the rest vanish.
+    private var resultSetsNotShownNote: String? {
+        guard resultSetsNotShown > 0 else { return nil }
+        return String(
+            format: String(
+                localized: "Showing the first of %d result sets. End each statement with a semicolon to see every result."
+            ),
+            resultSetsNotShown + 1
+        )
+    }
+}
+
+private extension MSSQLBatchReadout {
+    func toPluginBatchResult(
+        executionTime: TimeInterval,
+        binding: MSSQLParameterBatch.BoundBatch?
+    ) -> PluginBatchResult {
+        PluginBatchResult(
+            resultSets: resultSets.map { $0.toPluginResult(executionTime: 0) },
+            rowsAffected: rowsAffected,
+            errors: errors.map { $0.pluginBatchError(binding: binding) } + [errorsNotKeptNotice].compactMap { $0 },
+            discardedResultSetCount: resultSetsReadPast,
+            executionTime: executionTime
+        )
+    }
+
+    /// The errors a read counted without keeping, as one last error that says how many there were, so a loop that
+    /// failed on every pass does not read as having failed only as often as the read kept.
+    private var errorsNotKeptNotice: PluginBatchError? {
+        guard errorsNotKept > 0 else { return nil }
+        return PluginBatchError(
+            message: String(format: String(localized: "%d more errors were not kept."), errorsNotKept),
+            code: nil,
+            line: nil,
+            procedure: nil,
+            precedingResultSetCount: resultSets.count
+        )
+    }
+}
+
+private extension MSSQLPlacedError {
+    /// A line inside a procedure counts from the procedure's own start, which the binding never moved.
+    func pluginBatchError(binding: MSSQLParameterBatch.BoundBatch?) -> PluginBatchError {
+        let procedure = message.procedure.isEmpty ? nil : message.procedure
+        let reported = message.line > 0 ? message.line : nil
+        let line = reported.map { line in
+            guard procedure == nil, let binding else { return line }
+            return binding.batchLine(forReportedLine: line)
+        }
+        return PluginBatchError(
+            message: message.text,
+            code: message.number,
+            line: line,
+            procedure: procedure,
+            precedingResultSetCount: precedingResultSetCount
         )
     }
 }
@@ -252,6 +313,7 @@ final class MSSQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
             .batchExecute,
             .schemaCompare,
             .dataCompare,
+            .resultSetBatches,
         ]
     }
 
@@ -294,6 +356,12 @@ final class MSSQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         let conn: FreeTDSConnection
         do {
             let kerberosCachePath = try await acquireKerberosTicketIfNeeded(authMethod: authMethod)
+            var connectionOwnsKerberosCache = false
+            defer {
+                if !connectionOwnsKerberosCache, let kerberosCachePath {
+                    try? FileManager.default.removeItem(atPath: kerberosCachePath)
+                }
+            }
             let kerberosServicePrincipal = try await resolveKerberosServicePrincipal(authMethod: authMethod)
             let fedAuthToken = try await resolveEntraTokenIfNeeded(authMethod: authMethod)
             var options = MSSQLConnectionOptions(
@@ -303,7 +371,7 @@ final class MSSQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
                 password: config.password,
                 database: config.database,
                 schema: _currentSchema,
-                encryptionFlag: MSSQLSSLMapping.freetdsEncryptionFlag(for: config.ssl.mode),
+                encryptionLevel: MSSQLSSLMapping.encryptionLevel(for: config.ssl.mode),
                 authMethod: authMethod,
                 kerberosCachePath: kerberosCachePath,
                 kerberosServicePrincipal: kerberosServicePrincipal
@@ -312,6 +380,7 @@ final class MSSQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
             options.caCertificatePath = config.ssl.caCertificatePath
             options.fedAuthToken = fedAuthToken
             conn = FreeTDSConnection(options: options)
+            connectionOwnsKerberosCache = true
             try await conn.connect()
         } catch let error as MSSQLCoreError {
             switch error {
@@ -412,6 +481,18 @@ final class MSSQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
     func beginTransaction() async throws {
         _ = try await execute(query: "BEGIN TRANSACTION")
+    }
+
+    /// One round trip, and only when a caller is about to own a transaction on this session. It
+    /// goes through `executeInternal` rather than `execute` so the app's query cancellation and
+    /// history never see it.
+    func sessionTransactionState() async -> PluginSessionTransactionState {
+        guard let result = try? await executeInternal(MSSQLSessionTransaction.probe) else { return .unknown }
+        let row = result.rows.first
+        return MSSQLSessionTransaction.state(
+            tranCount: row?.first?.asText,
+            transactionState: row?.dropFirst().first?.asText
+        )
     }
 
     // MARK: - Query Execution
@@ -603,7 +684,42 @@ final class MSSQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     // MARK: - Streaming
 
     func executeBoundedQuery(query: String, rowCap: Int) async throws -> PluginQueryResult? {
-        try await boundedQueryFromStream(query: query, rowCap: rowCap)
+        guard let conn = freeTDSConn else {
+            throw MSSQLPluginError.notConnected
+        }
+        let startTime = Date()
+        do {
+            let raw = try await conn.executeQuery(query, rowCap: rowCap)
+            return raw.toPluginResult(executionTime: Date().timeIntervalSince(startTime))
+        } catch let error as MSSQLCoreError {
+            throw MSSQLPluginError(coreError: error)
+        }
+    }
+
+    func executeBatch(query: String, rowCap: Int?, parameters: [PluginCellValue]?) async throws -> PluginBatchResult? {
+        guard let conn = freeTDSConn else {
+            throw MSSQLPluginError.notConnected
+        }
+        let binding = parameters.flatMap { values in
+            MSSQLParameterBatch.boundBatch(query: query, parameters: values.map(Self.parameter))
+        }
+        let startTime = Date()
+        do {
+            let readout = try await conn.executeBatch(
+                binding?.text ?? query,
+                rowCap: rowCap,
+                countsToSkip: binding?.prependedStatementCount ?? 0
+            )
+            return readout.toPluginBatchResult(executionTime: Date().timeIntervalSince(startTime), binding: binding)
+        } catch let error as MSSQLCoreError {
+            throw MSSQLPluginError(coreError: error)
+        }
+    }
+
+    func fetchServerOutput() async throws -> PluginServerOutput {
+        guard let conn = freeTDSConn else { return .none }
+        let output = try await conn.takeServerOutput()
+        return PluginServerOutput(lines: output.lines, isTruncated: output.isTruncated)
     }
 
     func streamRows(query: String) -> AsyncThrowingStream<PluginStreamElement, Error> {
@@ -648,6 +764,8 @@ final class MSSQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
                         }
                     }
                     continuation.finish()
+                } catch let error as MSSQLCoreError {
+                    continuation.finish(throwing: MSSQLPluginError(coreError: error))
                 } catch {
                     continuation.finish(throwing: error)
                 }
@@ -667,21 +785,11 @@ final class MSSQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     }
 
     func executeParameterized(query: String, parameters: [PluginCellValue]) async throws -> PluginQueryResult {
-        guard !parameters.isEmpty else {
+        let statement = MSSQLParameterBatch.spExecuteSql(query: query, parameters: parameters.map(Self.parameter))
+        guard !parameters.isEmpty, !statement.isEmpty else {
             return try await execute(query: query)
         }
-
-        let statement = MSSQLParameterBatch.spExecuteSql(
-            query: query, parameters: parameters.map(Self.parameter)
-        )
-
-        guard !statement.isEmpty else {
-            return try await execute(query: query)
-        }
-
-        let sql = "EXEC sp_executesql N'\(Self.escapeNString(statement.query))', "
-            + "N'\(statement.declarations)', \(statement.assignments)"
-        return try await execute(query: sql)
+        return try await execute(query: statement.executeSqlText)
     }
 
     func fetchApproximateRowCount(table: String, schema: String?) async throws -> Int? {
@@ -847,9 +955,6 @@ final class MSSQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     }
 
     /// Escape single quotes for N'...' string literals in SQL Server.
-    private static func escapeNString(_ value: String) -> String {
-        value.replacingOccurrences(of: "'", with: "''")
-    }
 
     func effectiveSchema(_ schema: String?) -> String {
         guard let schema, !schema.isEmpty else { return _currentSchema }

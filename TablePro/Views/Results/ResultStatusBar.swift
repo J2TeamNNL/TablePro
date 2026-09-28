@@ -31,6 +31,7 @@ import SwiftUI
 /// tree cannot present, so giving up the Highlight Rules button would have made
 /// `View > Highlight Rules…` do nothing. See `StatusBarTier` for what a tier may give up.
 struct ResultStatusBar: View {
+    @ObservedObject private var settingsManager = AppSettingsManager.shared
     let model: ResultStatusModel
     let snapshot: StatusBarSnapshot
     let filterState: TabFilterState
@@ -56,6 +57,12 @@ struct ResultStatusBar: View {
 
     @State private var showColumnPopover = false
     @State private var showHighlightPopover = false
+    /// The tab the rules popover was opened for. Switching tab closes the popover, and by the time
+    /// the close is seen this view already belongs to the tab that was switched to, so pruning
+    /// "the selected tab" pruned the wrong one and left an unfinished rule saved on the tab the
+    /// user actually opened it from.
+    @State private var highlightPopoverTabId: UUID?
+    @State private var revealedExecutionTabId: UUID?
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -63,14 +70,26 @@ struct ResultStatusBar: View {
             row(.compact)
             row(.narrow)
         }
+        .loadingRevealGate(
+            for: execution.tabId,
+            isActive: execution.isExecuting,
+            activeSince: execution.startedAt,
+            revealedSubject: $revealedExecutionTabId
+        )
         .statusBarChrome()
         .onChange(of: snapshot.tabId) { _ in
             showColumnPopover = false
             showHighlightPopover = false
         }
         .onChange(of: showHighlightPopover) { isShown in
-            guard !isShown else { return }
-            highlightState.onDismiss()
+            guard !isShown else {
+                highlightPopoverTabId = snapshot.tabId
+                return
+            }
+            if let tabId = highlightPopoverTabId {
+                highlightState.onDismiss(tabId)
+            }
+            highlightPopoverTabId = nil
         }
         .onValueChange(of: highlightPresentation) { previous, current in
             guard previous.tabId == current.tabId, model.controls.showsHighlightRules else { return }
@@ -97,14 +116,8 @@ struct ResultStatusBar: View {
                     onCloseOthers: onCloseOtherResultSets
                 )
             }
-            if model.controls.showsReadout {
-                readoutCluster
-                    .frame(
-                        minWidth: 0,
-                        idealWidth: StatusBarLayoutMetrics.readoutIdealWidth,
-                        maxWidth: .infinity,
-                        alignment: .leading
-                    )
+            if model.controls.showsReadout || model.controls.showsExecution {
+                readoutZone(readoutCluster)
             } else {
                 Spacer(minLength: 0)
             }
@@ -143,83 +156,96 @@ struct ResultStatusBar: View {
     /// clusters on either side keep their intrinsic widths.
     private var readoutCluster: some View {
         HStack(spacing: 6) {
-            if model.controls.showsLoadingMore {
-                ProgressView()
-                    .controlSize(.small)
-                    .accessibilityHidden(true)
-                Text("Loading…")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                ResultStatusReadoutView(readout: model.readout)
+            if model.controls.showsReadout {
+                resultReadout
             }
-
-            if model.controls.showsCountInProgress {
-                ProgressView()
-                    .controlSize(.small)
-                    .accessibilityLabel(String(localized: "Counting rows"))
+            executionReport
+            if model.controls.showsReadout, isRefreshingSchema {
+                DelayedProgressIndicator(isActive: true)
+                    .accessibilityLabel(String(localized: "Refreshing"))
             }
-
-            if model.controls.showsExactCountAction {
-                Button(
-                    String(localized: "Count Exactly"),
-                    action: paginationCallbacks.onRequestExactCount
-                )
-                .accessoryBarActionStyle()
-                .help(String(localized: "Replace the estimate with an exact row count."))
-                .accessibilityIdentifier("result-status-count-exactly")
-            }
-
-            if model.controls.showsFetchAll, let onFetchAll {
-                Button(String(localized: "Fetch All"), action: onFetchAll)
-                    .accessoryBarActionStyle()
-                    .help(String(localized: "Load the rows the row cap left behind."))
-                    .accessibilityIdentifier("result-status-fetch-all")
-            }
-
-            if let statusMessage = model.statusMessage {
-                separator
-                /// Yields its width before the sentence beside it does, so a wordy driver message
-                /// truncates instead of squeezing out the row count. Which tier the bar draws is not
-                /// its business: the enclosing frame reports a constant ideal width so no message
-                /// length can change that choice.
-                Text(statusMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .layoutPriority(-1)
-            }
-
-            executionReadout
         }
     }
 
-    /// Whether a query is running and how long the last one took, beside the rows it produced. It
-    /// used to be a hosted SwiftUI view in the centre of the toolbar, where AppKit dropped it whole
-    /// before any command as soon as the window narrowed.
     @ViewBuilder
-    private var executionReadout: some View {
-        if execution.isActive {
-            separator
+    private var resultReadout: some View {
+        if model.controls.showsLoadingMore {
+            ProgressView()
+                .controlSize(.small)
+                .accessibilityHidden(true)
+            Text("Loading…")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            ResultStatusReadoutView(readout: model.readout)
+        }
+
+        if model.controls.showsCountInProgress {
+            ProgressView()
+                .controlSize(.small)
+                .accessibilityLabel(String(localized: "Counting rows"))
+        }
+
+        if model.controls.showsExactCountAction {
+            Button(
+                String(localized: "Count Exactly"),
+                action: paginationCallbacks.onRequestExactCount
+            )
+            .accessoryBarActionStyle()
+            .help(String(localized: "Replace the estimate with an exact row count."))
+            .accessibilityIdentifier("result-status-count-exactly")
+        }
+
+        if model.controls.showsFetchAll, let onFetchAll {
+            Button(String(localized: "Fetch All"), action: onFetchAll)
+                .accessoryBarActionStyle()
+                .help(String(localized: "Load the rows the row cap left behind."))
+                .accessibilityIdentifier("result-status-fetch-all")
+        }
+
+        if let statusMessage = model.statusMessage {
+            StatusBarSeparator()
+            /// Yields its width before the sentence beside it does, so a wordy driver message
+            /// truncates instead of squeezing out the row count. Which tier the bar draws is not
+            /// its business: the enclosing frame reports a constant ideal width so no message
+            /// length can change that choice.
+            Text(statusMessage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .layoutPriority(-1)
+        }
+    }
+
+    @ViewBuilder
+    private var executionReport: some View {
+        let slot = ExecutionSlot(
+            isOffered: model.controls.showsExecution,
+            followsReadout: model.controls.showsReadout,
+            isRevealed: revealedExecutionTabId == execution.tabId,
+            lastTiming: execution.lastTiming
+        )
+        if slot.leadsWithSeparator {
+            StatusBarSeparator()
+        }
+        if let report = slot.report {
             ExecutionIndicatorView(
+                report: report,
                 isExecuting: execution.isExecuting,
-                lastTiming: execution.lastTiming,
+                canStop: execution.canStop,
                 onCancel: execution.onCancel
             )
         }
-        if isRefreshingSchema {
-            DelayedProgressIndicator(isActive: true)
-                .accessibilityLabel(String(localized: "Refreshing"))
-        }
     }
 
-    /// Punctuation, so VoiceOver must not read it as an element of its own.
-    private var separator: some View {
-        Text(verbatim: "·")
-            .font(.caption)
-            .foregroundStyle(.tertiary)
-            .accessibilityHidden(true)
+    private func readoutZone(_ content: some View) -> some View {
+        content.frame(
+            minWidth: 0,
+            idealWidth: StatusBarLayoutMetrics.readoutIdealWidth,
+            maxWidth: .infinity,
+            alignment: .leading
+        )
     }
 
     // MARK: - Controls
@@ -367,7 +393,7 @@ struct ResultStatusBar: View {
         .statusBarLabelStyle(showsTitle: presentation.showsControlTitles)
         .toggleStyle(.button)
         .controlSize(.small)
-        .help(AppSettingsManager.shared.keyboard.shortcutHint(String(localized: "Filters"), for: .toggleFilters))
+        .help(settingsManager.keyboard.shortcutHint(String(localized: "Filters"), for: .toggleFilters))
         .accessibilityLabel(String(localized: "Filters"))
         .accessibilityValue(filtersAccessibilityValue)
         .accessibilityAddTraits(filterState.isVisible ? .isSelected : [])

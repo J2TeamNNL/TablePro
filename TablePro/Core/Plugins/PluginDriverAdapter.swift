@@ -29,28 +29,8 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
     }
 
     var serverVersion: String? { pluginDriver.serverVersion }
+    var sessionLexicalState: PluginSessionLexicalState? { pluginDriver.sessionLexicalState }
     var parameterStyle: ParameterStyle { pluginDriver.parameterStyle }
-
-    func pluginGenerateStatements(
-        table: String,
-        columns: [String],
-        primaryKeyColumns: [String],
-        changes: [PluginRowChange],
-        insertedRowData: [Int: [String?]],
-        deletedRowIndices: Set<Int>,
-        insertedRowIndices: Set<Int>
-    ) -> [(statement: String, parameters: [String?])]? {
-        let pluginRowData = insertedRowData.mapValues { row in
-            row.map(PluginCellValue.fromOptional)
-        }
-        let result = pluginDriver.generateStatements(
-            table: table, columns: columns, primaryKeyColumns: primaryKeyColumns, changes: changes,
-            insertedRowData: pluginRowData,
-            deletedRowIndices: deletedRowIndices,
-            insertedRowIndices: insertedRowIndices
-        )
-        return result?.map { (statement: $0.statement, parameters: $0.parameters.map { $0.asText }) }
-    }
 
     /// The underlying plugin driver, exposed for DDL schema generation delegation.
     var schemaPluginDriver: any PluginDatabaseDriver { pluginDriver }
@@ -221,6 +201,28 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         return mapQueryResult(pluginResult)
     }
 
+    var supportsResultSetBatches: Bool {
+        pluginDriver.capabilities.contains(.resultSetBatches)
+    }
+
+    func executeBatch(query: String, rowCap: Int?, parameters: [Any?]?) async throws -> QueryBatchResult? {
+        try StatementTextValidator.validate(query)
+        guard let batch = try await pluginDriver.executeBatch(
+            query: query,
+            rowCap: rowCap,
+            parameters: parameters?.map(Self.cellValue(for:))
+        ) else {
+            return nil
+        }
+        return QueryBatchResult(
+            resultSets: batch.resultSets.map(mapQueryResult),
+            rowsAffected: batch.rowsAffected,
+            errors: batch.errors,
+            discardedResultSetCount: batch.discardedResultSetCount,
+            executionTime: batch.executionTime
+        )
+    }
+
     // MARK: - Schema Operations
 
     func fetchTables() async throws -> [TableInfo] {
@@ -233,31 +235,42 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         return pluginTables.map { mapPluginTable($0, schemaFallback: resolvedSchema) }
     }
 
-    func fetchPartitions(table: String, schema: String?) async throws -> [TableInfo] {
+    func fetchTablesInAllSchemas() async throws -> [TableInfo]? {
+        guard let pluginTables = try await pluginDriver.fetchTablesInAllSchemas() else { return nil }
+        return pluginTables.map { mapPluginTable($0, schemaFallback: nil) }
+    }
+
+    func fetchPartitionDetails(table: String, schema: String?) async throws -> [PartitionInfo] {
         let resolvedSchema = schema ?? pluginDriver.currentSchema
-        let pluginTables = try await pluginDriver.fetchPartitions(table: table, schema: resolvedSchema)
-        return pluginTables.map { mapPluginTable($0, schemaFallback: resolvedSchema) }
+        let partitions = try await pluginDriver.fetchPartitionDetails(table: table, schema: resolvedSchema)
+        return partitions.map { partition in
+            let relationType = partition.relationType.flatMap(Self.mapPluginTableType)
+            return PartitionInfo(
+                name: partition.name,
+                schema: relationType == nil ? partition.schema : (partition.schema ?? resolvedSchema),
+                bound: partition.bound,
+                ordinalPosition: partition.ordinalPosition,
+                rowCount: partition.rowCount,
+                relationType: relationType,
+                isSubpartitioned: partition.isSubpartitioned,
+                parentPartitionName: partition.parentPartitionName
+            )
+        }
+    }
+
+    /// One vocabulary for what a plugin calls an object, shared with the partition path so a
+    /// foreign-table partition cannot arrive as a plain table and pick up Truncate on its way in.
+    nonisolated internal static func mapPluginTableType(_ declaredType: String) -> TableInfo.TableType? {
+        PluginTableKindDecoder.decode(declaredType).kind
     }
 
     private func mapPluginTable(_ table: PluginTableInfo, schemaFallback: String?) -> TableInfo {
+        let decoded = PluginTableKindDecoder.decode(table.type)
         let tableType: TableInfo.TableType
-        switch table.type.lowercased() {
-        case "table", "base table", "prefix":
-            tableType = .table
-        case "partitioned table", "partitioned_table":
-            tableType = .partitionedTable
-        case "view":
-            tableType = .view
-        case "materialized view", "materialized_view":
-            tableType = .materializedView
-        case "foreign table", "foreign_table":
-            tableType = .foreignTable
-        case "system table", "system base table", "system view":
-            tableType = .systemTable
-        case "external table", "external_table":
-            tableType = .externalTable
-        default:
-            Self.logger.warning("Unknown plugin table type \"\(table.type, privacy: .public)\" for \"\(table.name, privacy: .public)\"; defaulting to .table")
+        if let mapped = decoded.kind {
+            tableType = mapped
+        } else {
+            Self.logger.warning("Unknown plugin table type \"\(table.type, privacy: .public)\" for \"\(table.name, privacy: .private(mask: .hash))\"; defaulting to .table")
             tableType = .table
         }
         return TableInfo(
@@ -265,39 +278,20 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
             type: tableType,
             rowCount: table.rowCount,
             schema: table.schema ?? schemaFallback,
-            comment: table.comment
+            comment: table.comment,
+            partitionCount: table.partitionCount,
+            isSystemVersioned: decoded.isSystemVersioned
         )
     }
 
     func fetchColumns(table: String) async throws -> [ColumnInfo] {
         let pluginColumns = try await pluginDriver.fetchColumns(table: table, schema: pluginDriver.currentSchema)
-        return mapPluginColumns(pluginColumns)
+        return pluginColumns.map(ColumnInfo.init)
     }
 
     func fetchColumns(table: String, schema: String?) async throws -> [ColumnInfo] {
         let pluginColumns = try await pluginDriver.fetchColumns(table: table, schema: schema ?? pluginDriver.currentSchema)
-        return mapPluginColumns(pluginColumns)
-    }
-
-    private func mapPluginColumns(_ pluginColumns: [PluginColumnInfo]) -> [ColumnInfo] {
-        pluginColumns.map { col in
-            ColumnInfo(
-                name: col.name,
-                dataType: col.dataType,
-                isNullable: col.isNullable,
-                isPrimaryKey: col.isPrimaryKey,
-                defaultValue: col.defaultValue,
-                extra: col.extra,
-                charset: col.charset,
-                collation: col.collation,
-                comment: col.comment,
-                identityKind: col.identityKind,
-                isGenerated: col.isGenerated,
-                allowedValues: col.allowedValues,
-                generationExpression: col.generationExpression,
-                generationKind: col.generationKind
-            )
-        }
+        return pluginColumns.map(ColumnInfo.init)
     }
 
     func fetchIndexes(table: String) async throws -> [IndexInfo] {
@@ -308,35 +302,7 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         let pluginIndexes = try await pluginDriver.fetchIndexes(
             table: table, schema: schema ?? pluginDriver.currentSchema
         )
-        return pluginIndexes.map(Self.mapPluginIndex)
-    }
-
-    nonisolated private static func mapPluginIndex(_ index: PluginIndexInfo) -> IndexInfo {
-        IndexInfo(
-            name: index.name,
-            columns: index.columns,
-            isUnique: index.isUnique,
-            isPrimary: index.isPrimary,
-            type: index.type,
-            columnPrefixes: index.columnPrefixes,
-            whereClause: index.whereClause
-        )
-    }
-
-    nonisolated private static func mapPluginTableMetadata(_ metadata: PluginTableMetadata) -> TableMetadata {
-        TableMetadata(
-            tableName: metadata.tableName,
-            dataSize: metadata.dataSize,
-            indexSize: metadata.indexSize,
-            totalSize: metadata.totalSize,
-            avgRowLength: metadata.avgRowLength,
-            rowCount: metadata.rowCount,
-            comment: metadata.comment,
-            engine: metadata.engine,
-            collation: metadata.collation,
-            createTime: metadata.createTime,
-            updateTime: metadata.updateTime
-        )
+        return pluginIndexes.map(IndexInfo.init)
     }
 
     func fetchForeignKeys(table: String) async throws -> [ForeignKeyInfo] {
@@ -347,18 +313,7 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         let pluginFKs = try await pluginDriver.fetchForeignKeys(
             table: table, schema: schema ?? pluginDriver.currentSchema
         )
-        return pluginFKs.map { fk in
-            ForeignKeyInfo(
-                name: fk.name,
-                column: fk.column,
-                referencedTable: fk.referencedTable,
-                referencedColumn: fk.referencedColumn,
-                referencedDatabase: fk.referencedDatabase,
-                referencedSchema: fk.referencedSchema,
-                onDelete: fk.onDelete,
-                onUpdate: fk.onUpdate
-            )
-        }
+        return pluginFKs.map(ForeignKeyInfo.init)
     }
 
     func fetchCheckConstraints(table: String) async throws -> [CheckConstraintInfo] {
@@ -369,14 +324,7 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         let pluginConstraints = try await pluginDriver.fetchCheckConstraints(
             table: table, schema: schema ?? pluginDriver.currentSchema
         )
-        return pluginConstraints.map { constraint in
-            CheckConstraintInfo(
-                name: constraint.name,
-                expression: constraint.expression,
-                columns: constraint.columns,
-                isValidated: constraint.isValidated
-            )
-        }
+        return pluginConstraints.map(CheckConstraintInfo.init)
     }
 
     func fetchTriggers(table: String) async throws -> [TriggerInfo] {
@@ -414,6 +362,8 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
     var unsupportedStructureColumnFields: Set<StructureColumnField> { pluginDriver.unsupportedStructureColumnFields }
 
     var unsupportedIndexTypes: Set<String> { pluginDriver.unsupportedIndexTypes }
+
+    var checkConstraintRefusal: String? { pluginDriver.checkConstraintRefusal }
 
     func fetchApproximateRowCount(table: String) async throws -> Int? {
         try await fetchApproximateRowCount(table: table, schema: nil)
@@ -489,7 +439,7 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
             table: tableName,
             schema: pluginDriver.currentSchema
         )
-        return Self.mapPluginTableMetadata(pluginMeta)
+        return TableMetadata(pluginMeta)
     }
 
     func fetchDatabases() async throws -> [String] {
@@ -511,7 +461,7 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
             return pluginRoutines.map { RoutineInfo($0.adopting(kind: $0.kind, schema: resolvedSchema)) }
                 .sorted { ($0.kind.rawValue, $0.name) < ($1.kind.rawValue, $1.name) }
         } catch {
-            Self.logger.warning("fetchRoutines failed: \(error.localizedDescription, privacy: .public)")
+            Self.logger.warning("fetchRoutines failed: \(error.publicLogShape, privacy: .public)")
             throw error
         }
     }
@@ -530,7 +480,7 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
                 .map { UserDefinedTypeInfo($0.adoptingSchema(resolvedSchema)) }
                 .sorted { $0.name < $1.name }
         } catch {
-            Self.logger.warning("fetchUserDefinedTypes failed: \(error.localizedDescription, privacy: .public)")
+            Self.logger.warning("fetchUserDefinedTypes failed: \(error.publicLogShape, privacy: .public)")
             throw error
         }
     }
@@ -586,6 +536,18 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         try await pluginDriver.renameSchema(name: name, to: newName)
     }
 
+    func documentWriteStatement(_ write: PluginDocumentWrite) throws -> String? {
+        try pluginDriver.documentWriteStatement(write)
+    }
+
+    func executeDocumentWrite(_ write: PluginDocumentWrite) async throws {
+        try await pluginDriver.executeDocumentWrite(write)
+    }
+
+    func fetchDocument(table: String, schema: String?, locator: String) async throws -> String? {
+        try await pluginDriver.fetchDocument(table: table, schema: schema, locator: locator)
+    }
+
     func createSchemaStatements(_ definition: PluginSchemaDefinition) -> [String]? {
         pluginDriver.createSchemaStatements(definition)
     }
@@ -621,28 +583,14 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
 
     func fetchAllColumns() async throws -> [String: [ColumnInfo]] {
         let pluginResult = try await pluginDriver.fetchAllColumns(schema: pluginDriver.currentSchema)
-        var result: [String: [ColumnInfo]] = [:]
-        for (table, cols) in pluginResult {
-            result[table] = mapPluginColumns(cols)
-        }
-        return result
+        return pluginResult.mapValues { $0.map(ColumnInfo.init) }
     }
 
     var providesBulkForeignKeyFetch: Bool { pluginDriver.providesBulkForeignKeyFetch }
 
     func fetchAllForeignKeys() async throws -> [String: [ForeignKeyInfo]] {
         let pluginResult = try await pluginDriver.fetchAllForeignKeys(schema: pluginDriver.currentSchema)
-        var result: [String: [ForeignKeyInfo]] = [:]
-        for (table, fks) in pluginResult {
-            result[table] = fks.map { fk in
-                ForeignKeyInfo(name: fk.name, column: fk.column, referencedTable: fk.referencedTable,
-                               referencedColumn: fk.referencedColumn,
-                               referencedDatabase: fk.referencedDatabase,
-                               referencedSchema: fk.referencedSchema,
-                               onDelete: fk.onDelete, onUpdate: fk.onUpdate)
-            }
-        }
-        return result
+        return pluginResult.mapValues { $0.map(ForeignKeyInfo.init) }
     }
 
     func fetchAllDatabaseMetadata() async throws -> [DatabaseMetadata] {
@@ -701,6 +649,14 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
 
     func rollbackTransaction() async throws {
         try await pluginDriver.rollbackTransaction()
+    }
+
+    func sessionTransactionState() async -> PluginSessionTransactionState {
+        await pluginDriver.sessionTransactionState()
+    }
+
+    func fetchServerOutput() async throws -> PluginServerOutput {
+        try await pluginDriver.fetchServerOutput()
     }
 
     // MARK: - Schema Switching
@@ -926,12 +882,6 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         pluginDriver.allTablesMetadataSQL(schema: schema)
     }
 
-    // MARK: - EXPLAIN
-
-    func buildExplainQuery(_ sql: String) -> String? {
-        pluginDriver.buildExplainQuery(sql)
-    }
-
     // MARK: - View Templates
 
     func createViewTemplate() -> String? {
@@ -967,7 +917,13 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
     // MARK: - Result Mapping
 
     private func mapQueryResult(_ pluginResult: PluginQueryResult) -> QueryResult {
-        let columnTypes = mapColumnTypes(rawTypeNames: pluginResult.columnTypeNames)
+        let columnTypes = mapColumnTypes(
+            rawTypeNames: pluginResult.columnTypeNames,
+            classificationHints: PluginResultColumnHints.hints(
+                from: pluginResult.columnMeta,
+                columnCount: pluginResult.columns.count
+            )
+        )
         var result = QueryResult(
             columns: pluginResult.columns,
             columnTypes: columnTypes,
@@ -982,18 +938,26 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         result.columnMeta = pluginResult.columnMeta?.map {
             ResultColumnMeta(isPrimaryKey: $0.isPrimaryKey, isNullable: $0.isNullable, isAutoIncrement: $0.isIdentity)
         }
+        result.rowLocators = pluginResult.rowLocators
+        result.absentCells = pluginResult.absentCells ?? [:]
         return result
     }
 
-    private func mapColumnTypes(rawTypeNames: [String]) -> [ColumnType] {
+    private func mapColumnTypes(rawTypeNames: [String], classificationHints: [String?]) -> [ColumnType] {
         state.withLock { state in
-            rawTypeNames.map { rawTypeName in
-                if let cached = state.columnTypeCache[rawTypeName] { return cached }
-                let mapped = classifier.classify(rawTypeName: rawTypeName)
-                state.columnTypeCache[rawTypeName] = mapped
-                return mapped
+            rawTypeNames.enumerated().map { index, rawTypeName in
+                let hint = index < classificationHints.count ? classificationHints[index] : nil
+                guard let hint else { return classified(rawTypeName, cache: &state.columnTypeCache) }
+                return classified(hint, cache: &state.columnTypeCache).declared(as: rawTypeName)
             }
         }
+    }
+
+    private func classified(_ typeName: String, cache: inout [String: ColumnType]) -> ColumnType {
+        if let cached = cache[typeName] { return cached }
+        let mapped = classifier.classify(rawTypeName: typeName)
+        cache[typeName] = mapped
+        return mapped
     }
 }
 

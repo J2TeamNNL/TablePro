@@ -4,11 +4,11 @@
 //
 
 import Foundation
+import TableProPluginKit
 import Testing
 
 @testable import TablePro
 
-@Suite("ResultStatusModel")
 struct ResultStatusModelTests {
     private func makeSnapshot(
         tabType: TabType? = .table,
@@ -66,6 +66,88 @@ struct ResultStatusModelTests {
         #expect(!result.controls.showsReadout)
     }
 
+    @Test("A query tab's first run offers the execution slot and no readout")
+    func firstRunOffersTheExecutionSlotWithoutAReadout() {
+        let result = model(queryTabSnapshot(hasResult: false, isFetching: true))
+        #expect(!result.controls.showsReadout)
+        #expect(result.controls.showsExecution)
+    }
+
+    @Test(
+        "The execution slot is offered by the mode alone, with or without a result, running or idle",
+        arguments: ResultsViewMode.allCases
+    )
+    func executionSlotFollowsTheModeAlone(mode: ResultsViewMode) {
+        let offered = [false, true].flatMap { hasResult in
+            [false, true].map { isFetching in
+                model(queryTabSnapshot(hasResult: hasResult, isFetching: isFetching), viewMode: mode)
+                    .controls.showsExecution
+            }
+        }
+        #expect(offered == Array(repeating: mode != .structure, count: 4))
+    }
+
+    @Test("A running query with a result on screen keeps its readout beside the execution slot")
+    func runWithAResultKeepsTheReadout() {
+        let result = model(queryTabSnapshot(hasResult: true, isFetching: true))
+        #expect(result.controls.showsReadout)
+        #expect(result.controls.showsExecution)
+    }
+
+    @Test("Output mode offers the execution slot and no readout, running or idle")
+    func outputModeOffersTheExecutionSlot() {
+        for isFetching in [false, true] {
+            let result = model(queryTabSnapshot(hasResult: true, isFetching: isFetching), viewMode: .output)
+            #expect(!result.controls.showsReadout)
+            #expect(result.controls.showsExecution)
+        }
+    }
+
+    @Test("A query plan gives up the readout and still offers the execution slot, running or idle")
+    func queryPlanOffersTheExecutionSlot() {
+        for isFetching in [false, true] {
+            let result = model(queryTabSnapshot(hasResult: true, isFetching: isFetching, isQueryPlan: true))
+            #expect(!result.controls.showsReadout)
+            #expect(result.controls.showsExecution)
+        }
+    }
+
+    @Test("Structure mode never offers the execution slot, running or idle")
+    func structureModeNeverOffersTheExecutionSlot() {
+        let tab = QueryTab(title: "users", query: "", tabType: .table, tableName: "users")
+        for isFetching in [false, true] {
+            let snapshot = StatusBarSnapshot(tab: tab, tableRows: Self.resultRows, isFetching: isFetching)
+            #expect(!model(snapshot, viewMode: .structure).controls.showsExecution)
+        }
+    }
+
+    @Test("A query tab that never ran reads the fetch the registry reports as loading")
+    func neverRunQueryTabTakesTheFetchFromTheRegistry() {
+        let tab = QueryTab(title: "Query 1", query: "SELECT 1", tabType: .query)
+        #expect(!tab.pagination.isLoading)
+
+        let snapshot = StatusBarSnapshot(tab: tab, tableRows: TableRows(), isFetching: true)
+        let result = model(snapshot)
+
+        #expect(snapshot.pagination.isLoading)
+        #expect(result.readout == .loading)
+    }
+
+    private static let resultRows = TableRows.from(
+        queryRows: [[.text("1")]],
+        columns: ["id"],
+        columnTypes: [.text(rawType: "INTEGER")]
+    )
+
+    private func queryTabSnapshot(hasResult: Bool, isFetching: Bool, isQueryPlan: Bool = false) -> StatusBarSnapshot {
+        StatusBarSnapshot(
+            tab: QueryTab(title: "Query 1", query: "SELECT 1", tabType: .query),
+            tableRows: hasResult ? Self.resultRows : TableRows(),
+            isFetching: isFetching,
+            isQueryPlan: isQueryPlan
+        )
+    }
+
     @Test("A table with a known total reports the offset range")
     func tableReportsRange() {
         let snapshot = makeSnapshot(
@@ -104,10 +186,21 @@ struct ResultStatusModelTests {
     func truncatedQueryReportsPartialLoad() {
         var pagination = PaginationState(pageSize: 1_000)
         pagination.hasMoreRows = true
+        pagination.setBaseQueryForMore("SELECT * FROM orders", parameterValues: nil)
         let snapshot = makeSnapshot(tabType: .query, rowCount: 1_000, pagination: pagination)
         let result = model(snapshot)
         #expect(result.readout == .partialLoad(1_000))
         #expect(result.controls.showsFetchAll)
+    }
+
+    @Test("A truncated result with no query to run again reports a partial load and offers no Fetch All")
+    func truncatedResultWithoutReplayableQueryOffersNoFetchAll() {
+        var pagination = PaginationState(pageSize: 1_000)
+        pagination.hasMoreRows = true
+        let snapshot = makeSnapshot(tabType: .query, rowCount: 1_000, pagination: pagination)
+        let result = model(snapshot)
+        #expect(result.readout == .partialLoad(1_000))
+        #expect(!result.controls.showsFetchAll)
     }
 
     // MARK: - Selection
@@ -418,12 +511,33 @@ struct ResultStatusModelTests {
     }
 }
 
-@Suite("ResultsModeAvailability")
 struct ResultsModeAvailabilityTests {
     @Test("A table tab offers every mode")
     func tableTabOffersAllModes() {
         let modes = ResultsModeAvailability.modes(tabType: .table, hasTableName: true, hasColumns: true)
         #expect(modes == [.data, .structure, .json, .chart])
+    }
+
+    @Test("Output is offered only for a query result that printed something")
+    func outputFollowsTheServerOutput() {
+        #expect(ResultsModeAvailability.modes(
+            tabType: .query,
+            hasTableName: false,
+            hasColumns: true,
+            hasServerOutput: true
+        ) == [.data, .json, .chart, .output])
+        #expect(ResultsModeAvailability.modes(
+            tabType: .query,
+            hasTableName: false,
+            hasColumns: false,
+            hasServerOutput: true
+        ).isEmpty)
+        #expect(ResultsModeAvailability.modes(
+            tabType: .table,
+            hasTableName: true,
+            hasColumns: true,
+            hasServerOutput: true
+        ) == [.data, .structure, .json, .chart])
     }
 
     @Test("A query result has no structure to show")
@@ -496,5 +610,4 @@ struct ResultsModeAvailabilityTests {
         }
         #expect(ResultsViewMode.json.displayName == "JSON")
     }
-
 }

@@ -132,29 +132,47 @@ internal class UITestCase: XCTestCase {
         return app
     }
 
+    /// Writes `contents` into this test's sandbox and launches with it open in a data file window.
+    ///
+    /// `TABLEPRO_UI_TEST_OPEN_FILE` is read by `UITestLaunchEnvironment` in the app and delivered as
+    /// an ordinary open-file intent, so the window arrives the way a Finder double-click brings it.
+    internal func launchWithDataFile(named name: String, contents: Data) throws -> XCUIApplication {
+        let root = try XCTUnwrap(sandboxRoot, "setUpWithError did not prepare a sandbox")
+        let fileURL = root.appendingPathComponent(name)
+        try contents.write(to: fileURL)
+        return try launchApp(environment: ["TABLEPRO_UI_TEST_OPEN_FILE": fileURL.path])
+    }
+
     /// Returning as soon as the launch was requested is what used to leave fourteen suites poking
     /// at a window that had no connection yet, and every one of those misses cost an XCUITest
     /// retry. The object browser having rows is the cheapest proof the connection is live.
     ///
-    /// The query is built once and asks only whether a first match exists. Rebuilding
-    /// `app.windows.firstMatch.outlines.firstMatch` inside the poll re-resolves the chain from the
-    /// application element on every iteration, and `staticTexts.count` enumerates every static text
-    /// under the outline rather than stopping at the first. Together they cost seconds per
-    /// iteration once the window holds a loaded grid, so the timeout expires against the query
-    /// instead of against the app, and the failure reads as a launch that never finished.
-    /// The timeout is contention headroom, not a guess at how long opening takes. Three UI shards
-    /// share a runner with the unit job and both arch builds, and the tests that miss the window
-    /// are different on every run: this release's tag build lost `testTheBannerCanBeDismissed`,
-    /// `testSwitchConnectionOpensWithTheToolbarHidden` and
-    /// `testToggleFoldRunsWithTheCursorInsideAStatement`, and earlier runs lost an unrelated set.
-    /// A suite that reports a launch failure because a sibling shard had the CPU is measuring the
-    /// runner. Locally the wait settles in about two seconds, so the extra ceiling costs nothing
-    /// on a machine that is not starved.
-    internal func waitForSampleDatabaseWindow(in app: XCUIApplication, timeout: TimeInterval = 90) -> Bool {
-        let firstObject = app.children(matching: .window).firstMatch
-            .descendants(matching: .outline).firstMatch
+    /// The query is built once, asks only whether a first match exists, and never leaves the
+    /// sidebar. `objectBrowser(in:)` says why the last part matters: the sample opens `Track`, and
+    /// its 1,000 rows usually reach the grid before the table list reaches the sidebar. A search
+    /// for the outline that starts at the window walks the whole grid while the sidebar is still a
+    /// spinner, three to six seconds on the app's main thread per check, and the table list it was
+    /// waiting for could not load under that. The runs that reported this as "never finished
+    /// opening" had the sidebar spinning and the grid full, a different test each time. Locally the
+    /// wait settles in about two seconds.
+    internal func waitForSampleDatabaseWindow(in app: XCUIApplication, timeout: TimeInterval = 30) -> Bool {
+        let firstObject = objectBrowser(in: app.children(matching: .window).firstMatch)
             .descendants(matching: .staticText).firstMatch
         return waitForPredicate(timeout: timeout) { firstObject.exists }
+    }
+
+    /// The connection window's object browser, found without searching the rest of the window.
+    ///
+    /// The sidebar is the first group directly under the window's split group, ahead of the
+    /// splitter and the detail pane: `SplitGroup > Group > ScrollView > Outline` once the tables
+    /// have loaded and `SplitGroup > Group > ActivityIndicator` before. A descendants search from
+    /// the window reaches the outline first when it exists, but when it does not yet exist the
+    /// search goes on into the data grid, which publishes about 12,000 elements for `Track`.
+    /// Stepping through direct children keeps a miss as cheap as a hit.
+    internal func objectBrowser(in window: XCUIElement) -> XCUIElement {
+        window.children(matching: .splitGroup).firstMatch
+            .children(matching: .group).firstMatch
+            .descendants(matching: .outline).firstMatch
     }
 
     /// Opens the sample database the way a person does. Only the menu contract suite needs this;
@@ -170,6 +188,11 @@ internal class UITestCase: XCTestCase {
 
     internal func waitForPredicate(timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
         UITestPoll.until(timeout: timeout, condition)
+    }
+
+    internal func isOn(_ toggle: XCUIElement) -> Bool {
+        if let number = toggle.value as? Int { return number == 1 }
+        return (toggle.value as? String) == "1"
     }
 
     /// The precondition a click actually has. `waitForExistence` only says the element is in the
@@ -277,6 +300,30 @@ internal class UITestCase: XCTestCase {
         return window.textViews.firstMatch
     }
 
+    /// Puts `sql` in the query editor and confirms it arrived, retyping it if it did not.
+    ///
+    /// A click focuses the editor, but the keystrokes that follow it can outrun the focus: the
+    /// editor installs its coordinators and its key monitor on a later run-loop turn, and anything
+    /// typed before that lands nowhere. Measured on this suite, `EXPLAIN QUERY PLAN SELECT …`
+    /// reached the editor as `IN QUERY PLAN SELECT …` and the query came back
+    /// `near "IN": syntax error`, which reads in the report as a broken query plan rather than as
+    /// five lost keystrokes. Select-all before each attempt, so a partial first attempt is replaced
+    /// rather than prepended to.
+    internal func typeQuery(_ sql: String, in app: XCUIApplication, attempts: Int = 3) {
+        let editor = editorTextView(in: app)
+        XCTAssertTrue(editor.waitToExist(timeout: 10), "The query tab must hold an editor to type into")
+        for _ in 0 ..< attempts {
+            editor.click()
+            app.typeKey("a", modifierFlags: .command)
+            app.typeText(sql)
+            let arrived = waitForPredicate(timeout: 3) {
+                ((editor.value as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines) == sql
+            }
+            if arrived { return }
+        }
+        XCTFail("The editor never received the query typed into it")
+    }
+
     /// AppKit reports those rows as disabled, so they never become hittable and a plain `click()`
     /// waits for a state that cannot arrive. Clicking through a coordinate reaches them.
     internal func clickAtCenter(_ element: XCUIElement) {
@@ -300,6 +347,23 @@ internal class UITestCase: XCTestCase {
     internal func contextMenuItem(_ title: String, in app: XCUIApplication) -> XCUIElement {
         let matches = app.menuItems.matching(NSPredicate(format: "title == %@", title))
         return matches.allElementsBoundByIndex.first { $0.isHittable } ?? matches.firstMatch
+    }
+
+    /// Reached by the row's own identifier, because a section row's label is nested and does not
+    /// answer a subscript by title.
+    ///
+    /// Not finding the row fails the test rather than skipping it: a section list the accessibility
+    /// tree cannot see is a section list VoiceOver cannot drive.
+    internal func selectConnectionFormTab(_ tab: String, in form: XCUIElement) {
+        let row = form.descendants(matching: .any)
+            .matching(identifier: "connection-form-section-\(tab)")
+            .firstMatch
+        XCTAssertTrue(
+            row.waitToExist(timeout: 10),
+            "No section row identified connection-form-section-\(tab)"
+        )
+        XCTAssertTrue(waitUntilHittable(row, timeout: 10))
+        row.click()
     }
 
     /// The app removes its own defaults domain as it terminates, which is the only point that

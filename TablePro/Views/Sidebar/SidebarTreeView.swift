@@ -2,7 +2,9 @@ import SwiftUI
 import TableProPluginKit
 
 struct SidebarTreeView: View {
+    @ObservedObject private var databaseManager = DatabaseManager.shared
     @ObservedObject private var schemaService = SchemaService.shared
+    @ObservedObject private var treeMetadata = DatabaseTreeMetadataService.shared
 
     let connectionId: UUID
     @ObservedObject var viewModel: SidebarViewModel
@@ -13,7 +15,6 @@ struct SidebarTreeView: View {
     weak var coordinator: MainContentCoordinator?
 
     @ObservedObject private var settingsManager = AppSettingsManager.shared
-    @State private var searchLoadTask: Task<Void, Never>?
 
     private var activeDatabase: String? {
         let name = coordinator?.browseDatabaseName ?? ""
@@ -21,7 +22,7 @@ struct SidebarTreeView: View {
     }
 
     private var isConnected: Bool {
-        DatabaseManager.shared.session(for: connectionId)?.status == .connected
+        databaseManager.session(for: connectionId)?.status == .connected
     }
 
     private var systemSchemas: Set<String> {
@@ -41,9 +42,32 @@ struct SidebarTreeView: View {
         viewModel.filterQuery
     }
 
+    /// The same verdict the outline applies, so the empty state and the rows can never disagree about
+    /// whether a schema survived the filter.
     private var visibleSchemas: [String] {
         guard !searchText.isEmpty else { return schemas }
-        return schemas.filter { schemaIsVisibleDuringSearch($0) }
+        let listingMatches = DatabaseTreeFilter.hierarchicalListingMatches(
+            in: treeMetadata,
+            schemaService: schemaService,
+            connectionId: connectionId,
+            searchText: searchText
+        )
+        return schemas.filter { schema in
+            DatabaseTreeFilter.hierarchicalSchemaSearchVerdict(
+                schema: schema,
+                database: activeDatabase,
+                searchText: searchText,
+                loadedContent: DatabaseTreeFilter.hierarchicalLoadedContent(
+                    in: schemaService,
+                    connectionId: connectionId,
+                    schema: schema,
+                    searchText: searchText,
+                    database: activeDatabase
+                ),
+                listingMatches: listingMatches,
+                listingCoversSchema: !systemSchemas.contains(schema)
+            ).isVisible
+        }
     }
 
     var body: some View {
@@ -55,9 +79,6 @@ struct SidebarTreeView: View {
             } else {
                 treeList
             }
-        }
-        .onChange(of: searchText) { newValue in
-            scheduleSearchLoad(searchText: newValue)
         }
     }
 
@@ -80,6 +101,7 @@ struct SidebarTreeView: View {
             selectedTables: windowState.selectedTables,
             showRecentTables: settingsManager.general.showRecentTables,
             showSystemContainers: settingsManager.general.showSystemContainers,
+            showsPartitions: settingsManager.general.showPartitions,
             rowSizePreference: settingsManager.general.sidebarRowSize
         )
     }
@@ -100,42 +122,5 @@ struct SidebarTreeView: View {
     private var noMatchState: some View {
         UnavailableStateView.search(text: searchText)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    /// The same rule the outline applies, so the empty state and the rows can never disagree about
-    /// whether a schema survived the filter.
-    private func schemaIsVisibleDuringSearch(_ schema: String) -> Bool {
-        DatabaseTreeFilter.hierarchicalSchemaIsVisible(
-            schema,
-            searchText: searchText,
-            isLoaded: schemaService.isSchemaSettled(for: connectionId, schema: schema),
-            tables: schemaService.tables(for: connectionId, schema: schema),
-            routines: schemaService.routines(for: connectionId, schema: schema),
-            triggers: schemaService.triggers(for: connectionId, schema: schema),
-            userTypes: schemaService.userDefinedTypes(for: connectionId, schema: schema)
-        )
-    }
-
-    private func loadObjects(for schema: String) {
-        let database = activeDatabase
-        Task {
-            await schemaService.loadSchemaObjects(connectionId: connectionId, schema: schema, database: database)
-        }
-    }
-
-    private func scheduleSearchLoad(searchText: String) {
-        searchLoadTask?.cancel()
-        guard !searchText.isEmpty else { return }
-        let schemasSnapshot = schemas
-        searchLoadTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 300_000_000)
-            guard !Task.isCancelled else { return }
-            for schema in schemasSnapshot {
-                if case .loaded = schemaService.schemaState(for: connectionId, schema: schema) {
-                    continue
-                }
-                loadObjects(for: schema)
-            }
-        }
     }
 }

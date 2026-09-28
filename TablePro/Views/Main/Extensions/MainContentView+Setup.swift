@@ -47,11 +47,11 @@ extension MainContentView {
         case .openContent:
             if let selectedTab = tabManager.selectedTab,
                 selectedTab.tabType == .table,
-                let tableName = selectedTab.tableContext.tableName
+                selectedTab.tableContext.tableName != nil
             {
                 coordinator.restoreLastHiddenColumnsForTable()
                 if selectedTab.filterState.appliedFilters.isEmpty {
-                    coordinator.restoreFiltersForTable(tableName)
+                    coordinator.restoreFiltersForSelectedTab()
                 } else if let tabIndex = tabManager.selectedTabIndex {
                     coordinator.rebuildTableQuery(at: tabIndex)
                 }
@@ -130,11 +130,18 @@ extension MainContentView {
 
         guard let selected = tabManager.selectedTab else { return }
 
-        if selected.tabType == .table, let tableName = selected.tableContext.tableName,
+        if selected.tabType == .table,
             !selected.content.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         {
             coordinator.restoreLastHiddenColumnsForTable()
-            coordinator.restoreFiltersForTable(tableName)
+        }
+
+        /// Every table tab, not just the selected one. A tab whose filters were never loaded holds
+        /// an empty set, and the next tab switch saves that over the filters the reader left on the
+        /// table, because an empty set is what the storage reads as a delete. The hidden columns
+        /// above go first, so the query this rebuilds for the selected tab selects the right ones.
+        for index in tabManager.tabs.indices where tabManager.tabs[index].tabType == .table {
+            coordinator.restoreFilters(forTabAt: index)
         }
 
         restoreConnectionContext(
@@ -172,7 +179,7 @@ extension MainContentView {
                     )
                 } catch {
                     MainContentView.lifecycleLogger.error(
-                        "[open] buildBaseTableQuery failed for restored tab table=\(tableName, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                        "[open] buildBaseTableQuery failed for restored tab table=\(tableName, privacy: .private(mask: .hash)): \(error.publicLogShape, privacy: .public)"
                     )
                 }
             }
@@ -194,27 +201,39 @@ extension MainContentView {
 
     // MARK: - Command Actions Setup
 
+    /// One resolution of what is staged, so the commit control, its verb and Preview SQL's gate
+    /// cannot disagree. The arm this replaces never read `hasPrincipalChanges`, so a Users & Roles
+    /// tab with staged principals left both the toolbar's commit button and Cmd+S dim over work
+    /// `saveChanges()` already knew how to apply.
     func updateToolbarPendingState() {
-        if tabManager.selectedTab?.tabType == .createTable {
-            toolbarState.hasDataPendingChanges = false
-            toolbarState.hasPendingChanges = toolbarState.hasCreateTablePending
-            return
-        }
-        let hasDataChanges =
-            changeManager.hasChanges
-            || !pendingTruncates.isEmpty
-            || !pendingDeletes.isEmpty
-            || toolbarState.hasStructureChanges
-        let hasFileChanges = tabManager.selectedTab?.content.isFileDirty ?? false
-        toolbarState.hasDataPendingChanges = hasDataChanges
-        toolbarState.hasPendingChanges = hasDataChanges || hasFileChanges
+        let kind = PendingChangeKind.resolve(
+            tabType: tabManager.selectedTab?.tabType,
+            hasDataChanges: changeManager.hasChanges || !pendingTruncates.isEmpty || !pendingDeletes.isEmpty,
+            hasStructureChanges: toolbarState.hasStructureChanges,
+            hasCreateTablePending: toolbarState.hasCreateTablePending,
+            hasPrincipalChanges: toolbarState.hasPrincipalChanges,
+            isFileDirty: tabManager.selectedTab?.content.isFileDirty ?? false
+        )
+        toolbarState.pendingChange = kind
+        toolbarState.hasPendingChanges = kind != nil
+        /// Preview SQL asks a narrower question than the commit control: a dirty query file and
+        /// staged principals both raise the commit and neither has grid SQL to show.
+        toolbarState.hasDataPendingChanges = kind == .data || kind == .structure
     }
 
     /// Update window title, proxy icon, and dirty dot based on the selected tab.
+    ///
+    /// This tree is the browse content, so it names the window as the browse content: `.content`
+    /// and `.browse` are what it is, not guesses. Whether it is the tree on screen is the window's
+    /// question, and its bindings drop a name or a file written from behind an agent conversation.
+    /// The edited dot is still written directly, because the unsaved work it reports is still in
+    /// the window while the conversation is drawn over it.
     func updateWindowTitleAndFileState() {
         let selectedTab = tabManager.selectedTab
         let resolved = WindowTitleResolver.resolveWindow(
             pane: .content,
+            contentMode: .browse,
+            agentSessionTitle: nil,
             connection: connection,
             tab: selectedTab,
             hasTabs: !tabManager.tabs.isEmpty,
@@ -222,11 +241,11 @@ extension MainContentView {
         )
         windowTitle = resolved.title
         windowSubtitle = resolved.subtitle
+        windowRepresentedURL = resolved.representedURL
         coordinator.splitViewController?.updateDetailMinimumThickness(
             for: selectedTab?.tabType,
             connectionId: connection.id
         )
-        viewWindow?.representedURL = selectedTab?.content.sourceFileURL
         viewWindow?.isDocumentEdited = selectedTab.map(coordinator.showsUnsavedIndicator) ?? false
     }
 
@@ -251,7 +270,7 @@ extension MainContentView {
         coordinator.isKeyWindow = window.isKeyWindow
 
         // Native proxy icon (Cmd+click shows path in Finder) and dirty dot
-        window.representedURL = tabManager.selectedTab?.content.sourceFileURL
+        windowRepresentedURL = tabManager.selectedTab?.content.sourceFileURL
         window.isDocumentEdited = tabManager.selectedTab.map(coordinator.showsUnsavedIndicator) ?? false
 
         commandActions?.window = window
@@ -260,7 +279,6 @@ extension MainContentView {
             splitVC.pointToolbar(at: coordinator)
         }
 
-        ScreenshotEnvironment.pinWindowSize(window)
         MainContentView.lifecycleLogger.info(
             "[open] configureWindow done windowId=\(windowId, privacy: .public) isPreview=\(isPreview) elapsedMs=\(Int(Date().timeIntervalSince(start) * 1_000))"
         )

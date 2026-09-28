@@ -1,6 +1,6 @@
 ---
 title: General Settings
-description: Language, startup behavior, sidebar layout, query timeout, the command line tool, updates, and reset
+description: Language, startup behavior, tabs, sidebar layout, connections, query timeout, the command line tool, updates, and reset
 ---
 
 Most of this tab takes effect the moment you click. Language waits for a restart, and the query timeout reaches a connection only when that connection opens.
@@ -27,17 +27,26 @@ System (the default), English, Tiếng Việt, 简体中文, 繁體中文, 한�
 | **Show recent tables** | Off | A [Recent section](/features/favorites#recent-tables) at the top of the sidebar |
 | **Show object icons** | On | A type icon before each object name. Off gives a plain list of names |
 | **Show object comments** | On | Database object comments beside tables in the sidebar and in grid column headers |
+| **Show partitions** | On | A partitioned table's partitions listed under it, and how many it holds beside its name |
 | **Show system databases and schemas** | Off | `mysql`, `information_schema`, `master` and the other system databases and schemas in the sidebar tree and its database filter. The database switcher lists them either way |
 | **Row size** | Match System | Match System follows **Sidebar icon size** in **System Settings > Appearance**. Small, Medium, or Large overrides it to fit more objects on screen |
 | **Default layout for new connections** | List | List or Tree, on servers with a database tree. Switch the connection you are in from the **View** menu |
 
-Icons, comments, and row size are also under **View Options**, the button beside the sidebar's filter field. Right-clicking the empty space below the object list reaches the same options.
+Icons, comments, system databases and schemas, partitions, and row size are also under **View Options**, the button beside the sidebar's filter field. Right-clicking the empty space below the object list reaches the same options.
+
+## Connections
+
+**Show recent connections** is on out of the box and puts a [Recent section](/connections#organize-connections) in the welcome window and **Switch Connection**. Turning it off hides the section and keeps the history. **Clear Recent**, on the **Recent connection history** row, forgets it, which also starts sorting by **Last Connected** over. The switch and the history both stay on this Mac.
+
+**Check connections** sets how often each open connection is checked for a dropped session. The choices, and what a failed check starts, are under [Connection health](/connections/connection-form#connection-health).
 
 ## Query timeout
 
 How many seconds a query runs before it is cancelled. The default is 60; the picker offers 10 to 600 seconds and **No limit**. The value is read when a connection opens, so a change reaches an open connection only after you reconnect.
 
 Where the engine can enforce it, the timeout becomes a server-side setting: `statement_timeout` on PostgreSQL, `max_execution_time` on MySQL and ClickHouse, `max_statement_time` on MariaDB, `ob_query_timeout` on OceanBase. On SQLite it bounds how long a statement waits for a locked database instead. Drivers that talk HTTP (BigQuery, Spanner, Cloudflare D1, LibSQL, Etcd, DynamoDB, Elasticsearch, Typesense, and ClickHouse) bound the request at the timeout plus 30 seconds, and Oracle enforces it in the client: the connection is closed to unblock the call, and the next query reconnects and restores your current schema.
+
+Older servers have neither: MySQL before 5.7.8, MariaDB before 10.1.1. A statement that passes the timeout there is stopped with `KILL QUERY` from a second connection, which reaches a `SELECT` on MySQL and any statement at all on MariaDB. A server behind a proxy that reports a version it does not have still gets the right one of the two.
 
 **No limit** still caps an HTTP request at one hour, because the transport needs a ceiling.
 

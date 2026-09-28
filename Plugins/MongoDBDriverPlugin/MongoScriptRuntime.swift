@@ -1,12 +1,22 @@
 import Foundation
 import JavaScriptCore
-import TableProPluginKit
 import os
+import TableProPluginKit
+
+/// The find a statement's documents came from. A find with no projection returns whole
+/// documents, so its columns can include what the collection declares; a projection or a pipeline
+/// chose its own shape.
+struct MongoScriptFindShape: Equatable, Sendable {
+    let database: String
+    let returnsWholeDocuments: Bool
+    let skip: Int
+}
 
 /// What one statement of a script evaluated to.
 struct MongoScriptStatementResult: Sendable {
     var documents = MongoScriptDocumentBatch.empty
     var collection: String?
+    var find: MongoScriptFindShape?
     var scalarRows: [String]?
     var printedLines: [String] = []
     var databaseSwitch: String?
@@ -70,7 +80,15 @@ final class MongoScriptRuntime: @unchecked Sendable {
             // Captured strongly: a gate that is never finished leaves the caller waiting, and the
             // work is one statement long.
             engine.queue.async {
-                gate.finish(with: Result { try self.run(statement, on: engine) })
+                gate.finish(with: Result {
+                    do {
+                        return try self.run(statement, on: engine)
+                    } catch {
+                        throw MongoScriptStatementFailure.carrying(
+                            error, databaseSwitch: engine.host.databaseSwitch, writes: engine.host.writes
+                        )
+                    }
+                })
             }
             watchForSilence(engine: engine, gate: gate)
         }
@@ -84,16 +102,18 @@ final class MongoScriptRuntime: @unchecked Sendable {
     /// script through the public JavaScriptCore API, so its queue is abandoned and the next
     /// statement gets a new one.
     private func watchForSilence(engine: Engine, gate: MongoScriptResumeGate) {
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + Self.silenceCheckInterval) {
-            [weak self] in
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + Self.silenceCheckInterval) { [weak self] in
             guard let self, !gate.isFinished else { return }
             guard Date().timeIntervalSince(engine.host.lastActivity) >= Self.silenceLimit else {
                 watchForSilence(engine: engine, gate: gate)
                 return
             }
-            guard gate.finish(with: .failure(MongoDBError(
-                code: 0, message: MongoScriptText.timedOut(Self.silenceLimit)
-            ))) else { return }
+            let abandoned = MongoScriptStatementFailure.carrying(
+                MongoDBError(code: 0, message: MongoScriptText.timedOut(Self.silenceLimit)),
+                databaseSwitch: nil,
+                writes: engine.host.writes
+            )
+            guard gate.finish(with: .failure(abandoned)) else { return }
             poison(engine)
         }
     }
@@ -130,7 +150,15 @@ final class MongoScriptRuntime: @unchecked Sendable {
         connection.beginScriptRun()
         return try await withCheckedThrowingContinuation { continuation in
             engine.queue.async {
-                continuation.resume(with: Result { try self.runForExport(statement, on: engine) })
+                continuation.resume(with: Result {
+                    do {
+                        return try self.runForExport(statement, on: engine)
+                    } catch {
+                        throw MongoScriptStatementFailure.carrying(
+                            error, databaseSwitch: engine.host.databaseSwitch, writes: engine.host.writes
+                        )
+                    }
+                })
             }
         }
     }
@@ -147,10 +175,10 @@ final class MongoScriptRuntime: @unchecked Sendable {
         }
         if engine.host.isCancelled { throw CancellationError() }
 
-        if let value,
+        if let value, value.isObject,
            let handle = value.objectForKeyedSubscript("__handle"), handle.isNumber,
            let plan = engine.host.cursorPlan(handle: Int(handle.toInt32())) {
-            return .cursor(plan)
+            return .cursor(plan, databaseSwitch: engine.host.databaseSwitch, writes: engine.host.writes)
         }
 
         var result = MongoScriptStatementResult()
@@ -215,28 +243,16 @@ final class MongoScriptRuntime: @unchecked Sendable {
     }
 
     private func makeEngine(database: String, valueCeiling: Int, generation: Int) throws -> Engine {
-        guard let context = JSContext(virtualMachine: JSVirtualMachine()) else {
-            throw MongoDBError(code: 0, message: MongoScriptText.scriptEngineUnavailable)
-        }
         let host = MongoScriptHost(
             connection: connection, database: database, valueCeiling: valueCeiling
         )
         let queue = DispatchQueue(
             label: "com.TablePro.mongodb.script.\(generation)", qos: .userInitiated
         )
-
-        let execute: @convention(block) (String) -> String = { request in host.handle(request) }
-        let emit: @convention(block) (String) -> Bool = { line in host.record(printed: line) }
-        context.setObject(execute, forKeyedSubscript: "__tp_exec" as NSString)
-        context.setObject(emit, forKeyedSubscript: "__tp_print" as NSString)
-        context.exceptionHandler = { _, exception in
-            Self.logger.debug("Script exception: \(exception?.toString() ?? "unknown", privacy: .public)")
-        }
-
-        context.evaluateScript(MongoScriptPrelude.source)
-        if let failure = context.exception {
-            throw MongoDBError(code: 0, message: failure.toString() ?? MongoScriptText.scriptEngineUnavailable)
-        }
+        let context = try MongoScriptContext.make(
+            execute: { request in host.handle(request) },
+            emit: { line in host.record(printed: line) }
+        )
         return Engine(queue: queue, context: context, host: host)
     }
 
@@ -282,24 +298,26 @@ final class MongoScriptRuntime: @unchecked Sendable {
         on engine: Engine,
         into result: inout MongoScriptStatementResult
     ) throws {
-        guard let classifier = engine.context.objectForKeyedSubscript("__tp_classify"),
-              let described = classifier.call(withArguments: [value])?.toString(),
+        guard let classifier = engine.context.objectForKeyedSubscript("__tp_classify") else { return }
+        let classification = classifier.call(withArguments: [value])
+        if let failure = engine.context.exception {
+            engine.context.exception = nil
+            throw scriptError(failure, host: engine.host)
+        }
+        guard let described = classification?.toString(),
               let data = described.data(using: .utf8),
               let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let kind = payload["kind"] as? String else {
             return
         }
 
-        if let failure = engine.context.exception {
-            engine.context.exception = nil
-            throw scriptError(failure, host: engine.host)
-        }
-
         switch kind {
         case "cursor":
             guard let handle = payload["handle"] as? Int else { return }
             result.documents = try engine.host.drain(handle: handle)
-            result.collection = engine.host.cursorDescription(handle: handle)?.collection
+            let description = engine.host.cursorDescription(handle: handle)
+            result.collection = description?.collection
+            result.find = description?.find
             result.producedDocuments = true
         case "array":
             guard let json = payload["json"] as? String else { return }
@@ -329,6 +347,7 @@ final class MongoScriptRuntime: @unchecked Sendable {
     /// The shell answers a write with the object mongosh answers with, so the count the result bar
     /// reports has to be read back out of it rather than counted from the grid's one row.
     private static func rowsAffected(in json: String) -> Int {
+        guard MongoScriptJson.member(of: json, key: "acknowledged") != "false" else { return 0 }
         // Summed, not first-wins: a `bulkWrite` that mixes an insert with a delete carries two
         // positive counters and affected both rows.
         let total = ["modifiedCount", "deletedCount", "insertedCount", "upsertedCount"]
@@ -343,6 +362,7 @@ final class MongoScriptRuntime: @unchecked Sendable {
         if exception.objectForKeyedSubscript("isMongoError")?.toBool() == true {
             let message = exception.objectForKeyedSubscript("message")?.toString() ?? ""
             if message == MongoScriptText.cancelled { return CancellationError() }
+            if let failedWrite = MongoScriptContext.writeFailure(in: exception) { return failedWrite }
             let code = UInt32(max(0, exception.objectForKeyedSubscript("code")?.toInt32() ?? 0))
             return MongoDBError(code: code, message: message)
         }

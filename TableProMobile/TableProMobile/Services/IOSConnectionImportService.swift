@@ -44,6 +44,10 @@ enum IOSConnectionImportService {
         resolutions: [UUID: ImportResolution],
         appState: AppState
     ) -> ImportResult {
+        guard appState.isLibraryWritable else {
+            logger.error("Import refused: the stored library is not loaded")
+            return ImportResult(importedCount: 0, connectionIdMap: [:], newConnectionIdMap: [:])
+        }
         createMissingGroupsAndTags(from: preview.envelope, appState: appState)
 
         let tagIdsByName = lookup(appState.tags.map { ($0.name, $0.id) })
@@ -78,7 +82,7 @@ enum IOSConnectionImportService {
                     tagIdsByName: tagIdsByName, groupIdsByName: groupIdsByName
                 )
                 sortOrder += 1
-                appState.addConnection(connection)
+                guard appState.addConnection(connection) else { continue }
                 connectionIdMap[index] = id
                 newConnectionIdMap[index] = id
                 importedCount += 1
@@ -89,7 +93,10 @@ enum IOSConnectionImportService {
                     id: existingId, from: item.connection, name: item.connection.name, sortOrder: existingSortOrder,
                     tagIdsByName: tagIdsByName, groupIdsByName: groupIdsByName
                 )
-                appState.updateConnection(connection)
+                guard appState.mutateConnection(existingId, { $0 = connection }).isSaved else {
+                    logger.error("Import could not replace a connection that is no longer in the library")
+                    continue
+                }
                 connectionIdMap[index] = existingId
                 importedCount += 1
             }
@@ -111,16 +118,27 @@ enum IOSConnectionImportService {
         guard let credentials = envelope.credentials else { return }
         for (indexString, creds) in credentials {
             guard let index = Int(indexString), let id = connectionIdMap[index] else { continue }
-            let suffix = id.uuidString
-            if let password = creds.password {
-                try? secureStore.store(password, forKey: "com.TablePro.password.\(suffix)")
+            let secrets: [(ConnectionSecretKind, String?)] = [
+                (.password, creds.password),
+                (.sshPassword, creds.sshPassword),
+                (.keyPassphrase, creds.keyPassphrase)
+            ]
+            for case let (kind, value?) in secrets {
+                storeSecret(value, as: kind, of: id, in: secureStore)
             }
-            if let sshPassword = creds.sshPassword {
-                try? secureStore.store(sshPassword, forKey: "com.TablePro.sshpassword.\(suffix)")
-            }
-            if let keyPassphrase = creds.keyPassphrase {
-                try? secureStore.store(keyPassphrase, forKey: "com.TablePro.keypassphrase.\(suffix)")
-            }
+        }
+    }
+
+    private static func storeSecret(
+        _ value: String,
+        as kind: ConnectionSecretKind,
+        of connectionId: UUID,
+        in secureStore: any SecureStore
+    ) {
+        do {
+            try secureStore.store(value, forKey: kind.account(for: connectionId))
+        } catch {
+            logger.error("Restoring an imported secret failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -142,13 +160,19 @@ enum IOSConnectionImportService {
             sshEnabled = true
             sshConfiguration = SSHConfiguration(
                 host: ssh.host,
-                port: ssh.port ?? 22,
+                port: ssh.port,
                 username: ssh.username,
                 authMethod: sshAuthMethod(from: ssh.authMethod),
                 privateKeyPath: PathPortability.expandHome(ssh.privateKeyPath).isEmpty
                     ? nil : PathPortability.expandHome(ssh.privateKeyPath),
                 jumpHosts: (ssh.jumpHosts ?? []).map {
-                    SSHJumpHost(host: $0.host, port: $0.port ?? 22, username: $0.username)
+                    SSHJumpHost(
+                        host: $0.host,
+                        port: $0.port,
+                        username: $0.username,
+                        macAuthMethod: SSHJumpAuthMethod(carrying: $0.authMethod),
+                        macPrivateKeyPath: $0.privateKeyPath
+                    )
                 }
             )
         }

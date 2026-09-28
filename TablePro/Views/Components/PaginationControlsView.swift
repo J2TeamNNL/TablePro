@@ -6,6 +6,7 @@
 import SwiftUI
 
 struct PaginationControlsView: View {
+    @ObservedObject private var settingsManager = AppSettingsManager.shared
     let pagination: PaginationState
     let loadedRowCount: Int
     /// Identity of the tab these controls describe. Not used for display: a change to it is what
@@ -85,13 +86,13 @@ struct PaginationControlsView: View {
         } label: {
             Text(pagination.pageSize.formatted())
                 .monospacedDigit()
+                .accessibilityLabel(String(localized: "Rows per page"))
         }
         .menuStyle(.button)
         .fixedSize()
         .controlSize(.small)
         .disabled(pagination.isLoading)
         .help(String(localized: "Rows per page"))
-        .accessibilityLabel(String(localized: "Rows per page"))
         .accessibilityValue(pagination.pageSize.formatted())
         .accessibilityIdentifier("pagination-page-size")
         .popover(isPresented: $showCustomPopover, arrowEdge: .top) {
@@ -188,7 +189,7 @@ struct PaginationControlsView: View {
     }
 
     private func helpText(_ label: String, for shortcut: ShortcutAction) -> String {
-        AppSettingsManager.shared.keyboard.shortcutHint(label, for: shortcut)
+        settingsManager.keyboard.shortcutHint(label, for: shortcut)
     }
 
     /// A button straight to the jump popover while rows-per-page has its own control, and a menu
@@ -227,7 +228,8 @@ struct PaginationControlsView: View {
             } label: {
                 pageIndicatorLabel
             }
-            .menuStyle(.borderlessButton)
+            .menuStyle(.button)
+            .buttonStyle(.borderless)
             .disabled(pagination.isLoading)
             .help(String(localized: "Go to page"))
             .pageIndicatorAccessibility(value: pageIndicatorAccessibilityValue)

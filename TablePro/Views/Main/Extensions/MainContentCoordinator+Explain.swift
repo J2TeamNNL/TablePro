@@ -10,6 +10,7 @@
 import Foundation
 import TableProEditorKit
 import TableProPluginKit
+import TableProSQLGrammar
 
 extension MainContentCoordinator {
     func runExplain(variant: ExplainVariant? = nil) {
@@ -20,7 +21,12 @@ extension MainContentCoordinator {
         }
         guard let statement = explainStatement(in: tab) else { return }
         let anchor = tab.tabType == .table ? nil : StatementAnchor(statement)
-        guard let request = explainRequest(variant: variant, statement: statement.sql) else {
+        guard let request = ExplainRequest.make(
+            variant: variant,
+            declaredVariants: connection.type.explainVariants,
+            databaseType: connection.type,
+            statement: statement.sql
+        ) else {
             tabManager.mutate(at: index) {
                 $0.execution.errorMessage = String(
                     localized: "EXPLAIN is not supported for this database type."
@@ -31,7 +37,7 @@ extension MainContentCoordinator {
 
         let level = safeModeLevel
         guard level.appliesToAllQueries, level.requiresConfirmation else {
-            run(request, anchor: anchor)
+            executeExplain(request, anchor: anchor)
             return
         }
 
@@ -48,7 +54,7 @@ extension MainContentCoordinator {
                 )
             )
             guard case .authorized = decision else { return }
-            run(request, anchor: anchor)
+            executeExplain(request, anchor: anchor)
         }
     }
 
@@ -66,61 +72,19 @@ extension MainContentCoordinator {
         if tab.tabType == .table {
             sql = fullQuery
             sourceOffset = 0
-        } else if let firstCursor = cursorPositions.first, firstCursor.range.length > 0 {
-            let nsQuery = fullQuery as NSString
-            let clampedRange = NSIntersectionRange(
-                firstCursor.range,
-                NSRange(location: 0, length: nsQuery.length)
-            )
-            sql = nsQuery.substring(with: clampedRange)
-            sourceOffset = clampedRange.location
         } else {
-            let statement = QueryStatementScanner.locatedStatementAtCursor(
-                in: fullQuery,
-                cursorPosition: cursorPositions.first?.range.location ?? 0,
-                model: statementModel,
-                dialect: sqlDialect
-            )
-            sql = statement.sql
-            sourceOffset = statement.offset
+            let target = selectionOrStatementAtCursor(in: fullQuery)
+            sql = target.sql
+            sourceOffset = target.offset
         }
 
         return QueryStatementScanner
-            .executableStatements(in: sql, model: statementModel, dialect: sqlDialect)
+            .executableStatements(in: sql, model: statementModel, grammar: lexicalGrammar)
             .first?
             .offset(by: sourceOffset)
     }
 
-    private func explainRequest(variant: ExplainVariant?, statement: String) -> ExplainRequest? {
-        if let request = ExplainRequest.make(
-            variant: variant,
-            declaredVariants: connection.type.explainVariants,
-            databaseType: connection.type,
-            statement: statement
-        ) {
-            return request
-        }
-
-        guard let adapter = services.databaseManager.driver(for: connectionId) as? PluginDriverAdapter,
-              let fallbackSQL = adapter.buildExplainQuery(statement)
-        else { return nil }
-
-        return ExplainRequest.driverBuilt(
-            sql: fallbackSQL,
-            databaseType: connection.type,
-            subjectSQL: statement
-        )
-    }
-
     // MARK: - Execution
-
-    private func run(_ request: ExplainRequest, anchor: StatementAnchor?) {
-        guard !request.isDriverBuilt else {
-            executeQueryInternal(request.sql, anchor: anchor)
-            return
-        }
-        executeExplain(request, anchor: anchor)
-    }
 
     private func executeExplain(_ request: ExplainRequest, anchor: StatementAnchor?) {
         guard let (tab, index) = tabManager.selectedTabAndIndex else { return }
@@ -131,8 +95,7 @@ extension MainContentCoordinator {
             return
         }
 
-        supersedeExecution(for: tab.id)
-        let claim = tabExecution.claim(tab.id)
+        let (claim, lease) = beginTabExecution(for: tab.id)
         let tabId = tab.id
         let conn = connection
 
@@ -144,7 +107,7 @@ extension MainContentCoordinator {
                 let fetchResult = try await services.databaseManager.withScopedDriver(
                     scope: scope,
                     route: services.databaseManager.executionRoute(for: scope),
-                    cancellation: .cancellableRead
+                    cancellation: .cancellableRead(lease)
                 ) { [queryExecutor] driver in
                     try await queryExecutor.executeQuery(
                         driver: driver, sql: request.sql, parameters: nil, rowCap: nil
@@ -160,7 +123,7 @@ extension MainContentCoordinator {
                     // that cleared the spinner or nilled the task handle would be reporting on a
                     // query that is still running, so the gate comes before all of them.
                     guard tabExecution.settle(claim) else { return }
-                    retireQueryTask(for: claim)
+                    retireQueryTask(.claim(claim))
                     guard !Task.isCancelled else {
                         reportEndedExecutions([
                             EndedExecution(tabId: claim.tabId, startedAt: claim.startedAt, reason: .cancelledByUser)
@@ -238,7 +201,7 @@ extension MainContentCoordinator {
                 await MainActor.run { [weak self] in
                     guard let self else { return }
                     guard tabExecution.settle(claim) else { return }
-                    retireQueryTask(for: claim)
+                    retireQueryTask(.claim(claim))
 
                     // A cancelled EXPLAIN is not a failure the user needs told about, and it does
                     // not belong in history either.
@@ -285,6 +248,6 @@ extension MainContentCoordinator {
                 }
             }
         }
-        installQueryTask(explainTask, for: claim)
+        installQueryTask(explainTask, owner: .claim(claim), lease: lease)
     }
 }

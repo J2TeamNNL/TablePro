@@ -27,9 +27,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         /// Installed before any window exists, so the bar is correct from the first frame.
         /// Nothing else owns it now that the app no longer runs a SwiftUI `App`.
         MainMenuBuilder.install(keyboard: AppSettingsManager.shared.keyboard)
+        MainMenuBuilder.syncKeyEquivalentsOnKeyWindowChange()
         LaunchTracer.shared.mark(.menuInstalled)
 
-        _ = InspectorDocumentController()
+        _ = DataFileDocumentController()
         guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
         if #available(macOS 14.0, *) {
             FeatureTipsBootstrap.configure()
@@ -40,7 +41,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        Logger(subsystem: "com.TablePro", category: "CSVInspector")
+        Logger(subsystem: "com.TablePro", category: "DataFiles")
             .debug("AppDelegate.application(_:open:) urls=\(urls.map(\.lastPathComponent).joined(separator: ","), privacy: .public)")
         AppLaunchCoordinator.shared.handleOpenURLs(urls)
     }
@@ -82,6 +83,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         WindowOpener.shared.setSettingsPresenter { SettingsWindowController.present(pane: $0) }
         WindowOpener.shared.setCompareSyncPresenter { CompareSyncWindowController.present(prefillSource: $0) }
         KeyRepeatFilter.shared.install()
+        RecentTabSwitcherController.installEditorKeyClaim()
         let syncSettings = AppSettingsStorage.shared.loadSync()
         let passwordSyncExpected = syncSettings.enabled && syncSettings.syncConnections && syncSettings.syncPasswords
         AppStorageEnvironment.shared.defaults.set(passwordSyncExpected, forKey: KeychainHelper.passwordSyncEnabledKey)
@@ -196,6 +198,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         persistOpenConnectionsForRecovery()
+        /// Synchronously, because an actor hop at terminate may never be scheduled: a session killed
+        /// mid-reply used to come back with its last turn missing.
+        AgentSessionRegistry.shared.persistSynchronouslyForTermination()
         LinkedFolderWatcher.shared.stop()
         SQLFolderWatcher.shared.stop()
         SSHTunnelManager.shared.terminateAllProcessesSync()
@@ -219,7 +224,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
 
-        let csvLogger = Logger(subsystem: "com.TablePro", category: "CSVInspector")
+        let csvLogger = Logger(subsystem: "com.TablePro", category: "DataFiles")
         let isPrimary = AppLaunchCoordinator.isMainWindow(window)
         if isPrimary {
             let remaining = NSApp.windows.filter {
@@ -276,7 +281,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         original.draw(in: rect)
                         return true
                     }
-                    item.image = resized
+                    item.setInformativeImage(resized)
                 }
                 submenu.addItem(item)
             }

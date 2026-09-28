@@ -15,36 +15,52 @@ import TableProSyncTransport
 @MainActor
 final class SyncCoordinator: ObservableObject {
     static let shared = SyncCoordinator()
-    nonisolated private static let logger = Logger(subsystem: "com.TablePro", category: "SyncCoordinator")
+    nonisolated static let logger = Logger(subsystem: "com.TablePro", category: "SyncCoordinator")
 
     @Published private(set) var syncStatus: SyncStatus = .disabled(.userDisabled)
     @Published private(set) var lastSyncDate: Date?
     @Published private(set) var iCloudAccountAvailable: Bool = false
 
-    private let services: AppServices
-    private let engine = CloudKitSyncEngine()
-    private let changeTracker: SyncChangeTracker
-    private let metadataStorage: SyncMetadataStorage
-    private let recordCache = SyncRecordCache(
-        directory: AppStorageEnvironment.shared.supportDirectory
-            .appendingPathComponent("SyncRecordCache", isDirectory: true),
-        defaults: AppStorageEnvironment.shared.defaults
-    )
+    let services: AppServices
+    private let transport: any SyncTransport
+    let changeTracker: SyncChangeTracker
+    let metadataStorage: SyncMetadataStorage
+    let recordCache: SyncRecordCache
+    let columnLayouts: () -> FileColumnLayoutPersister
     private let accountObserver = OSAllocatedUnfairLock<(any NSObjectProtocol)?>(uncheckedState: nil)
     private var changeCancellable: AnyCancellable?
     private var licenseCancellable: AnyCancellable?
     private var syncTask: Task<Void, Never>?
     private var hasStarted = false
+    private var isRunningCycle = false
+    private var hasDeferredNotificationPull = false
+    private var notificationPull: Task<Void, Never>?
 
     /// Bumped every time something other than a sync run decides the status, so a run that has been
     /// suspended across the network can tell whether its outcome is still the current answer.
     private var statusGeneration = 0
 
-    init(services: AppServices = .live) {
+    init(
+        services: AppServices = .live,
+        recordCache: SyncRecordCache = SyncCoordinator.makeRecordCache(),
+        transport: any SyncTransport = CloudKitSyncEngine(),
+        columnLayouts: @escaping @autoclosure () -> FileColumnLayoutPersister = .shared
+    ) {
         self.services = services
+        self.transport = transport
         self.changeTracker = services.syncTracker
         self.metadataStorage = services.syncMetadataStorage
+        self.recordCache = recordCache
+        self.columnLayouts = columnLayouts
         lastSyncDate = metadataStorage.lastSyncDate
+    }
+
+    nonisolated static func makeRecordCache() -> SyncRecordCache {
+        SyncRecordCache(
+            directory: AppStorageEnvironment.shared.supportDirectory
+                .appendingPathComponent("SyncRecordCache", isDirectory: true),
+            defaults: AppStorageEnvironment.shared.defaults
+        )
     }
 
     deinit {
@@ -103,35 +119,50 @@ final class SyncCoordinator: ObservableObject {
         let generation = statusGeneration
         syncStatus = .syncing
 
-        do {
-            try await engine.ensureZoneExists()
-
-            var pushError: Error?
-            do {
-                try await performPush()
-            } catch {
-                pushError = error
-                Self.logger.error("Push failed: \(error.localizedDescription)")
-            }
-
-            await performPull()
-
-            if let pushError {
-                settle(.error(SyncError.from(pushError)), from: generation)
-                return
-            }
-
-            lastSyncDate = Date()
-            metadataStorage.lastSyncDate = lastSyncDate
-            settle(.idle, from: generation)
-            metadataStorage.pruneTombstones(olderThan: 30)
-
-            Self.logger.info("Sync completed successfully")
-        } catch {
-            let syncError = SyncError.from(error)
+        if let syncError = await runSyncCycle() {
             settle(.error(syncError), from: generation)
-            Self.logger.error("Sync failed: \(error.localizedDescription)")
+            return
         }
+
+        lastSyncDate = Date()
+        metadataStorage.lastSyncDate = lastSyncDate
+        settle(.idle, from: generation)
+        metadataStorage.pruneTombstones(olderThan: 30)
+
+        Self.logger.info("Sync completed successfully")
+    }
+
+    internal func runSyncCycle() async -> SyncError? {
+        isRunningCycle = true
+        await notificationPull?.value
+        let failure = await pushThenPull()
+        isRunningCycle = false
+        if hasDeferredNotificationPull {
+            hasDeferredNotificationPull = false
+            await pullForRemoteNotification()
+        }
+        return failure
+    }
+
+    private func pushThenPull() async -> SyncError? {
+        do {
+            try await transport.ensureZoneExists()
+        } catch {
+            Self.logger.error("Sync failed: \(error.localizedDescription)")
+            return SyncError.from(error)
+        }
+
+        let push = await performPush()
+        let pullError = await performPull(echoGuard: push.echoGuard)
+        while hasDeferredNotificationPull {
+            hasDeferredNotificationPull = false
+            await performPull(echoGuard: push.echoGuard)
+        }
+
+        if let pushError = push.error {
+            return SyncError.from(pushError)
+        }
+        return pullError
     }
 
     /// Publishes the outcome of a sync run, unless something decided the status while it was in
@@ -154,7 +185,24 @@ final class SyncCoordinator: ObservableObject {
         guard syncStatus.isEnabled else { return }
 
         Task {
+            await pullForRemoteNotification()
+        }
+    }
+
+    internal func pullForRemoteNotification() async {
+        guard !isRunningCycle else {
+            hasDeferredNotificationPull = true
+            return
+        }
+        let previous = notificationPull
+        let pull = Task {
+            await previous?.value
             await performPull()
+        }
+        notificationPull = pull
+        await pull.value
+        if notificationPull == pull {
+            notificationPull = nil
         }
     }
 
@@ -229,7 +277,7 @@ final class SyncCoordinator: ObservableObject {
         )
 
         let settingsCategories = AppSettingsCategory.synced + [CustomSlashCommandStorage.syncCategory]
-        let columnLayoutCategories = FileColumnLayoutPersister.shared.customizedStorageKeys()
+        let columnLayoutCategories = columnLayouts().customizedStorageKeys()
             .map { FileColumnLayoutPersister.syncCategory(for: $0) }
         changeTracker.markDirty(.settings, ids: settingsCategories + columnLayoutCategories)
 
@@ -327,90 +375,37 @@ final class SyncCoordinator: ObservableObject {
 
     // MARK: - Push
 
-    private func performPush() async throws {
+    private struct PushReport {
+        var echoGuard: SyncEchoGuard?
+        var error: Error?
+    }
+
+    private func performPush() async -> PushReport {
+        let snapshot = changeTracker.editSnapshot()
         let settings = services.appSettingsStorage.loadSync()
-        var recordsToSave: [CKRecord] = []
-        var recordIDsToDelete: [CKRecord.ID] = []
-        let zoneID = await engine.currentZoneID
+        let zoneID = await transport.currentZoneID
+        let batch = await collectPushBatch(snapshot: snapshot, settings: settings, zoneID: zoneID)
+        let deletions = batch.uniqueDeletions
 
-        if settings.syncConnections {
-            let dirtyConnectionIds = changeTracker.dirtyRecords(for: .connection)
-            if !dirtyConnectionIds.isEmpty {
-                let connections = services.connectionStorage.loadConnections()
-                for id in dirtyConnectionIds {
-                    if let connection = connections.first(where: { $0.id.uuidString == id }),
-                       !connection.localOnly {
-                        let recordID = SyncRecordMapper.recordID(type: .connection, id: id, in: zoneID)
-                        recordsToSave.append(
-                            SyncRecordMapper.toCKRecord(
-                                connection,
-                                in: zoneID,
-                                base: recordCache.record(for: recordID)
-                            )
-                        )
-                    }
-                }
-            }
+        guard !batch.records.isEmpty || !deletions.isEmpty else { return PushReport() }
 
-            let connectionTombstones = metadataStorage.tombstones(for: .connection)
-            for tombstone in connectionTombstones {
-                recordIDsToDelete.append(
-                    SyncRecordMapper.recordID(type: .connection, id: tombstone.id, in: zoneID)
-                )
-            }
+        let identities = SyncRecordMapper.identities(for: pushedLocalIds(snapshot), in: zoneID)
+        let outcome: PushOutcome
+        var interruption: Error?
+        do {
+            outcome = try await transport.push(records: batch.records, deletions: deletions)
+        } catch let interrupted as SyncPushInterruption {
+            outcome = interrupted.completed
+            interruption = interrupted.cause
+        } catch {
+            Self.logger.error("Push failed: \(error.localizedDescription)")
+            return PushReport(error: error)
         }
-
-        if settings.syncGroupsAndTags {
-            collectDirtyGroups(into: &recordsToSave, deletions: &recordIDsToDelete, zoneID: zoneID)
-            collectDirtyTags(into: &recordsToSave, deletions: &recordIDsToDelete, zoneID: zoneID)
-        }
-
-        if settings.syncSSHProfiles {
-            collectDirtySSHProfiles(into: &recordsToSave, deletions: &recordIDsToDelete, zoneID: zoneID)
-        }
-
-        if settings.syncCredentialProfiles {
-            collectDirtyCredentialProfiles(into: &recordsToSave, deletions: &recordIDsToDelete, zoneID: zoneID)
-        }
-
-        if settings.syncSettings {
-            let dirtySettingsIds = changeTracker.dirtyRecords(for: .settings)
-            for category in dirtySettingsIds {
-                if let data = settingsData(for: category) {
-                    recordsToSave.append(
-                        SyncRecordMapper.toCKRecord(category: category, settingsData: data, in: zoneID)
-                    )
-                }
-            }
-        }
-
-        if settings.syncTableFavorites {
-            collectDirtyTableFavorites(into: &recordsToSave, deletions: &recordIDsToDelete, zoneID: zoneID)
-        }
-
-        if settings.syncDatabaseFavorites {
-            collectDirtyDatabaseFavorites(into: &recordsToSave, deletions: &recordIDsToDelete, zoneID: zoneID)
-        }
-
-        if settings.syncSQLFavorites {
-            await collectDirtySQLFavorites(into: &recordsToSave, deletions: &recordIDsToDelete, zoneID: zoneID)
-        }
-
-        // Deduplicate deletion IDs to prevent CloudKit "can't delete same record twice" error
-        let uniqueDeletions = Array(Set(recordIDsToDelete))
-
-        guard !recordsToSave.isEmpty || !uniqueDeletions.isEmpty else { return }
-
-        let identities = SyncRecordMapper.identities(for: pushedLocalIds(), in: zoneID)
-        let outcome = try await engine.push(records: recordsToSave, deletions: uniqueDeletions)
 
         recordCache.store(Array(outcome.savedRecords.values))
         recordCache.remove(Array(outcome.deletedRecordIDs))
 
-        for recordID in outcome.savedRecords.keys {
-            guard let identity = identities[recordID] else { continue }
-            changeTracker.clearDirty(identity.type, id: identity.id)
-        }
+        let savedRecords = settleSavedRecords(outcome, batch: batch, identities: identities, snapshot: snapshot)
 
         for recordID in outcome.deletedRecordIDs {
             guard let identity = identities[recordID] else { continue }
@@ -422,19 +417,38 @@ final class SyncCoordinator: ObservableObject {
         let rejectedCount = outcome.failures.count
         Self.logger.info("Push completed: \(savedCount) saved, \(deletedCount) deleted, \(rejectedCount) rejected")
 
-        guard outcome.hasFailures else { return }
-
-        guard let firstFailure = outcome.failures.values.first else { return }
-        throw SyncError.pushRejected(count: outcome.failures.count, detail: firstFailure.message)
+        let echoGuard = SyncEchoGuard(snapshot: snapshot, savedRecords: savedRecords)
+        if let interruption {
+            Self.logger.error("Push stopped part way: \(interruption.localizedDescription)")
+            return PushReport(echoGuard: echoGuard, error: interruption)
+        }
+        guard outcome.hasFailures, let firstFailure = outcome.failures.values.first else {
+            return PushReport(echoGuard: echoGuard)
+        }
+        let rejection = SyncError.pushRejected(count: outcome.failures.count, detail: firstFailure.message)
+        Self.logger.error("Push failed: \(rejection.localizedDescription)")
+        return PushReport(echoGuard: echoGuard, error: rejection)
     }
 
-    /// Every local identifier this push can have sent. `SyncChangeTracker` is not isolated to this
-    /// actor, so the sets can move under an await; a record whose identifier is missing from the
-    /// snapshot is left dirty and pushed again rather than cleared against the wrong entry.
-    private func pushedLocalIds() -> [SyncRecordType: Set<String>] {
+    private func settleSavedRecords(
+        _ outcome: PushOutcome,
+        batch: SyncPushBatch,
+        identities: [CKRecord.ID: SyncRecordIdentity],
+        snapshot: SyncEditSnapshot
+    ) -> [CKRecord.ID: SyncRecordIdentity] {
+        var savedRecords: [CKRecord.ID: SyncRecordIdentity] = [:]
+        for recordID in outcome.savedRecords.keys {
+            guard let identity = identities[recordID] else { continue }
+            savedRecords[recordID] = identity
+            changeTracker.clearDirty(identity, unlessEditedSince: snapshot)
+        }
+        return savedRecords
+    }
+
+    private func pushedLocalIds(_ snapshot: SyncEditSnapshot) -> [SyncRecordType: Set<String>] {
         var localIds: [SyncRecordType: Set<String>] = [:]
         for type in SyncRecordType.allCases {
-            let ids = changeTracker.dirtyRecords(for: type)
+            let ids = snapshot.dirtyIds(for: type)
                 .union(metadataStorage.tombstones(for: type).map(\.id))
             guard !ids.isEmpty else { continue }
             localIds[type] = ids
@@ -448,51 +462,63 @@ final class SyncCoordinator: ObservableObject {
         (error as? SyncError) == .tokenExpired
     }
 
-    private func performPull() async {
+    @discardableResult
+    private func performPull(echoGuard: SyncEchoGuard? = nil) async -> SyncError? {
         let token = metadataStorage.loadToken()
         let tokenStatus = token == nil ? "nil (full fetch)" : "present (delta)"
         Self.logger.info("Pull starting, token: \(tokenStatus)")
 
         do {
-            let result = try await engine.pull(since: token)
-            applyPullResult(result)
+            let result = try await transport.pull(since: token)
+            return await applyPullResult(result, echoGuard: echoGuard) ? nil : .pullNotSaved
         } catch let error where Self.isTokenExpired(error) {
             Self.logger.warning("Change token expired, clearing and retrying with full fetch")
             metadataStorage.saveToken(nil)
             do {
-                let result = try await engine.pull(since: nil)
-                applyPullResult(result)
+                let result = try await transport.pull(since: nil)
+                return await applyPullResult(result, echoGuard: echoGuard) ? nil : .pullNotSaved
             } catch {
                 Self.logger.error("Full fetch after token expiry failed: \(error.localizedDescription)")
+                return nil
             }
         } catch {
             Self.logger.error("Pull failed: \(error.localizedDescription)")
+            return nil
         }
     }
 
-    private func applyPullResult(_ result: PullResult) {
-        let persisted = applyRemoteChanges(result)
+    @discardableResult
+    internal func applyPullResult(_ result: PullResult, echoGuard: SyncEchoGuard? = nil) async -> Bool {
+        let settings = services.appSettingsStorage.loadSync()
+        let storesPersisted = applyRemoteChanges(result, settings: settings, echoGuard: echoGuard)
+        let favoritesOutcome = await services.sqlFavoriteManager.applyRemote(
+            remoteSQLFavoriteBatch(from: result, settings: settings),
+            echoGuard: echoGuard
+        )
 
         /// The token and the cache are the record of what this device holds, so neither is
         /// committed over a batch a store refused. Saving the token first acknowledged records that
         /// were never written and the server never sent them again, and the cached record then
         /// stood in as the merge base for an edit that had no local base at all. Not saving it
         /// means the next pull replays the batch, which every apply here is written to survive.
-        guard persisted else {
+        guard storesPersisted, favoritesOutcome != .failed else {
             Self.logger.error("Pull not acknowledged: a store refused to persist part of the batch")
-            return
+            return false
         }
 
         if let newToken = result.newToken {
             metadataStorage.saveToken(newToken)
         }
 
-        recordCache.store(result.changedRecords)
+        recordCache.store(result.changedRecords.filter { record in
+            echoGuard?.withholds(record.recordID, tracker: changeTracker) != true
+        })
         recordCache.remove(result.deletedRecordIDs)
 
         Self.logger.info(
             "Pull completed: \(result.changedRecords.count) changed, \(result.deletedRecordIDs.count) deleted"
         )
+        return true
     }
 
     // Performance: storage reads here (loadSync, loadConnections, loadGroups, etc.) run on
@@ -500,10 +526,7 @@ final class SyncCoordinator: ObservableObject {
     // for large payloads.
     /// Reports whether every record that can say so was persisted. A pull that answers false must
     /// not commit its token: the batch has to arrive again.
-    @discardableResult
-    private func applyRemoteChanges(_ result: PullResult) -> Bool {
-        let settings = services.appSettingsStorage.loadSync()
-
+    private func applyRemoteChanges(_ result: PullResult, settings: SyncSettings, echoGuard: SyncEchoGuard?) -> Bool {
         services.connectionStorage.invalidateCache()
 
         changeTracker.isSuppressed = true
@@ -522,12 +545,12 @@ final class SyncCoordinator: ObservableObject {
         let credentialTombstoneIds = Set(metadataStorage.tombstones(for: .credentialProfile).map(\.id))
         let tableFavoriteTombstoneIds = Set(metadataStorage.tombstones(for: .tableFavorite).map(\.id))
         let databaseFavoriteTombstoneIds = Set(metadataStorage.tombstones(for: .favoriteDatabase).map(\.id))
-        let sqlFavoriteTombstoneIds = Set(metadataStorage.tombstones(for: .favorite).map(\.id))
-        let sqlFolderTombstoneIds = Set(metadataStorage.tombstones(for: .favoriteFolder).map(\.id))
-        var remoteFavorites: [SQLFavorite] = []
-        var remoteFolders: [SQLFavoriteFolder] = []
 
         for record in result.changedRecords {
+            if let echoGuard, echoGuard.withholds(record.recordID, tracker: changeTracker) {
+                Self.logger.info("Kept a local edit made while its record was being pushed")
+                continue
+            }
             switch record.recordType {
             case SyncRecordType.connection.rawValue where settings.syncConnections:
                 switch applyRemoteConnection(record, tombstoneIds: connectionTombstoneIds) {
@@ -559,92 +582,15 @@ final class SyncCoordinator: ObservableObject {
                 applyRemoteTableFavorite(record, tombstoneIds: tableFavoriteTombstoneIds)
             case SyncRecordType.favoriteDatabase.rawValue where settings.syncDatabaseFavorites:
                 applyRemoteDatabaseFavorite(record, tombstoneIds: databaseFavoriteTombstoneIds)
-            case SyncRecordType.favorite.rawValue where settings.syncSQLFavorites:
-                if let favorite = try? SyncRecordMapper.sqlFavorite(from: record),
-                   !sqlFavoriteTombstoneIds.contains(favorite.id.uuidString) {
-                    remoteFavorites.append(favorite)
-                }
-            case SyncRecordType.favoriteFolder.rawValue where settings.syncSQLFavorites:
-                if let folder = try? SyncRecordMapper.sqlFavoriteFolder(from: record),
-                   !sqlFolderTombstoneIds.contains(folder.id.uuidString) {
-                    remoteFolders.append(folder)
-                }
             default:
                 break
             }
         }
 
-        let pendingDeletions = Self.parseDeletions(result.deletedRecordIDs, settings: settings)
-        let connectionIdsToDelete = pendingDeletions.connections
-        let groupIdsToDelete = pendingDeletions.groups
-        let tagIdsToDelete = pendingDeletions.tags
-        let sshProfileIdsToDelete = pendingDeletions.sshProfiles
-        let credentialProfileIdsToDelete = pendingDeletions.credentialProfiles
-        let tableFavoriteIdsToDelete = pendingDeletions.tableFavorites
-        let sqlFavoriteIdsToDelete = pendingDeletions.sqlFavorites
-        let sqlFolderIdsToDelete = pendingDeletions.sqlFolders
-        actualConnectionChanges = actualConnectionChanges || !connectionIdsToDelete.isEmpty
-        groupsOrTagsChanged = groupsOrTagsChanged
-            || !groupIdsToDelete.isEmpty
-            || !tagIdsToDelete.isEmpty
-
-        if !connectionIdsToDelete.isEmpty {
-            var connections = services.connectionStorage.loadConnections()
-            connections.removeAll { connectionIdsToDelete.contains($0.id) }
-            if !services.connectionStorage.saveConnections(connections) {
-                Self.logger.error("Failed to apply remote connection deletions: persistence error")
-            } else {
-                ConnectionLocalState.purge(connectionIds: connectionIdsToDelete, origin: .remote)
-                let favoriteManager = services.sqlFavoriteManager
-                Task {
-                    for id in connectionIdsToDelete {
-                        await favoriteManager.removeFavoritesAndFolders(for: id)
-                    }
-                }
-            }
-        }
-        if !groupIdsToDelete.isEmpty {
-            var groups = services.groupStorage.loadGroups()
-            groups.removeAll { groupIdsToDelete.contains($0.id) }
-            services.groupStorage.saveGroups(groups)
-        }
-        if !tagIdsToDelete.isEmpty {
-            var tags = services.tagStorage.loadTags()
-            tags.removeAll { tagIdsToDelete.contains($0.id) }
-            services.tagStorage.saveTags(tags)
-        }
-        if !applyRemoteSSHProfileDeletions(sshProfileIdsToDelete) {
-            persistenceFailed = true
-        }
-        if !applyRemoteCredentialProfileDeletions(credentialProfileIdsToDelete) {
-            persistenceFailed = true
-        }
-        for id in tableFavoriteIdsToDelete {
-            services.favoriteTablesStorage.removeFavoriteWithoutSync(id: id)
-        }
-
-        if !remoteFolders.isEmpty || !remoteFavorites.isEmpty
-            || !sqlFolderIdsToDelete.isEmpty || !sqlFavoriteIdsToDelete.isEmpty {
-            let manager = services.sqlFavoriteManager
-            let folders = remoteFolders
-            let favorites = remoteFavorites
-            let folderDeletes = sqlFolderIdsToDelete
-            let favoriteDeletes = sqlFavoriteIdsToDelete
-            Task {
-                for folder in folders {
-                    await manager.applyRemoteFolder(folder)
-                }
-                for favorite in favorites {
-                    await manager.applyRemoteFavorite(favorite)
-                }
-                for id in favoriteDeletes {
-                    await manager.applyRemoteDeleteFavorite(id: id)
-                }
-                for id in folderDeletes {
-                    await manager.applyRemoteDeleteFolder(id: id)
-                }
-            }
-        }
+        let deletions = applyRemoteDeletions(SyncPendingDeletions.parse(result.deletedRecordIDs, settings: settings))
+        actualConnectionChanges = actualConnectionChanges || deletions.connectionsChanged
+        groupsOrTagsChanged = groupsOrTagsChanged || deletions.groupsOrTagsChanged
+        persistenceFailed = persistenceFailed || deletions.persistenceFailed
 
         /// After the batch, never per record: a pull carries no dependency order, so a legal
         /// hierarchy change spread over two records passes through a state that reads as a cycle
@@ -658,6 +604,30 @@ final class SyncCoordinator: ObservableObject {
         }
 
         return !persistenceFailed
+    }
+
+    private func remoteSQLFavoriteBatch(from result: PullResult, settings: SyncSettings) -> RemoteSQLFavoriteBatch {
+        guard settings.syncSQLFavorites else { return RemoteSQLFavoriteBatch() }
+
+        let deletions = SyncPendingDeletions.parse(result.deletedRecordIDs, settings: settings)
+        var batch = RemoteSQLFavoriteBatch(
+            deletedFavoriteIds: deletions.sqlFavorites,
+            deletedFolderIds: deletions.sqlFolders
+        )
+
+        for record in result.changedRecords {
+            switch record.recordType {
+            case SyncRecordType.favorite.rawValue:
+                guard let favorite = try? SyncRecordMapper.sqlFavorite(from: record) else { continue }
+                batch.favorites.append(favorite)
+            case SyncRecordType.favoriteFolder.rawValue:
+                guard let folder = try? SyncRecordMapper.sqlFavoriteFolder(from: record) else { continue }
+                batch.folders.append(folder)
+            default:
+                continue
+            }
+        }
+        return batch
     }
 
     @discardableResult
@@ -688,7 +658,7 @@ final class SyncCoordinator: ObservableObject {
         do {
             remoteConnection = try SyncRecordMapper.toConnection(record)
         } catch {
-            Self.logger.error("Skipping remote connection \(record.recordID.recordName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            Self.logger.error("Skipping remote connection \(record.recordID.recordName, privacy: .public): \(error.publicLogShape, privacy: .public)")
             return .skipped
         }
 
@@ -742,81 +712,6 @@ final class SyncCoordinator: ObservableObject {
         return services.tagStorage.applyRemoteTag(remoteTag)
     }
 
-    /// Unlinking reads a profile's secrets, so it runs while they still exist. Dropping the record
-    /// alone left every connection using it addressing a profile id that no longer resolved, and
-    /// left its keychain items with nothing able to name them.
-    ///
-    /// Returns false when a conversion could not be persisted, which withholds the pull token: the
-    /// alternative is acknowledging a delete whose connections still point at the profile, with the
-    /// conversion lost and no tombstone left to replay it.
-    private func applyRemoteSSHProfileDeletions(_ profileIds: Set<UUID>) -> Bool {
-        guard !profileIds.isEmpty else { return true }
-
-        var profiles = services.sshProfileStorage.loadProfiles()
-        let deleted = profiles.filter { profileIds.contains($0.id) }
-        profiles.removeAll { profileIds.contains($0.id) }
-
-        for profile in deleted where !services.sshProfileStorage.unlinkConnections(fromProfile: profile) {
-            Self.logger.error(
-                "Kept SSH profile \(profile.id.uuidString, privacy: .public): its connections could not be converted"
-            )
-            return false
-        }
-        guard services.sshProfileStorage.saveProfilesWithoutSync(profiles) else { return false }
-        for profile in deleted {
-            services.sshProfileStorage.deleteSecrets(for: profile.id)
-        }
-        return true
-    }
-
-    /// The tombstones a pull carried, sorted by the record type their name encodes.
-    ///
-    /// Pure and lifted out of `applyRemoteChanges`, which is the function every new record type
-    /// grows and which SwiftLint caps.
-    private struct PendingDeletions {
-        var connections: Set<UUID> = []
-        var groups: Set<UUID> = []
-        var tags: Set<UUID> = []
-        var sshProfiles: Set<UUID> = []
-        var credentialProfiles: Set<UUID> = []
-        var tableFavorites: Set<String> = []
-        var sqlFavorites: Set<UUID> = []
-        var sqlFolders: Set<UUID> = []
-    }
-
-    private static func parseDeletions(
-        _ recordIDs: [CKRecord.ID],
-        settings: SyncSettings
-    ) -> PendingDeletions {
-        var pending = PendingDeletions()
-        for recordID in recordIDs {
-            let name = recordID.recordName
-            func identifier(after prefix: String) -> UUID? {
-                guard name.hasPrefix(prefix) else { return nil }
-                return UUID(uuidString: String(name.dropFirst(prefix.count)))
-            }
-
-            if let uuid = identifier(after: "Connection_") {
-                pending.connections.insert(uuid)
-            } else if let uuid = identifier(after: "Group_") {
-                pending.groups.insert(uuid)
-            } else if let uuid = identifier(after: "Tag_") {
-                pending.tags.insert(uuid)
-            } else if let uuid = identifier(after: "SSHProfile_") {
-                pending.sshProfiles.insert(uuid)
-            } else if settings.syncCredentialProfiles, let uuid = identifier(after: "CredentialProfile_") {
-                pending.credentialProfiles.insert(uuid)
-            } else if name.hasPrefix("FavoriteTable_") {
-                pending.tableFavorites.insert(String(name.dropFirst("FavoriteTable_".count)))
-            } else if settings.syncSQLFavorites, let uuid = identifier(after: "FavoriteFolder_") {
-                pending.sqlFolders.insert(uuid)
-            } else if settings.syncSQLFavorites, let uuid = identifier(after: "Favorite_") {
-                pending.sqlFavorites.insert(uuid)
-            }
-        }
-        return pending
-    }
-
     private static func availableProfileName(
         basedOn name: String,
         taken profiles: [CredentialProfile]
@@ -837,7 +732,7 @@ final class SyncCoordinator: ObservableObject {
             remoteProfile = try SyncRecordMapper.toCredentialProfile(record)
         } catch {
             Self.logger.error(
-                "Skipping remote credential profile \(record.recordID.recordName, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                "Skipping remote credential profile \(record.recordID.recordName, privacy: .public): \(error.publicLogShape, privacy: .public)"
             )
             return true
         }
@@ -869,34 +764,12 @@ final class SyncCoordinator: ObservableObject {
         return true
     }
 
-    /// A profile deleted on another Mac hands its credentials to the connections using it here
-    /// too, so they keep connecting rather than losing the password the link took away.
-    private func applyRemoteCredentialProfileDeletions(_ profileIds: Set<UUID>) -> Bool {
-        guard !profileIds.isEmpty else { return true }
-
-        var profiles = services.credentialProfileStorage.loadProfiles()
-        let deleted = profiles.filter { profileIds.contains($0.id) }
-        profiles.removeAll { profileIds.contains($0.id) }
-
-        for profile in deleted where !services.credentialProfileStorage.unlinkConnections(from: profile) {
-            Self.logger.error(
-                "Kept credential profile \(profile.id.uuidString, privacy: .public): its connections could not be converted"
-            )
-            return false
-        }
-        guard services.credentialProfileStorage.saveProfilesWithoutSync(profiles) else { return false }
-        for profile in deleted {
-            services.credentialProfileStorage.deleteSecrets(for: profile)
-        }
-        return true
-    }
-
     private func applyRemoteSSHProfile(_ record: CKRecord, tombstoneIds: Set<String>) {
         let remoteProfile: SSHProfile
         do {
             remoteProfile = try SyncRecordMapper.toSSHProfile(record)
         } catch {
-            Self.logger.error("Skipping remote SSH profile \(record.recordID.recordName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            Self.logger.error("Skipping remote SSH profile \(record.recordID.recordName, privacy: .public): \(error.publicLogShape, privacy: .public)")
             return
         }
         if tombstoneIds.contains(remoteProfile.id.uuidString) { return }
@@ -921,9 +794,8 @@ final class SyncCoordinator: ObservableObject {
             try applySettingsData(data, for: category)
         } catch {
             let recordName = record.recordID.recordName
-            let message = error.localizedDescription
             Self.logger.error(
-                "Skipping remote settings \(recordName, privacy: .public) (\(category, privacy: .public)): \(message, privacy: .public)"
+                "Skipping remote settings \(recordName, privacy: .private(mask: .hash)) (\(category, privacy: .private(mask: .hash))): \(error.publicLogShape, privacy: .public) \(error.localizedDescription, privacy: .private)"
             )
         }
     }
@@ -935,9 +807,8 @@ final class SyncCoordinator: ObservableObject {
             entry = try SyncRecordMapper.favoriteEntry(from: record)
         } catch {
             let recordName = record.recordID.recordName
-            let message = error.localizedDescription
             Self.logger.error(
-                "Skipping remote favorite table \(recordName, privacy: .public): \(message, privacy: .public)"
+                "Skipping remote favorite table \(recordName, privacy: .private(mask: .hash)): \(error.publicLogShape, privacy: .public) \(error.localizedDescription, privacy: .private)"
             )
             return false
         }
@@ -953,9 +824,8 @@ final class SyncCoordinator: ObservableObject {
             entry = try SyncRecordMapper.favoriteDatabase(from: record)
         } catch {
             let recordName = record.recordID.recordName
-            let message = error.localizedDescription
             Self.logger.error(
-                "Skipping remote favorite database \(recordName, privacy: .public): \(message, privacy: .public)"
+                "Skipping remote favorite database \(recordName, privacy: .private(mask: .hash)): \(error.publicLogShape, privacy: .public) \(error.localizedDescription, privacy: .private)"
             )
             return
         }
@@ -1023,7 +893,7 @@ final class SyncCoordinator: ObservableObject {
 
     private func checkAccountStatus() async {
         do {
-            let status = try await engine.accountStatus()
+            let status = try await transport.accountStatus()
             iCloudAccountAvailable = (status == .available)
 
             if iCloudAccountAvailable {
@@ -1038,246 +908,6 @@ final class SyncCoordinator: ObservableObject {
     }
 
     private func currentAccountId() async throws -> String? {
-        try await engine.currentAccountId()
-    }
-
-    // MARK: - Conflict Handling
-
-    // MARK: - Settings Helpers
-
-    private func settingsData(for category: String) -> Data? {
-        let storage = services.appSettingsStorage
-        let encoder = JSONEncoder()
-
-        do {
-            switch category {
-            case AppSettingsCategory.general: return try encoder.encode(storage.loadGeneral())
-            case AppSettingsCategory.appearance: return try encoder.encode(storage.loadAppearance())
-            case AppSettingsCategory.editor: return try encoder.encode(storage.loadEditor())
-            case AppSettingsCategory.dataGrid: return try encoder.encode(storage.loadDataGrid())
-            case AppSettingsCategory.history: return try encoder.encode(storage.loadHistory())
-            case AppSettingsCategory.tabs: return try encoder.encode(storage.loadTabs())
-            case AppSettingsCategory.keyboard: return try encoder.encode(storage.loadKeyboard())
-            case AppSettingsCategory.ai: return try encoder.encode(storage.loadAI())
-            case AppSettingsCategory.notifications: return try encoder.encode(storage.loadNotifications())
-            case CustomSlashCommandStorage.syncCategory:
-                return try encoder.encode(CustomSlashCommandStorage.shared.commands)
-            case let category where category.hasPrefix(FileColumnLayoutPersister.syncCategoryPrefix):
-                return FileColumnLayoutPersister.shared.rawData(
-                    forStorageKey: String(category.dropFirst(FileColumnLayoutPersister.syncCategoryPrefix.count))
-                )
-            default: return nil
-            }
-        } catch {
-            Self.logger.error("Failed to encode settings category '\(category)': \(error.localizedDescription)")
-            return nil
-        }
-    }
-
-    private func applySettingsData(_ data: Data, for category: String) throws {
-        let manager = services.appSettings
-        let decoder = JSONDecoder()
-
-        do {
-            switch category {
-            case AppSettingsCategory.general: manager.general = try decoder.decode(GeneralSettings.self, from: data)
-            case AppSettingsCategory.appearance:
-                manager.appearance = try decoder.decode(AppearanceSettings.self, from: data)
-            case AppSettingsCategory.editor: manager.editor = try decoder.decode(EditorSettings.self, from: data)
-            case AppSettingsCategory.dataGrid: manager.dataGrid = try decoder.decode(DataGridSettings.self, from: data)
-            case AppSettingsCategory.history: manager.history = try decoder.decode(HistorySettings.self, from: data)
-            case AppSettingsCategory.tabs: manager.tabs = try decoder.decode(TabSettings.self, from: data)
-            case AppSettingsCategory.keyboard: manager.keyboard = try decoder.decode(KeyboardSettings.self, from: data)
-            case AppSettingsCategory.ai: manager.ai = try decoder.decode(AISettings.self, from: data)
-            case AppSettingsCategory.notifications:
-                manager.notifications = try decoder.decode(NotificationSettings.self, from: data)
-            case CustomSlashCommandStorage.syncCategory:
-                CustomSlashCommandStorage.shared.applyRemote(try decoder.decode([CustomSlashCommand].self, from: data))
-            case let category where category.hasPrefix(FileColumnLayoutPersister.syncCategoryPrefix):
-                FileColumnLayoutPersister.shared.applyRemote(
-                    storageKey: String(category.dropFirst(FileColumnLayoutPersister.syncCategoryPrefix.count)),
-                    data: data
-                )
-            default: return
-            }
-        } catch {
-            throw SyncDecodeError.decodeFailure(field: category, underlying: error)
-        }
-    }
-
-    // MARK: - Group/Tag Collection Helpers
-
-    private func collectDirtyGroups(
-        into records: inout [CKRecord],
-        deletions: inout [CKRecord.ID],
-        zoneID: CKRecordZone.ID
-    ) {
-        let dirtyGroupIds = changeTracker.dirtyRecords(for: .group)
-        if !dirtyGroupIds.isEmpty {
-            let groups = services.groupStorage.loadGroups()
-            for id in dirtyGroupIds {
-                if let group = groups.first(where: { $0.id.uuidString == id }) {
-                    records.append(SyncRecordMapper.toCKRecord(group, in: zoneID))
-                }
-            }
-        }
-
-        for tombstone in metadataStorage.tombstones(for: .group) {
-            deletions.append(
-                SyncRecordMapper.recordID(type: .group, id: tombstone.id, in: zoneID)
-            )
-        }
-    }
-
-    private func collectDirtyTags(
-        into records: inout [CKRecord],
-        deletions: inout [CKRecord.ID],
-        zoneID: CKRecordZone.ID
-    ) {
-        let dirtyTagIds = changeTracker.dirtyRecords(for: .tag)
-        if !dirtyTagIds.isEmpty {
-            let tags = services.tagStorage.loadTags()
-            for id in dirtyTagIds {
-                if let tag = tags.first(where: { $0.id.uuidString == id }) {
-                    records.append(SyncRecordMapper.toCKRecord(tag, in: zoneID))
-                }
-            }
-        }
-
-        for tombstone in metadataStorage.tombstones(for: .tag) {
-            deletions.append(
-                SyncRecordMapper.recordID(type: .tag, id: tombstone.id, in: zoneID)
-            )
-        }
-    }
-
-    private func collectDirtyCredentialProfiles(
-        into records: inout [CKRecord],
-        deletions: inout [CKRecord.ID],
-        zoneID: CKRecordZone.ID
-    ) {
-        let dirtyIds = changeTracker.dirtyRecords(for: .credentialProfile)
-        if !dirtyIds.isEmpty {
-            let profiles = services.credentialProfileStorage.loadProfiles()
-            for id in dirtyIds {
-                if let profile = profiles.first(where: { $0.id.uuidString == id }) {
-                    records.append(SyncRecordMapper.toCKRecord(profile, in: zoneID))
-                }
-            }
-        }
-
-        for tombstone in metadataStorage.tombstones(for: .credentialProfile) {
-            deletions.append(
-                SyncRecordMapper.recordID(type: .credentialProfile, id: tombstone.id, in: zoneID)
-            )
-        }
-    }
-
-    private func collectDirtySSHProfiles(
-        into records: inout [CKRecord],
-        deletions: inout [CKRecord.ID],
-        zoneID: CKRecordZone.ID
-    ) {
-        let dirtyProfileIds = changeTracker.dirtyRecords(for: .sshProfile)
-        if !dirtyProfileIds.isEmpty {
-            let profiles = services.sshProfileStorage.loadProfiles()
-            for id in dirtyProfileIds {
-                if let profile = profiles.first(where: { $0.id.uuidString == id }) {
-                    records.append(SyncRecordMapper.toCKRecord(profile, in: zoneID))
-                }
-            }
-        }
-
-        for tombstone in metadataStorage.tombstones(for: .sshProfile) {
-            deletions.append(
-                SyncRecordMapper.recordID(type: .sshProfile, id: tombstone.id, in: zoneID)
-            )
-        }
-    }
-
-    private func collectDirtySQLFavorites(
-        into records: inout [CKRecord],
-        deletions: inout [CKRecord.ID],
-        zoneID: CKRecordZone.ID
-    ) async {
-        let dirtyFavoriteIds = changeTracker.dirtyRecords(for: .favorite)
-        if !dirtyFavoriteIds.isEmpty {
-            let favorites = await services.sqlFavoriteManager.fetchFavorites()
-            let favoritesById = Dictionary(favorites.map { ($0.id.uuidString, $0) }, uniquingKeysWith: { first, _ in first })
-            for id in dirtyFavoriteIds {
-                if let favorite = favoritesById[id] {
-                    records.append(SyncRecordMapper.toCKRecord(sqlFavorite: favorite, in: zoneID))
-                }
-            }
-        }
-        for tombstone in metadataStorage.tombstones(for: .favorite) {
-            deletions.append(
-                SyncRecordMapper.recordID(type: .favorite, id: tombstone.id, in: zoneID)
-            )
-        }
-
-        let dirtyFolderIds = changeTracker.dirtyRecords(for: .favoriteFolder)
-        if !dirtyFolderIds.isEmpty {
-            let folders = await services.sqlFavoriteManager.fetchFolders()
-            let foldersById = Dictionary(folders.map { ($0.id.uuidString, $0) }, uniquingKeysWith: { first, _ in first })
-            for id in dirtyFolderIds {
-                if let folder = foldersById[id] {
-                    records.append(SyncRecordMapper.toCKRecord(sqlFavoriteFolder: folder, in: zoneID))
-                }
-            }
-        }
-        for tombstone in metadataStorage.tombstones(for: .favoriteFolder) {
-            deletions.append(
-                SyncRecordMapper.recordID(type: .favoriteFolder, id: tombstone.id, in: zoneID)
-            )
-        }
-    }
-
-    private func collectDirtyTableFavorites(
-        into records: inout [CKRecord],
-        deletions: inout [CKRecord.ID],
-        zoneID: CKRecordZone.ID
-    ) {
-        let dirtyIds = changeTracker.dirtyRecords(for: .tableFavorite)
-        if !dirtyIds.isEmpty {
-            let favorites = services.favoriteTablesStorage.loadFavorites()
-            for entry in favorites where dirtyIds.contains(FavoriteTablesStorage.syncId(for: entry)) {
-                records.append(SyncRecordMapper.toCKRecord(favoriteEntry: entry, in: zoneID))
-            }
-        }
-
-        for tombstone in metadataStorage.tombstones(for: .tableFavorite) {
-            deletions.append(
-                SyncRecordMapper.recordID(type: .tableFavorite, id: tombstone.id, in: zoneID)
-            )
-        }
-    }
-
-    /// A connection the user marked local only never reaches iCloud, and neither do the database
-    /// names hanging off it. Tombstones are not filtered: a deletion only ever removes something,
-    /// and a connection can be marked local only after its favorites were already pushed.
-    private func collectDirtyDatabaseFavorites(
-        into records: inout [CKRecord],
-        deletions: inout [CKRecord.ID],
-        zoneID: CKRecordZone.ID
-    ) {
-        let dirtyIds = changeTracker.dirtyRecords(for: .favoriteDatabase)
-        if !dirtyIds.isEmpty {
-            let localOnlyIds = Set(
-                services.connectionStorage.loadConnections().filter(\.localOnly).map(\.id)
-            )
-            let favorites = services.favoriteDatabasesStorage.loadFavorites()
-            for entry in favorites
-            where dirtyIds.contains(FavoriteDatabasesStorage.syncId(for: entry))
-                && !localOnlyIds.contains(entry.connectionId) {
-                records.append(SyncRecordMapper.toCKRecord(favoriteDatabase: entry, in: zoneID))
-            }
-        }
-
-        for tombstone in metadataStorage.tombstones(for: .favoriteDatabase) {
-            deletions.append(
-                SyncRecordMapper.recordID(type: .favoriteDatabase, id: tombstone.id, in: zoneID)
-            )
-        }
+        try await transport.currentAccountId()
     }
 }

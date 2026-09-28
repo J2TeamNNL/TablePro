@@ -42,10 +42,19 @@ struct LoadedBrowseCatalog: Sendable, Equatable {
 struct CatalogEditAdoption {
     private let databaseManager: DatabaseManager
     private let schemaService: SchemaService
+    private let connectionStorage: ConnectionStorage
+    private let appSettings: AppSettingsStorage
 
-    init(databaseManager: DatabaseManager = .shared, schemaService: SchemaService = .shared) {
+    init(
+        databaseManager: DatabaseManager = .shared,
+        schemaService: SchemaService = .shared,
+        connectionStorage: ConnectionStorage = .shared,
+        appSettings: AppSettingsStorage = .shared
+    ) {
         self.databaseManager = databaseManager
         self.schemaService = schemaService
+        self.connectionStorage = connectionStorage
+        self.appSettings = appSettings
     }
 
     /// Where the object lives. A reference without a database means the one being browsed, and the
@@ -60,12 +69,25 @@ struct CatalogEditAdoption {
         )
     }
 
+    /// A dropped table takes its saved settings with it, the way a renamed one takes them along.
+    /// Left behind, they outlive the table and come back on a table that is recreated with the same
+    /// name: a filter on a column the new table does not have opens the tab on a server error.
     func adoptDroppedTables(_ refs: [DatabaseTreeTableRef], connectionId: UUID) {
         let dropped = Set(refs)
         updatePendingOperations(connectionId: connectionId) { dropped.contains($0) ? nil : $0 }
         let sidebarState = SharedSidebarState.forConnection(connectionId)
         for ref in refs {
             sidebarState.removeRecentTable(database: ref.database, schema: ref.schema, name: ref.table.name)
+            FavoriteTablesStorage.shared.removeFavorite(
+                name: ref.table.name, schema: ref.favoriteSchema, database: ref.database, connectionId: connectionId
+            )
+            guard let scope = objectScope(for: ref, connectionId: connectionId) else { continue }
+            let tableScope = TableScope(
+                connectionId: connectionId, database: scope.database, schema: scope.schema, table: ref.table.name
+            )
+            for store in TableScopedSettingsRegistry.stores {
+                store.dropTable(tableScope)
+            }
         }
     }
 
@@ -123,6 +145,16 @@ struct CatalogEditAdoption {
             if let schema, ref.qualifyingSchema != schema { return ref }
             return nil
         }
+        /// Every table inside the container loses its saved settings and its favorite, for the
+        /// reason a dropped table does. Swept by prefix rather than by table, because the table
+        /// list is lazy and a table nobody opened this session still has settings on disk.
+        for store in TableScopedSettingsRegistry.stores {
+            store.dropContainer(connectionId: connectionId, database: database, schema: schema)
+        }
+        FavoriteTablesStorage.shared.removeFavorites(
+            inDatabase: database, schema: schema, connectionId: connectionId
+        )
+
         let sidebarState = SharedSidebarState.forConnection(connectionId)
         /// A dropped schema takes its own Recent entries with it and leaves its siblings alone.
         /// Skipping this left every Recent row for that schema opening a tab whose query failed
@@ -133,6 +165,8 @@ struct CatalogEditAdoption {
             return
         }
         guard container.kind == .database else { return }
+        FavoriteDatabasesStorage.shared.removeFavorite(database: database, connectionId: connectionId)
+        clearSavedConnectionDatabase(named: database, connectionId: connectionId)
         sidebarState.clearRecentTables(inDatabase: database)
         var selected = sidebarState.databaseFilterSelected
         guard selected.remove(database) != nil else { return }
@@ -145,17 +179,22 @@ struct CatalogEditAdoption {
               let loadedScope = schemaService.loadedScope(for: connectionId) else { return nil }
         let browseDatabase = databaseManager.browseDatabaseName(for: session.connection)
         guard loadedScope.database == browseDatabase else { return nil }
-        var schemas = Set(schemaService.schemas(for: connectionId).filter {
-            schemaService.hasLoadedContent(for: connectionId, schema: $0)
-        })
-        if let schema = loadedScope.schema {
+        var schemas = schemaService.schemasWithCurrentTables(for: connectionId)
+        if let schema = loadedScope.schema, holdsBrowsedSchemaInFlatList(session.connection.type) {
             schemas.insert(schema)
         }
         return LoadedBrowseCatalog(
             database: browseDatabase,
             schemas: schemas,
-            tables: schemaService.allLoadedTables(for: connectionId)
+            tables: schemaService.currentTables(for: connectionId)
         )
+    }
+
+    /// A schema-grouped engine's flat list is the browsed schema's, so that schema is answered for
+    /// even when it holds nothing. A hierarchical engine's flat list is empty, and its browsed schema
+    /// is answered for only by a per-schema list read since the last catalog change.
+    private func holdsBrowsedSchemaInFlatList(_ type: DatabaseType) -> Bool {
+        PluginManager.shared.databaseGroupingStrategy(for: type) != .hierarchicalSchema
     }
 
     /// Unstages queued operations whose object the freshly loaded catalog no longer has, judged by
@@ -191,13 +230,18 @@ struct CatalogEditAdoption {
         }
     }
 
+    /// Reads and writes the entry with `favoriteSchema`, the spelling the only writer of a table
+    /// favorite uses. Asking with the row's own schema instead missed the entry outright in a
+    /// hierarchical tree, where the schema hangs on the node and not on the `TableInfo`, so a
+    /// renamed table silently lost its star.
     private func moveFavorite(_ ref: DatabaseTreeTableRef, to newName: String, connectionId: UUID) {
         let storage = FavoriteTablesStorage.shared
+        let schema = ref.favoriteSchema
         guard storage.isFavorite(
-            name: ref.table.name, schema: ref.schema, database: ref.database, connectionId: connectionId
+            name: ref.table.name, schema: schema, database: ref.database, connectionId: connectionId
         ) else { return }
-        storage.removeFavorite(name: ref.table.name, schema: ref.schema, database: ref.database, connectionId: connectionId)
-        storage.addFavorite(name: newName, schema: ref.schema, database: ref.database, connectionId: connectionId)
+        storage.removeFavorite(name: ref.table.name, schema: schema, database: ref.database, connectionId: connectionId)
+        storage.addFavorite(name: newName, schema: schema, database: ref.database, connectionId: connectionId)
     }
 
     private func retargetContainer(
@@ -247,11 +291,31 @@ struct CatalogEditAdoption {
 
     /// The saved default is what a reconnect and Reopen Last Session both use, so a database renamed
     /// out from under it leaves the connection opening onto nothing.
-    private func retargetSavedConnectionDatabase(from oldName: String, to newName: String, connectionId: UUID) {
-        guard var saved = ConnectionStorage.shared.loadConnections().first(where: { $0.id == connectionId }),
+    internal func retargetSavedConnectionDatabase(from oldName: String, to newName: String, connectionId: UUID) {
+        guard var saved = connectionStorage.loadConnections().first(where: { $0.id == connectionId }),
               saved.database == oldName else { return }
         saved.database = newName
-        ConnectionStorage.shared.updateConnection(saved)
+        connectionStorage.updateConnection(saved)
+    }
+
+    /// A rename has a new name to point the saved default at. A drop has none, so it is emptied,
+    /// along with the last database the session remembered.
+    ///
+    /// Both, because `selectDatabaseFromLastSession` fires precisely when the saved default is
+    /// empty: emptying one and leaving the other would turn that action on and point it at the
+    /// database that was just dropped, so every later connect would try to switch to it and fail.
+    ///
+    /// Not for a type that requires a value. Emptying is the repair for an engine that accepts a
+    /// blank database, which is what the form already allows there, and MySQL connects with no
+    /// default while MongoDB picks one. A type whose form refuses to save without a value would be
+    /// left failing its own validation with nothing on screen saying why.
+    internal func clearSavedConnectionDatabase(named database: String, connectionId: UUID) {
+        guard var saved = connectionStorage.loadConnections().first(where: { $0.id == connectionId }),
+              saved.database == database,
+              !ConnectionDatabaseRequirement.requiresValue(for: saved.type) else { return }
+        saved.database = ""
+        connectionStorage.updateConnection(saved)
+        appSettings.saveLastDatabase(nil, for: connectionId)
     }
 
     private func retargetBrowseCursor(_ connection: DatabaseConnection, from oldName: String, to newName: String) {

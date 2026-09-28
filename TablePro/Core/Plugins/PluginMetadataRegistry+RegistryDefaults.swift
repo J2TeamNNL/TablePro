@@ -20,13 +20,18 @@ extension PluginMetadataRegistry {
         return [
             ("MongoDB", PluginMetadataSnapshot(
                 displayName: "MongoDB", iconName: "mongodb-icon", defaultPort: 27_017,
-                requiresAuthentication: false, supportsForeignKeys: false, supportsSchemaEditing: false,
+                requiresAuthentication: false, supportsForeignKeys: false, supportsSchemaEditing: true,
                 isDownloadable: true, primaryUrlScheme: "mongodb", parameterStyle: .questionMark,
                 navigationModel: .standard, explainVariants: [], pathFieldRole: .database,
                 supportsHealthMonitor: true, urlSchemes: ["mongodb", "mongodb+srv"], postConnectActions: [],
                 brandColorHex: "#00ED63",
                 queryLanguageName: "MQL", editorLanguage: .javascript,
                 connectionMode: .network, supportsDatabaseSwitching: true,
+                structureEditing: SchemaEditingSupport(
+                    structureEdits: StructureObjectEditMatrix([
+                        .table: [.addColumn, .renameColumn, .dropColumn, .addIndex, .dropIndex]
+                    ])
+                ),
                 capabilities: PluginMetadataSnapshot.CapabilityFlags(
                     supportsSchemaSwitching: false,
                     supportsImport: true,
@@ -39,8 +44,14 @@ extension PluginMetadataRegistry {
                     supportsQueryProgress: false,
                     requiresReconnectForDatabaseSwitch: false,
                     supportsDropDatabase: true,
+                    supportsDocumentEditing: true,
+                    supportsFieldRemoval: true,
+                    supportsAddColumn: false,
+                    supportsAddIndex: false,
+                    supportsDropIndex: false,
                     supportsOpportunisticTLS: false,
-                    authenticationIsDatabaseScoped: true
+                    authenticationIsDatabaseScoped: true,
+                    columnsAreSampled: true
                 ),
                 schema: PluginMetadataSnapshot.SchemaInfo(
                     defaultSchemaName: "public",
@@ -210,7 +221,7 @@ extension PluginMetadataRegistry {
                             id: "redisDatabase",
                             label: String(localized: "Database Index"),
                             defaultValue: "0",
-                            fieldType: .stepper(range: ConnectionField.IntRange(0...15)),
+                            fieldType: .stepper(range: ConnectionField.IntRange(0...(Int(Int32.max) - 1))),
                             visibleWhen: FieldVisibilityRule(
                                 fieldId: "redisMode",
                                 values: ["standalone", "sentinel"]
@@ -315,7 +326,9 @@ extension PluginMetadataRegistry {
                 displayName: "Teradata", iconName: "teradata-icon", defaultPort: 1_025,
                 requiresAuthentication: true, supportsForeignKeys: true, supportsSchemaEditing: true,
                 isDownloadable: true, primaryUrlScheme: "teradata", parameterStyle: .questionMark,
-                navigationModel: .standard, explainVariants: [], pathFieldRole: .database,
+                navigationModel: .standard,
+                explainVariants: [ExplainVariant(id: "explain", label: "EXPLAIN", sqlPrefix: "EXPLAIN", format: .plainText)],
+                pathFieldRole: .database,
                 supportsHealthMonitor: false, urlSchemes: ["teradata"],
                 postConnectActions: [.selectDatabaseFromLastSession],
                 brandColorHex: "#F37440",
@@ -1129,7 +1142,8 @@ extension PluginMetadataRegistry {
                             required: true,
                             section: .authentication,
                             visibleWhen: FieldVisibilityRule(fieldId: "libsqlMode", values: ["local"])
-                        )
+                        ),
+                        .loadableExtensions(visibleWhen: FieldVisibilityRule(fieldId: "libsqlMode", values: ["local"]))
                     ],
                     category: .cloud,
                     tagline: String(localized: "Distributed SQLite by Turso")

@@ -61,6 +61,8 @@ final class ConnectionFormCoordinator: ObservableObject {
 
     @Published private var temporaryTestIds: Set<UUID> = []
 
+    private var childChangeForwarding: AnyCancellable?
+
     let services: AppServices
     var storage: ConnectionStorage { services.connectionStorage }
     @Published var dismissAction: (() -> Void)?
@@ -137,6 +139,38 @@ final class ConnectionFormCoordinator: ObservableObject {
         customization.coordinator = ref
         advanced.coordinator = ref
         aiRules.coordinator = ref
+
+        childChangeForwarding = forwardChildChanges()
+    }
+
+    /// Every pane observes this coordinator and reads its values through a child, as in
+    /// `coordinator.network.type`. `@Published` on a child only fires when the reference is
+    /// replaced, never when a value inside it changes, so without this a pane stayed as it was
+    /// drawn: picking Sentinel left the Redis mode picker on Standalone with the host field still
+    /// showing. The send is synchronous because SwiftUI needs `objectWillChange` before the value
+    /// lands, and `switchToLatest` moves the subscription to a replacement child.
+    private func forwardChildChanges() -> AnyCancellable {
+        Publishers.MergeMany([
+            Self.changes(of: $network),
+            Self.changes(of: $auth),
+            Self.changes(of: $ssh),
+            Self.changes(of: $remoteFile),
+            Self.changes(of: $cloudflareTunnel),
+            Self.changes(of: $cloudSQLProxy),
+            Self.changes(of: $socksProxy),
+            Self.changes(of: $tunnelCommand),
+            Self.changes(of: $ssl),
+            Self.changes(of: $customization),
+            Self.changes(of: $advanced),
+            Self.changes(of: $aiRules),
+        ])
+        .sink { [weak self] in self?.objectWillChange.send() }
+    }
+
+    private static func changes<Child: ObservableObject>(
+        of child: Published<Child>.Publisher
+    ) -> AnyPublisher<Void, Never> where Child.ObjectWillChangePublisher == ObservableObjectPublisher {
+        child.map(\.objectWillChange).switchToLatest().eraseToAnyPublisher()
     }
 
     /// Performs the one-time side-effecting setup: applying initial type
@@ -306,7 +340,9 @@ final class ConnectionFormCoordinator: ObservableObject {
             aiPolicy: advanced.aiPolicy,
             aiRules: aiRules.trimmedRules,
             externalAccess: advanced.externalAccess,
-            redisDatabase: advanced.additionalFieldValues["redisDatabase"].map { Int($0) ?? 0 },
+            redisDatabase: advanced.additionalFieldValues[RedisDatabaseIndex.fieldName].map {
+                RedisDatabaseIndex.parse($0) ?? 0
+            },
             startupCommands: advanced.startupCommands.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 ? nil : advanced.startupCommands,
             localOnly: advanced.localOnly,
@@ -449,6 +485,7 @@ final class ConnectionFormCoordinator: ObservableObject {
                 return
             }
             clearedSecrets.forEach { $0() }
+            approveEditedExtensions(for: connectionToSave.id)
             if !connectionToSave.localOnly {
                 services.syncTracker.markDirty(.connection, id: connectionToSave.id.uuidString)
             }
@@ -474,6 +511,7 @@ final class ConnectionFormCoordinator: ObservableObject {
                 return
             }
             clearedSecrets.forEach { $0() }
+            approveEditedExtensions(for: connectionToSave.id)
             if !connectionToSave.localOnly {
                 services.syncTracker.markDirty(.connection, id: connectionToSave.id.uuidString)
             }
@@ -500,7 +538,7 @@ final class ConnectionFormCoordinator: ObservableObject {
 
         if !WindowManager.shared.hasOpenWindow(for: connection.id) {
             Self.logger.info(
-                "Connection failed after window was closed: \(error.localizedDescription, privacy: .public)")
+                "Connection failed after window was closed: \(error.publicLogShape, privacy: .public)")
             return
         }
 
@@ -512,7 +550,7 @@ final class ConnectionFormCoordinator: ObservableObject {
             return
         }
 
-        Self.logger.error("Failed to connect: \(error.localizedDescription, privacy: .public)")
+        Self.logger.error("Failed to connect: \(error.publicLogShape, privacy: .public)")
         WelcomeRouter.shared.routeError(error, for: connection)
     }
 
@@ -583,6 +621,14 @@ final class ConnectionFormCoordinator: ObservableObject {
         )
 
         testTask = Task { [weak self, services] in
+            guard await self?.authorizeExtensionsForTest(testConnectionId: testConn.id) == true else {
+                await MainActor.run {
+                    self?.cleanupTestSecrets(for: testConn.id)
+                    self?.isTesting = false
+                    self?.testTask = nil
+                }
+                return
+            }
             do {
                 let sshPasswordForTest = sshState.profileId == nil ? sshState.password : nil
                 let isApiOnly = services.pluginManager.connectionMode(for: connectionType) == .apiOnly
@@ -758,6 +804,7 @@ final class ConnectionFormCoordinator: ObservableObject {
         services.connectionStorage.deleteSOCKSProxyPassword(for: testId)
         let secureFieldIds = services.pluginManager.secureConnectionFieldIds(for: network.type)
         services.connectionStorage.deleteAllPluginSecureFields(for: testId, fieldIds: secureFieldIds)
+        LoadableExtensionApprovalStore.shared.revoke(for: [testId])
         temporaryTestIds.remove(testId)
     }
 

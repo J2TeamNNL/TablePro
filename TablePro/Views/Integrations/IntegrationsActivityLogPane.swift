@@ -8,6 +8,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct IntegrationsActivityLogPane: View {
+    @ObservedObject private var mcpServerManager = MCPServerManager.shared
     @State private var entries: [AuditEntry] = []
     @State private var tokens: [MCPAuthToken] = []
     @State private var connections: [DatabaseConnection] = []
@@ -212,7 +213,7 @@ struct IntegrationsActivityLogPane: View {
             hasLoaded = true
         }
 
-        if let store = MCPServerManager.shared.tokenStore {
+        if let store = mcpServerManager.tokenStore {
             tokens = await store.list().filter { !$0.isBridgeCredential }
         }
         connections = ConnectionStorage.shared.loadConnections()
@@ -283,6 +284,7 @@ struct IntegrationsActivityLogPane: View {
 
     private static func fileTimestamp() -> String {
         let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         return formatter.string(from: .now)
     }

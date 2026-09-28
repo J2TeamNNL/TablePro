@@ -3,6 +3,8 @@ title: PostgreSQL
 description: Connect to PostgreSQL 9.1 and later with the libpq driver, including PostGIS display, AWS IAM auth, and pg_dump backups
 ---
 
+import DeclaredColumnType from "/snippets/declared-column-type.mdx";
+
 Unlike MySQL, PostgreSQL will not connect without a **Database**, and it changes database only by reconnecting. Everything else on the form is ordinary. The libpq driver ships inside the app and also serves [Amazon Redshift](/databases/redshift), [CockroachDB](/databases/cockroachdb), and [PGlite](/databases/pglite).
 
 ## Connection settings
@@ -50,7 +52,7 @@ Turn on **Use Password File** to read the password from `~/.pgpass` instead of t
 
 ## Databases and schemas
 
-Every database on the server is listed, `postgres` included; `template0` and `template1` are not. The sidebar shows every schema you have access to, and the toolbar carries the active database and schema side by side: click either to switch, or press `Cmd+K` for the database list.
+Every database on the server is listed, `postgres` included; `template0` and `template1` are not. The sidebar shows every schema you have access to. The toolbar's centred control names the active database: click it, or press `Cmd+K`, for the list. The active schema has a picker at the foot of the object list in the flat layout, and **Database > Schema** everywhere.
 
 Right-click a schema to drop it. The statement is `DROP SCHEMA … CASCADE`, so views and functions in *other* schemas that depend on it go too; the confirmation says so before it runs.
 
@@ -66,9 +68,17 @@ Rename from the same sheet, or in place: select the row and press Return.
 
 `pg_catalog`, `information_schema` and `pg_toast` are refused for rename, edit and drop.
 
-A partitioned table is listed once, under its own icon. Expand it for its partitions, and expand a partition again if it is subpartitioned; opening one works like opening any other table. Tables using the older `INHERITS` inheritance are listed normally, each child in its own right.
+A partitioned table is listed once, with how many partitions it holds beside its name. Expand it for the partitions, each labelled with its bound: `FROM ('2024-01-01') TO ('2024-02-01')`, `IN ('de', 'fr')`, `WITH (modulus 4, remainder 0)`, or `DEFAULT`. Expand a partition again if it is subpartitioned.
+
+A partition is a relation, so opening, truncating, renaming and dropping one work as they do on any table. A partition declared in another schema, `CREATE TABLE archive.orders_2023 PARTITION OF public.orders`, is reached under its parent and carries `archive` into every statement built from it.
+
+Tables using the older `INHERITS` inheritance are listed normally, each child on its own. Turn partitions off with **Partitions** under **View Options**.
 
 ## Column types
+
+<DeclaredColumnType />
+
+That is what the [Structure tab](/features/table-structure) shows, what the [MCP tools](/external-api/mcp-tools) report as `data_type`, and what the AI context and autocomplete carry. An enum column keeps its value picker, and a domain column keeps the editor, formatting and sorting of the type underneath it.
 
 `jsonb` renders as formatted JSON, and `uuid`, `inet`, `timestamp with time zone`, `interval` and `bytea` display natively. PostGIS `geometry` and `geography` render as EWKT with the SRID kept, `SRID=4326;POINT(-73 40.7237)`, rather than raw EWKB hex; a value that fails to convert stays hex.
 
@@ -104,9 +114,19 @@ An SQL export writes those statements back for tables, views and materialized vi
 
 The Structure tab of a view, a materialized view or a foreign table offers only the edits PostgreSQL takes on that kind of object, which is fewer than a table's and different for each. See [Table Structure](/features/table-structure#what-each-object-accepts).
 
+PostgreSQL refuses `INSERT`, `UPDATE` and `DELETE` on a materialized view, so its rows open read-only in the data grid. Edit the tables it reads from, then choose **Refresh Materialized View…**.
+
+## Invalid indexes
+
+A `CREATE INDEX CONCURRENTLY` or `REINDEX CONCURRENTLY` that fails or is cancelled leaves an invalid index on the table. The **Indexes** tab names it, and exports leave it out as `pg_dump` does. [Table Structure](/features/table-structure#invalid-indexes) covers dropping or rebuilding it.
+
 ## Cross-database tabs
 
 PostgreSQL has no in-place `USE`, so a tab bound to a database other than the connection's active one runs on a second connection opened for that database. It shares no temp tables, session variables, or open transaction with the query editor on the main connection: keep a multi-statement transaction or a `CREATE TEMP TABLE` on tabs bound to one database. Binding itself is on [Tabs](/features/tabs#where-a-tab-points).
+
+## Sessions on the server
+
+In `pg_stat_activity`, the connection your query editor uses reports `application_name` as `TablePro`. The [metadata connections](/connections/connection-form#connection-health) that read the sidebar and the Structure tab, and the ones a cross-database tab runs on, report `TablePro Metadata`. To name them yourself, put `-c application_name=reporting` in **Connection Options**: every connection then uses that name.
 
 ## Text encoding
 
