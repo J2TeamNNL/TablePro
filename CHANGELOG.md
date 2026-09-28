@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Raw HTML error pages in Trino connection errors.
 - ClickHouse Verify Identity ignoring the chosen CA certificate.
 - Missing "no TLS fallback" warning under Preferred for Trino.
+- Welcome window toolbar growing and captioning its search field after choosing Icon and Text.
 
 ## [0.76.0] - 2026-09-28
 
