@@ -422,7 +422,14 @@ targets:
       - Plugins/ClickHouseDriverPlugin/ClickHousePluginDriver+TableOperations.swift
       - Plugins/ClickHouseDriverPlugin/ClickHouseTableOperations.swift
       - Plugins/CloudflareR2SQLDriverPlugin/CloudflareR2SQLMetadata.swift
+      - Plugins/CassandraDriverPlugin/CassandraBoundValue.swift
+      - Plugins/CassandraDriverPlugin/CassandraBrowseStatement.swift
+      - Plugins/CassandraDriverPlugin/CassandraCellText.swift
       - Plugins/CassandraDriverPlugin/CassandraIndexStatements.swift
+      - Plugins/CassandraDriverPlugin/CassandraObjectQueries.swift
+      - Plugins/CassandraDriverPlugin/CassandraResumePoints.swift
+      - Plugins/CassandraDriverPlugin/CassandraRowWriter.swift
+      - Plugins/CassandraDriverPlugin/CassandraVarint.swift
       - Plugins/DamengDriverPlugin/DamengParameterBinder.swift
       - Plugins/DamengDriverPlugin/DamengIndexStatements.swift
       - Plugins/OracleDriverPlugin/OracleColumnStatements.swift
@@ -710,6 +717,7 @@ targets:
       - Plugins/KafkaDriverPlugin/KafkaRequest.swift
       - Plugins/KafkaDriverPlugin/KafkaScram.swift
       - Plugins/KafkaDriverPlugin/SnappyDecoder.swift
+      - Plugins/TeradataDriverPlugin/TeradataSSLMapping.swift
       - Plugins/RedisDriverPlugin/RedisArgumentCodec.swift
       - Plugins/RedisDriverPlugin/RedisAuthCommand.swift
       - Plugins/RedisDriverPlugin/RedisClusterAggregator.swift
@@ -805,6 +813,8 @@ targets:
         product: NIOPosix
       - package: swift-nio-ssl
         product: NIOSSL
+      - package: TableProCore
+        product: TableProTeradataCore
     settings:
       base:
         CURRENT_PROJECT_VERSION: 1

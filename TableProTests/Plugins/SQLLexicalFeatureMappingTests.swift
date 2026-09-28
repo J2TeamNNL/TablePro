@@ -14,7 +14,7 @@ import TableProSQLGrammar
 import Testing
 
 struct SQLLexicalFeatureMappingTests {
-    @Test("Every grammar fact but SAP HANA's app-curated SQLScript blocks has exactly one kit feature, on the same bit")
+    @Test("Every grammar fact but the app-curated SQLScript blocks and CQL batches has exactly one kit feature, on the same bit")
     func everyFactHasAPartner() {
         let pairs = SQLLexicalGrammar.pluginFeaturePairs
         let grammarBits = pairs.reduce(into: SQLLexicalGrammar()) { $0.formUnion($1.1) }
@@ -24,7 +24,8 @@ struct SQLLexicalFeatureMappingTests {
         #expect(Set(pairs.map(\.1.rawValue)).count == pairs.count)
         #expect(grammarBits.rawValue == (1 << 25) - 1)
         #expect(grammarBits.isDisjoint(with: .sqlScriptBlocks))
-        #expect(grammarBits.union(.sqlScriptBlocks).rawValue == (1 << 26) - 1)
+        #expect(grammarBits.isDisjoint(with: .cqlBatches))
+        #expect(grammarBits.union([.sqlScriptBlocks, .cqlBatches]).rawValue == (1 << 27) - 1)
     }
 
     @Test("SAP HANA's SQLScript blocks stay in the app's curated grammar and never reach the kit")
@@ -33,6 +34,14 @@ struct SQLLexicalFeatureMappingTests {
         #expect(hana.contains(.sqlScriptBlocks))
         #expect(hana.pluginFeatures == [.dollarAndHashInIdentifiers])
         #expect(SQLLexicalGrammar(pluginFeatures: hana.pluginFeatures) == hana.subtracting(.sqlScriptBlocks))
+    }
+
+    @Test("A CQL batch stays in the app's curated grammar and never reaches the kit")
+    func cqlBatchesAreAppCurated() {
+        let cql = DatabaseType.cassandra.lexicalGrammar
+        #expect(cql.contains(.cqlBatches))
+        #expect(cql.pluginFeatures == [.untaggedDollarQuotes, .doubleSlashLineComments])
+        #expect(SQLLexicalGrammar(pluginFeatures: cql.pluginFeatures) == cql.subtracting(.cqlBatches))
     }
 
     @Test("A grammar survives the trip through the kit's features")
