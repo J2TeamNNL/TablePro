@@ -20,19 +20,23 @@ final class SSLPaneViewModel: ObservableObject {
     /// Silent on a driver that renders no SSL section, so a stored mode the form cannot show
     /// cannot disable Save over a certificate field the user has no way to reach.
     var validationIssues: [String] {
-        guard coordinator?.value?.supportsSSL ?? true else { return [] }
-        var issues: [String] = []
-        if mode == .verifyCa || mode == .verifyIdentity {
-            if caCertPath.trimmingCharacters(in: .whitespaces).isEmpty {
-                issues.append(String(localized: "CA certificate is required for verification modes"))
-            }
-        }
+        let owner = coordinator?.value
+        guard owner?.supportsSSL ?? true else { return [] }
+        let trustsSystemRoots = owner?.network.type.verifiesTLSWithSystemTrustStore ?? false
+        return caCertificateIssues(trustsSystemRoots: trustsSystemRoots) + clientKeyIssues
+    }
+
+    private func caCertificateIssues(trustsSystemRoots: Bool) -> [String] {
+        guard mode == .verifyCa || mode == .verifyIdentity, !trustsSystemRoots else { return [] }
+        guard caCertPath.trimmingCharacters(in: .whitespaces).isEmpty else { return [] }
+        return [String(localized: "CA certificate is required for verification modes")]
+    }
+
+    private var clientKeyIssues: [String] {
         let hasClientCert = !clientCertPath.trimmingCharacters(in: .whitespaces).isEmpty
         let hasClientKey = !clientKeyPath.trimmingCharacters(in: .whitespaces).isEmpty
-        if hasClientCert && !hasClientKey {
-            issues.append(String(localized: "Client key is required when client certificate is set"))
-        }
-        return issues
+        guard hasClientCert, !hasClientKey else { return [] }
+        return [String(localized: "Client key is required when client certificate is set")]
     }
 
     func load(from connection: DatabaseConnection) {

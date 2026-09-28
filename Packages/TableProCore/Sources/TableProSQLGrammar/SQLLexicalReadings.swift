@@ -101,6 +101,7 @@ enum SQLLexicalRelevance {
         let length = text.length
         var facts: SQLLexicalGrammar = [
             .plsqlBlocks, .delimiterDirective, .unterminatedStatements, .terminatedMergeStatements,
+            .sqlScriptBlocks,
         ]
         var blockCommentOpeners = 0
         var index = 0

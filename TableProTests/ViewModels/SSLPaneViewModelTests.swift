@@ -53,4 +53,27 @@ struct SSLPaneViewModelTests {
         viewModel.resetForType(DatabaseType(rawValue: "FutureDB"))
         #expect(viewModel.mode == .disabled)
     }
+
+    private func verifyIdentityIssues(for type: DatabaseType, caCertPath: String = "") -> [String] {
+        let coordinator = ConnectionFormCoordinator(connectionId: nil)
+        coordinator.network.type = type
+        coordinator.ssl.mode = .verifyIdentity
+        coordinator.ssl.caCertPath = caCertPath
+        return coordinator.ssl.validationIssues
+    }
+
+    @Test("Verify Identity without a CA file saves for engines that trust the system roots")
+    func systemTrustStoreEnginesNeedNoCAFile() {
+        for type in [DatabaseType.sapHana, .kafka, .mssql] {
+            #expect(type.verifiesTLSWithSystemTrustStore)
+            #expect(verifyIdentityIssues(for: type).isEmpty)
+        }
+    }
+
+    @Test("Verify Identity without a CA file is refused for engines that need one")
+    func fileTrustEnginesStillRequireACAFile() {
+        #expect(!DatabaseType.postgresql.verifiesTLSWithSystemTrustStore)
+        #expect(verifyIdentityIssues(for: .postgresql).count == 1)
+        #expect(verifyIdentityIssues(for: .postgresql, caCertPath: "/tmp/ca.pem").isEmpty)
+    }
 }

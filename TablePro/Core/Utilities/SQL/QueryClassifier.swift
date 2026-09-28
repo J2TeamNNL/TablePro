@@ -142,8 +142,8 @@ enum QueryClassifier {
         if let request = dynamoDBClassification(statement, databaseType: databaseType) {
             return request
         }
-        if runsPLSQL(statement, grammar: grammar) {
-            return plsqlBlockClassification(statement, grammar: grammar, databaseType: databaseType)
+        if runsProceduralBlock(statement, grammar: grammar) {
+            return proceduralBlockClassification(statement, grammar: grammar, databaseType: databaseType)
         }
         return sqlClassification(statement, grammar: grammar, databaseType: databaseType)
     }
@@ -156,8 +156,8 @@ enum QueryClassifier {
         if let request = dynamoDBDeletesEverything(statement, databaseType: databaseType) {
             return request
         }
-        if runsPLSQL(statement, grammar: grammar) {
-            return plsqlBlockDeletesEverything(statement, grammar: grammar)
+        if runsProceduralBlock(statement, grammar: grammar) {
+            return proceduralBlockDeletesEverything(statement, grammar: grammar)
         }
         let code = SQLCodeProjection.code(of: statement, grammar: grammar).uppercased()
         guard leadingCodeKeyword(code) == "DELETE" else { return false }

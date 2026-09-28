@@ -1529,11 +1529,11 @@ aggregateTargets:
       - CloudflareD1DriverPlugin
       - CloudflareR2SQLDriverPlugin
       - DamengDriver
-      - HanaDriver
       - DuckDBDriver
       - DynamoDBDriverPlugin
       - ElasticsearchDriverPlugin
       - EtcdDriverPlugin
+      - HanaDriver
       - JSONExport
       - JSONImport
       - KafkaDriverPlugin

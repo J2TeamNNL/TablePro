@@ -184585,6 +184585,111 @@
     },
     "This document holds JavaScript code with a scope. MongoDB compares a scope by value, so a save could not tell whether someone else changed it." : {
 
+    },
+    "Enter the SAP HANA host name." : {
+
+    },
+    "The SAP HANA port must be between 1 and 65535." : {
+
+    },
+    "Enter the SAP HANA user name." : {
+
+    },
+    "Set both a client certificate and a client key, or neither." : {
+
+    },
+    "The SAP HANA connection is closed." : {
+
+    },
+    "Lost connection to the SAP HANA server." : {
+
+    },
+    "SAP HANA returned a result TablePro could not read." : {
+
+    },
+    "TablePro could not reach the SAP HANA server within %lld seconds." : {
+
+    },
+    "The SAP HANA statement was cancelled." : {
+
+    },
+    "The statement ran longer than the query timeout and was stopped." : {
+
+    },
+    "The SAP HANA connection settings are not valid." : {
+
+    },
+    "TablePro could not reach the SAP HANA server." : {
+
+    },
+    "The SAP HANA driver failed unexpectedly." : {
+
+    },
+    "SAP HANA reported an error." : {
+
+    },
+    "Value %1$lld, \"%2$@\", is not a date. SAP HANA expects YYYY-MM-DD." : {
+
+    },
+    "Value %1$lld, \"%2$@\", is not a time. SAP HANA expects HH:MM:SS." : {
+
+    },
+    "Value %1$lld, \"%2$@\", is not a date and time. SAP HANA expects YYYY-MM-DD HH:MM:SS." : {
+
+    },
+    "Value %1$lld, \"%2$@\", is not a timestamp. SAP HANA expects YYYY-MM-DD HH:MM:SS.FFFFFFF." : {
+
+    },
+    "Value %1$lld, \"%2$@\", is not a boolean. SAP HANA expects TRUE or FALSE." : {
+
+    },
+    "Value %1$lld, \"%2$@\", is not a whole number." : {
+
+    },
+    "Value %1$lld, \"%2$@\", is not a decimal number." : {
+
+    },
+    "Value %1$lld, \"%2$@\", is not a number." : {
+
+    },
+    "Value %1$lld, \"%2$@\", has more decimal places than the column allows." : {
+
+    },
+    "Value %1$lld, \"%2$@\", could not be converted for SAP HANA." : {
+
+    },
+    "TLS Server Name" : {
+
+    },
+    "Leave empty unless the certificate names another host" : {
+
+    },
+    "SAP HANA did not return the table definition." : {
+
+    },
+    "SAP HANA returned no definition for this view." : {
+
+    },
+    "The SAP HANA schema name cannot be empty." : {
+
+    },
+    "Choose a SAP HANA schema first." : {
+
+    },
+    "%lld large object values were longer than 64 MiB and were cut short." : {
+
+    },
+    "Leave empty to verify against the system trust store." : {
+
+    },
+    "SAP's in-memory SQL database" : {
+
+    },
+    "Value %1$lld, \"%2$@\", is not hex-encoded well-known binary, the form SAP HANA takes for a spatial value." : {
+
+    },
+    "Parameter %lld is an OUT parameter, which TablePro cannot bind." : {
+
     }
   },
   "version" : "1.1"

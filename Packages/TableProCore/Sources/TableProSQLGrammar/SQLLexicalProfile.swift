@@ -75,6 +75,7 @@ public struct SQLLexicalProfile: Sendable, Hashable {
             for reading in profile.readings {
                 let unitless = reading.subtracting([
                     .plsqlBlocks, .delimiterDirective, .unterminatedStatements, .terminatedMergeStatements,
+                    .sqlScriptBlocks,
                 ])
                 if seen.insert(unitless).inserted {
                     result.append(unitless)
@@ -183,6 +184,8 @@ public struct SQLLexicalProfile: Sendable, Hashable {
     /// and a gate reads both. Not measured.
     static let dynamoDB: SQLLexicalGrammar = [.backslashEscapesInDoubleQuotes]
 
+    static let sapHana: SQLLexicalGrammar = [.dollarAndHashInIdentifiers, .sqlScriptBlocks]
+
     /// Engines whose statements are commands or JSON documents rather than SQL. Their splitting is what it has always
     /// been: a backslash escapes inside any quote, as it does in JSON and in `redis-cli`.
     static let commandLine: SQLLexicalGrammar = [
@@ -259,6 +262,10 @@ public struct SQLLexicalProfile: Sendable, Hashable {
             "Trino": SQLLexicalProfile(grammar: .ansi, undetermined: [.carriageReturnEndsLineComments]),
             "Teradata": SQLLexicalProfile(
                 grammar: .ansi,
+                undetermined: [.nestedBlockComments, .carriageReturnEndsLineComments]
+            ),
+            "SAP HANA": SQLLexicalProfile(
+                grammar: sapHana,
                 undetermined: [.nestedBlockComments, .carriageReturnEndsLineComments]
             ),
             "Cassandra": cqlFamily,

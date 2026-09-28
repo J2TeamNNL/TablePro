@@ -14,7 +14,7 @@ import TableProSQLGrammar
 import Testing
 
 struct SQLLexicalFeatureMappingTests {
-    @Test("Every grammar fact has exactly one kit feature, on the same bit")
+    @Test("Every grammar fact but SAP HANA's app-curated SQLScript blocks has exactly one kit feature, on the same bit")
     func everyFactHasAPartner() {
         let pairs = SQLLexicalGrammar.pluginFeaturePairs
         let grammarBits = pairs.reduce(into: SQLLexicalGrammar()) { $0.formUnion($1.1) }
@@ -23,6 +23,16 @@ struct SQLLexicalFeatureMappingTests {
         #expect(grammarBits.rawValue == featureBits.rawValue)
         #expect(Set(pairs.map(\.1.rawValue)).count == pairs.count)
         #expect(grammarBits.rawValue == (1 << 25) - 1)
+        #expect(grammarBits.isDisjoint(with: .sqlScriptBlocks))
+        #expect(grammarBits.union(.sqlScriptBlocks).rawValue == (1 << 26) - 1)
+    }
+
+    @Test("SAP HANA's SQLScript blocks stay in the app's curated grammar and never reach the kit")
+    func sqlScriptBlocksAreAppCurated() {
+        let hana = DatabaseType.sapHana.lexicalGrammar
+        #expect(hana.contains(.sqlScriptBlocks))
+        #expect(hana.pluginFeatures == [.dollarAndHashInIdentifiers])
+        #expect(SQLLexicalGrammar(pluginFeatures: hana.pluginFeatures) == hana.subtracting(.sqlScriptBlocks))
     }
 
     @Test("A grammar survives the trip through the kit's features")

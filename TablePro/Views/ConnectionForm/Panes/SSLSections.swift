@@ -68,7 +68,7 @@ struct SSLSections: View {
                         Text(String(localized: "Certificate Trust"))
                     }
                 } else if sslMode == .verifyCa || sslMode == .verifyIdentity {
-                    Section(String(localized: "CA Certificate")) {
+                    Section {
                         LabeledContent(String(localized: "Certificate")) {
                             HStack {
                                 TextField(
@@ -78,6 +78,14 @@ struct SSLSections: View {
                                 }
                                 .controlSize(.small)
                             }
+                        }
+                    } header: {
+                        Text(String(localized: "CA Certificate"))
+                    } footer: {
+                        if databaseType.verifiesTLSWithSystemTrustStore {
+                            Text(String(localized: "Leave empty to verify against the system trust store."))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }

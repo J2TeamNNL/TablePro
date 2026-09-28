@@ -70,6 +70,10 @@ extension DatabaseType {
         PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.supportsOpportunisticTLS ?? true
     }
 
+    var verifiesTLSWithSystemTrustStore: Bool {
+        PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.verifiesTLSWithSystemTrustStore ?? false
+    }
+
     var supportsClientKeyPassphrase: Bool {
         PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.supportsClientKeyPassphrase ?? false
     }
