@@ -1,9 +1,15 @@
 # SAP HANA Driver Plugin
 
-This plugin adds SAP HANA SQL connectivity to TablePro through the native protocol implementation in [SAP/go-hdb](https://github.com/SAP/go-hdb). It does not require the SAP HDB Client, ODBC, SQLDBC, or a local SAP installation.
+This plugin connects TablePro to SAP HANA Cloud and SAP HANA 2.0 through [SAP/go-hdb](https://github.com/SAP/go-hdb), a native implementation of the HANA SQL wire protocol. It needs no SAP HANA Client, ODBC, SQLDBC or local SAP install.
 
-The MVP supports username/password authentication, schema and table browsing, column and index metadata, SQL execution, result sets, and the normal TablePro TLS modes. The optional TLS Server Name field is useful when a HANA Cloud endpoint is reached through a tunnel or proxy. Verify CA and Verify Identity require a CA file. Client certificates, LDAP, JWT, and SSO are intentionally not exposed.
+The Go bridge in `Native/HanaBridge` is built by `scripts/build-hana.sh` as a universal arm64/x86_64 C archive. `CHana/CHana.h` is the whole interface: the bridge owns one HANA session per id and returns JSON, and the Swift side writes every message the user reads.
 
-The Go bridge is built as a universal arm64/x86_64 C archive by `scripts/build-hana.sh`. The archive owns the HANA wire connection and returns bounded JSON result envelopes to the Swift plugin.
+What the plugin does:
 
-The plugin has no structure editing or parameterized-query capability in this first release. Use a SQL statement in the query editor for writes and DDL.
+- User name and password login, with TLS in every TablePro mode. Preferred and Required encrypt without checking the certificate, Verify CA checks the chain only, and Verify Identity checks the chain and the host name, against the system roots unless a CA file is set. A client certificate and key can be added for mutual TLS. The TLS Server Name field overrides the name checked by Verify Identity when the certificate names another host.
+- Schema browsing, columns with full types, primary keys, identity and generated columns, indexes, foreign keys, row counts, table DDL and view definitions.
+- SQL execution with bound parameters, so grid edits, inserts and deletes work.
+- Stop and the query timeout. Both send `ALTER SYSTEM CANCEL SESSION` for the connection's own session, which keeps the session open. When the server refuses the cancel, the bridge closes the session and TablePro reconnects.
+- `EXPLAIN PLAN FOR` runs as one step that saves the plan, reads it and deletes it again. Reading plans needs the `OPTIMIZER ADMIN` privilege on recent HANA versions.
+
+Not supported: structure editing, transactions, LDAP, JWT and SSO logins. Large object values longer than 64 MiB are cut short, and the result says so.

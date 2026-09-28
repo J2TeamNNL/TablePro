@@ -1,5 +1,4 @@
 module CHana {
     header "CHana.h"
-    link "hana_bridge"
     export *
 }

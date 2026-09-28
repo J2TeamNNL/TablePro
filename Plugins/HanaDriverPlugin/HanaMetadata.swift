@@ -11,11 +11,17 @@ enum HanaMetadata {
     static let defaultSchemaName = ""
     static let tlsServerNameField = "hanaTLSServerName"
 
+    static let systemSchemaNames = [
+        "SYS", "SYS_DATABASES", "_SYS_AFL", "_SYS_AUDIT", "_SYS_BI", "_SYS_BIC", "_SYS_DATA_ANONYMIZATION", "_SYS_DI",
+        "_SYS_EPM", "_SYS_PLAN_STABILITY", "_SYS_REPO", "_SYS_RT", "_SYS_SECURITY", "_SYS_SQL_ANALYZER",
+        "_SYS_STATISTICS", "_SYS_TASK", "_SYS_TELEMETRY", "_SYS_WORKLOAD_REPLAY", "_SYS_XS"
+    ]
+
     static let connectionFields: [ConnectionField] = [
         ConnectionField(
             id: tlsServerNameField,
             label: String(localized: "TLS Server Name"),
-            placeholder: String(localized: "Leave empty to use the host"),
+            placeholder: String(localized: "Leave empty unless the certificate names another host"),
             section: .advanced
         )
     ]
@@ -34,7 +40,7 @@ enum HanaMetadata {
         CompletionEntry(label: "SELECT", insertText: "SELECT * FROM \"SCHEMA\".\"TABLE\""),
         CompletionEntry(label: "CREATE TABLE", insertText: "CREATE TABLE \"SCHEMA\".\"TABLE\" (\n    \"id\" INTEGER\n)"),
         CompletionEntry(label: "ALTER TABLE", insertText: "ALTER TABLE \"SCHEMA\".\"TABLE\""),
-        CompletionEntry(label: "EXPLAIN PLAN", insertText: "EXPLAIN PLAN SET STATEMENT_NAME = 'plan' FOR SELECT 1"),
+        CompletionEntry(label: "EXPLAIN PLAN", insertText: "EXPLAIN PLAN FOR SELECT * FROM \"SCHEMA\".\"TABLE\""),
         CompletionEntry(label: "SELECT TOP", insertText: "SELECT TOP 100 * FROM \"SCHEMA\".\"TABLE\"")
     ]
 
@@ -56,10 +62,14 @@ enum HanaMetadata {
         ],
         dataTypes: Set(columnTypesByCategory.values.flatMap { $0 }),
         tableOptions: ["PARTITION BY", "UNLOAD PRIORITY", "AUTO MERGE"],
-        regexSyntax: .regexpLike,
+        regexSyntax: .unsupported,
         booleanLiteralStyle: .truefalse,
         likeEscapeStyle: .explicit,
         paginationStyle: .limit,
-        autoLimitStyle: .limit
+        autoLimitStyle: .limit,
+        caseSensitivityStyle: .caseFoldFunction,
+        textCastTypeName: nil,
+        functionNamesAreCaseInsensitive: true,
+        lexicalFeatures: [.dollarAndHashInIdentifiers]
     )
 }
