@@ -2,7 +2,6 @@ import TableProPluginKit
 @testable import TablePro
 import Testing
 
-@Suite("SSLSections")
 struct SSLSectionsTests {
     @Test("Trino port 443 warns only while TLS is disabled")
     func trinoHTTPSPortWarning() {
