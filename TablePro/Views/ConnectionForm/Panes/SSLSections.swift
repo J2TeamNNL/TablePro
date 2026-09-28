@@ -14,25 +14,27 @@ import UniformTypeIdentifiers
 /// connections leave alone.
 struct SSLSections: View {
     let databaseType: DatabaseType
-    let serverPort: Int
     @Binding var sslMode: SSLMode
     @Binding var sslCaCertPath: String
     @Binding var sslClientCertPath: String
     @Binding var sslClientKeyPath: String
     @Binding var sslClientKeyPassphrase: String
 
-    private var supportsPerConnectionCertPaths: Bool { databaseType != .mssql }
+    private var supportsPerConnectionCertPaths: Bool { databaseType.supportsPerConnectionCertificatePaths }
+
+    private var caCertificateIsOptional: Bool {
+        !databaseType.requiresCACertificate(for: sslMode)
+    }
+
+    private var caCertificatePrompt: String {
+        caCertificateIsOptional ? String(localized: "Optional") : "/path/to/ca-cert.pem"
+    }
 
     private var noOpportunisticTLSWarning: String {
         if databaseType == .oracle {
             return String(localized: "Preferred connects in plain TCP for this driver. Use Required to enforce TCPS.")
         }
         return String(localized: "This driver has no TLS fallback. Preferred forces TLS, same as Required.")
-    }
-
-    static func trinoTLSWarning(databaseType: DatabaseType, serverPort: Int, sslMode: SSLMode) -> String? {
-        guard databaseType == .trino, serverPort == 443, sslMode == .disabled else { return nil }
-        return String(localized: "Trino uses plain HTTP while SSL is Disabled. Port 443 usually requires TLS; choose Verify Identity or another SSL mode.")
     }
 
     var body: some View {
@@ -43,18 +45,10 @@ struct SSLSections: View {
                         Text(mode.displayLabel).tag(mode)
                     }
                 }
+                .accessibilityIdentifier("connection-form-ssl-mode")
                 if sslMode == .preferred, !databaseType.supportsOpportunisticTLS {
                     Label(noOpportunisticTLSWarning, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(databaseType == .oracle ? .red : .orange)
-                        .font(.caption)
-                }
-                if let warning = Self.trinoTLSWarning(
-                    databaseType: databaseType,
-                    serverPort: serverPort,
-                    sslMode: sslMode
-                ) {
-                    Label(warning, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
                         .font(.caption)
                 }
             } footer: {
@@ -75,7 +69,7 @@ struct SSLSections: View {
                     Section {
                         Text(String(localized: """
                             Verify CA and Verify Identity check the server certificate against the system trust \
-                            store. A custom CA and client certificates are not available for SQL Server.
+                            store. This driver takes no custom CA or client certificate.
                             """))
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -83,16 +77,23 @@ struct SSLSections: View {
                         Text(String(localized: "Certificate Trust"))
                     }
                 } else if sslMode == .verifyCa || sslMode == .verifyIdentity {
-                    Section(String(localized: "CA Certificate")) {
+                    Section {
                         LabeledContent(String(localized: "Certificate")) {
                             HStack {
-                                TextField(
-                                    "", text: $sslCaCertPath, prompt: Text("/path/to/ca-cert.pem"))
+                                TextField("", text: $sslCaCertPath, prompt: Text(caCertificatePrompt))
                                 Button(String(localized: "Browse")) {
                                     browseForCertificate(binding: $sslCaCertPath)
                                 }
                                 .controlSize(.small)
                             }
+                        }
+                    } header: {
+                        Text(String(localized: "CA Certificate"))
+                    } footer: {
+                        if caCertificateIsOptional {
+                            Text(String(localized: "Leave empty to use the system trust store."))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }

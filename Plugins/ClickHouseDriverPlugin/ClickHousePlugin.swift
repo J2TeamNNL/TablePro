@@ -483,7 +483,11 @@ final class ClickHousePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
         let killConfig = URLSessionConfiguration.default
         killConfig.timeoutIntervalForRequest = 5
-        let killSession = URLSession(configuration: killConfig)
+        let killSession = URLSession(
+            configuration: killConfig,
+            delegate: ClickHouseTLSDelegate.make(for: config.ssl),
+            delegateQueue: nil
+        )
 
         do {
             let escapedId = queryId.replacingOccurrences(of: "'", with: "''")
@@ -827,7 +831,7 @@ final class ClickHousePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 private final class ClickHouseTLSDelegate: NSObject, URLSessionDelegate, @unchecked Sendable {
     private enum Strategy {
         case skipVerify
-        case verifyChain(anchor: SecCertificate?)
+        case verifyChain(anchor: SecCertificate?, checksHostname: Bool)
         case anchorUnavailable
     }
 
@@ -838,22 +842,30 @@ private final class ClickHouseTLSDelegate: NSObject, URLSessionDelegate, @unchec
     }
 
     /// Returns nil when the default URLSession trust evaluation is correct
-    /// (`.disabled` and `.verifyIdentity`).
+    /// (`.disabled`, and `.verifyIdentity` with no CA certificate).
     static func make(for ssl: SSLConfiguration) -> ClickHouseTLSDelegate? {
+        let caPath = ssl.caCertificatePath.trimmingCharacters(in: .whitespaces)
         switch ssl.mode {
-        case .disabled, .verifyIdentity:
+        case .disabled:
             return nil
         case .preferred, .required:
             return ClickHouseTLSDelegate(strategy: .skipVerify)
+        case .verifyIdentity:
+            guard !caPath.isEmpty else { return nil }
+            return anchored(at: caPath, checksHostname: true)
         case .verifyCa:
-            guard !ssl.caCertificatePath.isEmpty else {
-                return ClickHouseTLSDelegate(strategy: .verifyChain(anchor: nil))
+            guard !caPath.isEmpty else {
+                return ClickHouseTLSDelegate(strategy: .verifyChain(anchor: nil, checksHostname: false))
             }
-            guard let anchor = loadAnchor(at: ssl.caCertificatePath) else {
-                return ClickHouseTLSDelegate(strategy: .anchorUnavailable)
-            }
-            return ClickHouseTLSDelegate(strategy: .verifyChain(anchor: anchor))
+            return anchored(at: caPath, checksHostname: false)
         }
+    }
+
+    private static func anchored(at path: String, checksHostname: Bool) -> ClickHouseTLSDelegate {
+        guard let anchor = loadAnchor(at: path) else {
+            return ClickHouseTLSDelegate(strategy: .anchorUnavailable)
+        }
+        return ClickHouseTLSDelegate(strategy: .verifyChain(anchor: anchor, checksHostname: checksHostname))
     }
 
     /// A verification mode whose anchor cannot be read must fail, never quietly widen to the
@@ -882,12 +894,12 @@ private final class ClickHouseTLSDelegate: NSObject, URLSessionDelegate, @unchec
             completionHandler(.useCredential, URLCredential(trust: serverTrust))
         case .anchorUnavailable:
             completionHandler(.cancelAuthenticationChallenge, nil)
-        case .verifyChain(let anchor):
+        case .verifyChain(let anchor, let checksHostname):
             if let anchor {
                 SecTrustSetAnchorCertificates(serverTrust, [anchor] as CFArray)
             }
-            let hostnameAgnostic = SecPolicyCreateSSL(true, nil)
-            SecTrustSetPolicies(serverTrust, [hostnameAgnostic] as CFArray)
+            let hostname = checksHostname ? challenge.protectionSpace.host as CFString : nil
+            SecTrustSetPolicies(serverTrust, [SecPolicyCreateSSL(true, hostname)] as CFArray)
             if SecTrustEvaluateWithError(serverTrust, nil) {
                 completionHandler(.useCredential, URLCredential(trust: serverTrust))
             } else {

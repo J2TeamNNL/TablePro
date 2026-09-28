@@ -22,8 +22,7 @@ struct NetworkPaneView: View {
             if coordinator.supportsSSL {
                 SSLSections(
                     databaseType: coordinator.network.type,
-                    serverPort: coordinator.network.resolvedPort,
-                    sslMode: $coordinator.ssl.mode,
+                    sslMode: sslModeBinding,
                     sslCaCertPath: $coordinator.ssl.caCertPath,
                     sslClientCertPath: $coordinator.ssl.clientCertPath,
                     sslClientKeyPath: $coordinator.ssl.clientKeyPath,
@@ -33,6 +32,13 @@ struct NetworkPaneView: View {
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
+    }
+
+    private var sslModeBinding: Binding<SSLMode> {
+        Binding(
+            get: { coordinator.ssl.mode },
+            set: { coordinator.ssl.select($0) }
+        )
     }
 
     private var transportPicker: some View {

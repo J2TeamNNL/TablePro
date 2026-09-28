@@ -85,8 +85,11 @@ public protocol TrinoTransport: Sendable {
 /// Sends with `URLSession.data(for:delegate:)`, so cancelling the Swift task that awaits a request
 /// cancels its URL task, and keeps every request in flight so `cancelAll` stops each one. A DELETE
 /// is never tracked: it is how a statement tells Trino to stop, and a cancel must not cancel it.
+/// Certificate challenges are answered by each request's own delegate, so a certificate the request
+/// refused is reported as a TLS failure of that request rather than as a cancel.
 public final class URLSessionTrinoTransport: NSObject, TrinoTransport, @unchecked Sendable {
     private let session: URLSession
+    private let tls: TrinoTLSOptions
     private let lock = NSLock()
     private var inFlight: [ObjectIdentifier: URLSessionTask] = [:]
 
@@ -96,8 +99,8 @@ public final class URLSessionTrinoTransport: NSObject, TrinoTransport, @unchecke
 
     init(tls: TrinoTLSOptions, configuration: URLSessionConfiguration) {
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        let delegateProxy = TrinoTLSDelegate(tls: tls)
-        self.session = URLSession(configuration: configuration, delegate: delegateProxy, delegateQueue: nil)
+        self.tls = tls
+        self.session = URLSession(configuration: configuration)
         super.init()
     }
 
@@ -119,14 +122,17 @@ public final class URLSessionTrinoTransport: NSObject, TrinoTransport, @unchecke
             urlRequest.setValue(value, forHTTPHeaderField: name)
         }
 
-        let tracker = request.method == .delete ? nil : TrinoTaskTracker(transport: self)
-        defer { tracker?.finish() }
+        let delegate = TrinoTaskDelegate(
+            challenges: TrinoTLSChallengeHandler(tls: tls),
+            transport: request.method == .delete ? nil : self
+        )
+        defer { delegate.finish() }
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: urlRequest, delegate: tracker)
-        } catch let error as URLError where error.code == .cancelled {
-            throw TrinoError.cancelled
+            (data, response) = try await session.data(for: urlRequest, delegate: delegate)
+        } catch let error as URLError {
+            throw Self.failure(for: error, refusedTrust: delegate.refusedTrust)
         } catch is CancellationError {
             throw TrinoError.cancelled
         } catch {
@@ -143,6 +149,31 @@ public final class URLSessionTrinoTransport: NSObject, TrinoTransport, @unchecke
         )
     }
 
+    static func failure(for error: URLError, refusedTrust: TrinoTrustRefusal?) -> TrinoError {
+        switch error.code {
+        case .cancelled:
+            guard let refusedTrust else { return .cancelled }
+            return .tlsHandshakeFailed(kind: refusedTrust.kind, serverMessage: refusedTrust.message)
+        case .serverCertificateUntrusted, .serverCertificateHasBadDate,
+             .serverCertificateHasUnknownRoot, .serverCertificateNotYetValid:
+            return .tlsHandshakeFailed(kind: trustFailureKind(of: error), serverMessage: error.localizedDescription)
+        default:
+            return .transport(error.localizedDescription)
+        }
+    }
+
+    private static func trustFailureKind(of error: URLError) -> TrinoTLSFailureKind {
+        guard let peerTrust = error.userInfo[NSURLErrorFailingURLPeerTrustErrorKey],
+              CFGetTypeID(peerTrust as CFTypeRef) == SecTrustGetTypeID() else {
+            return .untrustedCertificate
+        }
+        // swiftlint:disable:next force_cast
+        let trust = peerTrust as! SecTrust
+        var evaluationError: CFError?
+        guard !SecTrustEvaluateWithError(trust, &evaluationError) else { return .untrustedCertificate }
+        return TrinoTLSChallengeHandler.failureKind(of: evaluationError)
+    }
+
     var inFlightCount: Int {
         lock.withLock { inFlight.count }
     }
@@ -156,18 +187,44 @@ public final class URLSessionTrinoTransport: NSObject, TrinoTransport, @unchecke
     }
 }
 
-private final class TrinoTaskTracker: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+struct TrinoTrustRefusal: Sendable, Equatable {
+    let kind: TrinoTLSFailureKind
+    let message: String
+}
+
+private final class TrinoTaskDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     private weak var transport: URLSessionTrinoTransport?
+    private let challenges: TrinoTLSChallengeHandler
     private let lock = NSLock()
     private var task: URLSessionTask?
+    private var refusal: TrinoTrustRefusal?
 
-    init(transport: URLSessionTrinoTransport) {
+    init(challenges: TrinoTLSChallengeHandler, transport: URLSessionTrinoTransport?) {
+        self.challenges = challenges
         self.transport = transport
     }
 
+    var refusedTrust: TrinoTrustRefusal? {
+        lock.withLock { refusal }
+    }
+
     func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
+        guard let transport else { return }
         lock.withLock { self.task = task }
-        transport?.register(task)
+        transport.register(task)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        let answer = challenges.answer(challenge)
+        if let refused = answer.refusal {
+            lock.withLock { refusal = refused }
+        }
+        completionHandler(answer.disposition, answer.credential)
     }
 
     func finish() {
@@ -176,76 +233,74 @@ private final class TrinoTaskTracker: NSObject, URLSessionTaskDelegate, @uncheck
     }
 }
 
-private final class TrinoTLSDelegate: NSObject, URLSessionDelegate {
-    private let tls: TrinoTLSOptions
+private struct TrinoChallengeAnswer {
+    let disposition: URLSession.AuthChallengeDisposition
+    let credential: URLCredential?
+    var refusal: TrinoTrustRefusal?
 
-    init(tls: TrinoTLSOptions) {
-        self.tls = tls
+    static let defaultHandling = TrinoChallengeAnswer(disposition: .performDefaultHandling, credential: nil)
+
+    static func refuse(_ kind: TrinoTLSFailureKind, message: String) -> TrinoChallengeAnswer {
+        TrinoChallengeAnswer(
+            disposition: .cancelAuthenticationChallenge,
+            credential: nil,
+            refusal: TrinoTrustRefusal(kind: kind, message: message)
+        )
     }
+}
 
-    func urlSession(
-        _ session: URLSession,
-        didReceive challenge: URLAuthenticationChallenge,
-        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
-    ) {
+private struct TrinoTLSChallengeHandler {
+    let tls: TrinoTLSOptions
+
+    func answer(_ challenge: URLAuthenticationChallenge) -> TrinoChallengeAnswer {
         switch challenge.protectionSpace.authenticationMethod {
         case NSURLAuthenticationMethodServerTrust:
-            handleServerTrust(challenge, completionHandler: completionHandler)
+            return answerServerTrust(challenge)
         case NSURLAuthenticationMethodClientCertificate:
-            handleClientCertificate(completionHandler: completionHandler)
+            return answerClientCertificate()
         default:
-            completionHandler(.performDefaultHandling, nil)
+            return .defaultHandling
         }
     }
 
-    private func handleServerTrust(
-        _ challenge: URLAuthenticationChallenge,
-        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
-    ) {
+    private func answerServerTrust(_ challenge: URLAuthenticationChallenge) -> TrinoChallengeAnswer {
         guard let serverTrust = challenge.protectionSpace.serverTrust else {
-            completionHandler(.performDefaultHandling, nil)
-            return
+            return .defaultHandling
         }
-
         if tls.mode == .insecure {
-            completionHandler(.useCredential, URLCredential(trust: serverTrust))
-            return
+            return TrinoChallengeAnswer(disposition: .useCredential, credential: URLCredential(trust: serverTrust))
         }
-
-        if !tls.caCertificatePath.isEmpty {
-            guard let caData = try? Data(contentsOf: URL(fileURLWithPath: tls.caCertificatePath)),
-                  let caCert = SecCertificateCreateWithData(nil, caData as CFData) else {
-                completionHandler(.cancelAuthenticationChallenge, nil)
-                return
+        if tls.mode == .full, tls.anchorCertificate == nil {
+            return .defaultHandling
+        }
+        if let anchorDER = tls.anchorCertificate {
+            guard let anchor = SecCertificateCreateWithData(nil, anchorDER as CFData) else {
+                return .refuse(.untrustedCertificate, message: "The CA certificate is not a DER or PEM certificate.")
             }
-            SecTrustSetAnchorCertificates(serverTrust, [caCert] as CFArray)
+            SecTrustSetAnchorCertificates(serverTrust, [anchor] as CFArray)
             SecTrustSetAnchorCertificatesOnly(serverTrust, true)
-        } else if tls.mode == .full {
-            completionHandler(.performDefaultHandling, nil)
-            return
         }
-
         if tls.mode == .caOnly {
             SecTrustSetPolicies(serverTrust, SecPolicyCreateBasicX509())
         }
-
-        if SecTrustEvaluateWithError(serverTrust, nil) {
-            completionHandler(.useCredential, URLCredential(trust: serverTrust))
-        } else {
-            completionHandler(.cancelAuthenticationChallenge, nil)
+        var error: CFError?
+        guard SecTrustEvaluateWithError(serverTrust, &error) else {
+            return .refuse(Self.failureKind(of: error), message: error.map { CFErrorCopyDescription($0) as String } ?? "")
         }
+        return TrinoChallengeAnswer(disposition: .useCredential, credential: URLCredential(trust: serverTrust))
     }
 
-    private func handleClientCertificate(
-        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
-    ) {
+    static func failureKind(of error: CFError?) -> TrinoTLSFailureKind {
+        guard let error, CFErrorGetCode(error) == Int(errSecHostNameMismatch) else { return .untrustedCertificate }
+        return .hostnameMismatch
+    }
+
+    private func answerClientCertificate() -> TrinoChallengeAnswer {
         guard !tls.clientCertificatePath.isEmpty, !tls.clientKeyPath.isEmpty else {
-            completionHandler(.performDefaultHandling, nil)
-            return
+            return .defaultHandling
         }
         guard let p12Data = Self.buildPkcs12(certPath: tls.clientCertificatePath, keyPath: tls.clientKeyPath) else {
-            completionHandler(.cancelAuthenticationChallenge, nil)
-            return
+            return .refuse(.clientCertificateUnusable, message: tls.clientCertificatePath)
         }
         var items: CFArray?
         let status = SecPKCS12Import(
@@ -257,12 +312,14 @@ private final class TrinoTLSDelegate: NSObject, URLSessionDelegate {
               let itemArray = items as? [[String: Any]],
               let identityRef = itemArray.first?[kSecImportItemIdentity as String],
               CFGetTypeID(identityRef as CFTypeRef) == SecIdentityGetTypeID() else {
-            completionHandler(.cancelAuthenticationChallenge, nil)
-            return
+            return .refuse(.clientCertificateUnusable, message: tls.clientCertificatePath)
         }
         // swiftlint:disable:next force_cast
         let identity = identityRef as! SecIdentity
-        completionHandler(.useCredential, URLCredential(identity: identity, certificates: nil, persistence: .forSession))
+        return TrinoChallengeAnswer(
+            disposition: .useCredential,
+            credential: URLCredential(identity: identity, certificates: nil, persistence: .forSession)
+        )
     }
 
     private static func buildPkcs12(certPath: String, keyPath: String) -> Data? {

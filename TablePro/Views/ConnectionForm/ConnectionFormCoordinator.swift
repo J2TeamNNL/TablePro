@@ -272,6 +272,11 @@ final class ConnectionFormCoordinator: ObservableObject {
         pluginInstallError = nil
     }
 
+    func didChangePort() {
+        guard hasLoadedData else { return }
+        ssl.reconcile(port: network.resolvedPort, type: network.type)
+    }
+
     private func applyTypeDefaults(_ newType: DatabaseType, includeNetwork: Bool) {
         if includeNetwork {
             network.applyTypeDefaults(forNewType: newType)
@@ -884,7 +889,12 @@ final class ConnectionFormCoordinator: ObservableObject {
         network.database = parsed.database
         auth.username = parsed.username
         auth.password = parsed.password
-        ssl.mode = parsed.sslMode ?? parsed.type.defaultSSLMode
+        ssl.applyImported(
+            parsed.sslMode,
+            disablesTLS: parsed.disablesTLS,
+            port: network.resolvedPort,
+            type: parsed.type
+        )
 
         if let sshHostValue = parsed.sshHost {
             /// Through the transport setter rather than the flag, so a URL naming an SSH server
@@ -934,7 +944,7 @@ final class ConnectionFormCoordinator: ObservableObject {
         if parsed.useSrv {
             writeFieldByRegistry("mongoUseSrv", value: "true")
             if ssl.mode == .disabled {
-                ssl.mode = .required
+                ssl.select(.required)
             }
         }
         for (key, value) in parsed.mongoQueryParams where !value.isEmpty {
@@ -1069,7 +1079,7 @@ final class ConnectionFormCoordinator: ObservableObject {
         }
 
         if parsed.useSSL {
-            ssl.mode = .required
+            ssl.select(.required)
         }
 
         if parsed.type == .mongodb {

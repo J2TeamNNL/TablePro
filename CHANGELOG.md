@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Trino on port 443, and ClickHouse on 443 or 8443, sending plain HTTP to an HTTPS port. (#3166)
+- Verify modes refusing to save without a CA file on SQL Server, and Verify Identity on Trino and ClickHouse.
+- Trino certificate failures shown as "Query was cancelled", and PEM CA files rejected.
+- Raw HTML error pages in Trino connection errors.
+- ClickHouse Verify Identity ignoring the chosen CA certificate.
+- Missing "no TLS fallback" warning under Preferred for Trino.
+
 ## [0.76.0] - 2026-09-28
 
 Agent mode: one AI session that works across the whole connection window, with every statement it ran.

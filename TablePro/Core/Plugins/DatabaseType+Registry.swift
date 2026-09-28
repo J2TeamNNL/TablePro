@@ -70,6 +70,28 @@ extension DatabaseType {
         PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.supportsOpportunisticTLS ?? true
     }
 
+    var tlsImpliedPorts: Set<Int> {
+        PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.tlsImpliedPorts ?? []
+    }
+
+    var verifiesServerWithSystemTrust: Bool {
+        PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.verifiesServerWithSystemTrust ?? false
+    }
+
+    var supportsPerConnectionCertificatePaths: Bool {
+        PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.supportsPerConnectionCertificatePaths ?? true
+    }
+
+    func requiresCACertificate(for mode: SSLMode) -> Bool {
+        guard mode == .verifyCa || mode == .verifyIdentity, supportsPerConnectionCertificatePaths else { return false }
+        return mode == .verifyCa || !verifiesServerWithSystemTrust
+    }
+
+    func impliedSSLMode(forPort port: Int) -> SSLMode? {
+        guard tlsImpliedPorts.contains(port) else { return nil }
+        return verifiesServerWithSystemTrust ? .verifyIdentity : .required
+    }
+
     var supportsClientKeyPassphrase: Bool {
         PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.supportsClientKeyPassphrase ?? false
     }

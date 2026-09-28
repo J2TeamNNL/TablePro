@@ -14,6 +14,7 @@ struct ParsedConnectionURL {
     let username: String
     let password: String
     let sslMode: SSLMode?
+    let disablesTLS: Bool
     let authSource: String?
     let sshHost: String?
     let sshPort: Int?
@@ -39,6 +40,11 @@ struct ParsedConnectionURL {
     let useSrv: Bool
     let mongoQueryParams: [String: String]
     let multiHost: String?
+
+    var portImpliedSSLMode: SSLMode? {
+        guard sslMode == nil, !disablesTLS, let port else { return nil }
+        return type.impliedSSLMode(forPort: port)
+    }
 
     var suggestedName: String {
         if let connectionName, !connectionName.isEmpty {
@@ -120,6 +126,7 @@ struct ConnectionURLParser {
                 username: "",
                 password: "",
                 sslMode: nil,
+                disablesTLS: false,
                 authSource: nil,
                 sshHost: nil,
                 sshPort: nil,
@@ -229,6 +236,7 @@ struct ConnectionURLParser {
             username: username,
             password: password,
             sslMode: sslMode,
+            disablesTLS: ext.disablesTLS,
             authSource: ext.authSource,
             sshHost: nil,
             sshPort: nil,
@@ -421,6 +429,7 @@ struct ConnectionURLParser {
             username: dbUsername,
             password: dbPassword,
             sslMode: ext.sslMode,
+            disablesTLS: ext.disablesTLS,
             authSource: ext.authSource,
             sshHost: sshHost,
             sshPort: sshPort,
@@ -520,6 +529,7 @@ struct ConnectionURLParser {
             username: username,
             password: password,
             sslMode: ext.sslMode,
+            disablesTLS: ext.disablesTLS,
             authSource: ext.authSource,
             sshHost: nil,
             sshPort: nil,
@@ -552,6 +562,7 @@ struct ConnectionURLParser {
 
     private struct ExtendedParams {
         var sslMode: SSLMode?
+        var disablesTLS = false
         var authSource: String?
         var connectionName: String?
         var usePrivateKey: Bool?
@@ -651,8 +662,15 @@ struct ConnectionURLParser {
                 ext.sslMode = parseTlsModeInteger(intValue)
             }
         case "tls", "ssl":
-            if value.lowercased() == "true" && ext.sslMode == nil {
-                ext.sslMode = .required
+            switch value.lowercased() {
+            case "true":
+                if ext.sslMode == nil {
+                    ext.sslMode = .required
+                }
+            case "false":
+                ext.disablesTLS = true
+            default:
+                break
             }
         case "authmechanism":
             ext.mongoQueryParams["authMechanism"] = value

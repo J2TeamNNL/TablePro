@@ -23,7 +23,7 @@ Click **New Connection…**, select **Trino**, enter the coordinator host and po
 | Field | Description |
 | --- | --- |
 | **Host** | Trino coordinator hostname |
-| **Port** | Default `8080`, or `8443` when the coordinator serves HTTPS |
+| **Port** | Default `8080`, or `8443` when the coordinator serves HTTPS. Port `443` sets **SSL Mode** to **Verify Identity** |
 | **Username** | The user the query runs as |
 | **Catalog** | Default catalog for unqualified table names. Optional; empty browses every catalog |
 | **Schema** | Default schema. Optional |
@@ -96,14 +96,14 @@ Click the Explain dropdown in the query editor to choose:
 
 ## SSL/TLS
 
-**Disabled** is the default and speaks plain HTTP. There is no plaintext fallback, so every other mode forces TLS.
+**Disabled** is the default and speaks plain HTTP. There is no plaintext fallback, so every other mode forces TLS. Port `443` turns on **Verify Identity**. See [Ports that mean TLS](/connections/ssl#ports-that-mean-tls).
 
 | Mode | Certificate check |
 | --- | --- |
 | **Preferred** | None |
 | **Required (skip verify)** | None |
-| **Verify CA** | Certificate chain. Point **CA Certificate** at your CA file for a private authority |
-| **Verify Identity** | Chain and hostname |
+| **Verify CA** | Certificate chain, against the file under **CA Certificate**, which this mode needs |
+| **Verify Identity** | Chain and hostname, against the CA file or, with none set, the system trust store |
 
 ## Limitations
 
@@ -117,7 +117,15 @@ Click the Explain dropdown in the query editor to choose:
 
 ### Cannot reach the coordinator
 
-Confirm the host and that the coordinator port is open. Trino serves HTTP on `8080` and HTTPS on `8443` by default.
+Confirm the host and that the coordinator port is open. Trino serves HTTP on `8080` and HTTPS on `8443` by default, and a load balancer in front of it usually serves HTTPS on `443`.
+
+### "The server requires an encrypted connection"
+
+The port serves HTTPS, usually `443` behind a load balancer, and **SSL Mode** is Disabled. The server's reply, often `400 The plain HTTP request was sent to HTTPS port`, is printed underneath. Set **Verify Identity**. A cluster whose certificate comes from a private authority also needs its CA file under **CA Certificate**, or **Required (skip verify)**.
+
+### "The network connection was lost"
+
+A coordinator that serves HTTPS itself, on `8443`, drops a plain HTTP request without answering. Set an SSL mode.
 
 ### Authentication failed
 

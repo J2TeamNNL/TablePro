@@ -28,7 +28,7 @@ internal enum TransientConnectionFactory {
         }
 
         var sslConfig = SSLConfiguration()
-        if let sslMode = parsed.sslMode {
+        if let sslMode = parsed.sslMode ?? parsed.portImpliedSSLMode {
             sslConfig.mode = sslMode
         }
 

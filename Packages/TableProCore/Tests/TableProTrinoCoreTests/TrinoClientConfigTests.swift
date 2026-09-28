@@ -4,7 +4,7 @@ import Testing
 
 @Suite("TrinoClientConfig")
 struct TrinoClientConfigTests {
-    @Test("TLS setting controls the statement URL scheme independently of port 443")
+    @Test("The TLS setting alone picks the scheme, so an explicit SSL off on 443 stays plain HTTP")
     func statementURLScheme() {
         let plainHTTP = TrinoClientConfig(host: "trino.example.com", port: 443, user: "tablepro")
         let https = TrinoClientConfig(host: "trino.example.com", port: 443, useTLS: true, user: "tablepro")

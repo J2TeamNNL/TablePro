@@ -18,11 +18,19 @@ public struct TrinoQueryError: Decodable, Sendable, Equatable {
     }
 }
 
+public enum TrinoTLSFailureKind: Sendable, Equatable {
+    case serverRejectedPlaintext
+    case untrustedCertificate
+    case hostnameMismatch
+    case clientCertificateUnusable
+}
+
 public enum TrinoError: Error, LocalizedError, Equatable {
     case invalidConfiguration(String)
     case notConnected
     case transport(String)
     case httpStatus(code: Int, body: String)
+    case tlsHandshakeFailed(kind: TrinoTLSFailureKind, serverMessage: String)
     case authenticationFailed(String)
     case query(TrinoQueryError)
     case invalidResponse(String)
@@ -39,6 +47,8 @@ public enum TrinoError: Error, LocalizedError, Equatable {
             return detail
         case .httpStatus(let code, let body):
             return body.isEmpty ? "HTTP \(code)" : "HTTP \(code): \(body)"
+        case .tlsHandshakeFailed(let kind, let serverMessage):
+            return Self.describe(kind, serverMessage: serverMessage)
         case .authenticationFailed(let detail):
             return detail
         case .query(let error):
@@ -53,5 +63,20 @@ public enum TrinoError: Error, LocalizedError, Equatable {
         case .timedOut:
             return "Timed out waiting for Trino"
         }
+    }
+
+    private static func describe(_ kind: TrinoTLSFailureKind, serverMessage: String) -> String {
+        let reason: String
+        switch kind {
+        case .serverRejectedPlaintext:
+            reason = "The server accepts only HTTPS, and SSL is off for this connection. Set SSL Mode to Verify Identity."
+        case .untrustedCertificate:
+            reason = "The server's TLS certificate is not trusted."
+        case .hostnameMismatch:
+            reason = "The server's TLS certificate does not match the host."
+        case .clientCertificateUnusable:
+            reason = "The client certificate and key could not be read as a certificate identity."
+        }
+        return serverMessage.isEmpty ? reason : "\(reason) \(serverMessage)"
     }
 }
