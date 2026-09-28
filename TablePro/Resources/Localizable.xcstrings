@@ -8232,6 +8232,9 @@
     "%lld ^[table](inflect: true) to export" : {
 
     },
+    "%lld large object values were longer than 64 MiB and were cut short." : {
+
+    },
     "%lld × %lld" : {
       "localizations" : {
         "en" : {
@@ -30815,6 +30818,9 @@
           }
         }
       }
+    },
+    "Choose a SAP HANA schema first." : {
+
     },
     "Choose port automatically" : {
       "localizations" : {
@@ -60093,6 +60099,12 @@
     "Enter the OAuth client ID and client secret for this connection, then sign in again." : {
 
     },
+    "Enter the SAP HANA host name." : {
+
+    },
+    "Enter the SAP HANA user name." : {
+
+    },
     "Enter the passphrase for SSH key \"%@\":" : {
       "localizations" : {
         "ko" : {
@@ -85147,6 +85159,9 @@
     "Leave blank to find it on your PATH. Apps launched from the Dock do not inherit your shell's PATH, so a tool installed somewhere unusual needs its full path here." : {
 
     },
+    "Leave empty unless the certificate names another host" : {
+
+    },
     "Leave the comment empty to remove it." : {
 
     },
@@ -90147,6 +90162,9 @@
           }
         }
       }
+    },
+    "Lost connection to the SAP HANA server." : {
+
     },
     "macOS will ask for your login password" : {
       "localizations" : {
@@ -105944,6 +105962,9 @@
         }
       }
     },
+    "Parameter %lld is an OUT parameter, which TablePro cannot bind." : {
+
+    },
     "number sign" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -106509,6 +106530,45 @@
           }
         }
       }
+    },
+    "SAP HANA did not return the table definition." : {
+
+    },
+    "SAP HANA reported an error." : {
+
+    },
+    "SAP HANA returned no definition for this view." : {
+
+    },
+    "SAP's in-memory SQL database" : {
+
+    },
+    "TLS Server Name" : {
+
+    },
+    "The SAP HANA schema name cannot be empty." : {
+
+    },
+    "Value %1$lld, \"%2$@\", could not be converted for SAP HANA." : {
+
+    },
+    "Value %1$lld, \"%2$@\", has more decimal places than the column allows." : {
+
+    },
+    "Value %1$lld, \"%2$@\", is not a boolean. SAP HANA expects TRUE or FALSE." : {
+
+    },
+    "Value %1$lld, \"%2$@\", is not a date and time. SAP HANA expects YYYY-MM-DD HH:MM:SS." : {
+
+    },
+    "Value %1$lld, \"%2$@\", is not a decimal number." : {
+
+    },
+    "Value %1$lld, \"%2$@\", is not a number." : {
+
+    },
+    "Value %1$lld, \"%2$@\", is not a time. SAP HANA expects HH:MM:SS." : {
+
     },
     "on %@" : {
       "comment" : "A sentence fragment describing the table on which the operation is performed.",
@@ -120986,6 +121046,9 @@
           }
         }
       }
+    },
+    "SAP HANA returned a result TablePro could not read." : {
+
     },
     "quotation mark" : {
       "extractionState" : "manual",
@@ -147824,6 +147887,9 @@
         }
       }
     },
+    "Set both a client certificate and a client key, or neither." : {
+
+    },
     "Stage" : {
 
     },
@@ -150925,6 +150991,9 @@
           }
         }
       }
+    },
+    "TablePro could not reach the SAP HANA server." : {
+
     },
     "The procedures and functions in %1$@ could not be listed: %2$@" : {
 
@@ -154476,6 +154545,21 @@
       }
     },
     "Table Type" : {
+
+    },
+    "TablePro could not reach the SAP HANA server within %lld seconds." : {
+
+    },
+    "The SAP HANA connection is closed." : {
+
+    },
+    "The SAP HANA connection settings are not valid." : {
+
+    },
+    "The SAP HANA driver failed unexpectedly." : {
+
+    },
+    "The SAP HANA port must be between 1 and 65535." : {
 
     },
     "The source's definition could not be read: %@" : {
@@ -158165,6 +158249,9 @@
           }
         }
       }
+    },
+    "The SAP HANA statement was cancelled." : {
+
     },
     "The code expires in 15 minutes." : {
       "localizations" : {
@@ -161875,6 +161962,9 @@
 
     },
     "The statement before it stays applied." : {
+
+    },
+    "The statement ran longer than the query timeout and was stopped." : {
 
     },
     "The statements may or may not be saved. Check the table before running them again." : {
@@ -182881,24 +182971,6 @@
     "Server response: %@" : {
 
     },
-    "Open the connection editor, switch to the SSL tab, and set Mode to Required (or stricter)." : {
-
-    },
-    "Open the connection editor, switch to the SSL tab, and set Mode to Disabled." : {
-
-    },
-    "Switch SSL Mode to Verify CA (validates the CA chain but skips hostname check), or update the host field to match the certificate." : {
-
-    },
-    "Provide the client certificate and key paths in the SSL tab." : {
-
-    },
-    "Open the connection editor, switch to the SSL tab, and enter the Key Passphrase." : {
-
-    },
-    "Open the connection editor, switch to the SSL tab, and correct the Key Passphrase." : {
-
-    },
     "Check that the Client Key path points to a valid PEM private key." : {
 
     },
@@ -184184,9 +184256,6 @@
     "The FreeTDS configuration could not be written: %@" : {
 
     },
-    "Verify CA and Verify Identity check the server certificate against the system trust store. A custom CA and client certificates are not available for SQL Server." : {
-
-    },
     "MongoDB refused the write (error %u)." : {
 
     },
@@ -184586,109 +184655,104 @@
     "This document holds JavaScript code with a scope. MongoDB compares a scope by value, so a save could not tell whether someone else changed it." : {
 
     },
-    "Enter the SAP HANA host name." : {
+    "On the connection's Network tab, set SSL Mode to Verify Identity, or to Required to skip the certificate check." : {
 
     },
-    "The SAP HANA port must be between 1 and 65535." : {
+    "On the connection's Network tab, set SSL Mode to Disabled." : {
 
     },
-    "Enter the SAP HANA user name." : {
+    "Choose the client certificate and key on the connection's Network tab." : {
 
     },
-    "Set both a client certificate and a client key, or neither." : {
+    "Enter the Key Passphrase on the connection's Network tab." : {
 
     },
-    "The SAP HANA connection is closed." : {
+    "Correct the Key Passphrase on the connection's Network tab." : {
 
     },
-    "Lost connection to the SAP HANA server." : {
+    "The CA certificate at %@ could not be read as a PEM or DER certificate." : {
 
     },
-    "SAP HANA returned a result TablePro could not read." : {
+    "Leave empty to use the system trust store." : {
 
     },
-    "TablePro could not reach the SAP HANA server within %lld seconds." : {
+    "On the connection's Network tab, choose the server's CA certificate under Verify Identity or Verify CA. Required (skip verify) also connects, but does not check the certificate." : {
 
     },
-    "The SAP HANA statement was cancelled." : {
+    "Port %lld uses TLS, so SSL Mode is %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Port %1$lld uses TLS, so SSL Mode is %2$@."
+          }
+        }
+      }
+    },
+    "Port %lld usually requires TLS, and SSL Mode is Disabled." : {
 
     },
-    "The statement ran longer than the query timeout and was stopped." : {
+    "Use %@" : {
 
     },
-    "The SAP HANA connection settings are not valid." : {
+    "Verify CA and Verify Identity check the server certificate against the system trust store. This driver takes no custom CA or client certificate." : {
 
     },
-    "TablePro could not reach the SAP HANA server." : {
+    "A client certificate needs its client key. On the connection's Network tab, choose the client key, or clear the client certificate." : {
 
     },
-    "The SAP HANA driver failed unexpectedly." : {
+    "A password is sent only over TLS, and SSL Mode is Disabled. Set SSL Mode to Verify Identity, or clear the password if the cluster has no authentication." : {
 
     },
-    "SAP HANA reported an error." : {
+    "An access token is sent only over TLS, and SSL Mode is Disabled. Set SSL Mode to Verify Identity, or clear the Access Token if the cluster has no authentication." : {
+
+    },
+    "Change Host to a name the certificate covers." : {
+
+    },
+    "The client certificate at %@ could not be read as a PEM or DER certificate." : {
+
+    },
+    "The client certificate at %@ could not be read." : {
+
+    },
+    "The client key at %1$@ does not belong to the certificate at %2$@." : {
+
+    },
+    "The client key at %@ could not be read." : {
+
+    },
+    "The client key at %@ is encrypted. This connection needs an unencrypted key." : {
+
+    },
+    "The client key at %@ is not an RSA or EC private key in PEM or DER form." : {
+
+    },
+    "The server answered with HTTP %lld and no address. Trino never redirects, so a proxy in front of it sent this. Check the host, port and SSL Mode." : {
+
+    },
+    "The server did not accept the client certificate. %@" : {
+
+    },
+    "The server redirected the request to %1$@, which needs HTTPS. Set Port to %2$lld and SSL Mode to Verify Identity." : {
+
+    },
+    "The server redirected the request to %@. TablePro does not follow redirects, and Trino never sends one, so a proxy in front of it did. Check the host, port and SSL Mode." : {
 
     },
     "Value %1$lld, \"%2$@\", is not a date. SAP HANA expects YYYY-MM-DD." : {
 
     },
-    "Value %1$lld, \"%2$@\", is not a time. SAP HANA expects HH:MM:SS." : {
-
-    },
-    "Value %1$lld, \"%2$@\", is not a date and time. SAP HANA expects YYYY-MM-DD HH:MM:SS." : {
-
-    },
     "Value %1$lld, \"%2$@\", is not a timestamp. SAP HANA expects YYYY-MM-DD HH:MM:SS.FFFFFFF." : {
-
-    },
-    "Value %1$lld, \"%2$@\", is not a boolean. SAP HANA expects TRUE or FALSE." : {
 
     },
     "Value %1$lld, \"%2$@\", is not a whole number." : {
 
     },
-    "Value %1$lld, \"%2$@\", is not a decimal number." : {
-
-    },
-    "Value %1$lld, \"%2$@\", is not a number." : {
-
-    },
-    "Value %1$lld, \"%2$@\", has more decimal places than the column allows." : {
-
-    },
-    "Value %1$lld, \"%2$@\", could not be converted for SAP HANA." : {
-
-    },
-    "TLS Server Name" : {
-
-    },
-    "Leave empty unless the certificate names another host" : {
-
-    },
-    "SAP HANA did not return the table definition." : {
-
-    },
-    "SAP HANA returned no definition for this view." : {
-
-    },
-    "The SAP HANA schema name cannot be empty." : {
-
-    },
-    "Choose a SAP HANA schema first." : {
-
-    },
-    "%lld large object values were longer than 64 MiB and were cut short." : {
-
-    },
-    "Leave empty to verify against the system trust store." : {
-
-    },
-    "SAP's in-memory SQL database" : {
-
-    },
     "Value %1$lld, \"%2$@\", is not hex-encoded well-known binary, the form SAP HANA takes for a spatial value." : {
 
     },
-    "Parameter %lld is an OUT parameter, which TablePro cannot bind." : {
+    "Verify CA needs a CA certificate. On the connection's Network tab, choose the CA certificate that signed the server's certificate, or set SSL Mode to Verify Identity." : {
 
     }
   },

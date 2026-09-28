@@ -101,8 +101,8 @@ The DDL view is built from the same catalog: `CREATE COLUMN TABLE` or `CREATE RO
 | **Disabled** | Plain TCP. HANA Cloud refuses it |
 | **Preferred** | TLS, certificate not checked. There is no plain fallback, so this is the same as Required |
 | **Required (skip verify)** | TLS, certificate not checked |
-| **Verify CA** | Certificate chain checked against **CA Certificate**, or against the macOS trust store when it is empty. The hostname is not checked |
-| **Verify Identity** | Chain checked as for Verify CA, and the certificate must name **TLS Server Name**, or the host when that is empty |
+| **Verify CA** | Certificate chain checked against **CA Certificate**, which this mode requires. The hostname is not checked |
+| **Verify Identity** | Chain checked against **CA Certificate**, or against the macOS trust store when it is empty, and the certificate must name **TLS Server Name**, or the host when that is empty |
 
 Keep **Verify Identity** for HANA Cloud, whose certificates chain to DigiCert roots macOS already trusts. For an on-premises server with a self-signed or internal certificate, point **CA Certificate** at the certificate or the CA that signed it. Every mode that encrypts uses TLS 1.2 or later.
 

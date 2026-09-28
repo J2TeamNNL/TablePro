@@ -40,7 +40,8 @@ extension PluginMetadataRegistry {
                     supportsModifyPrimaryKey: false,
                     defaultSSLMode: .verifyIdentity,
                     supportsOpportunisticTLS: false,
-                    verifiesTLSWithSystemTrustStore: true,
+                    tlsImpliedPorts: [443],
+                    verifiesServerWithSystemTrust: true,
                     supportsCloudflareTunnel: false
                 ),
                 schema: PluginMetadataSnapshot.SchemaInfo(

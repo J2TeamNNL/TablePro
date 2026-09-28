@@ -267,7 +267,7 @@ extension PluginMetadataRegistry {
                     supportsDropSchema: true,
                     supportsRenameColumn: true,
                     defaultSSLMode: .preferred,
-                    verifiesTLSWithSystemTrustStore: true
+                    supportsPerConnectionCertificatePaths: false
                 ),
                 schema: PluginMetadataSnapshot.SchemaInfo(
                     defaultSchemaName: "dbo",
@@ -437,7 +437,10 @@ extension PluginMetadataRegistry {
                     requiresReconnectForDatabaseSwitch: false,
                     supportsDropDatabase: false,
                     supportsRenameColumn: false,
-                    defaultSSLMode: .disabled
+                    defaultSSLMode: .disabled,
+                    supportsOpportunisticTLS: false,
+                    tlsImpliedPorts: [443],
+                    verifiesServerWithSystemTrust: true
                 ),
                 schema: PluginMetadataSnapshot.SchemaInfo(
                     defaultSchemaName: "",
@@ -676,7 +679,9 @@ extension PluginMetadataRegistry {
                     requiresReconnectForDatabaseSwitch: false,
                     supportsDropDatabase: true,
                     supportsModifyPrimaryKey: false,
-                    supportsOpportunisticTLS: false
+                    supportsOpportunisticTLS: false,
+                    tlsImpliedPorts: [8_443, 443],
+                    verifiesServerWithSystemTrust: true
                 ),
                 schema: PluginMetadataSnapshot.SchemaInfo(
                     defaultSchemaName: "public",
