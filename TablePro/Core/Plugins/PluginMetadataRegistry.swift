@@ -75,7 +75,7 @@ struct PluginMetadataSnapshot: Sendable {
         var supportsUserDefinedTypeBrowse: Bool = false
         var defaultSSLMode: SSLMode = .disabled
         var supportsOpportunisticTLS: Bool = true
-        var tlsImpliedPorts: Set<Int> = []
+        var tlsImpliedPorts: [Int] = []
         var verifiesServerWithSystemTrust: Bool = false
         var supportsPerConnectionCertificatePaths: Bool = true
         var supportsCloudflareTunnel: Bool = true

@@ -78,7 +78,7 @@ The default is **Disabled**, which sends plain HTTP. Any other mode switches the
 | **Verify CA** | The chain, against the CA file | Private PKI |
 | **Verify Identity** | The chain and the hostname, against the CA file or, with none set, the system trust store | ClickHouse Cloud, on port 8443 |
 
-The CA file may be PEM or DER. If **Verify CA** or **Verify Identity** cannot read it, the connection fails rather than falling back to the public root store. See [SSL/TLS](/connections/ssl).
+The CA file may be PEM or DER. **Verify CA** needs one, since it checks no hostname, and a connection without it is refused. If **Verify CA** or **Verify Identity** cannot read the file, the connection fails rather than falling back to the public root store. An imported URL with `ssl=true` opens as Verify Identity, and `sslmode=none` as Required. See [SSL/TLS](/connections/ssl).
 
 ## Limitations
 

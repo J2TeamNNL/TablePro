@@ -885,16 +885,11 @@ final class ConnectionFormCoordinator: ObservableObject {
         }
 
         network.host = parsed.host
-        network.port = parsed.port.map(String.init) ?? String(parsed.type.defaultPort)
+        network.port = String(parsed.resolvedPort)
         network.database = parsed.database
         auth.username = parsed.username
         auth.password = parsed.password
-        ssl.applyImported(
-            parsed.sslMode,
-            disablesTLS: parsed.disablesTLS,
-            port: network.resolvedPort,
-            type: parsed.type
-        )
+        ssl.applyImported(parsed.sslModeResolution)
 
         if let sshHostValue = parsed.sshHost {
             /// Through the transport setter rather than the flag, so a URL naming an SSH server
@@ -943,9 +938,6 @@ final class ConnectionFormCoordinator: ObservableObject {
         }
         if parsed.useSrv {
             writeFieldByRegistry("mongoUseSrv", value: "true")
-            if ssl.mode == .disabled {
-                ssl.select(.required)
-            }
         }
         for (key, value) in parsed.mongoQueryParams where !value.isEmpty {
             switch key {

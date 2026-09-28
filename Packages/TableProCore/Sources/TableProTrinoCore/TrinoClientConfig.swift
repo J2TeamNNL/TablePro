@@ -15,19 +15,16 @@ public struct TrinoTLSOptions: Sendable, Equatable {
 
     public var mode: VerificationMode
     public var anchorCertificate: Data?
-    public var clientCertificatePath: String
-    public var clientKeyPath: String
+    public var clientCredential: URLCredential?
 
     public init(
         mode: VerificationMode = .full,
         anchorCertificate: Data? = nil,
-        clientCertificatePath: String = "",
-        clientKeyPath: String = ""
+        clientCredential: URLCredential? = nil
     ) {
         self.mode = mode
         self.anchorCertificate = anchorCertificate
-        self.clientCertificatePath = clientCertificatePath
-        self.clientKeyPath = clientKeyPath
+        self.clientCredential = clientCredential
     }
 
     public static let systemDefault = TrinoTLSOptions(mode: .full)
@@ -88,6 +85,18 @@ public struct TrinoClientConfig: Sendable {
         components.port = port
         components.path = "/v1/statement"
         return components.url
+    }
+
+    public var plaintextCredential: TrinoCredentialKind? {
+        guard !useTLS else { return nil }
+        switch auth {
+        case .none:
+            return nil
+        case .basic:
+            return .password
+        case .jwt:
+            return .accessToken
+        }
     }
 
     public var authorizationHeader: String? {

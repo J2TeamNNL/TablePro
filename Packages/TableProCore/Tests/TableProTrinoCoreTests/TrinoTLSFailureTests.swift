@@ -148,9 +148,10 @@ struct TrinoTLSFailureTests {
     func refusedTrustIsNotACancel() {
         let refusal = TrinoTrustRefusal(kind: .hostnameMismatch, message: "certificate is for otherhost")
 
-        #expect(URLSessionTrinoTransport.failure(for: URLError(.cancelled), refusedTrust: refusal)
+        #expect(URLSessionTrinoTransport.failure(for: URLError(.cancelled), refusedTrust: refusal, clientCertificateRequest: nil)
             == .tlsHandshakeFailed(kind: .hostnameMismatch, serverMessage: "certificate is for otherhost"))
-        #expect(URLSessionTrinoTransport.failure(for: URLError(.cancelled), refusedTrust: nil) == .cancelled)
+        #expect(URLSessionTrinoTransport.failure(for: URLError(.cancelled), refusedTrust: nil, clientCertificateRequest: nil)
+            == .cancelled)
     }
 
     @Test("A certificate URLSession itself rejected reports as an untrusted certificate")
@@ -162,14 +163,154 @@ struct TrinoTLSFailureTests {
             .serverCertificateNotYetValid
         ] {
             guard case .tlsHandshakeFailed(.untrustedCertificate, _) =
-                URLSessionTrinoTransport.failure(for: URLError(code), refusedTrust: nil) else {
+                URLSessionTrinoTransport.failure(for: URLError(code), refusedTrust: nil, clientCertificateRequest: nil) else {
                 Issue.record("\(code.rawValue) should be an untrusted certificate")
                 continue
             }
         }
-        guard case .transport = URLSessionTrinoTransport.failure(for: URLError(.timedOut), refusedTrust: nil) else {
+        guard case .transport = URLSessionTrinoTransport.failure(
+            for: URLError(.timedOut),
+            refusedTrust: nil,
+            clientCertificateRequest: nil
+        ) else {
             Issue.record("A timeout is not a TLS failure")
             return
         }
+    }
+
+    @Test("An unanswered certificate request reports the missing certificate only on the codes that say so")
+    func unansweredRequestNeedsACertificateCode() {
+        for code in [URLError.Code.clientCertificateRequired, .secureConnectionFailed] {
+            let error = URLError(code)
+            #expect(URLSessionTrinoTransport.failure(for: error, refusedTrust: nil, clientCertificateRequest: .unanswered)
+                == .tlsHandshakeFailed(kind: .clientCertificateRequired, serverMessage: error.localizedDescription))
+        }
+    }
+
+    @Test("A connection dropped after an unanswered certificate request is still a dropped connection")
+    func unansweredRequestThenDropIsTransport() {
+        let error = URLError(.networkConnectionLost)
+
+        #expect(URLSessionTrinoTransport.failure(for: error, refusedTrust: nil, clientCertificateRequest: .unanswered)
+            == .transport(error.localizedDescription))
+        #expect(URLSessionTrinoTransport.failure(for: error, refusedTrust: nil, clientCertificateRequest: nil)
+            == .transport(error.localizedDescription))
+    }
+
+    @Test("A handshake that ends after the certificate was sent reports the certificate as rejected")
+    func answeredRequestThenFailureIsRejection() {
+        for code in [
+            URLError.Code.networkConnectionLost,
+            .secureConnectionFailed,
+            .clientCertificateRejected,
+            .clientCertificateRequired
+        ] {
+            let error = URLError(code)
+            #expect(URLSessionTrinoTransport.failure(for: error, refusedTrust: nil, clientCertificateRequest: .answered)
+                == .tlsHandshakeFailed(kind: .clientCertificateRejected, serverMessage: error.localizedDescription))
+        }
+    }
+
+    @Test("A connection that fails after the server began answering is a transport failure, certificate or not")
+    func failureAfterAnswerIsTransport() {
+        for request in [TrinoClientCertificateRequest.answered, .unanswered] {
+            let error = URLError(.networkConnectionLost)
+            #expect(URLSessionTrinoTransport.failure(
+                for: error,
+                refusedTrust: nil,
+                clientCertificateRequest: request,
+                serverAnswered: true
+            ) == .transport(error.localizedDescription))
+        }
+    }
+
+    @Test("A server certificate the request refused is reported as that refusal after a certificate request too")
+    func refusedTrustWinsOverCertificateRequest() {
+        let refusal = TrinoTrustRefusal(kind: .untrustedCertificate, message: "not trusted")
+
+        #expect(URLSessionTrinoTransport.failure(for: URLError(.cancelled), refusedTrust: refusal, clientCertificateRequest: .answered)
+            == .tlsHandshakeFailed(kind: .untrustedCertificate, serverMessage: "not trusted"))
+    }
+
+    @Test("A 401 after an unanswered certificate request, with no password or token, says the certificate is missing")
+    func unauthorizedWithoutCertificate() async {
+        let transport = StubTransport([canned("Unauthorized", status: 401, clientCertificateRequest: .unanswered)])
+
+        let error = await failure(of: transport, useTLS: true)
+
+        #expect(error == .tlsHandshakeFailed(kind: .clientCertificateRequired, serverMessage: "Unauthorized"))
+    }
+
+    @Test("A 401 to a password stays the password's failure when the coordinator also asked for a certificate")
+    func unauthorizedPasswordStaysAnAuthenticationFailure() async {
+        let transport = StubTransport([
+            canned("Access Denied: Invalid credentials", status: 401, clientCertificateRequest: .unanswered)
+        ])
+        let config = TrinoClientConfig(
+            host: "trino.example.com", port: 443, useTLS: true, user: "u", auth: .basic(password: "secret")
+        )
+        let client = TrinoStatementClient(transport: transport, config: config, session: TrinoSessionState())
+
+        await #expect(throws: TrinoError.authenticationFailed("Access Denied: Invalid credentials")) {
+            try await client.execute("SELECT 1")
+        }
+    }
+
+    @Test("A 401 on a connection that sent its certificate is an authentication failure")
+    func unauthorizedAfterCertificateWasSent() async {
+        let transport = StubTransport([canned("Unauthorized", status: 401, clientCertificateRequest: .answered)])
+
+        let error = await failure(of: transport, useTLS: true)
+
+        #expect(error == .authenticationFailed("Unauthorized"))
+    }
+
+    @Test("A redirect on the statement POST to HTTPS on the same host and port is the plaintext rejection")
+    func redirectedPostIsPlaintextRejection() async {
+        let transport = StubTransport([
+            canned(
+                "<html><head><title>301 Moved Permanently</title></head></html>",
+                status: 301,
+                headers: ["Location": "https://trino.example.com/v1/statement"]
+            )
+        ])
+
+        let error = await failure(of: transport, useTLS: false)
+
+        #expect(error == .tlsHandshakeFailed(
+            kind: .serverRejectedPlaintext,
+            serverMessage: "301 redirect to https://trino.example.com/v1/statement"
+        ))
+    }
+
+    @Test("A redirect on a nextUri poll stops the statement and names the address")
+    func redirectedPollStopsTheStatement() async {
+        let transport = StubTransport([
+            canned(#"{"id":"q1","nextUri":"https://trino.example.com/v1/statement/executing/q1/1"}"#),
+            canned("", status: 307, headers: ["Location": "https://elsewhere.example.com/x"])
+        ])
+        let config = TrinoClientConfig(
+            host: "trino.example.com", port: 443, useTLS: true, user: "u", auth: .basic(password: "secret")
+        )
+        let client = TrinoStatementClient(transport: transport, config: config, session: TrinoSessionState())
+
+        await #expect(throws: TrinoError.redirected(
+            statusCode: 307,
+            location: "https://elsewhere.example.com/x",
+            advice: .checkAddress
+        )) {
+            try await client.execute("SELECT 1")
+        }
+    }
+
+    @Test("Verify CA with no CA certificate refuses the server, and no other setting does")
+    func missingAnchorRefusal() {
+        #expect(TrinoTLSOptions(mode: .caOnly).missingAnchorRefusal == TrinoTrustRefusal(
+            kind: .untrustedCertificate,
+            message: "Verify CA has no CA certificate to check the server against."
+        ))
+        #expect(TrinoTLSOptions(mode: .caOnly, anchorCertificate: Data([0x30])).missingAnchorRefusal == nil)
+        #expect(TrinoTLSOptions(mode: .full).missingAnchorRefusal == nil)
+        #expect(TrinoTLSOptions(mode: .insecure).missingAnchorRefusal == nil)
     }
 }

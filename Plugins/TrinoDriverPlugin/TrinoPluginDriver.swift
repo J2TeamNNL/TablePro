@@ -51,8 +51,8 @@ final class TrinoPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         let result: TrinoResultSet
         do {
             result = try await client.execute("SELECT version()")
-        } catch TrinoError.tlsHandshakeFailed(let kind, let serverMessage) {
-            throw kind.sslHandshakeError(serverMessage: serverMessage)
+        } catch let error as TrinoError {
+            throw error.connectionFailure
         }
         if case .text(let version)? = result.rows.first?.first {
             lock.withLock { _serverVersion = "Trino \(version)" }
@@ -177,7 +177,7 @@ final class TrinoPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     private static func makeClientConfig(_ config: DriverConnectionConfig) throws -> TrinoClientConfig {
         let useTLS = config.ssl.isEnabled
         let port = config.port > 0 ? config.port : (useTLS ? 8_443 : 8_080)
-        return TrinoClientConfig(
+        let clientConfig = TrinoClientConfig(
             host: config.host.isEmpty ? "localhost" : config.host,
             port: port,
             useTLS: useTLS,
@@ -188,6 +188,7 @@ final class TrinoPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
             timeZone: trimmedField(config.additionalFields["trinoTimeZone"]),
             auth: resolveAuth(config)
         )
+        return clientConfig
     }
 
     private static func resolveAuth(_ config: DriverConnectionConfig) -> TrinoAuth {

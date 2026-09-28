@@ -280,7 +280,7 @@ struct PluginMetadataRegistryCuratedCapabilityTests {
     func clickHouseKeepsItsTLSCapabilities() {
         let built = PluginMetadataRegistry.shared.buildMetadataSnapshot(from: MockClickHousePlugin.self)
 
-        #expect(built.capabilities.tlsImpliedPorts == [443, 8_443])
+        #expect(built.capabilities.tlsImpliedPorts == [8_443, 443])
         #expect(built.capabilities.verifiesServerWithSystemTrust == true)
     }
 

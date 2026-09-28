@@ -87,6 +87,17 @@ struct ConnectionFormPortTLSTests {
         #expect(coordinator.ssl.mode == .disabled)
     }
 
+    @Test("An imported JDBC URL with SSLVerification=CA opens on Verify CA, asks for the CA file, and keeps it through port edits")
+    func importedVerificationIsAChoice() throws {
+        let coordinator = try imported("jdbc:trino://analyst@trino.example.com:8443/hive?SSL=true&SSLVerification=CA")
+        #expect(coordinator.ssl.mode == .verifyCa)
+        #expect(!coordinator.ssl.validationIssues.isEmpty)
+
+        coordinator.network.setPort("443")
+        coordinator.network.setPort("8080")
+        #expect(coordinator.ssl.mode == .verifyCa)
+    }
+
     @Test("Typing port 8443 on a new ClickHouse connection turns on Verify Identity")
     func clickHouseTLSPort() {
         let coordinator = newConnection(.clickhouse)

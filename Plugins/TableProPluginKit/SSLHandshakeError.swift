@@ -95,7 +95,7 @@ public enum SSLHandshakeError: Error, LocalizedError, Sendable {
                 or Verify CA. Required (skip verify) also connects, but does not check the certificate.
                 """)
         case .hostnameMismatch:
-            return String(localized: "Switch SSL Mode to Verify CA (validates the CA chain but skips hostname check), or update the host field to match the certificate.")
+            return String(localized: "Change Host to a name the certificate covers.")
         case .clientCertRequired:
             return String(localized: "Choose the client certificate and key on the connection's Network tab.")
         case .clientKeyPassphraseRequired:

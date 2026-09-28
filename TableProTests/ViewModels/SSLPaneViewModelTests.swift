@@ -109,23 +109,27 @@ struct SSLPaneViewModelTests {
     func testApplyImported() {
         let viewModel = SSLPaneViewModel()
 
-        viewModel.applyImported(.required, disablesTLS: false, port: 443, type: .trino)
+        viewModel.applyImported(SSLModeResolution(mode: .required, origin: .chosen))
         #expect(viewModel.mode == .required)
         #expect(viewModel.origin == .chosen)
 
-        viewModel.applyImported(nil, disablesTLS: false, port: 443, type: .trino)
+        viewModel.applyImported(DatabaseType.trino.sslModeResolution(forPort: 443))
         #expect(viewModel.mode == .verifyIdentity)
         #expect(viewModel.origin == .impliedByPort)
 
-        viewModel.applyImported(nil, disablesTLS: true, port: 443, type: .trino)
+        viewModel.reconcile(port: 8_080, type: .trino)
         #expect(viewModel.mode == .disabled)
-        #expect(viewModel.origin == .chosen)
+        #expect(viewModel.origin == .typeDefault)
     }
 
     @Test("An imported ssl=false turns SSL off even where the driver defaults to Preferred")
-    func testImportedSSLFalseIsDisabled() {
+    func testImportedSSLFalseIsDisabled() throws {
+        guard case .success(let parsed) = ConnectionURLParser.parse("mysql://root@db.example.com/shop?ssl=false") else {
+            Issue.record("Expected the URL to parse")
+            return
+        }
         let viewModel = SSLPaneViewModel()
-        viewModel.applyImported(nil, disablesTLS: true, port: 3_306, type: .mysql)
+        viewModel.applyImported(parsed.sslModeResolution)
         #expect(viewModel.mode == .disabled)
         #expect(viewModel.origin == .chosen)
     }

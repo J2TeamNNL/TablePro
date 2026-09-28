@@ -233,6 +233,34 @@ struct DatabaseTypeTests {
         #expect(DatabaseType(rawValue: "FutureDB").impliedSSLMode(forPort: 443) == nil)
     }
 
+    @Test("An omitted port is the driver's TLS port once TLS is on, where it has one")
+    func testPortWhenOmitted() {
+        #expect(DatabaseType.clickhouse.portWhenOmitted(tlsEnabled: true) == 8_443)
+        #expect(DatabaseType.clickhouse.portWhenOmitted(tlsEnabled: false) == 8_123)
+        #expect(DatabaseType.trino.portWhenOmitted(tlsEnabled: true) == 443)
+        #expect(DatabaseType.trino.portWhenOmitted(tlsEnabled: false) == 8_080)
+        #expect(DatabaseType.postgresql.portWhenOmitted(tlsEnabled: true) == 5_432)
+    }
+
+    @Test("TLS turned on without a named check verifies the host only where no CA file is needed")
+    func testSSLModeWhenTLSEnabled() {
+        #expect(DatabaseType.trino.sslModeWhenTLSEnabled == .verifyIdentity)
+        #expect(DatabaseType.clickhouse.sslModeWhenTLSEnabled == .verifyIdentity)
+        #expect(DatabaseType.postgresql.sslModeWhenTLSEnabled == .required)
+        #expect(DatabaseType.mongodb.sslModeWhenTLSEnabled == .required)
+        #expect(DatabaseType(rawValue: "FutureDB").sslModeWhenTLSEnabled == .required)
+    }
+
+    @Test("The SSL mode a port resolves to carries whether the port or the driver default chose it")
+    func testSSLModeResolutionForPort() {
+        #expect(DatabaseType.postgresql.sslModeResolution(forPort: 5_432)
+            == SSLModeResolution(mode: .preferred, origin: .typeDefault))
+        #expect(DatabaseType.trino.sslModeResolution(forPort: 443)
+            == SSLModeResolution(mode: .verifyIdentity, origin: .impliedByPort))
+        #expect(DatabaseType.clickhouse.sslModeResolution(forPort: 8_123)
+            == SSLModeResolution(mode: .disabled, origin: .typeDefault))
+    }
+
     @Test("Verify Identity skips the CA file only where the driver checks the system trust store")
     func testCACertificateRequirement() {
         #expect(DatabaseType.trino.requiresCACertificate(for: .verifyIdentity) == false)

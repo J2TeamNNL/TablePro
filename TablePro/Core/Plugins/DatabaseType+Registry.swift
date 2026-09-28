@@ -70,8 +70,17 @@ extension DatabaseType {
         PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.supportsOpportunisticTLS ?? true
     }
 
-    var tlsImpliedPorts: Set<Int> {
+    var tlsImpliedPorts: [Int] {
         PluginMetadataRegistry.shared.snapshot(for: self)?.capabilities.tlsImpliedPorts ?? []
+    }
+
+    var defaultTLSPort: Int? {
+        tlsImpliedPorts.first
+    }
+
+    func portWhenOmitted(tlsEnabled: Bool) -> Int {
+        guard tlsEnabled, let defaultTLSPort else { return defaultPort }
+        return defaultTLSPort
     }
 
     var verifiesServerWithSystemTrust: Bool {
@@ -87,9 +96,20 @@ extension DatabaseType {
         return mode == .verifyCa || !verifiesServerWithSystemTrust
     }
 
+    var sslModeWhenTLSEnabled: SSLMode {
+        verifiesServerWithSystemTrust ? .verifyIdentity : .required
+    }
+
     func impliedSSLMode(forPort port: Int) -> SSLMode? {
         guard tlsImpliedPorts.contains(port) else { return nil }
-        return verifiesServerWithSystemTrust ? .verifyIdentity : .required
+        return sslModeWhenTLSEnabled
+    }
+
+    func sslModeResolution(forPort port: Int) -> SSLModeResolution {
+        guard let impliedMode = impliedSSLMode(forPort: port) else {
+            return SSLModeResolution(mode: defaultSSLMode, origin: .typeDefault)
+        }
+        return SSLModeResolution(mode: impliedMode, origin: .impliedByPort)
     }
 
     var supportsClientKeyPassphrase: Bool {

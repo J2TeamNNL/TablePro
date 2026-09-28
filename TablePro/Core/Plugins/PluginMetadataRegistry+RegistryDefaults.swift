@@ -680,7 +680,7 @@ extension PluginMetadataRegistry {
                     supportsDropDatabase: true,
                     supportsModifyPrimaryKey: false,
                     supportsOpportunisticTLS: false,
-                    tlsImpliedPorts: [443, 8_443],
+                    tlsImpliedPorts: [8_443, 443],
                     verifiesServerWithSystemTrust: true
                 ),
                 schema: PluginMetadataSnapshot.SchemaInfo(

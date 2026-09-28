@@ -7,12 +7,6 @@ import Combine
 import Foundation
 import TableProPluginKit
 
-enum SSLModeOrigin: Equatable {
-    case typeDefault
-    case impliedByPort
-    case chosen
-}
-
 @MainActor
 final class SSLPaneViewModel: ObservableObject {
     @Published private(set) var mode: SSLMode = .disabled
@@ -48,33 +42,19 @@ final class SSLPaneViewModel: ObservableObject {
         origin = .chosen
     }
 
-    func applyImported(_ importedMode: SSLMode?, disablesTLS: Bool, port: Int, type: DatabaseType) {
-        if let explicitMode = importedMode ?? (disablesTLS ? .disabled : nil) {
-            select(explicitMode)
-            return
-        }
-        mode = type.defaultSSLMode
-        origin = .typeDefault
-        reconcile(port: port, type: type)
+    func applyImported(_ resolution: SSLModeResolution) {
+        apply(resolution)
     }
 
     func reconcile(port: Int, type: DatabaseType) {
-        let impliedMode = type.impliedSSLMode(forPort: port)
-        switch origin {
-        case .chosen:
-            return
-        case .typeDefault:
-            guard let impliedMode else { return }
-            mode = impliedMode
-            origin = .impliedByPort
-        case .impliedByPort:
-            guard let impliedMode else {
-                mode = type.defaultSSLMode
-                origin = .typeDefault
-                return
-            }
-            mode = impliedMode
-        }
+        guard origin != .chosen else { return }
+        apply(type.sslModeResolution(forPort: port))
+    }
+
+    private func apply(_ resolution: SSLModeResolution) {
+        guard resolution != SSLModeResolution(mode: mode, origin: origin) else { return }
+        mode = resolution.mode
+        origin = resolution.origin
     }
 
     func load(from connection: DatabaseConnection) {

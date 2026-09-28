@@ -85,6 +85,9 @@ public final class TrinoStatementClient: @unchecked Sendable {
         guard let statementURL = config.statementURL else {
             throw TrinoError.invalidConfiguration("Invalid Trino server URL")
         }
+        if let credential = config.plaintextCredential {
+            throw TrinoError.credentialsRequireTLS(credential)
+        }
         let statement = TrinoRunningStatement()
         lock.withLock { running[ObjectIdentifier(statement)] = statement }
         defer { lock.withLock { running[ObjectIdentifier(statement)] = nil } }
@@ -214,8 +217,10 @@ public final class TrinoStatementClient: @unchecked Sendable {
                     throw TrinoError.httpStatus(code: 429, body: readableBody(response))
                 }
                 try await sleepBackoff(attempt: attempt, retryAfter: response.retryAfterSeconds())
+            case 300...399:
+                throw TrinoRedirectPolicy.refusal(for: response, requestURL: request.url, useTLS: config.useTLS)
             case 401, 403:
-                throw TrinoError.authenticationFailed(authMessage(response))
+                throw authenticationFailure(response)
             default:
                 throw failure(for: response)
             }
@@ -328,6 +333,14 @@ public final class TrinoStatementClient: @unchecked Sendable {
             return .httpStatus(code: response.statusCode, body: readable)
         }
         return .tlsHandshakeFailed(kind: .serverRejectedPlaintext, serverMessage: readable)
+    }
+
+    private func authenticationFailure(_ response: TrinoHTTPResponse) -> TrinoError {
+        let message = authMessage(response)
+        guard response.clientCertificateRequest == .unanswered, config.auth == .none else {
+            return .authenticationFailed(message)
+        }
+        return .tlsHandshakeFailed(kind: .clientCertificateRequired, serverMessage: message)
     }
 
     private func authMessage(_ response: TrinoHTTPResponse) -> String {
