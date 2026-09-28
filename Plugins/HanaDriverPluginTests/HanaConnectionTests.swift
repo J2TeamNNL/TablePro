@@ -214,7 +214,8 @@ final class HanaConnectionTests: XCTestCase {
         let queued = Task { try await connection.execute("DELETE FROM T") }
         await queue.submissions(reaching: 3)
 
-        let reconnect = Task { try await connection.connect(Self.configuration) }
+        let configuration = Self.configuration
+        let reconnect = Task { try await connection.connect(configuration) }
         await queue.submissions(reaching: 4)
 
         XCTAssertEqual(bridge.closes, [oldSession])
