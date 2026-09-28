@@ -38,6 +38,15 @@ func (r *recordingInterrupter) calls() []stopReason {
 	return append([]stopReason(nil), r.reasons...)
 }
 
+func awaitSignal(t *testing.T, signal <-chan struct{}, what string) {
+	t.Helper()
+	select {
+	case <-signal:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("%s did not happen within 5 seconds", what)
+	}
+}
+
 func waitFor(t *testing.T, condition func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -50,7 +59,7 @@ func waitFor(t *testing.T, condition func() bool) {
 }
 
 func TestQueuedOperationCancelledBeforeItArrivesIsDroppedWithoutInterrupting(t *testing.T) {
-	slot := newOperationSlot()
+	slot := newOperationSlot(0, nil)
 	interrupter := newRecordingInterrupter()
 	slot.cancel(5)
 	op, err := slot.begin(5, interrupter.interrupt)
@@ -71,7 +80,7 @@ func TestQueuedOperationCancelledBeforeItArrivesIsDroppedWithoutInterrupting(t *
 }
 
 func TestCancellingAFinishedOperationIsIgnored(t *testing.T) {
-	slot := newOperationSlot()
+	slot := newOperationSlot(0, nil)
 	interrupter := newRecordingInterrupter()
 	op, err := slot.begin(3, interrupter.interrupt)
 	if err != nil {
@@ -93,7 +102,7 @@ func TestCancellingAFinishedOperationIsIgnored(t *testing.T) {
 }
 
 func TestOperationZeroTargetsTheRunningOperation(t *testing.T) {
-	slot := newOperationSlot()
+	slot := newOperationSlot(0, nil)
 	interrupter := newRecordingInterrupter()
 	op, err := slot.begin(7, interrupter.interrupt)
 	if err != nil {
@@ -110,7 +119,7 @@ func TestOperationZeroTargetsTheRunningOperation(t *testing.T) {
 }
 
 func TestOperationZeroWithNothingRunningDoesNothing(t *testing.T) {
-	slot := newOperationSlot()
+	slot := newOperationSlot(0, nil)
 	interrupter := newRecordingInterrupter()
 	slot.cancel(0)
 	op, err := slot.begin(1, interrupter.interrupt)
@@ -124,7 +133,7 @@ func TestOperationZeroWithNothingRunningDoesNothing(t *testing.T) {
 }
 
 func TestCancellingTheRunningOperationByIDInterruptsOnlyThatOperation(t *testing.T) {
-	slot := newOperationSlot()
+	slot := newOperationSlot(0, nil)
 	interrupter := newRecordingInterrupter()
 	op, err := slot.begin(9, interrupter.interrupt)
 	if err != nil {
@@ -143,7 +152,7 @@ func TestCancellingTheRunningOperationByIDInterruptsOnlyThatOperation(t *testing
 }
 
 func TestRunningOperationDoesNotFinishUntilTheInFlightCancelSettles(t *testing.T) {
-	slot := newOperationSlot()
+	slot := newOperationSlot(0, nil)
 	interrupter := newBlockingInterrupter()
 	op, err := slot.begin(1, interrupter.interrupt)
 	if err != nil {
@@ -188,7 +197,7 @@ func TestRunningOperationDoesNotFinishUntilTheInFlightCancelSettles(t *testing.T
 }
 
 func TestTimeoutStopsTheOperationAndTheFirstCauseWins(t *testing.T) {
-	slot := newOperationSlot()
+	slot := newOperationSlot(0, nil)
 	interrupter := newRecordingInterrupter()
 	op, err := slot.begin(1, interrupter.interrupt)
 	if err != nil {
@@ -207,7 +216,7 @@ func TestTimeoutStopsTheOperationAndTheFirstCauseWins(t *testing.T) {
 }
 
 func TestSettledOperationIgnoresLaterCancelsAndTimeouts(t *testing.T) {
-	slot := newOperationSlot()
+	slot := newOperationSlot(0, nil)
 	interrupter := newRecordingInterrupter()
 	op, err := slot.begin(1, interrupter.interrupt)
 	if err != nil {
@@ -224,7 +233,7 @@ func TestSettledOperationIgnoresLaterCancelsAndTimeouts(t *testing.T) {
 }
 
 func TestOperationsRunOneAtATime(t *testing.T) {
-	slot := newOperationSlot()
+	slot := newOperationSlot(0, nil)
 	first, err := slot.begin(1, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -248,7 +257,7 @@ func TestOperationsRunOneAtATime(t *testing.T) {
 }
 
 func TestCancelForAWaitingOperationDropsItWhenItArrives(t *testing.T) {
-	slot := newOperationSlot()
+	slot := newOperationSlot(0, nil)
 	interrupter := newRecordingInterrupter()
 	first, err := slot.begin(1, interrupter.interrupt)
 	if err != nil {
@@ -271,7 +280,7 @@ func TestCancelForAWaitingOperationDropsItWhenItArrives(t *testing.T) {
 }
 
 func TestEarlyCancellationsOlderThanAStartedOperationAreForgotten(t *testing.T) {
-	slot := newOperationSlot()
+	slot := newOperationSlot(0, nil)
 	slot.cancel(10)
 	op, err := slot.begin(11, nil)
 	if err != nil {
@@ -284,7 +293,7 @@ func TestEarlyCancellationsOlderThanAStartedOperationAreForgotten(t *testing.T) 
 }
 
 func TestClosingTheSlotStopsTheRunningOperationAndRefusesNewOnes(t *testing.T) {
-	slot := newOperationSlot()
+	slot := newOperationSlot(0, nil)
 	interrupter := newRecordingInterrupter()
 	op, err := slot.begin(1, interrupter.interrupt)
 	if err != nil {
@@ -311,4 +320,105 @@ func TestClosingTheSlotStopsTheRunningOperationAndRefusesNewOnes(t *testing.T) {
 		t.Fatalf("begin after close = %v; want the closed slot error", err)
 	}
 	slot.cancel(3)
+}
+
+func TestForcedSeverThatFiredBeforeSettleFinishesBeforeTheSlotIsReleased(t *testing.T) {
+	severStarted := make(chan struct{})
+	releaseSever := make(chan struct{})
+	var severs atomic.Int32
+	var severFinished atomic.Bool
+	slot := newOperationSlot(time.Millisecond, func() {
+		severs.Add(1)
+		close(severStarted)
+		<-releaseSever
+		severFinished.Store(true)
+	})
+	op, err := slot.begin(1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slot.cancel(1)
+	awaitSignal(t, severStarted, "the forced sever")
+
+	finished := make(chan bool, 1)
+	go func() {
+		slot.finish(op)
+		finished <- severFinished.Load()
+	}()
+	nextBegan := make(chan bool, 1)
+	go func() {
+		next, beginErr := slot.begin(2, nil)
+		if beginErr != nil {
+			t.Error(beginErr)
+			nextBegan <- false
+			return
+		}
+		nextBegan <- severFinished.Load()
+		slot.finish(next)
+	}()
+
+	select {
+	case <-finished:
+		t.Fatal("the slot released the operation while its forced sever was still running")
+	case <-nextBegan:
+		t.Fatal("the next operation began while the forced sever was still running")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(releaseSever)
+	if !<-finished {
+		t.Fatal("finish returned before the forced sever finished")
+	}
+	if !<-nextBegan {
+		t.Fatal("the next operation began before the forced sever finished")
+	}
+	if count := severs.Load(); count != 1 {
+		t.Fatalf("forced sever ran %d times; want once", count)
+	}
+}
+
+func TestATimeoutArmsTheForcedSever(t *testing.T) {
+	severed := make(chan struct{})
+	slot := newOperationSlot(time.Millisecond, func() { close(severed) })
+	op, err := slot.begin(1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	op.stopAfter(time.Millisecond)
+	awaitSignal(t, severed, "the forced sever of a timed-out operation")
+	slot.finish(op)
+}
+
+func TestSettlingInsideTheGraceNeverSevers(t *testing.T) {
+	var severs atomic.Int32
+	slot := newOperationSlot(50*time.Millisecond, func() { severs.Add(1) })
+	stopped, err := slot.begin(1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slot.cancel(1)
+	slot.finish(stopped)
+	unstopped, err := slot.begin(2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	slot.finish(unstopped)
+	if count := severs.Load(); count != 0 {
+		t.Fatalf("forced sever ran %d times; want none", count)
+	}
+}
+
+func TestClosingTheSlotArmsNoForcedSever(t *testing.T) {
+	var severs atomic.Int32
+	slot := newOperationSlot(time.Millisecond, func() { severs.Add(1) })
+	op, err := slot.begin(1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slot.close()
+	time.Sleep(30 * time.Millisecond)
+	slot.finish(op)
+	if count := severs.Load(); count != 0 {
+		t.Fatalf("closing the slot armed a forced sever that ran %d times", count)
+	}
 }

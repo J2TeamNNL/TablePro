@@ -25,12 +25,7 @@ func (s *session) interruptStatement(reason stopReason) {
 			s.loseConnection()
 		}
 	}()
-	watchdog := time.AfterFunc(cancelDeadline, s.loseConnection)
-	err := s.sendCancel()
-	if !watchdog.Stop() {
-		return
-	}
-	if err != nil {
+	if _, err := runUnderWatchdog(cancelDeadline, s.loseConnection, s.sendCancel); err != nil {
 		s.loseConnection()
 	}
 }

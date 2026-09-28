@@ -50,6 +50,17 @@ final class HanaBridgeContractTests: XCTestCase {
         XCTAssertTrue(result.rows.isEmpty)
     }
 
+    func testSessionLostIsReadAndDefaultsToFalse() throws {
+        let fields = """
+            "columns":[],"columnTypeNames":[],"columnClassifications":[],"rows":[],
+            "rowsAffected":1,"hasResultSet":false,"executionTime":0,"isTruncated":false,"truncatedLobCount":0
+            """
+
+        XCTAssertTrue(try decode("{\(fields),\"sessionLost\":true}").sessionLost)
+        XCTAssertFalse(try decode("{\(fields),\"sessionLost\":false}").sessionLost)
+        XCTAssertFalse(try decode("{\(fields)}").sessionLost)
+    }
+
     func testNumericCellsAreRejectedBecauseTheContractSendsText() {
         let json = """
             {"columns":["ID"],"columnTypeNames":["INTEGER"],"columnClassifications":[null],"rows":[[1]],

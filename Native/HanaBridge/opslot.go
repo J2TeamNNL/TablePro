@@ -31,10 +31,12 @@ type operationSlot struct {
 	lastStarted          uint64
 	running              *operation
 	cancelledBeforeStart map[uint64]struct{}
+	severGrace           time.Duration
+	sever                func()
 }
 
-func newOperationSlot() *operationSlot {
-	slot := &operationSlot{cancelledBeforeStart: map[uint64]struct{}{}}
+func newOperationSlot(severGrace time.Duration, sever func()) *operationSlot {
+	slot := &operationSlot{cancelledBeforeStart: map[uint64]struct{}{}, severGrace: severGrace, sever: sever}
 	slot.idle = sync.NewCond(&slot.mu)
 	return slot
 }
@@ -56,7 +58,7 @@ func (s *operationSlot) begin(id uint64, interrupt interruptFunc) (*operation, e
 	if cancelledEarly && id != 0 {
 		return nil, errOperationDroppedWhileQueued
 	}
-	op := &operation{id: id, interrupt: interrupt}
+	op := &operation{id: id, interrupt: interrupt, severGrace: s.severGrace, sever: s.sever}
 	s.running = op
 	return op, nil
 }
@@ -105,15 +107,18 @@ func (s *operationSlot) close() {
 }
 
 type operation struct {
-	id        uint64
-	interrupt interruptFunc
-	stopFlag  atomic.Bool
+	id         uint64
+	interrupt  interruptFunc
+	severGrace time.Duration
+	sever      func()
+	stopFlag   atomic.Bool
 
-	mu       sync.Mutex
-	reason   stopReason
-	settled  bool
-	deadline *time.Timer
-	inFlight sync.WaitGroup
+	mu          sync.Mutex
+	reason      stopReason
+	settled     bool
+	deadline    *time.Timer
+	forcedSever *watchdog
+	inFlight    sync.WaitGroup
 }
 
 func (o *operation) requestStop(reason stopReason) {
@@ -124,6 +129,9 @@ func (o *operation) requestStop(reason stopReason) {
 	}
 	o.reason = reason
 	o.stopFlag.Store(true)
+	if reason != stopClosed && o.sever != nil {
+		o.forcedSever = armWatchdog(o.severGrace, o.sever)
+	}
 	if o.interrupt == nil {
 		return
 	}
@@ -152,7 +160,11 @@ func (o *operation) settle() {
 	if o.deadline != nil {
 		o.deadline.Stop()
 	}
+	forcedSever := o.forcedSever
 	o.mu.Unlock()
+	if forcedSever != nil {
+		forcedSever.disarm()
+	}
 	o.inFlight.Wait()
 }
 

@@ -265,6 +265,56 @@ final class HanaPluginDriverTests: XCTestCase {
         } catch {
             XCTAssertEqual((error as? HanaError)?.kind, .cancelled, "got \(error)")
         }
+        XCTAssertEqual(session.cancelRunningCount, 0)
+    }
+
+    func testStopWithNoQueryInFlightLeavesARunningPingAlone() async throws {
+        let bridge = HanaFakeBridge()
+        let driver = HanaPluginDriver(config: config(), session: HanaConnection(bridge: bridge))
+        try await driver.connect()
+        let hold = bridge.holdPing()
+        let ping = Task { try await driver.ping() }
+        _ = await hold.arrival()
+
+        try driver.cancelQuery()
+
+        XCTAssertTrue(bridge.cancels.isEmpty)
+        hold.release()
+        try await ping.value
+    }
+
+    func testStopDuringAQueryReachesTheBridgeBeforeCancelQueryReturns() async throws {
+        let bridge = HanaFakeBridge()
+        let driver = HanaPluginDriver(config: config(), session: HanaConnection(bridge: bridge))
+        try await driver.connect()
+        let hold = bridge.hold(sql: "SELECT * FROM BIG")
+        let run = Task { try await driver.executeUserQuery(query: "SELECT * FROM BIG", rowCap: nil, parameters: nil) }
+        let ticket = await hold.arrival()
+
+        try driver.cancelQuery()
+
+        XCTAssertEqual(bridge.cancels, [ticket])
+        hold.release()
+        do {
+            _ = try await run.value
+            XCTFail("the statement should report a cancellation")
+        } catch {
+            XCTAssertTrue(error is CancellationError, "got \(error)")
+        }
+    }
+
+    func testAStatementThatSucceededOnASessionLostReturnsItsResultAndReportsTheLoss() async throws {
+        let bridge = HanaFakeBridge()
+        let lost = HanaBridgeJSON.envelope(columns: ["ID"], rows: [["7"]], sessionLost: true)
+        bridge.respond(to: "SELECT ID FROM T", with: lost)
+        let driver = HanaPluginDriver(config: config(), session: HanaConnection(bridge: bridge))
+        try await driver.connect()
+
+        let result = try await driver.executeUserQuery(query: "SELECT ID FROM T", rowCap: nil, parameters: nil)
+
+        XCTAssertEqual(result.columns, ["ID"])
+        XCTAssertEqual(result.rows, [[.text("7")]])
+        XCTAssertTrue(driver.hasLostConnection)
     }
 
     func testServerErrorsAreMappedWithTheirCode() async {

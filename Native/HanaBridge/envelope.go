@@ -136,6 +136,7 @@ type resultEnvelope struct {
 	executionTime         float64
 	isTruncated           bool
 	truncatedLobCount     int
+	sessionLost           bool
 }
 
 func affectedRowsEnvelope(rowsAffected int64) *resultEnvelope {
@@ -176,6 +177,8 @@ func (e *resultEnvelope) appendJSON(buffer []byte) []byte {
 	buffer = strconv.AppendBool(buffer, e.isTruncated)
 	buffer = append(buffer, `,"truncatedLobCount":`...)
 	buffer = strconv.AppendInt(buffer, int64(e.truncatedLobCount), 10)
+	buffer = append(buffer, `,"sessionLost":`...)
+	buffer = strconv.AppendBool(buffer, e.sessionLost)
 	return append(buffer, '}')
 }
 

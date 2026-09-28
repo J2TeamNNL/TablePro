@@ -142,6 +142,33 @@ func serverErrorCode(err error) (int, bool) {
 	return failure.Code(), true
 }
 
+type cleanupFailure struct {
+	cleanup   error
+	statement error
+}
+
+func (f *cleanupFailure) Error() string {
+	return f.cleanup.Error()
+}
+
+func (f *cleanupFailure) Unwrap() []error {
+	return []error{f.cleanup, f.statement}
+}
+
+func joinCleanupFailure(statementErr error, cleanupErr error) error {
+	if !isConnectionFailure(cleanupErr) {
+		return statementErr
+	}
+	if statementErr == nil {
+		return cleanupErr
+	}
+	return &cleanupFailure{cleanup: cleanupErr, statement: statementErr}
+}
+
+func cleanupInto(err *error, cleanup func() error) {
+	*err = joinCleanupFailure(*err, cleanup())
+}
+
 func isConnectionFailure(err error) bool {
 	if errors.Is(err, driver.ErrBadConn) || errors.Is(err, sql.ErrConnDone) || errors.Is(err, errDialerSevered) || errors.Is(err, errPingUnanswered) {
 		return true
@@ -154,16 +181,16 @@ func isConnectionFailure(err error) bool {
 }
 
 func classifyError(err error) *bridgeError {
-	var classified *bridgeError
-	if errors.As(err, &classified) {
-		return classified
-	}
 	var opaque *opaqueConnectError
 	if errors.As(err, &opaque) {
 		return classifyConnectError(opaque.cause)
 	}
 	if isConnectionFailure(err) {
 		return connectionLostError(err)
+	}
+	var classified *bridgeError
+	if errors.As(err, &classified) {
+		return classified
 	}
 	var failure hdb.DBError
 	if errors.As(err, &failure) {

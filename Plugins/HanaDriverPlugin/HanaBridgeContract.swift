@@ -128,6 +128,11 @@ struct HanaConnectResult: Decodable, Equatable, Sendable {
 }
 
 struct HanaResultEnvelope: Decodable, Equatable, Sendable {
+    private enum CodingKeys: String, CodingKey {
+        case columns, columnTypeNames, columnClassifications, rows, rowsAffected, hasResultSet, executionTime
+        case isTruncated, truncatedLobCount, sessionLost
+    }
+
     let columns: [String]
     let columnTypeNames: [String]
     let columnClassifications: [String?]
@@ -137,6 +142,45 @@ struct HanaResultEnvelope: Decodable, Equatable, Sendable {
     let executionTime: TimeInterval
     let isTruncated: Bool
     let truncatedLobCount: Int
+    let sessionLost: Bool
+
+    init(
+        columns: [String],
+        columnTypeNames: [String],
+        columnClassifications: [String?],
+        rows: [[HanaBridgeCell]],
+        rowsAffected: Int64,
+        hasResultSet: Bool,
+        executionTime: TimeInterval,
+        isTruncated: Bool,
+        truncatedLobCount: Int,
+        sessionLost: Bool = false
+    ) {
+        self.columns = columns
+        self.columnTypeNames = columnTypeNames
+        self.columnClassifications = columnClassifications
+        self.rows = rows
+        self.rowsAffected = rowsAffected
+        self.hasResultSet = hasResultSet
+        self.executionTime = executionTime
+        self.isTruncated = isTruncated
+        self.truncatedLobCount = truncatedLobCount
+        self.sessionLost = sessionLost
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        columns = try container.decode([String].self, forKey: .columns)
+        columnTypeNames = try container.decode([String].self, forKey: .columnTypeNames)
+        columnClassifications = try container.decode([String?].self, forKey: .columnClassifications)
+        rows = try container.decode([[HanaBridgeCell]].self, forKey: .rows)
+        rowsAffected = try container.decode(Int64.self, forKey: .rowsAffected)
+        hasResultSet = try container.decode(Bool.self, forKey: .hasResultSet)
+        executionTime = try container.decode(TimeInterval.self, forKey: .executionTime)
+        isTruncated = try container.decode(Bool.self, forKey: .isTruncated)
+        truncatedLobCount = try container.decode(Int.self, forKey: .truncatedLobCount)
+        sessionLost = try container.decodeIfPresent(Bool.self, forKey: .sessionLost) ?? false
+    }
 }
 
 struct HanaBridgeFailure: Error, Decodable, Equatable, Sendable {

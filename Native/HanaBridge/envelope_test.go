@@ -49,7 +49,7 @@ func TestEnvelopeCarriesEveryContractKey(t *testing.T) {
 	envelope.truncatedLobCount = 2
 	encoded := string(envelope.appendJSON(nil))
 	want := `{"columns":["ID","WHEN"],"columnTypeNames":["INTEGER","SECONDDATE"],"columnClassifications":[null,"TIMESTAMP"],` +
-		`"rows":[["1",null]],"rowsAffected":0,"hasResultSet":true,"executionTime":0.0123,"isTruncated":true,"truncatedLobCount":2}`
+		`"rows":[["1",null]],"rowsAffected":0,"hasResultSet":true,"executionTime":0.0123,"isTruncated":true,"truncatedLobCount":2,"sessionLost":false}`
 	if encoded != want {
 		t.Fatalf("envelope =\n%s\nwant\n%s", encoded, want)
 	}
@@ -148,5 +148,23 @@ func TestErrorJSONCarriesEveryKey(t *testing.T) {
 	}
 	if !strings.Contains(string(parameterError(2, expectScale, "1.234").encoded()), `"parameter":2,"expected":"scale"`) {
 		t.Fatal("parameter errors lost their position or expectation")
+	}
+}
+
+func TestEnvelopeAlwaysCarriesSessionLost(t *testing.T) {
+	envelopes := map[string]*resultEnvelope{
+		"affected rows": affectedRowsEnvelope(3),
+		"zero value":    {},
+		"no rows":       tabularEnvelope([]columnInfo{column("INTEGER")}),
+		"plan":          planEnvelope(nil),
+	}
+	for label, envelope := range envelopes {
+		if raw := string(decodeEnvelope(t, envelope)["sessionLost"]); raw != "false" {
+			t.Fatalf("%s: sessionLost = %q; want false", label, raw)
+		}
+		envelope.sessionLost = true
+		if raw := string(decodeEnvelope(t, envelope)["sessionLost"]); raw != "true" {
+			t.Fatalf("%s: sessionLost = %q; want true", label, raw)
+		}
 	}
 }

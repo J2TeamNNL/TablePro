@@ -19,9 +19,10 @@ import (
 var errPingUnanswered = errors.New("the server did not answer the ping in time")
 
 const (
-	applicationName = "TablePro"
-	pingDeadline    = 20 * time.Second
-	identityQuery   = "SELECT CURRENT_SCHEMA, CURRENT_CONNECTION FROM DUMMY"
+	applicationName  = "TablePro"
+	pingDeadline     = 20 * time.Second
+	forcedSeverGrace = 30 * time.Second
+	identityQuery    = "SELECT CURRENT_SCHEMA, CURRENT_CONNECTION FROM DUMMY"
 )
 
 type sessionState uint8
@@ -81,14 +82,15 @@ func newSession(config connectionConfig) (*session, *bridgeError) {
 	controlDB := sql.OpenDB(source)
 	controlDB.SetMaxOpenConns(1)
 	controlDB.SetMaxIdleConns(1)
-	return &session{
+	entry := &session{
 		connectTimeout: config.connectTimeout(),
 		connector:      connector,
 		dialer:         dialer,
 		db:             db,
 		controlDB:      controlDB,
-		slot:           newOperationSlot(),
-	}, nil
+	}
+	entry.slot = newOperationSlot(forcedSeverGrace, entry.loseConnection)
+	return entry, nil
 }
 
 func newConnector(config connectionConfig, dialer dial.Dialer) *hdb.Connector {
@@ -210,12 +212,12 @@ func (s *session) establish(connectContext context.Context) (*sql.Conn, connectR
 	return conn, identity, nil
 }
 
-func readIdentity(conn *sql.Conn) (connectResult, error) {
+func readIdentity(conn *sql.Conn) (identity connectResult, err error) {
 	rows, err := conn.QueryContext(context.Background(), identityQuery)
 	if err != nil {
 		return connectResult{}, err
 	}
-	defer rows.Close()
+	defer cleanupInto(&err, rows.Close)
 	var schema, connectionID any
 	if rows.Next() {
 		if err := rows.Scan(&schema, &connectionID); err != nil {
@@ -225,7 +227,6 @@ func readIdentity(conn *sql.Conn) (connectResult, error) {
 	if err := rows.Err(); err != nil {
 		return connectResult{}, err
 	}
-	identity := connectResult{}
 	if text, ok := schema.([]byte); ok {
 		identity.CurrentSchema = decodeText(text)
 	}
@@ -305,6 +306,7 @@ func (s *session) execute(operationID uint64, request executeRequest) ([]byte, *
 		return nil, s.failure(op, err)
 	}
 	envelope.executionTime = elapsed.Seconds()
+	envelope.sessionLost = s.currentState() == sessionLost
 	return envelope.appendJSON(nil), nil
 }
 
@@ -325,6 +327,7 @@ func (s *session) explain(operationID uint64, request explainRequest) ([]byte, *
 	}
 	envelope := planEnvelope(renderPlan(nodes))
 	envelope.executionTime = time.Since(started).Seconds()
+	envelope.sessionLost = s.currentState() == sessionLost
 	return envelope.appendJSON(nil), nil
 }
 
@@ -332,10 +335,11 @@ func (s *session) discardPlan(conn *sql.Conn, statementName string) {
 	if state := s.currentState(); state == sessionLost || state == sessionClosed {
 		return
 	}
-	watchdog := time.AfterFunc(cancelDeadline, s.loseConnection)
-	_, err := conn.ExecContext(context.Background(), planCleanupStatement(statementName))
-	watchdog.Stop()
-	if err != nil && isConnectionFailure(err) {
+	_, err := runUnderWatchdog(cancelDeadline, s.loseConnection, func() error {
+		_, err := conn.ExecContext(context.Background(), planCleanupStatement(statementName))
+		return err
+	})
+	if isConnectionFailure(err) {
 		s.loseConnection()
 	}
 }
@@ -346,14 +350,18 @@ func (s *session) ping(operationID uint64) *bridgeError {
 		return failure
 	}
 	defer s.slot.finish(op)
-	watchdog := time.AfterFunc(pingDeadline, s.loseConnection)
-	err := conn.PingContext(context.Background())
-	if !watchdog.Stop() {
+	expired, err := runUnderWatchdog(pingDeadline, s.loseConnection, func() error {
+		return conn.PingContext(context.Background())
+	})
+	if expired {
 		err = errPingUnanswered
 	}
 	op.settle()
 	if err != nil {
 		return s.failure(op, err)
+	}
+	if s.currentState() == sessionLost {
+		return connectionLostError(nil)
 	}
 	return nil
 }

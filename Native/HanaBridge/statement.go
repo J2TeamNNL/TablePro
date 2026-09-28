@@ -29,12 +29,12 @@ func runCountingStatement(conn *sql.Conn, statement string) (*resultEnvelope, er
 	return affectedRowsEnvelope(rowsAffected(result)), nil
 }
 
-func runQuery(conn *sql.Conn, op *operation, statement string, rowLimit int) (*resultEnvelope, error) {
+func runQuery(conn *sql.Conn, op *operation, statement string, rowLimit int) (envelope *resultEnvelope, err error) {
 	rows, err := conn.QueryContext(context.Background(), statement)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer cleanupInto(&err, rows.Close)
 	return readFirstResultSet(rows, op, rowLimit)
 }
 
@@ -44,7 +44,7 @@ type preparedPlan struct {
 	bindsLob    bool
 }
 
-func runParameterized(conn *sql.Conn, op *operation, request executeRequest) (*resultEnvelope, error) {
+func runParameterized(conn *sql.Conn, op *operation, request executeRequest) (envelope *resultEnvelope, err error) {
 	var metadata hdb.StmtMetadata
 	statement, err := conn.PrepareContext(hdb.WithStmtMetadata(context.Background(), &metadata), request.SQL)
 	if err != nil {
@@ -52,14 +52,15 @@ func runParameterized(conn *sql.Conn, op *operation, request executeRequest) (*r
 	}
 	plan, failure := planPreparedStatement(metadata, *request.Parameters)
 	if failure != nil {
-		_ = statement.Close()
-		return nil, failure
+		return nil, joinCleanupFailure(failure, statement.Close())
 	}
 	if plan.bindsLob {
-		_ = statement.Close()
+		if err := joinCleanupFailure(nil, statement.Close()); err != nil {
+			return nil, err
+		}
 		return runInTransaction(conn, op, request, plan)
 	}
-	defer statement.Close()
+	defer cleanupInto(&err, statement.Close)
 	return runPrepared(statement, op, request.rowLimit(), plan)
 }
 
@@ -95,8 +96,7 @@ func runInTransaction(conn *sql.Conn, op *operation, request executeRequest, pla
 		err = errOperationStopped
 	}
 	if err != nil {
-		_ = transaction.Rollback()
-		return nil, err
+		return nil, joinCleanupFailure(err, transaction.Rollback())
 	}
 	if err := transaction.Commit(); err != nil {
 		return nil, err
@@ -104,16 +104,16 @@ func runInTransaction(conn *sql.Conn, op *operation, request executeRequest, pla
 	return envelope, nil
 }
 
-func runTransactionStatement(transaction *sql.Tx, op *operation, request executeRequest, plan preparedPlan) (*resultEnvelope, error) {
+func runTransactionStatement(transaction *sql.Tx, op *operation, request executeRequest, plan preparedPlan) (envelope *resultEnvelope, err error) {
 	statement, err := transaction.PrepareContext(context.Background(), request.SQL)
 	if err != nil {
 		return nil, err
 	}
-	defer statement.Close()
+	defer cleanupInto(&err, statement.Close)
 	return runPrepared(statement, op, request.rowLimit(), plan)
 }
 
-func runPrepared(statement *sql.Stmt, op *operation, rowLimit int, plan preparedPlan) (*resultEnvelope, error) {
+func runPrepared(statement *sql.Stmt, op *operation, rowLimit int, plan preparedPlan) (envelope *resultEnvelope, err error) {
 	if op.stopped() {
 		return nil, errOperationStopped
 	}
@@ -128,7 +128,7 @@ func runPrepared(statement *sql.Stmt, op *operation, rowLimit int, plan prepared
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer cleanupInto(&err, rows.Close)
 	return readFirstResultSet(rows, op, rowLimit)
 }
 

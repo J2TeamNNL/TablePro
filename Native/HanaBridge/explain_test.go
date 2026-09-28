@@ -90,7 +90,7 @@ func TestExplainStatementsUseTheGeneratedName(t *testing.T) {
 func TestPlanEnvelopeIsOneTextColumn(t *testing.T) {
 	encoded := string(planEnvelope([]string{"ROOT", "  CHILD"}).appendJSON(nil))
 	want := `{"columns":["QUERY PLAN"],"columnTypeNames":["NVARCHAR"],"columnClassifications":[null],"rows":[["ROOT"],["  CHILD"]],` +
-		`"rowsAffected":0,"hasResultSet":true,"executionTime":0,"isTruncated":false,"truncatedLobCount":0}`
+		`"rowsAffected":0,"hasResultSet":true,"executionTime":0,"isTruncated":false,"truncatedLobCount":0,"sessionLost":false}`
 	if encoded != want {
 		t.Fatalf("plan envelope =\n%s\nwant\n%s", encoded, want)
 	}

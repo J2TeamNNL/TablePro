@@ -60,7 +60,7 @@ final class HanaPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     }
 
     func cancelQuery() throws {
-        cancellationGate.cancel()
+        guard cancellationGate.cancel() != nil else { return }
         session.cancelRunning()
     }
 

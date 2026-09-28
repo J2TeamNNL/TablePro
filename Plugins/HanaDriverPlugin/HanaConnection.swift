@@ -1,11 +1,15 @@
-import CHana
 import Foundation
 import os
 
 final class HanaConnection: HanaSession, @unchecked Sendable {
-    private enum Target {
+    private enum Target: Sendable {
         case connecting(UInt64)
         case connected
+    }
+
+    private struct Admission: Sendable {
+        let ticket: HanaOperationTicket
+        let epoch: UInt64
     }
 
     private struct State {
@@ -13,18 +17,28 @@ final class HanaConnection: HanaSession, @unchecked Sendable {
         var isAdopted = false
         var epoch: UInt64 = 0
         var lastOperation: UInt64 = 0
+        var running: HanaOperationTicket?
         var queryTimeoutSeconds = 0
         var hasLostConnection = false
     }
 
     private static let logger = Logger(subsystem: "com.TablePro", category: "HanaConnection")
 
-    private let queue = DispatchQueue(label: "com.TablePro.hana.connection", qos: .userInitiated)
+    private let bridge: any HanaNativeBridge
+    private let queue: any HanaOperationQueue
     private let stateLock = NSLock()
     private var state = State()
 
+    init(
+        bridge: any HanaNativeBridge = HanaCBridge(),
+        queue: any HanaOperationQueue = DispatchQueue(label: "com.TablePro.hana.connection", qos: .userInitiated)
+    ) {
+        self.bridge = bridge
+        self.queue = queue
+    }
+
     deinit {
-        Self.close(state.session)
+        closeNative(state.session)
     }
 
     var hasLostConnection: Bool {
@@ -34,22 +48,15 @@ final class HanaConnection: HanaSession, @unchecked Sendable {
     func connect(_ configuration: HanaConnectConfiguration) async throws -> HanaConnectResult {
         let configurationJSON = try JSONEncoder().encode(configuration)
         let attempt = beginAttempt()
-        let session = try Self.open(configurationJSON)
+        let session = try bridge.open(configuration: configurationJSON)
         guard claim(session, attempt: attempt) else {
-            Self.close(session)
+            closeNative(session)
             throw HanaBridgeFailure.closed
         }
         let result: HanaConnectResult
         do {
-            result = try await perform(.connecting(session)) { session, operation in
-                var rawResult: UnsafeMutablePointer<CChar>?
-                var rawError: UnsafeMutablePointer<CChar>?
-                guard tp_hana_connect(session, operation, &rawResult, &rawError) else {
-                    Self.release(rawResult)
-                    throw Self.failure(consuming: rawError)
-                }
-                Self.release(rawError)
-                return try Self.decode(HanaConnectResult.self, consuming: rawResult)
+            result = try await perform(.connecting(session)) { bridge, ticket in
+                try Self.decode(HanaConnectResult.self, from: bridge.connect(ticket))
             }
         } catch {
             abandon(session)
@@ -64,24 +71,13 @@ final class HanaConnection: HanaSession, @unchecked Sendable {
     }
 
     func disconnect() {
-        let session = stateLock.withLock { () -> UInt64 in
-            let current = state.session
-            state.session = 0
-            state.isAdopted = false
-            state.hasLostConnection = false
-            state.epoch &+= 1
-            return current
-        }
-        Self.close(session)
+        let (session, _) = retireSession()
+        closeNative(session)
     }
 
     func ping() async throws {
-        try await perform(.connected) { session, operation in
-            var rawError: UnsafeMutablePointer<CChar>?
-            guard tp_hana_ping(session, operation, &rawError) else {
-                throw Self.failure(consuming: rawError)
-            }
-            Self.release(rawError)
+        try await perform(.connected) { bridge, ticket in
+            try bridge.ping(ticket)
         }
     }
 
@@ -93,42 +89,21 @@ final class HanaConnection: HanaSession, @unchecked Sendable {
             timeoutSeconds: queryTimeoutSeconds
         )
         let requestJSON = try JSONEncoder().encode(request)
-        return try await perform(.connected) { session, operation in
-            var rawError: UnsafeMutablePointer<CChar>?
-            let rawResult = requestJSON.withUnsafeBytes { bytes in
-                tp_hana_execute(
-                    session,
-                    operation,
-                    bytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                    bytes.count,
-                    &rawError
-                )
-            }
-            return try Self.envelope(consuming: rawResult, error: rawError)
+        return try await statement { bridge, ticket in
+            try bridge.execute(ticket, request: requestJSON)
         }
     }
 
     func explain(sql: String) async throws -> HanaResultEnvelope {
         let requestJSON = try JSONEncoder().encode(HanaExplainRequest(sql: sql, timeoutSeconds: queryTimeoutSeconds))
-        return try await perform(.connected) { session, operation in
-            var rawError: UnsafeMutablePointer<CChar>?
-            let rawResult = requestJSON.withUnsafeBytes { bytes in
-                tp_hana_explain(
-                    session,
-                    operation,
-                    bytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                    bytes.count,
-                    &rawError
-                )
-            }
-            return try Self.envelope(consuming: rawResult, error: rawError)
+        return try await statement { bridge, ticket in
+            try bridge.explain(ticket, request: requestJSON)
         }
     }
 
     func cancelRunning() {
-        let session = stateLock.withLock { state.session }
-        guard session != 0 else { return }
-        Self.cancel(HanaOperationTicket(session: session, operation: 0))
+        guard let running = stateLock.withLock({ state.running }) else { return }
+        bridge.cancel(running)
     }
 
     func applyQueryTimeout(seconds: Int) {
@@ -140,7 +115,13 @@ final class HanaConnection: HanaSession, @unchecked Sendable {
     }
 
     private func beginAttempt() -> UInt64 {
-        let (previous, attempt) = stateLock.withLock { () -> (UInt64, UInt64) in
+        let (previous, attempt) = retireSession()
+        closeNative(previous)
+        return attempt
+    }
+
+    private func retireSession() -> (session: UInt64, epoch: UInt64) {
+        stateLock.withLock {
             let current = state.session
             state.session = 0
             state.isAdopted = false
@@ -148,8 +129,6 @@ final class HanaConnection: HanaSession, @unchecked Sendable {
             state.epoch &+= 1
             return (current, state.epoch)
         }
-        Self.close(previous)
-        return attempt
     }
 
     private func claim(_ session: UInt64, attempt: UInt64) -> Bool {
@@ -175,21 +154,39 @@ final class HanaConnection: HanaSession, @unchecked Sendable {
             state.session = 0
             state.isAdopted = false
         }
-        Self.close(session)
+        closeNative(session)
+    }
+
+    private func closeNative(_ session: UInt64) {
+        guard session != 0 else { return }
+        bridge.close(session: session)
+    }
+
+    private func statement(
+        _ call: @escaping @Sendable (any HanaNativeBridge, HanaOperationTicket) throws -> Data
+    ) async throws -> HanaResultEnvelope {
+        try await perform(.connected) { bridge, ticket in
+            let envelope = try Self.decode(HanaResultEnvelope.self, from: call(bridge, ticket))
+            if envelope.sessionLost {
+                Self.logger.error("SAP HANA session was lost after its statement completed")
+                self.markLost(ticket.session)
+            }
+            return envelope
+        }
     }
 
     private func perform<T: Sendable>(
         _ target: Target,
-        _ call: @escaping @Sendable (_ session: UInt64, _ operation: UInt64) throws -> T
+        _ call: @escaping @Sendable (any HanaNativeBridge, HanaOperationTicket) throws -> T
     ) async throws -> T {
         let slot = HanaOperationSlot()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<T, any Error>) in
                 enqueue(target, slot: slot, continuation: continuation, call: call)
             }
-        } onCancel: {
+        } onCancel: { [bridge] in
             guard let ticket = slot.cancel() else { return }
-            Self.cancel(ticket)
+            bridge.cancel(ticket)
         }
     }
 
@@ -197,29 +194,68 @@ final class HanaConnection: HanaSession, @unchecked Sendable {
         _ target: Target,
         slot: HanaOperationSlot,
         continuation: CheckedContinuation<T, any Error>,
-        call: @escaping @Sendable (_ session: UInt64, _ operation: UInt64) throws -> T
+        call: @escaping @Sendable (any HanaNativeBridge, HanaOperationTicket) throws -> T
     ) {
-        stateLock.lock()
-        guard let session = resolve(target) else {
-            stateLock.unlock()
-            continuation.resume(throwing: HanaBridgeFailure.closed)
-            return
-        }
-        state.lastOperation &+= 1
-        let ticket = HanaOperationTicket(session: session, operation: state.lastOperation)
-        guard slot.assign(ticket) else {
-            stateLock.unlock()
-            continuation.resume(throwing: CancellationError())
-            return
-        }
-        queue.async {
-            let outcome = Result { try call(ticket.session, ticket.operation) }
-            if case .failure(let error) = outcome {
-                self.noteFailure(error, session: ticket.session)
+        let refusal = stateLock.withLock { () -> (any Error)? in
+            guard let session = resolve(target) else { return HanaBridgeFailure.closed }
+            state.lastOperation &+= 1
+            let admission = Admission(
+                ticket: HanaOperationTicket(session: session, operation: state.lastOperation),
+                epoch: state.epoch
+            )
+            guard slot.assign(admission.ticket) else { return CancellationError() }
+            queue.submit {
+                self.run(admission, target: target, slot: slot, continuation: continuation, call: call)
             }
-            continuation.resume(with: outcome)
+            return nil
         }
-        stateLock.unlock()
+        guard let refusal else { return }
+        continuation.resume(throwing: refusal)
+    }
+
+    private func run<T: Sendable>(
+        _ admission: Admission,
+        target: Target,
+        slot: HanaOperationSlot,
+        continuation: CheckedContinuation<T, any Error>,
+        call: @Sendable (any HanaNativeBridge, HanaOperationTicket) throws -> T
+    ) {
+        if let refusal = start(admission, target: target, slot: slot) {
+            continuation.resume(throwing: refusal)
+            return
+        }
+        let outcome = Result { try call(bridge, admission.ticket) }
+        if case .failure(let error) = outcome, (error as? HanaBridgeFailure)?.kind == .connectionLost {
+            markLost(admission.ticket.session)
+        }
+        finish(admission.ticket)
+        continuation.resume(with: outcome)
+    }
+
+    private func start(_ admission: Admission, target: Target, slot: HanaOperationSlot) -> (any Error)? {
+        stateLock.withLock { () -> (any Error)? in
+            guard state.epoch == admission.epoch, resolve(target) == admission.ticket.session else {
+                Self.logger.debug("SAP HANA operation \(admission.ticket.operation) dropped: its session was closed")
+                return HanaBridgeFailure.closed
+            }
+            guard !slot.isCancelled else { return CancellationError() }
+            state.running = admission.ticket
+            return nil
+        }
+    }
+
+    private func finish(_ ticket: HanaOperationTicket) {
+        stateLock.withLock {
+            guard state.running == ticket else { return }
+            state.running = nil
+        }
+    }
+
+    private func markLost(_ session: UInt64) {
+        stateLock.withLock {
+            guard state.session == session else { return }
+            state.hasLostConnection = true
+        }
     }
 
     private func resolve(_ target: Target) -> UInt64? {
@@ -233,65 +269,12 @@ final class HanaConnection: HanaSession, @unchecked Sendable {
         }
     }
 
-    private func noteFailure(_ error: any Error, session: UInt64) {
-        guard (error as? HanaBridgeFailure)?.kind == .connectionLost else { return }
-        stateLock.withLock {
-            guard state.session == session else { return }
-            state.hasLostConnection = true
-        }
-    }
-
-    private static func open(_ configurationJSON: Data) throws -> UInt64 {
-        var rawError: UnsafeMutablePointer<CChar>?
-        let session = configurationJSON.withUnsafeBytes { bytes in
-            tp_hana_open(bytes.baseAddress?.assumingMemoryBound(to: UInt8.self), bytes.count, &rawError)
-        }
-        guard session != 0 else { throw failure(consuming: rawError) }
-        release(rawError)
-        return session
-    }
-
-    private static func close(_ session: UInt64) {
-        guard session != 0 else { return }
-        DispatchQueue.global(qos: .userInitiated).async { tp_hana_close(session) }
-    }
-
-    private static func cancel(_ ticket: HanaOperationTicket) {
-        DispatchQueue.global(qos: .userInitiated).async { tp_hana_cancel(ticket.session, ticket.operation) }
-    }
-
-    private static func envelope(
-        consuming rawResult: UnsafeMutablePointer<CChar>?,
-        error rawError: UnsafeMutablePointer<CChar>?
-    ) throws -> HanaResultEnvelope {
-        guard rawResult != nil else { throw failure(consuming: rawError) }
-        release(rawError)
-        return try decode(HanaResultEnvelope.self, consuming: rawResult)
-    }
-
-    private static func decode<T: Decodable>(_ type: T.Type, consuming pointer: UnsafeMutablePointer<CChar>?) throws -> T {
-        guard let data = consume(pointer) else { throw HanaError.unreadableResult }
+    private static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
         do {
             return try JSONDecoder().decode(type, from: data)
         } catch {
             logger.error("SAP HANA bridge returned unreadable JSON: \(error.localizedDescription, privacy: .private)")
             throw HanaError.unreadableResult
         }
-    }
-
-    private static func failure(consuming pointer: UnsafeMutablePointer<CChar>?) -> HanaBridgeFailure {
-        guard let data = consume(pointer) else { return HanaBridgeFailure(kind: .internalFailure) }
-        return HanaBridgeFailure.decoded(from: data)
-    }
-
-    private static func consume(_ pointer: UnsafeMutablePointer<CChar>?) -> Data? {
-        guard let pointer else { return nil }
-        defer { tp_hana_free_string(pointer) }
-        return Data(bytes: pointer, count: strlen(pointer))
-    }
-
-    private static func release(_ pointer: UnsafeMutablePointer<CChar>?) {
-        guard let pointer else { return }
-        tp_hana_free_string(pointer)
     }
 }

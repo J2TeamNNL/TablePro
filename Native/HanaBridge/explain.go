@@ -156,7 +156,7 @@ func singleLine(text string) string {
 	return strings.Join(strings.Fields(text), " ")
 }
 
-func readPlan(conn *sql.Conn, op *operation, statementName string, statement string) ([]planNode, error) {
+func readPlan(conn *sql.Conn, op *operation, statementName string, statement string) (nodes []planNode, err error) {
 	if _, err := conn.ExecContext(context.Background(), explainStatement(statementName, statement)); err != nil {
 		return nil, err
 	}
@@ -167,8 +167,7 @@ func readPlan(conn *sql.Conn, op *operation, statementName string, statement str
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var nodes []planNode
+	defer cleanupInto(&err, rows.Close)
 	for rows.Next() {
 		if op.stopped() {
 			return nil, errOperationStopped

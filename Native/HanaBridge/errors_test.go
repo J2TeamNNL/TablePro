@@ -170,3 +170,50 @@ func TestConnectContextDecidesCancelledAndTimeout(t *testing.T) {
 	assertKind(t, connectFailure(cancelled, net.ErrClosed), kindCancelled)
 	assertKind(t, connectFailure(context.Background(), &net.OpError{Op: "dial", Err: syscall.ECONNREFUSED}), kindConnect)
 }
+
+func TestCleanupConnectionFailureTurnsASuccessIntoConnectionLost(t *testing.T) {
+	var err error
+	cleanupInto(&err, func() error { return fmt.Errorf("%w: %w", driver.ErrBadConn, io.EOF) })
+	failure := resolveFailure(sessionConnected, stopNone, err)
+	assertKind(t, failure, kindConnectionLost)
+	if failure.Message != "EOF" {
+		t.Fatalf("message = %q; want the cleanup's own failure", failure.Message)
+	}
+}
+
+func TestCleanupFailureThatIsNotAConnectionFailureNeverOverridesTheStatement(t *testing.T) {
+	err := error(fakeServerError{code: 259, text: "invalid table name"})
+	cleanupInto(&err, func() error { return fakeServerError{code: 7, text: "drop statement refused"} })
+	failure := resolveFailure(sessionConnected, stopNone, err)
+	assertKind(t, failure, kindServer)
+	if failure.Code != 259 {
+		t.Fatalf("failure = %+v; want the statement's error", failure)
+	}
+	var succeeded error
+	cleanupInto(&succeeded, func() error { return errors.New("drop statement refused") })
+	if succeeded != nil {
+		t.Fatalf("a cleanup error that is not a connection failure failed a statement that succeeded: %v", succeeded)
+	}
+}
+
+func TestCleanupConnectionFailureOutranksTheStatementError(t *testing.T) {
+	statementErrors := []error{
+		fakeServerError{code: 259, text: "invalid table name"},
+		cancelledByServer,
+		errOperationStopped,
+		parameterError(1, expectDate, "2024-02-30"),
+	}
+	for _, statementErr := range statementErrors {
+		err := joinCleanupFailure(statementErr, net.ErrClosed)
+		if !errors.Is(err, statementErr) {
+			t.Fatalf("the joined failure dropped the statement error %v", statementErr)
+		}
+		for _, reason := range []stopReason{stopNone, stopCancelled, stopTimedOut} {
+			failure := resolveFailure(sessionConnected, reason, err)
+			assertKind(t, failure, kindConnectionLost)
+			if failure.Message != net.ErrClosed.Error() {
+				t.Fatalf("message = %q; want the cleanup failure alone", failure.Message)
+			}
+		}
+	}
+}
