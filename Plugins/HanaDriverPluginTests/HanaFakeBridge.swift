@@ -18,9 +18,9 @@ final class HanaFakeBridge: HanaNativeBridge, @unchecked Sendable {
     private var pingLog: [HanaOperationTicket] = []
     private var cancelLog: [HanaOperationTicket] = []
     private var closeLog: [UInt64] = []
-    private var statementHolds: [String: HanaBridgeHold] = [:]
-    private var pingHold: HanaBridgeHold?
-    private var cancelHold: HanaBridgeHold?
+    private var statementHolds: [String: HanaHold<HanaOperationTicket>] = [:]
+    private var pingHold: HanaHold<HanaOperationTicket>?
+    private var cancelHold: HanaHold<HanaOperationTicket>?
     private var responses: [String: Data] = [:]
 
     var connects: [HanaOperationTicket] { lock.withLock { connectLog } }
@@ -29,20 +29,20 @@ final class HanaFakeBridge: HanaNativeBridge, @unchecked Sendable {
     var cancels: [HanaOperationTicket] { lock.withLock { cancelLog } }
     var closes: [UInt64] { lock.withLock { closeLog } }
 
-    func hold(sql: String) -> HanaBridgeHold {
-        let hold = HanaBridgeHold()
+    func hold(sql: String) -> HanaHold<HanaOperationTicket> {
+        let hold = HanaHold<HanaOperationTicket>()
         lock.withLock { statementHolds[sql] = hold }
         return hold
     }
 
-    func holdPing() -> HanaBridgeHold {
-        let hold = HanaBridgeHold()
+    func holdPing() -> HanaHold<HanaOperationTicket> {
+        let hold = HanaHold<HanaOperationTicket>()
         lock.withLock { pingHold = hold }
         return hold
     }
 
-    func holdCancels() -> HanaBridgeHold {
-        let hold = HanaBridgeHold()
+    func holdCancels() -> HanaHold<HanaOperationTicket> {
+        let hold = HanaHold<HanaOperationTicket>()
         lock.withLock { cancelHold = hold }
         return hold
     }
@@ -73,7 +73,7 @@ final class HanaFakeBridge: HanaNativeBridge, @unchecked Sendable {
     }
 
     func ping(_ ticket: HanaOperationTicket) throws {
-        let hold = lock.withLock { () -> HanaBridgeHold? in
+        let hold = lock.withLock { () -> HanaHold<HanaOperationTicket>? in
             pingLog.append(ticket)
             return pingHold
         }
@@ -81,7 +81,7 @@ final class HanaFakeBridge: HanaNativeBridge, @unchecked Sendable {
     }
 
     func cancel(_ ticket: HanaOperationTicket) {
-        let hold = lock.withLock { () -> HanaBridgeHold? in
+        let hold = lock.withLock { () -> HanaHold<HanaOperationTicket>? in
             cancelLog.append(ticket)
             return cancelHold
         }
@@ -104,14 +104,18 @@ final class HanaFakeBridge: HanaNativeBridge, @unchecked Sendable {
     private func statement(_ ticket: HanaOperationTicket, request: Data) throws -> Data {
         let object = try JSONSerialization.jsonObject(with: request) as? [String: Any]
         let sql = object?["sql"] as? String ?? ""
-        let (hold, response) = lock.withLock { () -> (HanaBridgeHold?, Data?) in
+        let (hold, response) = lock.withLock { () -> (HanaHold<HanaOperationTicket>?, Data?) in
             statementLog.append(Statement(ticket: ticket, sql: sql))
             return (statementHolds[sql], responses[sql])
         }
         return try run(ticket, hold: hold) { response ?? HanaBridgeJSON.envelope() }
     }
 
-    private func run(_ ticket: HanaOperationTicket, hold: HanaBridgeHold?, result: () -> Data) throws -> Data {
+    private func run(
+        _ ticket: HanaOperationTicket,
+        hold: HanaHold<HanaOperationTicket>?,
+        result: () -> Data
+    ) throws -> Data {
         try lock.withLock {
             guard openSessions.contains(ticket.session) else { throw HanaBridgeFailure.closed }
             running = ticket
@@ -131,26 +135,35 @@ final class HanaFakeBridge: HanaNativeBridge, @unchecked Sendable {
     }
 }
 
-final class HanaBridgeHold: @unchecked Sendable {
+final class HanaHold<Arrival: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private let gate = DispatchSemaphore(value: 0)
-    private var arrivals: [HanaOperationTicket] = []
-    private var waiters: [CheckedContinuation<HanaOperationTicket, Never>] = []
+    private var arrivals: [Arrival] = []
+    private var waiters: [CheckedContinuation<Arrival, Never>] = []
 
-    func arrive(_ ticket: HanaOperationTicket) {
-        let waiting = lock.withLock { () -> [CheckedContinuation<HanaOperationTicket, Never>] in
-            arrivals.append(ticket)
+    func arrive(_ value: Arrival) {
+        let waiting = lock.withLock { () -> [CheckedContinuation<Arrival, Never>] in
+            arrivals.append(value)
             let waiting = waiters
             waiters.removeAll()
             return waiting
         }
-        waiting.forEach { $0.resume(returning: ticket) }
+        waiting.forEach { $0.resume(returning: value) }
         _ = gate.wait(timeout: .now() + 10)
     }
 
-    func arrival() async -> HanaOperationTicket {
+    func arrive(_ value: Arrival) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global().async {
+                self.arrive(value)
+                continuation.resume()
+            }
+        }
+    }
+
+    func arrival() async -> Arrival {
         await withCheckedContinuation { continuation in
-            let first = lock.withLock { () -> HanaOperationTicket? in
+            let first = lock.withLock { () -> Arrival? in
                 guard let first = arrivals.first else {
                     waiters.append(continuation)
                     return nil

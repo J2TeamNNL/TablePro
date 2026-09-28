@@ -14,10 +14,13 @@ final class HanaFakeSession: HanaSession, @unchecked Sendable {
         HanaConnectResult(serverVersion: "4.00.000.00.1234567890", currentSchema: "DBADMIN", connectionId: 200_123)
     )
     private var statementHook: (@Sendable () -> Void)?
+    private var statementHolds: [String: HanaHold<HanaOperationSlot>] = [:]
+    private var cancelHold: HanaHold<HanaOperationSlot>?
     private var executedStatements: [ExecutedStatement] = []
     private var explainedStatements: [String] = []
+    private var statementSlots: [HanaOperationSlot] = []
+    private var cancelledSlots: [HanaOperationSlot] = []
     private var connectConfigurations: [HanaConnectConfiguration] = []
-    private var cancelRunningCalls = 0
     private var disconnectCalls = 0
     private var appliedTimeout: Int?
     private var lostConnection = false
@@ -25,8 +28,9 @@ final class HanaFakeSession: HanaSession, @unchecked Sendable {
     var hasLostConnection: Bool { lock.withLock { lostConnection } }
     var executed: [ExecutedStatement] { lock.withLock { executedStatements } }
     var explained: [String] { lock.withLock { explainedStatements } }
+    var slots: [HanaOperationSlot] { lock.withLock { statementSlots } }
+    var cancelled: [HanaOperationSlot] { lock.withLock { cancelledSlots } }
     var connects: [HanaConnectConfiguration] { lock.withLock { connectConfigurations } }
-    var cancelRunningCount: Int { lock.withLock { cancelRunningCalls } }
     var disconnectCount: Int { lock.withLock { disconnectCalls } }
     var timeout: Int? { lock.withLock { appliedTimeout } }
 
@@ -44,6 +48,18 @@ final class HanaFakeSession: HanaSession, @unchecked Sendable {
 
     func runDuringStatement(_ hook: @escaping @Sendable () -> Void) {
         lock.withLock { statementHook = hook }
+    }
+
+    func hold(sql: String) -> HanaHold<HanaOperationSlot> {
+        let hold = HanaHold<HanaOperationSlot>()
+        lock.withLock { statementHolds[sql] = hold }
+        return hold
+    }
+
+    func holdCancels() -> HanaHold<HanaOperationSlot> {
+        let hold = HanaHold<HanaOperationSlot>()
+        lock.withLock { cancelHold = hold }
+        return hold
     }
 
     func markConnectionLost() {
@@ -64,32 +80,51 @@ final class HanaFakeSession: HanaSession, @unchecked Sendable {
 
     func ping() async throws {}
 
-    func execute(sql: String, parameters: [HanaBridgeCell]?, rowCap: Int) async throws -> HanaResultEnvelope {
-        lock.withLock {
+    func execute(
+        sql: String,
+        parameters: [HanaBridgeCell]?,
+        rowCap: Int,
+        cancellation: HanaOperationSlot
+    ) async throws -> HanaResultEnvelope {
+        let hold = lock.withLock { () -> HanaHold<HanaOperationSlot>? in
             executedStatements.append(ExecutedStatement(sql: sql, parameters: parameters, rowCap: rowCap))
+            statementSlots.append(cancellation)
+            return statementHolds[sql]
         }
-        return try nextResponse()
+        await hold?.arrive(cancellation)
+        return try nextResponse(for: cancellation)
     }
 
-    func explain(sql: String) async throws -> HanaResultEnvelope {
-        lock.withLock { explainedStatements.append(sql) }
-        return try nextResponse()
+    func explain(sql: String, cancellation: HanaOperationSlot) async throws -> HanaResultEnvelope {
+        let hold = lock.withLock { () -> HanaHold<HanaOperationSlot>? in
+            explainedStatements.append(sql)
+            statementSlots.append(cancellation)
+            return statementHolds[sql]
+        }
+        await hold?.arrive(cancellation)
+        return try nextResponse(for: cancellation)
     }
 
-    func cancelRunning() {
-        lock.withLock { cancelRunningCalls += 1 }
+    func cancel(_ cancellation: HanaOperationSlot) {
+        let hold = lock.withLock { () -> HanaHold<HanaOperationSlot>? in
+            cancelledSlots.append(cancellation)
+            return cancelHold
+        }
+        hold?.arrive(cancellation)
+        _ = cancellation.cancel()
     }
 
     func applyQueryTimeout(seconds: Int) {
         lock.withLock { appliedTimeout = seconds }
     }
 
-    private func nextResponse() throws -> HanaResultEnvelope {
+    private func nextResponse(for cancellation: HanaOperationSlot) throws -> HanaResultEnvelope {
         let (hook, response) = lock.withLock { () -> ((@Sendable () -> Void)?, Result<HanaResultEnvelope, any Error>) in
             let response = responses.isEmpty ? .success(HanaEnvelopes.empty) : responses.removeFirst()
             return (statementHook, response)
         }
         hook?()
+        guard !cancellation.isCancelled else { throw HanaBridgeFailure(kind: .cancelled) }
         return try response.get()
     }
 }

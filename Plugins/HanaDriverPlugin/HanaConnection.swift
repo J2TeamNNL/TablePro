@@ -17,7 +17,6 @@ final class HanaConnection: HanaSession, @unchecked Sendable {
         var isAdopted = false
         var epoch: UInt64 = 0
         var lastOperation: UInt64 = 0
-        var running: HanaOperationTicket?
         var queryTimeoutSeconds = 0
         var hasLostConnection = false
     }
@@ -55,7 +54,7 @@ final class HanaConnection: HanaSession, @unchecked Sendable {
         }
         let result: HanaConnectResult
         do {
-            result = try await perform(.connecting(session)) { bridge, ticket in
+            result = try await perform(.connecting(session), cancellation: HanaOperationSlot()) { bridge, ticket in
                 try Self.decode(HanaConnectResult.self, from: bridge.connect(ticket))
             }
         } catch {
@@ -76,12 +75,17 @@ final class HanaConnection: HanaSession, @unchecked Sendable {
     }
 
     func ping() async throws {
-        try await perform(.connected) { bridge, ticket in
+        try await perform(.connected, cancellation: HanaOperationSlot()) { bridge, ticket in
             try bridge.ping(ticket)
         }
     }
 
-    func execute(sql: String, parameters: [HanaBridgeCell]?, rowCap: Int) async throws -> HanaResultEnvelope {
+    func execute(
+        sql: String,
+        parameters: [HanaBridgeCell]?,
+        rowCap: Int,
+        cancellation: HanaOperationSlot
+    ) async throws -> HanaResultEnvelope {
         let request = HanaExecuteRequest(
             sql: sql,
             parameters: parameters,
@@ -89,21 +93,21 @@ final class HanaConnection: HanaSession, @unchecked Sendable {
             timeoutSeconds: queryTimeoutSeconds
         )
         let requestJSON = try JSONEncoder().encode(request)
-        return try await statement { bridge, ticket in
+        return try await statement(cancellation) { bridge, ticket in
             try bridge.execute(ticket, request: requestJSON)
         }
     }
 
-    func explain(sql: String) async throws -> HanaResultEnvelope {
+    func explain(sql: String, cancellation: HanaOperationSlot) async throws -> HanaResultEnvelope {
         let requestJSON = try JSONEncoder().encode(HanaExplainRequest(sql: sql, timeoutSeconds: queryTimeoutSeconds))
-        return try await statement { bridge, ticket in
+        return try await statement(cancellation) { bridge, ticket in
             try bridge.explain(ticket, request: requestJSON)
         }
     }
 
-    func cancelRunning() {
-        guard let running = stateLock.withLock({ state.running }) else { return }
-        bridge.cancel(running)
+    func cancel(_ cancellation: HanaOperationSlot) {
+        guard let ticket = cancellation.cancel() else { return }
+        bridge.cancel(ticket)
     }
 
     func applyQueryTimeout(seconds: Int) {
@@ -163,9 +167,10 @@ final class HanaConnection: HanaSession, @unchecked Sendable {
     }
 
     private func statement(
+        _ cancellation: HanaOperationSlot,
         _ call: @escaping @Sendable (any HanaNativeBridge, HanaOperationTicket) throws -> Data
     ) async throws -> HanaResultEnvelope {
-        try await perform(.connected) { bridge, ticket in
+        try await perform(.connected, cancellation: cancellation) { bridge, ticket in
             let envelope = try Self.decode(HanaResultEnvelope.self, from: call(bridge, ticket))
             if envelope.sessionLost {
                 Self.logger.error("SAP HANA session was lost after its statement completed")
@@ -177,16 +182,15 @@ final class HanaConnection: HanaSession, @unchecked Sendable {
 
     private func perform<T: Sendable>(
         _ target: Target,
+        cancellation slot: HanaOperationSlot,
         _ call: @escaping @Sendable (any HanaNativeBridge, HanaOperationTicket) throws -> T
     ) async throws -> T {
-        let slot = HanaOperationSlot()
-        return try await withTaskCancellationHandler {
+        try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<T, any Error>) in
                 enqueue(target, slot: slot, continuation: continuation, call: call)
             }
-        } onCancel: { [bridge] in
-            guard let ticket = slot.cancel() else { return }
-            bridge.cancel(ticket)
+        } onCancel: {
+            cancel(slot)
         }
     }
 
@@ -228,7 +232,6 @@ final class HanaConnection: HanaSession, @unchecked Sendable {
         if case .failure(let error) = outcome, (error as? HanaBridgeFailure)?.kind == .connectionLost {
             markLost(admission.ticket.session)
         }
-        finish(admission.ticket)
         continuation.resume(with: outcome)
     }
 
@@ -239,15 +242,7 @@ final class HanaConnection: HanaSession, @unchecked Sendable {
                 return HanaBridgeFailure.closed
             }
             guard !slot.isCancelled else { return CancellationError() }
-            state.running = admission.ticket
             return nil
-        }
-    }
-
-    private func finish(_ ticket: HanaOperationTicket) {
-        stateLock.withLock {
-            guard state.running == ticket else { return }
-            state.running = nil
         }
     }
 

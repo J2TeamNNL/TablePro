@@ -236,7 +236,8 @@ final class HanaPluginDriverTests: XCTestCase {
         } catch {
             XCTAssertTrue(error is CancellationError, "got \(error)")
         }
-        XCTAssertEqual(session.cancelRunningCount, 1)
+        XCTAssertEqual(session.cancelled.map { ObjectIdentifier($0) }, session.slots.map { ObjectIdentifier($0) })
+        XCTAssertEqual(session.cancelled.count, 1)
     }
 
     func testCancellationNobodyAskedForIsAnError() async {
@@ -265,7 +266,102 @@ final class HanaPluginDriverTests: XCTestCase {
         } catch {
             XCTAssertEqual((error as? HanaError)?.kind, .cancelled, "got \(error)")
         }
-        XCTAssertEqual(session.cancelRunningCount, 0)
+        XCTAssertTrue(session.cancelled.isEmpty)
+    }
+
+    func testStopCancelsTheSlotOfTheQueryThatIsRunning() async throws {
+        let session = HanaFakeSession()
+        let driver = HanaPluginDriver(config: config(), session: session)
+        let hold = session.hold(sql: "SELECT * FROM BIG")
+        let run = Task { try await driver.executeUserQuery(query: "SELECT * FROM BIG", rowCap: nil, parameters: nil) }
+        let slot = await hold.arrival()
+
+        try driver.cancelQuery()
+
+        XCTAssertEqual(session.cancelled.map { ObjectIdentifier($0) }, [ObjectIdentifier(slot)])
+        XCTAssertTrue(slot.isCancelled)
+        hold.release()
+        do {
+            _ = try await run.value
+            XCTFail("the statement should report a cancellation")
+        } catch {
+            XCTAssertTrue(error is CancellationError, "got \(error)")
+        }
+    }
+
+    func testStopWithNoQueryRunningCancelsNoSlot() async throws {
+        let session = HanaFakeSession()
+        let driver = HanaPluginDriver(config: config(), session: session)
+
+        try driver.cancelQuery()
+        _ = try await driver.executeUserQuery(query: "SELECT 1 FROM DUMMY", rowCap: nil, parameters: nil)
+        try driver.cancelQuery()
+
+        XCTAssertTrue(session.cancelled.isEmpty)
+        let slot = try XCTUnwrap(session.slots.first)
+        XCTAssertEqual(session.slots.count, 1)
+        XCTAssertFalse(slot.isCancelled)
+    }
+
+    func testAStopDeliveredAfterItsQueryFinishedLeavesTheNextQuerysSlotAlone() async throws {
+        let session = HanaFakeSession()
+        let driver = HanaPluginDriver(config: config(), session: session)
+        let first = session.hold(sql: "UPDATE A SET X = 1")
+        let second = session.hold(sql: "UPDATE B SET X = 1")
+        let delivery = session.holdCancels()
+        let firstRun = Task {
+            try await driver.executeUserQuery(query: "UPDATE A SET X = 1", rowCap: nil, parameters: nil)
+        }
+        let firstSlot = await first.arrival()
+
+        let stopReturned = HanaLatch()
+        DispatchQueue.global().async {
+            try? driver.cancelQuery()
+            stopReturned.open()
+        }
+        let stoppedSlot = await delivery.arrival()
+        first.release()
+        _ = try await firstRun.value
+        let secondRun = Task {
+            try await driver.executeUserQuery(query: "UPDATE B SET X = 1", rowCap: nil, parameters: nil)
+        }
+        let secondSlot = await second.arrival()
+        delivery.release()
+        await stopReturned.wait()
+        second.release()
+
+        _ = try await secondRun.value
+        XCTAssertIdentical(stoppedSlot, firstSlot)
+        XCTAssertNotIdentical(secondSlot, firstSlot)
+        XCTAssertFalse(secondSlot.isCancelled)
+        XCTAssertEqual(session.cancelled.map { ObjectIdentifier($0) }, [ObjectIdentifier(firstSlot)])
+    }
+
+    func testStopWhileAQueryWaitsBehindAPingStopsTheQueryAndNotThePing() async throws {
+        let bridge = HanaFakeBridge()
+        let queue = HanaRecordingQueue()
+        let driver = HanaPluginDriver(config: config(), session: HanaConnection(bridge: bridge, queue: queue))
+        try await driver.connect()
+        let pingHold = bridge.holdPing()
+        let ping = Task { try await driver.ping() }
+        let pingTicket = await pingHold.arrival()
+        let query = Task { try await driver.executeUserQuery(query: "SELECT * FROM BIG", rowCap: nil, parameters: nil) }
+        await queue.submissions(reaching: 3)
+
+        try driver.cancelQuery()
+
+        let queryTicket = HanaOperationTicket(session: pingTicket.session, operation: pingTicket.operation + 1)
+        XCTAssertEqual(bridge.cancels, [queryTicket])
+        pingHold.release()
+        try await ping.value
+        do {
+            _ = try await query.value
+            XCTFail("the query queued behind the ping should report a cancellation")
+        } catch {
+            XCTAssertTrue(error is CancellationError, "got \(error)")
+        }
+        XCTAssertEqual(bridge.pings, [pingTicket])
+        XCTAssertTrue(bridge.statements.isEmpty)
     }
 
     func testStopWithNoQueryInFlightLeavesARunningPingAlone() async throws {

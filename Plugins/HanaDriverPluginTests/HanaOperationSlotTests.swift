@@ -16,4 +16,14 @@ final class HanaOperationSlotTests: XCTestCase {
         XCTAssertNil(slot.cancel())
         XCTAssertFalse(slot.assign(HanaOperationTicket(session: 7, operation: 4)))
     }
+
+    func testOnlyTheFirstCancelReturnsTheTicket() {
+        let slot = HanaOperationSlot()
+        let ticket = HanaOperationTicket(session: 7, operation: 5)
+
+        XCTAssertTrue(slot.assign(ticket))
+        XCTAssertEqual(slot.cancel(), ticket)
+        XCTAssertNil(slot.cancel())
+        XCTAssertTrue(slot.isCancelled)
+    }
 }

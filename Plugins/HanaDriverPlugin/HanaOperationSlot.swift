@@ -35,6 +35,7 @@ final class HanaOperationSlot: @unchecked Sendable {
     func cancel() -> HanaOperationTicket? {
         lock.lock()
         defer { lock.unlock() }
+        guard !cancelled else { return nil }
         cancelled = true
         return ticket
     }

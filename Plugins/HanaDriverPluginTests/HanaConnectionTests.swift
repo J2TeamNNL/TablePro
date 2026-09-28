@@ -16,16 +16,62 @@ final class HanaConnectionTests: XCTestCase {
         connectTimeoutSeconds: 30
     )
 
-    func testStopWithNothingRunningSendsNothing() async throws {
+    func testCancellingASlotThatNeverHeldAnOperationSendsNothing() async throws {
         let bridge = HanaFakeBridge()
         let connection = HanaConnection(bridge: bridge)
 
-        connection.cancelRunning()
+        connection.cancel(HanaOperationSlot())
         _ = try await connection.connect(Self.configuration)
-        _ = try await connection.execute(sql: "SELECT 1 FROM DUMMY", parameters: nil, rowCap: 0)
-        connection.cancelRunning()
+        _ = try await connection.execute("SELECT 1 FROM DUMMY")
+        connection.cancel(HanaOperationSlot())
 
         XCTAssertTrue(bridge.cancels.isEmpty)
+    }
+
+    func testASlotCancelledBeforeItsQueryIsEnqueuedKeepsTheQueryOffTheBridge() async throws {
+        let bridge = HanaFakeBridge()
+        let connection = HanaConnection(bridge: bridge)
+        _ = try await connection.connect(Self.configuration)
+        let slot = HanaOperationSlot()
+
+        connection.cancel(slot)
+
+        do {
+            _ = try await connection.execute("DELETE FROM T", cancellation: slot)
+            XCTFail("a query whose slot was already cancelled should not run")
+        } catch {
+            XCTAssertTrue(error is CancellationError, "got \(error)")
+        }
+        XCTAssertTrue(bridge.statements.isEmpty)
+        XCTAssertTrue(bridge.cancels.isEmpty)
+    }
+
+    func testCancellingAQueryQueuedBehindAPingStopsTheQueryAndLeavesThePingAlone() async throws {
+        let bridge = HanaFakeBridge()
+        let queue = HanaRecordingQueue()
+        let connection = HanaConnection(bridge: bridge, queue: queue)
+        _ = try await connection.connect(Self.configuration)
+        let pingHold = bridge.holdPing()
+        let ping = Task { try await connection.ping() }
+        let pingTicket = await pingHold.arrival()
+        let slot = HanaOperationSlot()
+        let query = Task { try await connection.execute("SELECT * FROM BIG", cancellation: slot) }
+        await queue.submissions(reaching: 3)
+
+        connection.cancel(slot)
+
+        let queryTicket = HanaOperationTicket(session: pingTicket.session, operation: pingTicket.operation + 1)
+        XCTAssertEqual(bridge.cancels, [queryTicket])
+        pingHold.release()
+        try await ping.value
+        do {
+            _ = try await query.value
+            XCTFail("the query queued behind the ping should not run")
+        } catch {
+            XCTAssertTrue(error is CancellationError, "got \(error)")
+        }
+        XCTAssertEqual(bridge.pings, [pingTicket])
+        XCTAssertTrue(bridge.statements.isEmpty)
     }
 
     func testAStopThatLandsAfterItsOperationFinishedNeverCancelsTheNextOne() async throws {
@@ -35,18 +81,19 @@ final class HanaConnectionTests: XCTestCase {
         let first = bridge.hold(sql: "UPDATE A SET X = 1")
         let second = bridge.hold(sql: "UPDATE B SET X = 1")
         let delivery = bridge.holdCancels()
-        let firstRun = Task { try await connection.execute(sql: "UPDATE A SET X = 1", parameters: nil, rowCap: 0) }
+        let firstSlot = HanaOperationSlot()
+        let firstRun = Task { try await connection.execute("UPDATE A SET X = 1", cancellation: firstSlot) }
         let firstTicket = await first.arrival()
 
         let stopReturned = HanaLatch()
         DispatchQueue.global().async {
-            connection.cancelRunning()
+            connection.cancel(firstSlot)
             stopReturned.open()
         }
         let stoppedTicket = await delivery.arrival()
         first.release()
         _ = try await firstRun.value
-        let secondRun = Task { try await connection.execute(sql: "UPDATE B SET X = 1", parameters: nil, rowCap: 0) }
+        let secondRun = Task { try await connection.execute("UPDATE B SET X = 1") }
         let secondTicket = await second.arrival()
         delivery.release()
         await stopReturned.wait()
@@ -63,10 +110,11 @@ final class HanaConnectionTests: XCTestCase {
         let connection = HanaConnection(bridge: bridge)
         _ = try await connection.connect(Self.configuration)
         let hold = bridge.hold(sql: "SELECT * FROM BIG")
-        let run = Task { try await connection.execute(sql: "SELECT * FROM BIG", parameters: nil, rowCap: 0) }
+        let slot = HanaOperationSlot()
+        let run = Task { try await connection.execute("SELECT * FROM BIG", cancellation: slot) }
         let ticket = await hold.arrival()
 
-        connection.cancelRunning()
+        connection.cancel(slot)
 
         XCTAssertEqual(bridge.cancels, [ticket])
         XCTAssertNotEqual(ticket.operation, 0)
@@ -74,12 +122,32 @@ final class HanaConnectionTests: XCTestCase {
         await assertFailure(of: run, kind: .cancelled)
     }
 
+    func testCancellingASlotAgainAfterItsOperationFinishedSendsNothingNew() async throws {
+        let bridge = HanaFakeBridge()
+        let connection = HanaConnection(bridge: bridge)
+        _ = try await connection.connect(Self.configuration)
+        let hold = bridge.hold(sql: "SELECT * FROM BIG")
+        let slot = HanaOperationSlot()
+        let run = Task { try await connection.execute("SELECT * FROM BIG", cancellation: slot) }
+        let ticket = await hold.arrival()
+        connection.cancel(slot)
+        XCTAssertEqual(bridge.cancels, [ticket])
+        hold.release()
+        await assertFailure(of: run, kind: .cancelled)
+
+        connection.cancel(slot)
+
+        XCTAssertEqual(bridge.cancels, [ticket])
+        _ = try await connection.execute("SELECT 1 FROM DUMMY")
+        XCTAssertEqual(bridge.statements.map(\.sql), ["SELECT * FROM BIG", "SELECT 1 FROM DUMMY"])
+    }
+
     func testCancellingTheTaskStopsItsOwnOperationBeforeCancelReturns() async throws {
         let bridge = HanaFakeBridge()
         let connection = HanaConnection(bridge: bridge)
         _ = try await connection.connect(Self.configuration)
         let hold = bridge.hold(sql: "SELECT * FROM BIG")
-        let run = Task { try await connection.execute(sql: "SELECT * FROM BIG", parameters: nil, rowCap: 0) }
+        let run = Task { try await connection.execute("SELECT * FROM BIG") }
         let ticket = await hold.arrival()
 
         run.cancel()
@@ -96,9 +164,9 @@ final class HanaConnectionTests: XCTestCase {
         let connection = HanaConnection(bridge: bridge, queue: queue)
         _ = try await connection.connect(Self.configuration)
         let hold = bridge.hold(sql: "SELECT * FROM BIG")
-        let running = Task { try await connection.execute(sql: "SELECT * FROM BIG", parameters: nil, rowCap: 0) }
+        let running = Task { try await connection.execute("SELECT * FROM BIG") }
         _ = await hold.arrival()
-        let queued = Task { try await connection.execute(sql: "DELETE FROM T", parameters: nil, rowCap: 0) }
+        let queued = Task { try await connection.execute("DELETE FROM T") }
         await queue.submissions(reaching: 3)
 
         queued.cancel()
@@ -120,9 +188,9 @@ final class HanaConnectionTests: XCTestCase {
         let connection = HanaConnection(bridge: bridge, queue: queue)
         _ = try await connection.connect(Self.configuration)
         let hold = bridge.hold(sql: "UPDATE A SET X = 1")
-        let running = Task { try await connection.execute(sql: "UPDATE A SET X = 1", parameters: nil, rowCap: 0) }
+        let running = Task { try await connection.execute("UPDATE A SET X = 1") }
         let runningTicket = await hold.arrival()
-        let queued = Task { try await connection.execute(sql: "DELETE FROM T", parameters: nil, rowCap: 0) }
+        let queued = Task { try await connection.execute("DELETE FROM T") }
         await queue.submissions(reaching: 3)
 
         connection.disconnect()
@@ -141,9 +209,9 @@ final class HanaConnectionTests: XCTestCase {
         let connection = HanaConnection(bridge: bridge, queue: queue)
         _ = try await connection.connect(Self.configuration)
         let hold = bridge.hold(sql: "UPDATE A SET X = 1")
-        let running = Task { try await connection.execute(sql: "UPDATE A SET X = 1", parameters: nil, rowCap: 0) }
+        let running = Task { try await connection.execute("UPDATE A SET X = 1") }
         let oldSession = await hold.arrival().session
-        let queued = Task { try await connection.execute(sql: "DELETE FROM T", parameters: nil, rowCap: 0) }
+        let queued = Task { try await connection.execute("DELETE FROM T") }
         await queue.submissions(reaching: 3)
 
         let reconnect = Task { try await connection.connect(Self.configuration) }
@@ -156,7 +224,7 @@ final class HanaConnectionTests: XCTestCase {
         _ = try? await running.value
         XCTAssertEqual(bridge.statements.map(\.sql), ["UPDATE A SET X = 1"])
         XCTAssertEqual(bridge.connects.map(\.session), [oldSession, oldSession + 1])
-        _ = try await connection.execute(sql: "SELECT 1 FROM DUMMY", parameters: nil, rowCap: 0)
+        _ = try await connection.execute("SELECT 1 FROM DUMMY")
         XCTAssertEqual(bridge.statements.last?.ticket.session, oldSession + 1)
     }
 
@@ -166,9 +234,9 @@ final class HanaConnectionTests: XCTestCase {
         let connection = HanaConnection(bridge: bridge)
         _ = try await connection.connect(Self.configuration)
 
-        _ = try await connection.execute(sql: "SELECT 1 FROM DUMMY", parameters: nil, rowCap: 0)
+        _ = try await connection.execute("SELECT 1 FROM DUMMY")
         XCTAssertFalse(connection.hasLostConnection)
-        let envelope = try await connection.execute(sql: "COMMIT", parameters: nil, rowCap: 0)
+        let envelope = try await connection.execute("COMMIT")
 
         XCTAssertEqual(envelope.rows, [[.text("1")]])
         XCTAssertTrue(envelope.sessionLost)
@@ -182,7 +250,7 @@ final class HanaConnectionTests: XCTestCase {
         let connection = HanaConnection(bridge: bridge)
         _ = try await connection.connect(Self.configuration)
 
-        let envelope = try await connection.explain(sql: "SELECT * FROM T")
+        let envelope = try await connection.explain(sql: "SELECT * FROM T", cancellation: HanaOperationSlot())
 
         XCTAssertEqual(envelope.rows, [[.text("COLUMN SEARCH")]])
         XCTAssertTrue(connection.hasLostConnection)
@@ -193,7 +261,7 @@ final class HanaConnectionTests: XCTestCase {
         bridge.respond(to: "COMMIT", with: HanaBridgeJSON.envelope(sessionLost: true))
         let connection = HanaConnection(bridge: bridge)
         _ = try await connection.connect(Self.configuration)
-        _ = try await connection.execute(sql: "COMMIT", parameters: nil, rowCap: 0)
+        _ = try await connection.execute("COMMIT")
         XCTAssertTrue(connection.hasLostConnection)
 
         _ = try await connection.connect(Self.configuration)
@@ -213,5 +281,14 @@ final class HanaConnectionTests: XCTestCase {
         } catch {
             XCTAssertEqual((error as? HanaBridgeFailure)?.kind, kind, "got \(error)", file: file, line: line)
         }
+    }
+}
+
+private extension HanaConnection {
+    func execute(
+        _ sql: String,
+        cancellation: HanaOperationSlot = HanaOperationSlot()
+    ) async throws -> HanaResultEnvelope {
+        try await execute(sql: sql, parameters: nil, rowCap: 0, cancellation: cancellation)
     }
 }
