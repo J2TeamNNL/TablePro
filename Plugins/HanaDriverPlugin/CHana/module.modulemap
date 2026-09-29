@@ -1,4 +1,0 @@
-module CHana {
-    header "CHana.h"
-    export *
-}

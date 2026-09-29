@@ -161,8 +161,9 @@
   source: manual
   patched: false
   notes: 'The toolchain line of Native/HanaBridge/go.mod pins go1.27.1. scripts/build-hana.sh builds
-    the bridge with -buildmode=c-archive, so the Go runtime and every standard library package the
-    bridge reaches are linked into libhana_bridge.a, which the SAP HANA plugin force_loads. The standard
+    the bridge into tablepro-hana-helper, a CGO_ENABLED=0 executable the SAP HANA plugin carries in
+    Contents/MacOS and runs as a separate process, so the Go runtime and every standard library package
+    the helper reaches are linked into that executable. The standard
     library vendors golang.org/x/crypto, x/net, x/sys and x/text (src/vendor/modules.txt at go1.27.1),
     all under this same BSD-3-Clause notice from The Go Authors. PATENTS beside LICENSE is an extra
     patent grant from Google and adds no notice duty. source is manual because the pin lives in go.mod,
@@ -186,8 +187,8 @@
     files carry no per-file header: the holder line is quoted from the SPDX-FileCopyrightText annotation
     for path "**" in REUSE.toml at the tag. The same file carries an SPDX-PackageComment saying that
     calls to the APIs of SAP products are not licensed under Apache-2.0 and are governed by the user''s
-    own agreement with SAP. Statically linked into libhana_bridge.a with the Go runtime; reaches users
-    only through the registry-only SAP HANA plugin.'
+    own agreement with SAP. Statically linked into the tablepro-hana-helper executable with the Go
+    runtime; reaches users only through the registry-only SAP HANA plugin.'
 - id: golang-x-text
   name: golang.org/x/text
   version: v0.42.0

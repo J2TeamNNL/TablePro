@@ -1,7 +1,8 @@
 # Third-party notices
 
-`scripts/build-hana.sh` builds this bridge with `-buildmode=c-archive`, so everything below is statically linked into
-`libhana_bridge.a` and ships inside the SAP HANA plugin. The versions are the ones `go.mod` and `go.sum` pin.
+`scripts/build-hana.sh` builds this bridge with `CGO_ENABLED=0` into the `tablepro-hana-helper` executable, so
+everything below is statically linked into it. The helper ships inside the SAP HANA plugin, in
+`HanaDriver.tableplugin/Contents/MacOS`. The versions are the ones `go.mod` and `go.sum` pin.
 
 | Component | Version | License | Copyright |
 | --- | --- | --- | --- |

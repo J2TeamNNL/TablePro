@@ -346,7 +346,7 @@ final class HanaPluginDriverTests: XCTestCase {
         let ping = Task { try await driver.ping() }
         let pingTicket = await pingHold.arrival()
         let query = Task { try await driver.executeUserQuery(query: "SELECT * FROM BIG", rowCap: nil, parameters: nil) }
-        await queue.submissions(reaching: 3)
+        await queue.submissions(reaching: 4)
 
         try driver.cancelQuery()
 

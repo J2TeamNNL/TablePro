@@ -16,6 +16,27 @@ final class HanaConnectionTests: XCTestCase {
         connectTimeoutSeconds: 30
     )
 
+    func testConnectOpensTheSessionFromTheConnectionQueueAndNotTheCaller() async throws {
+        let bridge = HanaFakeBridge()
+        let queue = HanaManualQueue()
+        let connection = HanaConnection(bridge: bridge, queue: queue)
+        let configuration = Self.configuration
+        let connect = Task { try await connection.connect(configuration) }
+        await queue.pending(reaching: 1)
+
+        XCTAssertEqual(bridge.opens, 0)
+        queue.runNext()
+        await queue.pending(reaching: 1)
+
+        XCTAssertEqual(bridge.opens, 1)
+        XCTAssertTrue(bridge.connects.isEmpty)
+        queue.runNext()
+        let result = try await connect.value
+        XCTAssertEqual(result.connectionId, 200_123)
+        XCTAssertEqual(bridge.connects.count, 1)
+        XCTAssertEqual(queue.pendingCount, 0)
+    }
+
     func testCancellingASlotThatNeverHeldAnOperationSendsNothing() async throws {
         let bridge = HanaFakeBridge()
         let connection = HanaConnection(bridge: bridge)
@@ -56,7 +77,7 @@ final class HanaConnectionTests: XCTestCase {
         let pingTicket = await pingHold.arrival()
         let slot = HanaOperationSlot()
         let query = Task { try await connection.execute("SELECT * FROM BIG", cancellation: slot) }
-        await queue.submissions(reaching: 3)
+        await queue.submissions(reaching: 4)
 
         connection.cancel(slot)
 
@@ -167,7 +188,7 @@ final class HanaConnectionTests: XCTestCase {
         let running = Task { try await connection.execute("SELECT * FROM BIG") }
         _ = await hold.arrival()
         let queued = Task { try await connection.execute("DELETE FROM T") }
-        await queue.submissions(reaching: 3)
+        await queue.submissions(reaching: 4)
 
         queued.cancel()
         hold.release()
@@ -191,7 +212,7 @@ final class HanaConnectionTests: XCTestCase {
         let running = Task { try await connection.execute("UPDATE A SET X = 1") }
         let runningTicket = await hold.arrival()
         let queued = Task { try await connection.execute("DELETE FROM T") }
-        await queue.submissions(reaching: 3)
+        await queue.submissions(reaching: 4)
 
         connection.disconnect()
 
@@ -212,11 +233,11 @@ final class HanaConnectionTests: XCTestCase {
         let running = Task { try await connection.execute("UPDATE A SET X = 1") }
         let oldSession = await hold.arrival().session
         let queued = Task { try await connection.execute("DELETE FROM T") }
-        await queue.submissions(reaching: 3)
+        await queue.submissions(reaching: 4)
 
         let configuration = Self.configuration
         let reconnect = Task { try await connection.connect(configuration) }
-        await queue.submissions(reaching: 4)
+        await queue.submissions(reaching: 5)
 
         XCTAssertEqual(bridge.closes, [oldSession])
         hold.release()

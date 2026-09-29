@@ -141,7 +141,7 @@ Nothing answered at the host and port. Check both against the instance's SQL end
 
 ### Lost connection to the SAP HANA server.
 
-The network dropped or the server ended the session. TablePro reconnects on its own. If it happens right after **Stop**, see [Stop reconnects instead of cancelling](#stop-reconnects-instead-of-cancelling).
+The network dropped or the server ended the session. A driver failure ends the same way: the driver runs as a separate `tablepro-hana-helper` process for each connection, so a failure drops that connection and leaves TablePro running. TablePro reconnects on its own. If it happens right after **Stop**, see [Stop reconnects instead of cancelling](#stop-reconnects-instead-of-cancelling).
 
 ### insufficient privilege: …
 

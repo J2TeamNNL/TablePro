@@ -29,7 +29,7 @@ final class HanaConnection: HanaSession, @unchecked Sendable {
     private var state = State()
 
     init(
-        bridge: any HanaNativeBridge = HanaCBridge(),
+        bridge: any HanaNativeBridge = HanaHelperBridge(),
         queue: any HanaOperationQueue = DispatchQueue(label: "com.TablePro.hana.connection", qos: .userInitiated)
     ) {
         self.bridge = bridge
@@ -47,7 +47,7 @@ final class HanaConnection: HanaSession, @unchecked Sendable {
     func connect(_ configuration: HanaConnectConfiguration) async throws -> HanaConnectResult {
         let configurationJSON = try JSONEncoder().encode(configuration)
         let attempt = beginAttempt()
-        let session = try bridge.open(configuration: configurationJSON)
+        let session = try await open(configurationJSON)
         guard claim(session, attempt: attempt) else {
             closeNative(session)
             throw HanaBridgeFailure.closed
@@ -116,6 +116,14 @@ final class HanaConnection: HanaSession, @unchecked Sendable {
 
     private var queryTimeoutSeconds: Int {
         stateLock.withLock { state.queryTimeoutSeconds }
+    }
+
+    private func open(_ configurationJSON: Data) async throws -> UInt64 {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.submit {
+                continuation.resume(with: Result { try self.bridge.open(configuration: configurationJSON) })
+            }
+        }
     }
 
     private func beginAttempt() -> UInt64 {

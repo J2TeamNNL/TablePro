@@ -3,72 +3,80 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BRIDGE_DIR="$ROOT_DIR/Native/HanaBridge"
-HEADER="$ROOT_DIR/Plugins/HanaDriverPlugin/CHana/CHana.h"
-LIBS_DIR="${LIBS_DIR:-$BRIDGE_DIR/lib}"
+BIN_DIR="$BRIDGE_DIR/bin"
+HELPER_NAME="tablepro-hana-helper"
+OUTPUT="$BIN_DIR/$HELPER_NAME"
+GO_TOOLCHAIN="go1.27.1"
 ARCH="${1:-both}"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/deployment-target.sh"
 
-case "$LIBS_DIR" in
-    /*) ;;
-    *) LIBS_DIR="$ROOT_DIR/$LIBS_DIR" ;;
-esac
+if ! command -v go > /dev/null; then
+    echo "Go is required to build $HELPER_NAME. Install it from https://go.dev/dl/" >&2
+    exit 1
+fi
 
-declared_symbols() {
-    grep -oE 'tp_hana_[a-z_]+[(]' "$HEADER" | tr -d '(' | sort -u
-}
-
-verify_exports() {
-    local archive="$1"
-    local arch="$2"
-    local exported
-    exported="$(nm -arch "$arch" -gU "$archive" 2>/dev/null)"
-    local symbol
-    local missing=0
-    while IFS= read -r symbol; do
-        if ! grep -qE "[[:space:]]T _${symbol}\$" <<< "$exported"; then
-            echo "$archive ($arch) does not export $symbol, which CHana.h declares" >&2
-            missing=1
-        fi
-    done < <(declared_symbols)
-    return "$missing"
+go_arch() {
+    case "$1" in
+        arm64) echo arm64 ;;
+        x86_64) echo amd64 ;;
+    esac
 }
 
 build_slice() {
     local arch="$1"
-    local go_arch="$arch"
-    local output="$LIBS_DIR/libhana_bridge_${arch}.a"
-    if [ "$arch" = "x86_64" ]; then
-        go_arch=amd64
-    fi
+    local output="$BIN_DIR/$HELPER_NAME-$arch"
     (
         cd "$BRIDGE_DIR"
-        env CGO_ENABLED=1 GOOS=darwin GOARCH="$go_arch" MACOSX_DEPLOYMENT_TARGET="$DEPLOY_TARGET" \
-            go build -buildmode=c-archive -trimpath -mod=readonly -o "$output" .
+        env GOTOOLCHAIN="$GO_TOOLCHAIN" GOWORK=off GOFLAGS= CGO_ENABLED=0 GOOS=darwin GOARCH="$(go_arch "$arch")" \
+            go build -trimpath -buildvcs=false -ldflags='-s -w' -o "$output" .
     )
-    verify_exports "$output" "$arch"
 }
 
-if [ "$(declared_symbols | wc -l | tr -d ' ')" -eq 0 ]; then
-    echo "No tp_hana_ symbols found in $HEADER" >&2
-    exit 1
-fi
+version_at_most() {
+    awk -v actual="$1" -v limit="$2" 'BEGIN {
+        split(actual, a, ".")
+        split(limit, l, ".")
+        for (i = 1; i <= 3; i++) {
+            if ((a[i] + 0) < (l[i] + 0)) exit 0
+            if ((a[i] + 0) > (l[i] + 0)) exit 1
+        }
+        exit 0
+    }'
+}
 
-mkdir -p "$LIBS_DIR"
+slice_minimum_os() {
+    vtool -arch "$2" -show-build "$1" | awk '$1 == "minos" { print $2; exit }'
+}
+
+verify_minimum_os() {
+    local binary="$1"
+    local arch
+    local version
+    for arch in $(lipo -archs "$binary"); do
+        version="$(slice_minimum_os "$binary" "$arch")"
+        if [ -z "$version" ]; then
+            echo "$binary ($arch) records no minimum macOS" >&2
+            exit 1
+        fi
+        if ! version_at_most "$version" "$DEPLOY_TARGET"; then
+            echo "$binary ($arch) targets macOS $version, above the deployment target $DEPLOY_TARGET" >&2
+            exit 1
+        fi
+        echo "$arch: minimum macOS $version, deployment target $DEPLOY_TARGET"
+    done
+}
+
+mkdir -p "$BIN_DIR"
 
 case "$ARCH" in
     arm64|x86_64)
         build_slice "$ARCH"
-        cp "$LIBS_DIR/libhana_bridge_${ARCH}.a" "$LIBS_DIR/libhana_bridge.a"
+        cp "$BIN_DIR/$HELPER_NAME-$ARCH" "$OUTPUT"
         ;;
     both|universal)
         build_slice arm64
         build_slice x86_64
-        lipo -create \
-            "$LIBS_DIR/libhana_bridge_arm64.a" \
-            "$LIBS_DIR/libhana_bridge_x86_64.a" \
-            -output "$LIBS_DIR/libhana_bridge.a"
-        verify_exports "$LIBS_DIR/libhana_bridge.a" arm64
-        verify_exports "$LIBS_DIR/libhana_bridge.a" x86_64
+        lipo -create "$BIN_DIR/$HELPER_NAME-arm64" "$BIN_DIR/$HELPER_NAME-x86_64" -output "$OUTPUT"
         ;;
     *)
         echo "Usage: $0 [arm64|x86_64|both]" >&2
@@ -76,4 +84,6 @@ case "$ARCH" in
         ;;
 esac
 
-file "$LIBS_DIR"/libhana_bridge*.a
+codesign --force -s - "$OUTPUT"
+file "$OUTPUT"
+verify_minimum_os "$OUTPUT"

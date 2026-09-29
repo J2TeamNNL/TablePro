@@ -1,4 +1,4 @@
-module github.com/TableProApp/tablepro-hana-bridge
+module github.com/TableProApp/TablePro/Native/HanaBridge
 
 go 1.27.0
 

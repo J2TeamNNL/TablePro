@@ -195,13 +195,15 @@ jobs:
       - name: Build Dameng native bridge
         run: scripts/build-dameng.sh arm64
 
-      - name: Set up Go for the SAP HANA bridge
+      - name: Set up Go for the SAP HANA helper
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: Native/HanaBridge/go.mod
           cache-dependency-path: Native/HanaBridge/go.sum
 
-      - name: Build SAP HANA native bridge
+      # Xcode copies tablepro-hana-helper into HanaDriver and HanaDriverTests and never builds
+      # it, so both targets fail with "Build input file cannot be found" until this has run.
+      - name: Build the SAP HANA helper
         run: scripts/build-hana.sh arm64
 
       # Only the bridge's own FFI tests live here. The DM8 protocol crates are a pinned
@@ -213,14 +215,25 @@ jobs:
         working-directory: Native/DamengBridge
         run: cargo test --locked
 
-      # Only the bridge's own tests, none of which needs a HANA server. Run from the bridge
+      # Only the helper's own tests, none of which needs a HANA server. Run from the bridge
       # directory so the go command reads its go.mod and builds with the toolchain it pins.
-      - name: Test SAP HANA native bridge
+      # staticcheck and govulncheck are pinned here and fetched by `go run`, so they never
+      # enter the helper's go.mod.
+      - name: Test the SAP HANA helper
         working-directory: Native/HanaBridge
         run: |
           set -euo pipefail
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt would rewrite: $unformatted"
+            exit 1
+          fi
+          go mod verify
+          go mod tidy -diff
           go vet ./...
-          go test ./...
+          go test -race ./...
+          go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./...
+          go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
       # Secrets.xcconfig is gitignored. Tests do not need analytics keys, and the project only
       # needs the variable to resolve, so an empty value is enough and no secret is read here.
@@ -286,10 +299,11 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             | xcbeautify --renderer github-actions
 
-      # DamengDriverTests and HanaDriverTests are the plugin-owned unit bundles: their suites
-      # import the plugin's C bridge module (CDameng, CHana), so they cannot move into
-      # TableProTests the way pure-logic plugin tests do. Without these steps nothing runs them
-      # and they rot silently.
+      # DamengDriverTests and HanaDriverTests are the plugin-owned unit bundles, so they cannot
+      # move into TableProTests the way pure-logic plugin tests do: the Dameng suites import the
+      # plugin's C bridge module (CDameng), and HanaDriverTests compiles the whole plugin and
+      # carries tablepro-hana-helper in its own Contents/MacOS, where the plugin looks for it.
+      # Without these steps nothing runs them and they rot silently.
       - name: Build the Dameng driver tests
         run: |
           set -o pipefail

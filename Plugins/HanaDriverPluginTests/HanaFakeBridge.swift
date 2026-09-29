@@ -13,6 +13,7 @@ final class HanaFakeBridge: HanaNativeBridge, @unchecked Sendable {
     private var openSessions: Set<UInt64> = []
     private var running: HanaOperationTicket?
     private var stopped: Set<HanaOperationTicket> = []
+    private var openCount = 0
     private var connectLog: [HanaOperationTicket] = []
     private var statementLog: [Statement] = []
     private var pingLog: [HanaOperationTicket] = []
@@ -23,6 +24,7 @@ final class HanaFakeBridge: HanaNativeBridge, @unchecked Sendable {
     private var cancelHold: HanaHold<HanaOperationTicket>?
     private var responses: [String: Data] = [:]
 
+    var opens: Int { lock.withLock { openCount } }
     var connects: [HanaOperationTicket] { lock.withLock { connectLog } }
     var statements: [Statement] { lock.withLock { statementLog } }
     var pings: [HanaOperationTicket] { lock.withLock { pingLog } }
@@ -53,6 +55,7 @@ final class HanaFakeBridge: HanaNativeBridge, @unchecked Sendable {
 
     func open(configuration: Data) throws -> UInt64 {
         lock.withLock {
+            openCount += 1
             lastSession += 1
             openSessions.insert(lastSession)
             return lastSession
@@ -209,6 +212,46 @@ final class HanaRecordingQueue: HanaOperationQueue, @unchecked Sendable {
             guard reached else { return }
             continuation.resume()
         }
+    }
+}
+
+final class HanaManualQueue: HanaOperationQueue, @unchecked Sendable {
+    private let lock = NSLock()
+    private var waiting: [@Sendable () -> Void] = []
+    private var waiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+
+    var pendingCount: Int { lock.withLock { waiting.count } }
+
+    func submit(_ work: @escaping @Sendable () -> Void) {
+        let ready = lock.withLock { () -> [CheckedContinuation<Void, Never>] in
+            waiting.append(work)
+            let ready = waiters.filter { $0.count <= waiting.count }.map(\.continuation)
+            waiters.removeAll { $0.count <= waiting.count }
+            return ready
+        }
+        ready.forEach { $0.resume() }
+    }
+
+    func pending(reaching count: Int) async {
+        await withCheckedContinuation { continuation in
+            let reached = lock.withLock { () -> Bool in
+                guard waiting.count >= count else {
+                    waiters.append((count, continuation))
+                    return false
+                }
+                return true
+            }
+            guard reached else { return }
+            continuation.resume()
+        }
+    }
+
+    func runNext() {
+        let next = lock.withLock { () -> (@Sendable () -> Void)? in
+            guard !waiting.isEmpty else { return nil }
+            return waiting.removeFirst()
+        }
+        next?()
     }
 }
 
