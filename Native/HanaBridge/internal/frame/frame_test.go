@@ -2,6 +2,7 @@ package frame
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"io"
 	"math"
@@ -158,19 +159,54 @@ func TestBodyAtTheLimitIsAccepted(t *testing.T) {
 	}
 }
 
-func TestHeaderRefusesALengthOutsideFourBytes(t *testing.T) {
+func TestTheCapIsTwoGiBMinusOne(t *testing.T) {
+	if MaxBodyLength != 1<<31-1 {
+		t.Fatalf("MaxBodyLength = %d; want 2^31-1, the cap both ends of the pipe share", MaxBodyLength)
+	}
+}
+
+func TestHeaderRefusesALengthOverTheCap(t *testing.T) {
 	if _, err := encodeHeader(1, 0, MaxBodyLength+1); !errors.Is(err, ErrBodyTooLarge) {
-		t.Fatalf("length 2^32: err = %v; want ErrBodyTooLarge", err)
+		t.Fatalf("length 2^31: err = %v; want ErrBodyTooLarge", err)
+	}
+	if _, err := encodeHeader(1, 0, math.MaxUint32); !errors.Is(err, ErrBodyTooLarge) {
+		t.Fatalf("length 2^32-1: err = %v; want ErrBodyTooLarge", err)
 	}
 	if _, err := encodeHeader(1, 0, -1); !errors.Is(err, ErrBodyTooLarge) {
 		t.Fatalf("length -1: err = %v; want ErrBodyTooLarge", err)
 	}
 	encoded, err := encodeHeader(1, 0, MaxBodyLength)
 	if err != nil {
-		t.Fatalf("length 2^32-1: %v", err)
+		t.Fatalf("length 2^31-1: %v", err)
 	}
 	if decoded := decodeHeader(encoded); decoded.length != MaxBodyLength {
-		t.Fatalf("length decoded as %d; want %d", decoded.length, uint32(MaxBodyLength))
+		t.Fatalf("length decoded as %d; want %d", decoded.length, MaxBodyLength)
+	}
+}
+
+func TestWriteRefusesABodyOverTheCapBeforeWritingAnything(t *testing.T) {
+	var output bytes.Buffer
+	err := Write(&output, Frame{ID: 1, Body: make([]byte, MaxBodyLength+1)})
+	if !errors.Is(err, ErrBodyTooLarge) {
+		t.Fatalf("err = %v; want ErrBodyTooLarge", err)
+	}
+	if output.Len() != 0 {
+		t.Fatalf("wrote %d bytes; want nothing", output.Len())
+	}
+}
+
+func TestReadRefusesAHeaderOverTheCapBeforeReadingTheBody(t *testing.T) {
+	for _, length := range []uint32{MaxBodyLength + 1, math.MaxUint32} {
+		header := make([]byte, HeaderSize)
+		binary.BigEndian.PutUint32(header[0:4], length)
+		binary.BigEndian.PutUint64(header[4:12], 1)
+		input := bytes.NewReader(append(header, "body"...))
+		if _, err := Read(input, MaxBodyLength); !errors.Is(err, ErrBodyTooLarge) {
+			t.Fatalf("length %d: err = %v; want ErrBodyTooLarge", length, err)
+		}
+		if unread := input.Len(); unread != len("body") {
+			t.Fatalf("length %d: %d body bytes left unread; want all %d", length, unread, len("body"))
+		}
 	}
 }
 

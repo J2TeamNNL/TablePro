@@ -14,9 +14,11 @@ enum HanaHelperFrameError: Error, Equatable, Sendable {
     case truncatedHeader(receivedByteCount: Int)
     case truncatedBody(expectedByteCount: Int, receivedByteCount: Int)
     case requestTooLarge(byteCount: Int)
+    case frameTooLarge(byteCount: Int, limit: Int)
     case unknownStatus(UInt8)
     case unexpectedHandshake
     case incompatibleProtocol(Int)
+    case unusableForcedSeverGrace
     case unexpectedReply(id: UInt64)
 
     var message: String {
@@ -27,12 +29,18 @@ enum HanaHelperFrameError: Error, Equatable, Sendable {
             return "the helper ended a frame body after \(received) of \(expected) bytes"
         case .requestTooLarge(let byteCount):
             return "the request is \(byteCount) bytes, over the \(HanaHelperRequest.maximumBodyLength)-byte limit"
+        case .frameTooLarge(let byteCount, let limit):
+            return "the helper announced a \(byteCount)-byte frame, over the \(limit)-byte limit"
         case .unknownStatus(let status):
             return "the helper answered with unknown status \(status)"
         case .unexpectedHandshake:
             return "the helper did not open with its protocol handshake"
         case .incompatibleProtocol(let version):
             return "incompatible helper protocol \(version)"
+        case .unusableForcedSeverGrace:
+            let accepted = HanaHelperHandshake.acceptedForcedSeverGraceSeconds
+            return "incompatible helper: its handshake names no forcedSeverGraceSeconds from "
+                + "\(accepted.lowerBound) to \(accepted.upperBound)"
         case .unexpectedReply(let id):
             return "the helper answered frame \(id), which no call is waiting for"
         }
@@ -98,6 +106,8 @@ enum HanaHelperReply: Equatable, Sendable {
     case success(Data)
     case failure(HanaBridgeFailure)
 
+    static let maximumBodyLength = Int(Int32.max)
+
     private static let successStatus: UInt8 = 0
     private static let failureStatus: UInt8 = 1
 
@@ -120,21 +130,29 @@ enum HanaHelperReply: Equatable, Sendable {
     }
 }
 
+struct HanaHelperGreeting: Equatable, Sendable {
+    let forcedSeverGrace: TimeInterval
+}
+
 enum HanaHelperHandshake {
     static let protocolVersion = 1
     static let frameID: UInt64 = 0
+    static let maximumBodyLength = 4_096
+    static let acceptedForcedSeverGraceSeconds = 1...3_600
 
     private static let successStatus: UInt8 = 0
 
     private struct Greeting: Decodable {
         private enum CodingKeys: String, CodingKey {
             case version = "protocol"
+            case forcedSeverGraceSeconds
         }
 
         let version: Int
+        let forcedSeverGraceSeconds: Int?
     }
 
-    static func validate(_ header: HanaHelperFrameHeader, body: Data) throws {
+    static func greeting(from header: HanaHelperFrameHeader, body: Data) throws -> HanaHelperGreeting {
         guard header.id == frameID,
               header.code == successStatus,
               let greeting = try? JSONDecoder().decode(Greeting.self, from: body)
@@ -144,5 +162,9 @@ enum HanaHelperHandshake {
         guard greeting.version == protocolVersion else {
             throw HanaHelperFrameError.incompatibleProtocol(greeting.version)
         }
+        guard let seconds = greeting.forcedSeverGraceSeconds, acceptedForcedSeverGraceSeconds.contains(seconds) else {
+            throw HanaHelperFrameError.unusableForcedSeverGrace
+        }
+        return HanaHelperGreeting(forcedSeverGrace: TimeInterval(seconds))
     }
 }

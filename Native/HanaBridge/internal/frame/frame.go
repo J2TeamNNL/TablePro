@@ -9,7 +9,7 @@ import (
 
 const (
 	HeaderSize    = 13
-	MaxBodyLength = math.MaxUint32
+	MaxBodyLength = math.MaxInt32
 )
 
 var (

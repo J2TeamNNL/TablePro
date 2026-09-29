@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"sync"
+	"time"
 
 	"github.com/TableProApp/TablePro/Native/HanaBridge/internal/frame"
 	"github.com/TableProApp/TablePro/Native/HanaBridge/internal/hana"
@@ -29,8 +31,9 @@ const (
 )
 
 const (
-	helloFrameID         uint64 = 0
-	maxRequestBodyLength uint32 = 1 << 30
+	helloFrameID           uint64 = 0
+	maxRequestBodyLength   uint32 = 1 << 30
+	oversizedResultMessage        = "the result is larger than 2 GiB"
 )
 
 const (
@@ -196,7 +199,7 @@ func replyFrame(id uint64, result []byte, failure []byte) frame.Frame {
 		return frame.Frame{ID: id, Code: statusError, Body: failure}
 	}
 	if !fitsInFrame(len(result)) {
-		return frame.Frame{ID: id, Code: statusError, Body: hana.InternalFailure("the result is larger than 4 GiB")}
+		return frame.Frame{ID: id, Code: statusError, Body: hana.InternalFailure(oversizedResultMessage)}
 	}
 	return frame.Frame{ID: id, Code: statusOK, Body: result}
 }
@@ -214,7 +217,11 @@ func decodeRequestBody(data []byte) (requestBody, []byte) {
 }
 
 func helloBody() []byte {
-	return fmt.Appendf(nil, `{"protocol":%d}`, protocolVersion)
+	return fmt.Appendf(nil, `{"protocol":%d,"forcedSeverGraceSeconds":%d}`, protocolVersion, wholeSecondsRoundedUp(hana.ForcedSeverGrace))
+}
+
+func wholeSecondsRoundedUp(duration time.Duration) int64 {
+	return int64(math.Ceil(duration.Seconds()))
 }
 
 func openedBody(sessionID uint64) []byte {

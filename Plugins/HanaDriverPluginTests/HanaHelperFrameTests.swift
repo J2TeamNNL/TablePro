@@ -97,35 +97,75 @@ final class HanaHelperFrameTests: XCTestCase {
         }
     }
 
-    func testHandshakeAcceptsProtocolOneOnFrameZero() throws {
-        let header = HanaHelperFrameHeader(bodyLength: 14, id: 0, code: 0)
+    func testHandshakeAcceptsProtocolOneAndReadsTheForcedSeverGrace() throws {
+        let body = Data(#"{"protocol":1,"forcedSeverGraceSeconds":30}"#.utf8)
+        let header = HanaHelperFrameHeader(bodyLength: UInt32(body.count), id: 0, code: 0)
 
-        XCTAssertNoThrow(try HanaHelperHandshake.validate(header, body: Data(#"{"protocol":1}"#.utf8)))
+        XCTAssertEqual(try HanaHelperHandshake.greeting(from: header, body: body), HanaHelperGreeting(forcedSeverGrace: 30))
     }
 
     func testHandshakeNamesAnIncompatibleProtocol() {
-        let header = HanaHelperFrameHeader(bodyLength: 14, id: 0, code: 0)
+        let body = Data(#"{"protocol":2,"forcedSeverGraceSeconds":30}"#.utf8)
+        let header = HanaHelperFrameHeader(bodyLength: UInt32(body.count), id: 0, code: 0)
 
-        XCTAssertThrowsError(try HanaHelperHandshake.validate(header, body: Data(#"{"protocol":2}"#.utf8))) { error in
+        XCTAssertThrowsError(try HanaHelperHandshake.greeting(from: header, body: body)) { error in
             XCTAssertEqual(error as? HanaHelperFrameError, .incompatibleProtocol(2))
             XCTAssertEqual((error as? HanaHelperFrameError)?.failure.message, "incompatible helper protocol 2")
             XCTAssertEqual((error as? HanaHelperFrameError)?.failure.kind, .internalFailure)
         }
     }
 
+    func testHandshakeWithoutAUsableForcedSeverGraceIsAnIncompatibleHelper() {
+        let bodies = [
+            #"{"protocol":1}"#,
+            #"{"protocol":1,"forcedSeverGraceSeconds":null}"#,
+            #"{"protocol":1,"forcedSeverGraceSeconds":0}"#,
+            #"{"protocol":1,"forcedSeverGraceSeconds":-30}"#,
+            #"{"protocol":1,"forcedSeverGraceSeconds":3601}"#
+        ]
+
+        for body in bodies {
+            let header = HanaHelperFrameHeader(bodyLength: UInt32(body.utf8.count), id: 0, code: 0)
+            XCTAssertThrowsError(try HanaHelperHandshake.greeting(from: header, body: Data(body.utf8))) { error in
+                XCTAssertEqual(error as? HanaHelperFrameError, .unusableForcedSeverGrace, body)
+                XCTAssertEqual((error as? HanaHelperFrameError)?.failure.kind, .internalFailure, body)
+                XCTAssertEqual((error as? HanaHelperFrameError)?.message.hasPrefix("incompatible helper"), true, body)
+            }
+        }
+    }
+
     func testHandshakeRefusesAnythingButAGreetingOnFrameZero() {
+        let greeting = #"{"protocol":1,"forcedSeverGraceSeconds":30}"#
         let cases: [(HanaHelperFrameHeader, String)] = [
-            (HanaHelperFrameHeader(bodyLength: 14, id: 1, code: 0), #"{"protocol":1}"#),
-            (HanaHelperFrameHeader(bodyLength: 14, id: 0, code: 1), #"{"protocol":1}"#),
+            (HanaHelperFrameHeader(bodyLength: 43, id: 1, code: 0), greeting),
+            (HanaHelperFrameHeader(bodyLength: 43, id: 0, code: 1), greeting),
             (HanaHelperFrameHeader(bodyLength: 8, id: 0, code: 0), "garbage!"),
-            (HanaHelperFrameHeader(bodyLength: 2, id: 0, code: 0), "{}")
+            (HanaHelperFrameHeader(bodyLength: 2, id: 0, code: 0), "{}"),
+            (HanaHelperFrameHeader(bodyLength: 45, id: 0, code: 0), #"{"protocol":1,"forcedSeverGraceSeconds":"30"}"#)
         ]
 
         for (header, body) in cases {
-            XCTAssertThrowsError(try HanaHelperHandshake.validate(header, body: Data(body.utf8))) { error in
+            XCTAssertThrowsError(try HanaHelperHandshake.greeting(from: header, body: Data(body.utf8))) { error in
                 XCTAssertEqual(error as? HanaHelperFrameError, .unexpectedHandshake, "\(header) \(body)")
             }
         }
+    }
+
+    func testFramesFromTheHelperAreCappedBelowTwoGibibytesAndTheHandshakeAtFourKibibytes() {
+        XCTAssertEqual(HanaHelperReply.maximumBodyLength, 2_147_483_647)
+        XCTAssertEqual(HanaHelperHandshake.maximumBodyLength, 4_096)
+        XCTAssertEqual(
+            HanaHelperFrameError.frameTooLarge(byteCount: 4_294_967_295, limit: 2_147_483_647).failure,
+            HanaBridgeFailure(
+                kind: .internalFailure,
+                message: "the helper announced a 4294967295-byte frame, over the 2147483647-byte limit"
+            )
+        )
+    }
+
+    func testTheCancelDeadlineIsTheHelpersForcedSeverGracePlusTenSeconds() {
+        XCTAssertEqual(HanaHelperBridge.cancelDeadline(forcedSeverGrace: 30), 40)
+        XCTAssertEqual(HanaHelperBridge.cancelDeadline(forcedSeverGrace: 1), 11)
     }
 
     func testOperationBodyNamesTheSessionAndOperation() throws {

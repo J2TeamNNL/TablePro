@@ -7,6 +7,8 @@ enum HanaHelperPipeRead: Equatable, Sendable {
 }
 
 enum HanaHelperPipe {
+    static let maximumChunkByteCount = 16 << 20
+
     static func suppressBrokenPipeSignal(on descriptor: Int32) throws {
         guard fcntl(descriptor, F_SETNOSIGPIPE, 1) == 0 else {
             throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
@@ -18,7 +20,8 @@ enum HanaHelperPipe {
             guard let start = buffer.baseAddress else { return }
             var offset = 0
             while offset < buffer.count {
-                let written = Darwin.write(descriptor, start + offset, buffer.count - offset)
+                let chunk = min(buffer.count - offset, maximumChunkByteCount)
+                let written = Darwin.write(descriptor, start + offset, chunk)
                 if written >= 0 {
                     offset += written
                     continue
@@ -30,24 +33,21 @@ enum HanaHelperPipe {
 
     static func read(exactly count: Int, from descriptor: Int32) throws -> HanaHelperPipeRead {
         guard count > 0 else { return .complete(Data()) }
-        var bytes = Data(count: count)
-        let received = try bytes.withUnsafeMutableBytes { buffer -> Int in
-            guard let start = buffer.baseAddress else { return 0 }
-            var offset = 0
-            while offset < count {
-                let chunk = Darwin.read(descriptor, start + offset, count - offset)
-                if chunk > 0 {
-                    offset += chunk
-                    continue
-                }
-                if chunk == 0 {
-                    return offset
-                }
-                try throwUnlessInterrupted(errno)
+        let chunk = UnsafeMutableRawBufferPointer.allocate(byteCount: min(count, maximumChunkByteCount), alignment: 1)
+        defer { chunk.deallocate() }
+        guard let start = chunk.baseAddress else { return .endOfStream(receivedByteCount: 0) }
+        var bytes = Data()
+        while bytes.count < count {
+            let received = Darwin.read(descriptor, start, min(count - bytes.count, chunk.count))
+            if received > 0 {
+                bytes.append(start.assumingMemoryBound(to: UInt8.self), count: received)
+                continue
             }
-            return offset
+            if received == 0 {
+                return .endOfStream(receivedByteCount: bytes.count)
+            }
+            try throwUnlessInterrupted(errno)
         }
-        guard received == count else { return .endOfStream(receivedByteCount: received) }
         return .complete(bytes)
     }
 

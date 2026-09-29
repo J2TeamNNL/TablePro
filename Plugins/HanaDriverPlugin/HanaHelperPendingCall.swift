@@ -22,14 +22,16 @@ final class HanaHelperPendingCall: @unchecked Sendable {
         self.ticket = ticket
     }
 
-    func complete(with outcome: Result<Data, HanaBridgeFailure>) {
+    @discardableResult
+    func complete(with outcome: Result<Data, HanaBridgeFailure>) -> Bool {
         let isFirstAnswer = lock.withLock { () -> Bool in
             guard self.outcome == nil else { return false }
             self.outcome = outcome
             return true
         }
-        guard isFirstAnswer else { return }
+        guard isFirstAnswer else { return false }
         answered.signal()
+        return true
     }
 
     func wait() -> Result<Data, HanaBridgeFailure> {

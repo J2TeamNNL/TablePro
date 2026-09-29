@@ -40,3 +40,36 @@ final class HanaOperationSlot: @unchecked Sendable {
         return ticket
     }
 }
+
+final class HanaOpenInterruption: @unchecked Sendable {
+    private let lock = NSLock()
+    private var interrupted = false
+    private var response: (@Sendable () -> Void)?
+
+    var isInterrupted: Bool {
+        lock.withLock { interrupted }
+    }
+
+    func interrupt() {
+        let pending = lock.withLock { () -> (@Sendable () -> Void)? in
+            guard !interrupted else { return nil }
+            interrupted = true
+            let pending = response
+            response = nil
+            return pending
+        }
+        pending?()
+    }
+
+    func whenInterrupted(_ response: @escaping @Sendable () -> Void) -> Bool {
+        lock.withLock {
+            guard !interrupted else { return false }
+            self.response = response
+            return true
+        }
+    }
+
+    func stopWatching() {
+        lock.withLock { response = nil }
+    }
+}

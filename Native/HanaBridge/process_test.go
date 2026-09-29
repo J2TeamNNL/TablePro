@@ -140,10 +140,7 @@ func startChild(t *testing.T, backendName string) *childProcess {
 		t.Fatal(err)
 	}
 	child := &childProcess{t: t, command: command, stdin: stdin, stdout: stdout, stderr: stderr}
-	hello := child.next()
-	if hello.ID != 0 || hello.Code != statusOK || string(hello.Body) != `{"protocol":1}` {
-		t.Fatalf("the helper's first frame = %+v (%s); want the protocol 1 hello", hello, hello.Body)
-	}
+	expectHello(t, child.next())
 	return child
 }
 

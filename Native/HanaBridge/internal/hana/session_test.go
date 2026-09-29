@@ -113,13 +113,24 @@ func TestClosingDuringConnectAnswersClosedPromptly(t *testing.T) {
 	started := time.Now()
 	testBridge.closeSession(id)
 	if elapsed := time.Since(started); elapsed > time.Second {
-		t.Fatalf("tp_hana_close blocked for %v", elapsed)
+		t.Fatalf("closing the session blocked for %v", elapsed)
 	}
 	result := awaitConnect(t, outcome)
 	assertKind(t, result.failure, kindClosed)
 	server.waitForClientHangUp(t)
 	_, failure = testBridge.executeOnSession(id, 2, []byte(`{"sql":"SELECT 1 FROM DUMMY"}`))
 	assertKind(t, failure, kindClosed)
+}
+
+func TestEverySessionSeversAfterTheExportedGrace(t *testing.T) {
+	id := openTestSession(t, unreachableConfig(closedPort(t)))
+	entry, failure := testBridge.sessions.lookup(id)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	if entry.slot.severGrace != ForcedSeverGrace {
+		t.Fatalf("the session severs after %v; want the exported ForcedSeverGrace %v", entry.slot.severGrace, ForcedSeverGrace)
+	}
 }
 
 func TestStatementsBeforeConnectAnswerConnectionLost(t *testing.T) {

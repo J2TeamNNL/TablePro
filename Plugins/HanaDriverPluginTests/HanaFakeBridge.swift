@@ -20,6 +20,7 @@ final class HanaFakeBridge: HanaNativeBridge, @unchecked Sendable {
     private var cancelLog: [HanaOperationTicket] = []
     private var closeLog: [UInt64] = []
     private var statementHolds: [String: HanaHold<HanaOperationTicket>] = [:]
+    private var openHold: HanaHold<HanaOpenInterruption>?
     private var pingHold: HanaHold<HanaOperationTicket>?
     private var cancelHold: HanaHold<HanaOperationTicket>?
     private var responses: [String: Data] = [:]
@@ -34,6 +35,12 @@ final class HanaFakeBridge: HanaNativeBridge, @unchecked Sendable {
     func hold(sql: String) -> HanaHold<HanaOperationTicket> {
         let hold = HanaHold<HanaOperationTicket>()
         lock.withLock { statementHolds[sql] = hold }
+        return hold
+    }
+
+    func holdOpen() -> HanaHold<HanaOpenInterruption> {
+        let hold = HanaHold<HanaOpenInterruption>()
+        lock.withLock { openHold = hold }
         return hold
     }
 
@@ -53,9 +60,16 @@ final class HanaFakeBridge: HanaNativeBridge, @unchecked Sendable {
         lock.withLock { responses[sql] = envelope }
     }
 
-    func open(configuration: Data) throws -> UInt64 {
-        lock.withLock {
+    func open(configuration: Data, interruption: HanaOpenInterruption) throws -> UInt64 {
+        let hold = lock.withLock { () -> HanaHold<HanaOpenInterruption>? in
             openCount += 1
+            return openHold
+        }
+        if let hold, interruption.whenInterrupted({ hold.release() }) {
+            hold.arrive(interruption)
+        }
+        guard !interruption.isInterrupted else { throw HanaBridgeFailure(kind: .cancelled) }
+        return lock.withLock {
             lastSession += 1
             openSessions.insert(lastSession)
             return lastSession

@@ -131,3 +131,122 @@ enum HanaProcessProbe {
         return !isRunning(processIdentifier)
     }
 }
+
+final class HanaStandInFolder: @unchecked Sendable {
+    let url: URL
+
+    init(named prefix: String) throws {
+        url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    }
+
+    func remove() {
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    func file(named name: String) -> URL {
+        url.appendingPathComponent(name)
+    }
+
+    func script(_ body: String) throws -> URL {
+        let script = file(named: "helper-\(UUID().uuidString)")
+        try Data("#!/bin/sh\n\(body)\n".utf8).write(to: script)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+        return script
+    }
+}
+
+enum HanaStandInFrame {
+    static let greetingBody = #"{"protocol":1,"forcedSeverGraceSeconds":30}"#
+
+    static func greeting(_ body: String = greetingBody) -> String {
+        frame(id: HanaHelperHandshake.frameID, code: 0, body: body)
+    }
+
+    static func frame(id: UInt64, code: UInt8, body: String) -> String {
+        let header = HanaHelperFrameHeader(bodyLength: UInt32(body.utf8.count), id: id, code: code)
+        return "/usr/bin/printf '\(escaped(header.encoded))\(body)'"
+    }
+
+    static func header(bodyLength: UInt32, id: UInt64, code: UInt8) -> String {
+        let header = HanaHelperFrameHeader(bodyLength: bodyLength, id: id, code: code)
+        return "/usr/bin/printf '\(escaped(header.encoded))'"
+    }
+
+    static func absorbInput(into file: URL? = nil) -> String {
+        "exec /bin/cat 3>&1 > '\(file?.path ?? "/dev/null")'"
+    }
+
+    private static func escaped(_ bytes: Data) -> String {
+        bytes.map { String(format: "\\%03o", UInt32($0)) }.joined()
+    }
+}
+
+enum HanaFileProbe {
+    static func byteCount(at url: URL) -> Int {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        return (attributes?[.size] as? NSNumber)?.intValue ?? 0
+    }
+
+    static func waitForBytes(at url: URL, reaching count: Int, within seconds: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            guard byteCount(at: url) < count else { return true }
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        return byteCount(at: url) >= count
+    }
+
+    static func processIdentifier(recordedAt url: URL, within seconds: TimeInterval) -> pid_t? {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            if let recorded = recordedProcessIdentifier(at: url) {
+                return recorded
+            }
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        return recordedProcessIdentifier(at: url)
+    }
+
+    private static func recordedProcessIdentifier(at url: URL) -> pid_t? {
+        guard let text = try? String(contentsOf: url, encoding: .utf8), text.hasSuffix("\n") else { return nil }
+        return pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+}
+
+enum HanaMemoryProbe {
+    static var peakResidentByteCount: Int {
+        var usage = rusage()
+        guard getrusage(RUSAGE_SELF, &usage) == 0 else { return 0 }
+        return usage.ru_maxrss
+    }
+}
+
+final class HanaRunningCodeChecks: @unchecked Sendable {
+    struct Request: Equatable {
+        let processIdentifier: pid_t
+        let requirement: String
+    }
+
+    private let lock = NSLock()
+    private var recorded: [Request] = []
+    private let failure: HanaBridgeFailure?
+
+    init(failingWith failure: HanaBridgeFailure? = nil) {
+        self.failure = failure
+    }
+
+    var requests: [Request] {
+        lock.withLock { recorded }
+    }
+
+    var record: HanaHelperTrust.RunningCodeCheck {
+        { [self] processIdentifier, requirement in
+            lock.withLock { recorded.append(Request(processIdentifier: processIdentifier, requirement: requirement)) }
+            if let failure {
+                throw failure
+            }
+        }
+    }
+}

@@ -37,6 +37,61 @@ final class HanaConnectionTests: XCTestCase {
         XCTAssertEqual(queue.pendingCount, 0)
     }
 
+    func testCancellingTheConnectWhileItsOpenWaitsInterruptsTheOpen() async throws {
+        let bridge = HanaFakeBridge()
+        let hold = bridge.holdOpen()
+        let connection = HanaConnection(bridge: bridge)
+        let configuration = Self.configuration
+        let connect = Task { try await connection.connect(configuration) }
+        let interruption = await hold.arrival()
+        XCTAssertFalse(interruption.isInterrupted)
+
+        connect.cancel()
+
+        await assertFailure(of: connect, kind: .cancelled)
+        XCTAssertTrue(interruption.isInterrupted)
+        XCTAssertEqual(bridge.opens, 1)
+        XCTAssertTrue(bridge.connects.isEmpty)
+        XCTAssertTrue(bridge.closes.isEmpty)
+    }
+
+    func testAConnectCancelledBeforeItsOpenRunsHandsTheBridgeAnInterruptedOpen() async throws {
+        let bridge = HanaFakeBridge()
+        let queue = HanaManualQueue()
+        let connection = HanaConnection(bridge: bridge, queue: queue)
+        let configuration = Self.configuration
+        let connect = Task { try await connection.connect(configuration) }
+        await queue.pending(reaching: 1)
+
+        connect.cancel()
+        queue.runNext()
+
+        await assertFailure(of: connect, kind: .cancelled)
+        XCTAssertTrue(bridge.connects.isEmpty)
+        XCTAssertEqual(queue.pendingCount, 0)
+    }
+
+    func testAConnectAfterAnInterruptedOpenOpensNormally() async throws {
+        let bridge = HanaFakeBridge()
+        let hold = bridge.holdOpen()
+        let connection = HanaConnection(bridge: bridge)
+        let configuration = Self.configuration
+        let cancelled = Task { try await connection.connect(configuration) }
+        _ = await hold.arrival()
+        cancelled.cancel()
+        await assertFailure(of: cancelled, kind: .cancelled)
+        let secondHold = bridge.holdOpen()
+        let second = Task { try await connection.connect(configuration) }
+        let secondOpen = await secondHold.arrival()
+        secondHold.release()
+
+        let result = try await second.value
+
+        XCTAssertFalse(secondOpen.isInterrupted)
+        XCTAssertEqual(result.connectionId, 200_123)
+        XCTAssertEqual(bridge.connects.count, 1)
+    }
+
     func testCancellingASlotThatNeverHeldAnOperationSendsNothing() async throws {
         let bridge = HanaFakeBridge()
         let connection = HanaConnection(bridge: bridge)

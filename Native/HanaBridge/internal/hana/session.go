@@ -18,11 +18,12 @@ import (
 
 var errPingUnanswered = errors.New("the server did not answer the ping in time")
 
+const ForcedSeverGrace = 30 * time.Second
+
 const (
-	applicationName  = "TablePro"
-	pingDeadline     = 20 * time.Second
-	forcedSeverGrace = 30 * time.Second
-	identityQuery    = "SELECT CURRENT_SCHEMA, CURRENT_CONNECTION FROM DUMMY"
+	applicationName = "TablePro"
+	pingDeadline    = 20 * time.Second
+	identityQuery   = "SELECT CURRENT_SCHEMA, CURRENT_CONNECTION FROM DUMMY"
 )
 
 type sessionState uint8
@@ -89,7 +90,7 @@ func newSession(config connectionConfig) (*session, *bridgeError) {
 		db:             db,
 		controlDB:      controlDB,
 	}
-	entry.slot = newOperationSlot(forcedSeverGrace, entry.loseConnection)
+	entry.slot = newOperationSlot(ForcedSeverGrace, entry.loseConnection)
 	return entry, nil
 }
 

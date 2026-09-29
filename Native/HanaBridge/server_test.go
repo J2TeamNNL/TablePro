@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -115,11 +116,41 @@ func startServer(t *testing.T, bridge backend) *harness {
 		_ = outputReader.Close()
 	})
 	h := &harness{t: t, input: inputWriter, output: outputReader, exit: exit}
-	hello := h.next()
-	if hello.ID != 0 || hello.Code != statusOK || string(hello.Body) != `{"protocol":1}` {
-		t.Fatalf("first frame = %+v (%s); want the protocol 1 hello", hello, hello.Body)
-	}
+	expectHello(t, h.next())
 	return h
+}
+
+type helloFields struct {
+	Protocol                *int   `json:"protocol"`
+	ForcedSeverGraceSeconds *int64 `json:"forcedSeverGraceSeconds"`
+}
+
+func decodeHello(t *testing.T, hello frame.Frame) helloFields {
+	t.Helper()
+	if hello.ID != helloFrameID || hello.Code != statusOK {
+		t.Fatalf("first frame = id %d status %d (%s); want the hello", hello.ID, hello.Code, hello.Body)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(hello.Body))
+	decoder.DisallowUnknownFields()
+	var fields helloFields
+	if err := decoder.Decode(&fields); err != nil {
+		t.Fatalf("hello %s does not decode as the protocol's hello: %v", hello.Body, err)
+	}
+	if fields.Protocol == nil || fields.ForcedSeverGraceSeconds == nil {
+		t.Fatalf("hello %s lacks protocol or forcedSeverGraceSeconds", hello.Body)
+	}
+	return fields
+}
+
+func expectHello(t *testing.T, hello frame.Frame) {
+	t.Helper()
+	fields := decodeHello(t, hello)
+	if *fields.Protocol != protocolVersion {
+		t.Fatalf("hello %s announces protocol %d; want %d", hello.Body, *fields.Protocol, protocolVersion)
+	}
+	if *fields.ForcedSeverGraceSeconds != wholeSecondsRoundedUp(hana.ForcedSeverGrace) {
+		t.Fatalf("hello %s announces a %d s grace; want the bridge's %v", hello.Body, *fields.ForcedSeverGraceSeconds, hana.ForcedSeverGrace)
+	}
 }
 
 func (h *harness) send(id uint64, opcode byte, body string) {
@@ -195,6 +226,39 @@ func (h *harness) awaitExit() int {
 	case <-time.After(replyTimeout):
 		h.t.Fatal("the server did not stop")
 		return -1
+	}
+}
+
+func TestHelloAdvertisesTheProtocolAndTheForcedSeverGrace(t *testing.T) {
+	inputReader, inputWriter := io.Pipe()
+	outputReader, outputWriter := io.Pipe()
+	t.Cleanup(func() {
+		_ = inputWriter.Close()
+		_ = outputReader.Close()
+	})
+	go run(inputReader, outputWriter, newFakeBackend())
+	h := &harness{t: t, input: inputWriter, output: outputReader}
+	fields := decodeHello(t, h.next())
+	if *fields.Protocol != 1 {
+		t.Fatalf("protocol = %d; want 1", *fields.Protocol)
+	}
+	advertised := time.Duration(*fields.ForcedSeverGraceSeconds) * time.Second
+	if advertised < hana.ForcedSeverGrace || advertised >= hana.ForcedSeverGrace+time.Second {
+		t.Fatalf("forcedSeverGraceSeconds = %d; want %v rounded up to a whole second", *fields.ForcedSeverGraceSeconds, hana.ForcedSeverGrace)
+	}
+}
+
+func TestGraceSecondsRoundUpSoTheHostNeverStopsTheHelperEarly(t *testing.T) {
+	cases := map[time.Duration]int64{
+		0:                                     0,
+		30 * time.Second:                      30,
+		30*time.Second + time.Millisecond:     31,
+		29*time.Second + 999*time.Millisecond: 30,
+	}
+	for duration, want := range cases {
+		if got := wholeSecondsRoundedUp(duration); got != want {
+			t.Fatalf("wholeSecondsRoundedUp(%v) = %d; want %d", duration, got, want)
+		}
 	}
 }
 
@@ -424,16 +488,30 @@ func TestReplyThatCannotBeWrittenExitsThree(t *testing.T) {
 	bridge.awaitCall(t, "closeAll")
 }
 
-func TestResultsOnlyFitAFrameUpToFourGiB(t *testing.T) {
-	if !fitsInFrame(0) || !fitsInFrame(math.MaxUint32) {
-		t.Fatal("a result up to 4 GiB - 1 was refused")
+func TestResultsOnlyFitAFrameUpToTwoGiBMinusOne(t *testing.T) {
+	if !fitsInFrame(0) || !fitsInFrame(frame.MaxBodyLength) {
+		t.Fatal("a result up to 2 GiB - 1 was refused")
 	}
-	if fitsInFrame(math.MaxUint32+1) || fitsInFrame(-1) {
-		t.Fatal("a result outside a frame was accepted")
+	if fitsInFrame(frame.MaxBodyLength+1) || fitsInFrame(math.MaxUint32) || fitsInFrame(-1) {
+		t.Fatal("a result over the frame cap was accepted")
 	}
 	if small := replyFrame(5, []byte("{}"), nil); small.Code != statusOK || small.ID != 5 {
 		t.Fatalf("a small result became %+v", small)
 	}
+}
+
+func TestAResultOverTheCapAnswersAnInternalErrorAndTheServerKeepsServing(t *testing.T) {
+	bridge := newFakeBackend()
+	bridge.result = make([]byte, frame.MaxBodyLength+1)
+	h := startServer(t, bridge)
+	h.send(90, opcodeExecute, `{"session":1,"operation":1,"request":{}}`)
+	bridge.awaitCall(t, "execute")
+	if failure := h.expectFailure(90, "internal"); failure["message"] != "the result is larger than 2 GiB" {
+		t.Fatalf("message = %v; want the oversized result message", failure["message"])
+	}
+	h.send(91, opcodePing, `{"session":1,"operation":2}`)
+	bridge.awaitCall(t, "ping")
+	h.expectReply(91, statusOK)
 }
 
 func closedPort(t *testing.T) int {

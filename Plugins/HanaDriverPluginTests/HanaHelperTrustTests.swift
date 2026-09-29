@@ -2,6 +2,9 @@ import Foundation
 import XCTest
 
 final class HanaHelperTrustTests: XCTestCase {
+    private static let team = "D7HJ5TFYCU"
+    private static let developmentHost = HanaHelperTrust(signingTeam: nil, admitsUnsignedHost: true)
+
     private var root: URL?
 
     override func setUpWithError() throws {
@@ -16,20 +19,100 @@ final class HanaHelperTrustTests: XCTestCase {
         try FileManager.default.removeItem(at: root)
     }
 
-    func testARegularExecutableInsideContentsMacOSIsTrustedInAnUnsignedBundle() throws {
+    func testADevelopmentBuildWithATeamlessHostTrustsARegularExecutableInsideContentsMacOS() throws {
         let bundle = try makeBundle(named: "Regular")
         try writeHelper(at: helperURL(in: bundle), permissions: 0o755)
 
-        let executable = try HanaHelperTrust.verifiedExecutable(in: XCTUnwrap(Bundle(url: bundle)))
+        let executable = try Self.developmentHost.verifiedExecutable(in: XCTUnwrap(Bundle(url: bundle)))
 
         XCTAssertEqual(executable.lastPathComponent, HanaHelperTrust.executableName)
         XCTAssertEqual(executable.deletingLastPathComponent().lastPathComponent, "MacOS")
     }
 
+    func testADevelopmentBuildWithATeamlessHostSkipsTheRunningCodeCheck() throws {
+        let checks = HanaRunningCodeChecks()
+        let trust = HanaHelperTrust(signingTeam: nil, admitsUnsignedHost: true, checkRunningCode: checks.record)
+
+        XCTAssertNoThrow(try trust.verifyRunningHelper(4_242))
+
+        XCTAssertTrue(checks.requests.isEmpty)
+    }
+
+    func testAReleaseBuildWithATeamlessHostTrustsNoHelper() throws {
+        let bundle = try makeBundle(named: "Release")
+        try writeHelper(at: helperURL(in: bundle), permissions: 0o755)
+        let checks = HanaRunningCodeChecks()
+        let trust = HanaHelperTrust(signingTeam: nil, admitsUnsignedHost: false, checkRunningCode: checks.record)
+
+        assertRefused(bundle, by: trust, mentioning: "not signed with a Team ID")
+        XCTAssertThrowsError(try trust.verifyRunningHelper(4_242)) { error in
+            XCTAssertEqual((error as? HanaBridgeFailure)?.kind, .internalFailure, "got \(error)")
+        }
+        XCTAssertTrue(checks.requests.isEmpty)
+    }
+
+    func testATeamSignedHostRefusesAnUnsignedHelperBeforeItRuns() throws {
+        let bundle = try makeBundle(named: "Unsigned")
+        try writeHelper(at: helperURL(in: bundle), permissions: 0o755)
+        let trust = HanaHelperTrust(signingTeam: Self.team, admitsUnsignedHost: true)
+
+        assertRefused(bundle, by: trust, mentioning: "does not satisfy")
+    }
+
+    func testATeamSignedHostChecksTheRunningHelperAgainstItsOwnTeam() throws {
+        let checks = HanaRunningCodeChecks()
+        let trust = HanaHelperTrust(signingTeam: Self.team, admitsUnsignedHost: false, checkRunningCode: checks.record)
+
+        let expected = try XCTUnwrap(HanaHelperTrust.requirement(forTeam: Self.team))
+
+        try trust.verifyRunningHelper(4_242)
+
+        XCTAssertEqual(checks.requests, [HanaRunningCodeChecks.Request(processIdentifier: 4_242, requirement: expected)])
+    }
+
+    func testARunningCodeCheckThatFailsIsAnInternalFailure() {
+        let trust = HanaHelperTrust(signingTeam: Self.team, admitsUnsignedHost: false) { _, _ in
+            throw CocoaError(.fileReadNoPermission)
+        }
+
+        XCTAssertThrowsError(try trust.verifyRunningHelper(4_242)) { error in
+            let failure = error as? HanaBridgeFailure
+            XCTAssertEqual(failure?.kind, .internalFailure, "got \(error)")
+            XCTAssertEqual(failure?.message.contains("failed its signature check"), true, "\(error)")
+        }
+    }
+
+    func testAHostWithAnInvalidTeamTrustsNoHelper() throws {
+        let bundle = try makeBundle(named: "BadTeam")
+        try writeHelper(at: helperURL(in: bundle), permissions: 0o755)
+        let trust = HanaHelperTrust(signingTeam: "d7hj5tfycu", admitsUnsignedHost: true)
+
+        assertRefused(bundle, by: trust, mentioning: "Team ID is not valid")
+        XCTAssertThrowsError(try trust.verifyRunningHelper(4_242))
+    }
+
+    func testTheRunningCodeCheckAcceptsAnAppleBinaryAndRefusesAnotherTeam() throws {
+        let sleeper = Process()
+        sleeper.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        sleeper.arguments = ["30"]
+        try sleeper.run()
+        defer { sleeper.terminate() }
+
+        XCTAssertNoThrow(try HanaHelperTrust.checkRunningCode(processIdentifier: sleeper.processIdentifier, requirement: "anchor apple"))
+        let teamRequirement = try XCTUnwrap(HanaHelperTrust.requirement(forTeam: Self.team))
+        XCTAssertThrowsError(
+            try HanaHelperTrust.checkRunningCode(processIdentifier: sleeper.processIdentifier, requirement: teamRequirement)
+        ) { error in
+            let failure = error as? HanaBridgeFailure
+            XCTAssertEqual(failure?.kind, .internalFailure, "got \(error)")
+            XCTAssertEqual(failure?.message.contains("does not satisfy"), true, "\(error)")
+        }
+    }
+
     func testAMissingHelperIsRefused() throws {
         let bundle = try makeBundle(named: "Missing")
 
-        assertRefused(bundle, mentioning: "missing")
+        assertRefused(bundle, by: Self.developmentHost, mentioning: "missing")
     }
 
     func testASymlinkedHelperIsRefusedEvenWhenItPointsAtAnExecutable() throws {
@@ -38,21 +121,21 @@ final class HanaHelperTrustTests: XCTestCase {
         try writeHelper(at: outside, permissions: 0o755)
         try FileManager.default.createSymbolicLink(at: helperURL(in: bundle), withDestinationURL: outside)
 
-        assertRefused(bundle, mentioning: "regular file")
+        assertRefused(bundle, by: Self.developmentHost, mentioning: "regular file")
     }
 
     func testADirectoryNamedLikeTheHelperIsRefused() throws {
         let bundle = try makeBundle(named: "Directory")
         try FileManager.default.createDirectory(at: helperURL(in: bundle), withIntermediateDirectories: true)
 
-        assertRefused(bundle, mentioning: "regular file")
+        assertRefused(bundle, by: Self.developmentHost, mentioning: "regular file")
     }
 
     func testAHelperThatIsNotExecutableIsRefused() throws {
         let bundle = try makeBundle(named: "NotExecutable")
         try writeHelper(at: helperURL(in: bundle), permissions: 0o644)
 
-        assertRefused(bundle, mentioning: "not executable")
+        assertRefused(bundle, by: Self.developmentHost, mentioning: "not executable")
     }
 
     func testAHelperReachedThroughASymlinkedMacOSFolderIsRefused() throws {
@@ -65,7 +148,7 @@ final class HanaHelperTrustTests: XCTestCase {
             withDestinationURL: outsideFolder
         )
 
-        assertRefused(bundle, mentioning: "Contents/MacOS")
+        assertRefused(bundle, by: Self.developmentHost, mentioning: "Contents/MacOS")
     }
 
     func testTheLocationCheckRefusesAHelperFromAnotherBundle() throws {
@@ -79,16 +162,9 @@ final class HanaHelperTrustTests: XCTestCase {
         XCTAssertNoThrow(try HanaHelperTrust.verifyLocation(of: helperURL(in: second), inBundleAt: second))
     }
 
-    func testAnUnsignedBundleHasNoTeamToRequire() throws {
-        let bundle = try makeBundle(named: "NoTeam")
-        try writeHelper(at: helperURL(in: bundle), permissions: 0o755)
-
-        XCTAssertNil(HanaHelperTrust.signingTeam(ofCodeAt: bundle))
-    }
-
     func testTheTeamRequirementNamesTheLeafCertificateUnit() {
         XCTAssertEqual(
-            HanaHelperTrust.requirement(forTeam: "D7HJ5TFYCU"),
+            HanaHelperTrust.requirement(forTeam: Self.team),
             "anchor apple generic and certificate leaf[subject.OU] = \"D7HJ5TFYCU\""
         )
     }
@@ -118,6 +194,7 @@ final class HanaHelperTrustTests: XCTestCase {
 
     private func assertRefused(
         _ bundle: URL,
+        by trust: HanaHelperTrust,
         mentioning fragment: String,
         file: StaticString = #filePath,
         line: UInt = #line
@@ -126,7 +203,7 @@ final class HanaHelperTrustTests: XCTestCase {
             XCTFail("\(bundle.path) did not open as a bundle", file: file, line: line)
             return
         }
-        XCTAssertThrowsError(try HanaHelperTrust.verifiedExecutable(in: loaded), file: file, line: line) { error in
+        XCTAssertThrowsError(try trust.verifiedExecutable(in: loaded), file: file, line: line) { error in
             let failure = error as? HanaBridgeFailure
             XCTAssertEqual(failure?.kind, .internalFailure, "got \(error)", file: file, line: line)
             XCTAssertEqual(

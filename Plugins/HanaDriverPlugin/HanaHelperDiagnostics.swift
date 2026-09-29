@@ -24,6 +24,12 @@ struct HanaHelperOutputTail: Sendable {
     }
 }
 
+enum HanaHelperDuration {
+    static func secondsText(_ seconds: TimeInterval) -> String {
+        seconds.rounded() == seconds ? String(Int(seconds)) : String(seconds)
+    }
+}
+
 struct HanaHelperExitReport: Equatable, Sendable {
     enum Termination: Equatable, Sendable {
         case exited(status: Int32)

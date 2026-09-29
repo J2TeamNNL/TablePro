@@ -2,44 +2,67 @@ import Foundation
 import os
 
 final class HanaHelperBridge: HanaNativeBridge, @unchecked Sendable {
-    static let defaultCancelDeadline: TimeInterval = 15
     static let handshakeDeadline: TimeInterval = 15
+    static let defaultOpenDeadline: TimeInterval = 15
+    static let cancelDeadlineMargin: TimeInterval = 10
+
+    private struct Helper {
+        let process: HanaHelperProcess
+        let cancelDeadline: TimeInterval
+    }
 
     private struct Route {
-        let helper: HanaHelperProcess
+        let helper: Helper
         let session: UInt64
     }
 
     private static let logger = Logger(subsystem: "com.TablePro", category: "HanaHelperBridge")
 
+    private let trust: HanaHelperTrust
     private let locateExecutable: @Sendable () throws -> URL
-    private let cancelDeadline: TimeInterval
-    private let launchLock = NSLock()
+    private let cancelDeadlineOverride: TimeInterval?
+    private let openDeadline: TimeInterval
     private let lock = NSLock()
-    private var helper: HanaHelperProcess?
     private var routes: [UInt64: Route] = [:]
     private var lastSession: UInt64 = 0
 
     init(
-        cancelDeadline: TimeInterval = HanaHelperBridge.defaultCancelDeadline,
-        locateExecutable: @escaping @Sendable () throws -> URL = { try HanaHelperBridge.bundledExecutable() }
+        trust: HanaHelperTrust = .host,
+        cancelDeadline: TimeInterval? = nil,
+        openDeadline: TimeInterval = HanaHelperBridge.defaultOpenDeadline,
+        locateExecutable: (@Sendable () throws -> URL)? = nil
     ) {
-        self.cancelDeadline = cancelDeadline
-        self.locateExecutable = locateExecutable
+        self.trust = trust
+        self.cancelDeadlineOverride = cancelDeadline
+        self.openDeadline = openDeadline
+        self.locateExecutable = locateExecutable ?? {
+            try trust.verifiedExecutable(in: Bundle(for: HanaPluginDriver.self))
+        }
     }
 
     deinit {
         shutdown()
     }
 
-    var helperProcessIdentifier: pid_t? {
-        lock.withLock { helper?.processIdentifier }
+    func helperProcessIdentifier(serving session: UInt64) -> pid_t? {
+        lock.withLock { routes[session]?.helper.process.processIdentifier }
     }
 
-    func open(configuration: Data) throws -> UInt64 {
-        let helper = try runningHelper()
-        let reply = try helper.call(.open, body: configuration, ticket: nil)
-        let remoteSession = try HanaHelperMessage.openedSession(from: reply)
+    static func cancelDeadline(forcedSeverGrace: TimeInterval) -> TimeInterval {
+        forcedSeverGrace + cancelDeadlineMargin
+    }
+
+    func open(configuration: Data, interruption: HanaOpenInterruption) throws -> UInt64 {
+        guard !interruption.isInterrupted else { throw HanaHelperProcess.interruptedFailure }
+        let helper = try launchHelper(interruption: interruption)
+        let remoteSession: UInt64
+        do {
+            remoteSession = try openSession(on: helper, configuration: configuration, interruption: interruption)
+        } catch {
+            helper.process.shutdown()
+            throw error
+        }
+        Self.logger.debug("SAP HANA helper \(helper.process.processIdentifier) is serving this connection")
         return lock.withLock {
             lastSession &+= 1
             routes[lastSession] = Route(helper: helper, session: remoteSession)
@@ -66,33 +89,30 @@ final class HanaHelperBridge: HanaNativeBridge, @unchecked Sendable {
     func cancel(_ ticket: HanaOperationTicket) {
         guard let route = lock.withLock({ routes[ticket.session] }) else { return }
         let remoteTicket = HanaOperationTicket(session: route.session, operation: ticket.operation)
-        guard let cancelFrame = route.helper.post(.cancel, body: HanaHelperMessage.operation(remoteTicket)) else { return }
+        let process = route.helper.process
+        guard let cancelFrame = process.post(.cancel, body: HanaHelperMessage.operation(remoteTicket)) else { return }
         let watch = HanaHelperCancelWatch(ticket: remoteTicket, issuedThrough: cancelFrame)
+        let deadline = route.helper.cancelDeadline
         let cause = "TablePro stopped the SAP HANA helper because a cancelled operation was still running "
-            + "\(Self.secondsText(cancelDeadline)) seconds later."
-        let helper = route.helper
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + cancelDeadline) { [weak helper] in
-            helper?.stop(ifStillPending: watch, cause: cause)
+            + "\(HanaHelperDuration.secondsText(deadline)) seconds later."
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + deadline) { [weak process] in
+            process?.stop(ifStillPending: watch, cause: cause)
         }
     }
 
     func close(session: UInt64) {
         guard let route = lock.withLock({ routes.removeValue(forKey: session) }) else { return }
-        route.helper.post(.close, body: HanaHelperMessage.session(route.session))
+        route.helper.process.post(.close, body: HanaHelperMessage.session(route.session))
+        route.helper.process.shutdown()
     }
 
     func shutdown() {
-        let retired = lock.withLock { () -> HanaHelperProcess? in
-            let retired = helper
-            helper = nil
+        let retired = lock.withLock { () -> [Route] in
+            let retired = Array(routes.values)
             routes.removeAll()
             return retired
         }
-        retired?.shutdown()
-    }
-
-    static func bundledExecutable() throws -> URL {
-        try HanaHelperTrust.verifiedExecutable(in: Bundle(for: HanaPluginDriver.self))
+        retired.forEach { $0.helper.process.shutdown() }
     }
 
     private func call(
@@ -102,31 +122,40 @@ final class HanaHelperBridge: HanaNativeBridge, @unchecked Sendable {
     ) throws -> Data {
         guard let route = lock.withLock({ routes[ticket.session] }) else { throw HanaBridgeFailure.closed }
         let remoteTicket = HanaOperationTicket(session: route.session, operation: ticket.operation)
-        return try route.helper.call(opcode, body: body(remoteTicket), ticket: remoteTicket)
+        return try route.helper.process.call(opcode, body: body(remoteTicket), ticket: remoteTicket)
     }
 
-    private func runningHelper() throws -> HanaHelperProcess {
-        try launchLock.withLock {
-            if let current = lock.withLock({ helper }), current.isAlive {
-                return current
-            }
-            let launched = try HanaHelperProcess.launch(
-                executable: locateExecutable(),
-                handshakeDeadline: Self.handshakeDeadline
-            )
-            let retired = lock.withLock { () -> HanaHelperProcess? in
-                let retired = helper
-                helper = launched
-                routes = routes.filter { $0.value.helper.isAlive }
-                return retired
-            }
-            retired?.shutdown()
-            Self.logger.debug("SAP HANA helper \(launched.processIdentifier) is serving this connection")
-            return launched
+    private func openSession(
+        on helper: Helper,
+        configuration: Data,
+        interruption: HanaOpenInterruption
+    ) throws -> UInt64 {
+        let seconds = HanaHelperDuration.secondsText(openDeadline)
+        let reply = try helper.process.call(
+            .open,
+            body: configuration,
+            within: openDeadline,
+            interruption: interruption,
+            lateness: "The SAP HANA helper did not answer the connection request within \(seconds) seconds."
+        )
+        return try HanaHelperMessage.openedSession(from: reply)
+    }
+
+    private func launchHelper(interruption: HanaOpenInterruption) throws -> Helper {
+        let (process, greeting) = try HanaHelperProcess.launch(
+            executable: locateExecutable(),
+            handshakeDeadline: Self.handshakeDeadline,
+            interruption: interruption
+        )
+        do {
+            try trust.verifyRunningHelper(process.processIdentifier)
+        } catch {
+            Self.logger.error("SAP HANA helper \(process.processIdentifier) failed its code signature check")
+            process.stop(cause: "TablePro stopped the SAP HANA helper because its code signature check failed.")
+            throw error
         }
-    }
-
-    private static func secondsText(_ seconds: TimeInterval) -> String {
-        seconds.rounded() == seconds ? String(Int(seconds)) : String(seconds)
+        let cancelDeadline = cancelDeadlineOverride
+            ?? Self.cancelDeadline(forcedSeverGrace: greeting.forcedSeverGrace)
+        return Helper(process: process, cancelDeadline: cancelDeadline)
     }
 }

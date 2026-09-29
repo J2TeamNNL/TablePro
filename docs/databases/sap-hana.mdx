@@ -59,9 +59,11 @@ Username and password, over HANA's SCRAM-PBKDF2-SHA256 exchange, so the password
 
 ## Running and stopping queries
 
-**Stop** sends `ALTER SYSTEM CANCEL SESSION` for your session from a second session under the same user. The statement ends with its changes rolled back, and the connection stays. If the server refuses that statement, the connection closes instead and reconnects on the schema you were using, so temporary tables and session variables are gone. [Troubleshooting](#stop-reconnects-instead-of-cancelling) names the privilege that avoids it.
+**Stop** sends `ALTER SYSTEM CANCEL SESSION` for your session from a second session under the same user. The statement ends with its changes rolled back, and the connection stays.
 
-The [query timeout](/customization/general-settings#query-timeout) ends a statement the same way, and the error says the timeout was reached.
+The connection closes instead when the server refuses that statement or takes more than 10 seconds to answer it, and when the statement is still running 30 seconds after **Stop**. If the driver itself has not answered 40 seconds after **Stop**, it is shut down. Each case reconnects on the schema you were using, without your temporary tables and session variables. [Troubleshooting](#stop-reconnects-instead-of-cancelling) says what to change.
+
+The [query timeout](/customization/general-settings#query-timeout) sends the same cancel and closes the connection in the same cases, short of shutting the driver down. When the cancel works, the error says the timeout was reached.
 
 ### Explain
 
@@ -113,7 +115,7 @@ Keep **Verify Identity** for HANA Cloud, whose certificates chain to DigiCert ro
 - Procedures, functions and triggers are not in the sidebar. Read one with `SELECT DEFINITION FROM SYS.PROCEDURES WHERE SCHEMA_NAME = 'APP' AND PROCEDURE_NAME = 'P'`, or from `SYS.FUNCTIONS` and `SYS.TRIGGERS` by their own name columns.
 - Every statement commits as it runs. A batch or a grid save that fails partway keeps the statements before the failure, so check what landed before running it again. A statement that binds a `BLOB`, `CLOB` or `NCLOB` value runs in a transaction of its own, which resets the session's `SET TRANSACTION` isolation level and access mode.
 - **matches regex** in the filter bar runs as a plain contains match. For a pattern, write `WHERE col LIKE_REGEXPR 'pattern'` in the SQL editor.
-- Export and [Copy and duplicate](/features/copy-objects) read a whole table or result into memory before writing, and stop at 5,000,000 rows. Export a larger table in slices, with a `WHERE` on a key range or `LIMIT` and `OFFSET`.
+- A single result larger than 2 GiB fails with "The SAP HANA driver failed unexpectedly." Export and [Copy and duplicate](/features/copy-objects) read a whole table or result into memory before writing, and stop at 5,000,000 rows. Export a larger table in slices, with a `WHERE` on a key range or `LIMIT` and `OFFSET`.
 - [Compare & Sync](/features/compare-sync) is not available.
 - A `CALL` with query parameters runs, but its result sets are not shown, and a procedure with `OUT` parameters is refused. Write the arguments into the statement to see the result sets.
 
@@ -141,7 +143,7 @@ Nothing answered at the host and port. Check both against the instance's SQL end
 
 ### Lost connection to the SAP HANA server.
 
-The network dropped or the server ended the session. A driver failure ends the same way: the driver runs as a separate `tablepro-hana-helper` process for each connection, so a failure drops that connection and leaves TablePro running. TablePro reconnects on its own. If it happens right after **Stop**, see [Stop reconnects instead of cancelling](#stop-reconnects-instead-of-cancelling).
+The network dropped, the server ended the session, or the driver failed. A driver failure drops that connection's session and TablePro keeps running. The connection reconnects on its own. Right after **Stop**, see [Stop reconnects instead of cancelling](#stop-reconnects-instead-of-cancelling).
 
 ### insufficient privilege: …
 
@@ -149,7 +151,7 @@ On **Query > Explain Query**, the user lacks `OPTIMIZER ADMIN`. Anywhere else, i
 
 ### Stop reconnects instead of cancelling
 
-The server refused `ALTER SYSTEM CANCEL SESSION`. SAP files stopping a session under the `SESSION ADMIN` system privilege, which reaches every other user's session too. With `GRANT SESSION ADMIN TO user` in place, Stop keeps the connection.
+The statement fails with "Lost connection to the SAP HANA server." for one of three reasons: the server refused `ALTER SYSTEM CANCEL SESSION` or did not answer it within 10 seconds, the statement was still running 30 seconds after **Stop**, or the driver had not answered 40 seconds after it. SAP files stopping a session under the `SESSION ADMIN` system privilege, which reaches every other user's session too, so check that the user holds it. With `GRANT SESSION ADMIN TO user` in place the server accepts the cancel, and a statement that takes longer than 30 seconds to stop still reconnects.
 
 ### A schema or table is missing
 

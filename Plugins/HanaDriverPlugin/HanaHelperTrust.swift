@@ -2,18 +2,57 @@ import Darwin
 import Foundation
 import Security
 
-enum HanaHelperTrust {
+struct HanaHelperTrust: Sendable {
+    typealias RunningCodeCheck = @Sendable (_ processIdentifier: pid_t, _ requirement: String) throws -> Void
+
     static let executableName = "tablepro-hana-helper"
+    static let host = HanaHelperTrust(signingTeam: runningHostTeam(), admitsUnsignedHost: isDevelopmentBuild)
 
-    private static let validationFlags = SecCSFlags(rawValue: kSecCSStrictValidate | kSecCSCheckAllArchitectures)
+    private static let staticValidationFlags = SecCSFlags(rawValue: kSecCSStrictValidate | kSecCSCheckAllArchitectures)
+    private static let dynamicValidationFlags = SecCSFlags(rawValue: kSecCSStrictValidate)
 
-    static func verifiedExecutable(in bundle: Bundle) throws -> URL {
-        guard let executable = bundle.url(forAuxiliaryExecutable: executableName) else {
-            throw untrusted("\(executableName) is missing from \(bundle.bundleURL.lastPathComponent)")
+    private static var isDevelopmentBuild: Bool {
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    let signingTeam: String?
+    let admitsUnsignedHost: Bool
+    private let checkRunningCode: RunningCodeCheck
+
+    init(
+        signingTeam: String?,
+        admitsUnsignedHost: Bool,
+        checkRunningCode: @escaping RunningCodeCheck = { try HanaHelperTrust.checkRunningCode(processIdentifier: $0, requirement: $1) }
+    ) {
+        self.signingTeam = signingTeam
+        self.admitsUnsignedHost = admitsUnsignedHost
+        self.checkRunningCode = checkRunningCode
+    }
+
+    func verifiedExecutable(in bundle: Bundle) throws -> URL {
+        let requirement = try requiredSignature()
+        guard let executable = bundle.url(forAuxiliaryExecutable: Self.executableName) else {
+            throw Self.untrusted("\(Self.executableName) is missing from \(bundle.bundleURL.lastPathComponent)")
         }
-        try verifyLocation(of: executable, inBundleAt: bundle.bundleURL)
-        try verifySignature(of: executable, bundleURL: bundle.bundleURL)
+        try Self.verifyLocation(of: executable, inBundleAt: bundle.bundleURL)
+        guard let requirement else { return executable }
+        try Self.checkStaticCode(at: executable, requirement: requirement)
         return executable
+    }
+
+    func verifyRunningHelper(_ processIdentifier: pid_t) throws {
+        guard let requirement = try requiredSignature() else { return }
+        do {
+            try checkRunningCode(processIdentifier, requirement)
+        } catch let failure as HanaBridgeFailure {
+            throw failure
+        } catch {
+            throw Self.untrusted("the running \(Self.executableName) failed its signature check: \(error.localizedDescription)")
+        }
     }
 
     static func verifyLocation(of executable: URL, inBundleAt bundleURL: URL) throws {
@@ -43,39 +82,72 @@ enum HanaHelperTrust {
         return "anchor apple generic and certificate leaf[subject.OU] = \"\(team)\""
     }
 
-    static func signingTeam(ofCodeAt url: URL) -> String? {
-        var code: SecStaticCode?
-        guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code else { return nil }
+    static func runningHostTeam() -> String? {
+        var code: SecCode?
+        guard SecCodeCopySelf([], &code) == errSecSuccess, let code else { return nil }
+        var staticCode: SecStaticCode?
+        guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode else { return nil }
         var information: CFDictionary?
-        let status = SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &information)
+        let status = SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &information)
         guard status == errSecSuccess,
               let values = information as? [String: Any],
               let team = values[kSecCodeInfoTeamIdentifier as String] as? String,
-              !team.isEmpty
+              let requirementText = requirement(forTeam: team),
+              let requirement = try? compiledRequirement(requirementText),
+              SecCodeCheckValidity(code, dynamicValidationFlags, requirement) == errSecSuccess
         else { return nil }
         return team
     }
 
-    private static func verifySignature(of executable: URL, bundleURL: URL) throws {
-        guard let team = signingTeam(ofCodeAt: bundleURL) else { return }
-        guard let requirementText = requirement(forTeam: team) else {
-            throw untrusted("the plugin's signing team identifier is not valid")
+    static func checkRunningCode(processIdentifier: pid_t, requirement text: String) throws {
+        let requirement = try compiledRequirement(text)
+        var code: SecCode?
+        let attributes = [kSecGuestAttributePid: NSNumber(value: processIdentifier)] as CFDictionary
+        let guestStatus = SecCodeCopyGuestWithAttributes(nil, attributes, [], &code)
+        guard guestStatus == errSecSuccess, let code else {
+            throw untrusted("the running \(executableName) could not be inspected (OSStatus \(guestStatus))")
         }
-        var requirement: SecRequirement?
-        guard SecRequirementCreateWithString(requirementText as CFString, [], &requirement) == errSecSuccess,
-              let requirement
-        else {
-            throw untrusted("the signing requirement for team \(team) could not be built")
+        let status = SecCodeCheckValidity(code, dynamicValidationFlags, requirement)
+        guard status == errSecSuccess else {
+            throw untrusted("the running \(executableName) does not satisfy \(text) (OSStatus \(status))")
         }
+    }
+
+    private func requiredSignature() throws -> String? {
+        guard let signingTeam else {
+            guard admitsUnsignedHost else {
+                throw Self.untrusted(
+                    "TablePro is not signed with a Team ID, so it cannot check the signature of \(Self.executableName)"
+                )
+            }
+            return nil
+        }
+        guard let requirement = Self.requirement(forTeam: signingTeam) else {
+            throw Self.untrusted("TablePro's signing Team ID is not valid")
+        }
+        return requirement
+    }
+
+    private static func checkStaticCode(at executable: URL, requirement text: String) throws {
+        let requirement = try compiledRequirement(text)
         var code: SecStaticCode?
         let createStatus = SecStaticCodeCreateWithPath(executable as CFURL, [], &code)
         guard createStatus == errSecSuccess, let code else {
             throw untrusted("\(executableName) could not be opened for signature checks (OSStatus \(createStatus))")
         }
-        let status = SecStaticCodeCheckValidity(code, validationFlags, requirement)
+        let status = SecStaticCodeCheckValidity(code, staticValidationFlags, requirement)
         guard status == errSecSuccess else {
-            throw untrusted("\(executableName) is not signed by team \(team) (OSStatus \(status))")
+            throw untrusted("\(executableName) does not satisfy \(text) (OSStatus \(status))")
         }
+    }
+
+    private static func compiledRequirement(_ text: String) throws -> SecRequirement {
+        var requirement: SecRequirement?
+        let status = SecRequirementCreateWithString(text as CFString, [], &requirement)
+        guard status == errSecSuccess, let requirement else {
+            throw untrusted("the signing requirement \(text) could not be built (OSStatus \(status))")
+        }
+        return requirement
     }
 
     private static func resolvedPath(_ path: String) -> String? {

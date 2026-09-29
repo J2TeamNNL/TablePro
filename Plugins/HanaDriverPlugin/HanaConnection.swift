@@ -119,10 +119,17 @@ final class HanaConnection: HanaSession, @unchecked Sendable {
     }
 
     private func open(_ configurationJSON: Data) async throws -> UInt64 {
-        try await withCheckedThrowingContinuation { continuation in
-            queue.submit {
-                continuation.resume(with: Result { try self.bridge.open(configuration: configurationJSON) })
+        let interruption = HanaOpenInterruption()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                queue.submit {
+                    continuation.resume(with: Result {
+                        try self.bridge.open(configuration: configurationJSON, interruption: interruption)
+                    })
+                }
             }
+        } onCancel: {
+            interruption.interrupt()
         }
     }
 

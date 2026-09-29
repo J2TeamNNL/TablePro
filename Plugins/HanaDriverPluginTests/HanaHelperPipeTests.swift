@@ -28,6 +28,28 @@ final class HanaHelperPipeTests: XCTestCase {
         try writer.close()
     }
 
+    func testAFrameLargerThanOneChunkCrossesThePipeIntact() throws {
+        let pipe = Pipe()
+        let reader = pipe.fileHandleForReading.fileDescriptor
+        let writer = pipe.fileHandleForWriting
+        let count = HanaHelperPipe.maximumChunkByteCount * 2 + 12_345
+        let block = Data((0..<65_521).map { UInt8(truncatingIfNeeded: $0 &* 31) })
+        var pattern = Data()
+        while pattern.count < count {
+            pattern.append(block)
+        }
+        let payload = Data(pattern.prefix(count))
+        DispatchQueue.global().async {
+            try? HanaHelperPipe.write(payload, to: writer.fileDescriptor)
+            try? writer.close()
+        }
+
+        let received = try HanaHelperPipe.read(exactly: count, from: reader)
+
+        XCTAssertEqual(received, .complete(payload))
+        XCTAssertEqual(try HanaHelperPipe.read(exactly: 1, from: reader), .endOfStream(receivedByteCount: 0))
+    }
+
     func testReadingReportsHowFarTheStreamGotBeforeItEnded() throws {
         let pipe = Pipe()
         try HanaHelperPipe.write(Data("abc".utf8), to: pipe.fileHandleForWriting.fileDescriptor)

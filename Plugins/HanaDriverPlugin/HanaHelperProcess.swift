@@ -5,6 +5,7 @@ import os
 final class HanaHelperProcess: @unchecked Sendable {
     static let shutdownGrace: TimeInterval = 2
     static let exitReportDeadline: TimeInterval = 2
+    static let interruptedFailure = HanaBridgeFailure(kind: .cancelled, message: "The connection attempt was cancelled.")
 
     private enum StreamEnd {
         case endOfStream
@@ -13,6 +14,8 @@ final class HanaHelperProcess: @unchecked Sendable {
     }
 
     private static let logger = Logger(subsystem: "com.TablePro", category: "HanaHelperProcess")
+    private static let interruptionCause = "TablePro stopped the SAP HANA helper because the connection attempt was cancelled."
+    private static let stoppedMessage = "TablePro stopped the SAP HANA helper."
 
     let processIdentifier: pid_t
 
@@ -26,16 +29,22 @@ final class HanaHelperProcess: @unchecked Sendable {
     private let stateLock = NSLock()
     private var lastFrameID: UInt64 = 0
     private var pendingCalls: [UInt64: HanaHelperPendingCall] = [:]
+    private var greeting: HanaHelperGreeting?
     private var deathFailure: HanaBridgeFailure?
     private var stopCause: String?
+    private var isStopping = false
     private var isShuttingDown = false
     private var isInputClosed = false
     private var isHandshaken = false
 
-    static func launch(executable: URL, handshakeDeadline: TimeInterval) throws -> HanaHelperProcess {
+    static func launch(
+        executable: URL,
+        handshakeDeadline: TimeInterval,
+        interruption: HanaOpenInterruption? = nil
+    ) throws -> (process: HanaHelperProcess, greeting: HanaHelperGreeting) {
         let helper = try HanaHelperProcess(executable: executable)
-        try helper.awaitHandshake(within: handshakeDeadline)
-        return helper
+        let greeting = try helper.awaitHandshake(within: handshakeDeadline, interruption: interruption)
+        return (helper, greeting)
     }
 
     private init(executable: URL) throws {
@@ -71,7 +80,7 @@ final class HanaHelperProcess: @unchecked Sendable {
     }
 
     var isAlive: Bool {
-        stateLock.withLock { deathFailure == nil }
+        stateLock.withLock { deathFailure == nil && !isStopping && !isShuttingDown }
     }
 
     func call(_ opcode: HanaHelperOpcode, body: Data, ticket: HanaOperationTicket?) throws -> Data {
@@ -81,10 +90,29 @@ final class HanaHelperProcess: @unchecked Sendable {
         return try pending.wait().get()
     }
 
+    func call(
+        _ opcode: HanaHelperOpcode,
+        body: Data,
+        within deadline: TimeInterval,
+        interruption: HanaOpenInterruption,
+        lateness: String
+    ) throws -> Data {
+        let pending = HanaHelperPendingCall(ticket: nil)
+        let request = try register(pending, opcode: opcode, body: body)
+        let frameID = request.header.id
+        guard watch(pending, frameID: frameID, for: interruption) else {
+            stateLock.withLock { _ = pendingCalls.removeValue(forKey: frameID) }
+            throw Self.interruptedFailure
+        }
+        defer { interruption.stopWatching() }
+        writer.sync { send(request) }
+        return try answer(to: pending, frameID: frameID, within: deadline, lateness: lateness).get()
+    }
+
     @discardableResult
     func post(_ opcode: HanaHelperOpcode, body: Data) -> UInt64? {
         let request = stateLock.withLock { () -> HanaHelperRequest? in
-            guard deathFailure == nil else { return nil }
+            guard deathFailure == nil, !isStopping, !isShuttingDown else { return nil }
             lastFrameID &+= 1
             return try? HanaHelperRequest(id: lastFrameID, opcode: opcode, body: body)
         }
@@ -117,6 +145,7 @@ final class HanaHelperProcess: @unchecked Sendable {
 
     func stop(cause: String?) {
         let isRunning = stateLock.withLock { () -> Bool in
+            isStopping = true
             if stopCause == nil {
                 stopCause = cause
             }
@@ -134,6 +163,12 @@ final class HanaHelperProcess: @unchecked Sendable {
         try stateLock.withLock {
             if let deathFailure {
                 throw deathFailure
+            }
+            guard !isShuttingDown else {
+                throw HanaBridgeFailure(kind: .closed, message: stopCause ?? Self.stoppedMessage)
+            }
+            guard !isStopping else {
+                throw HanaBridgeFailure(kind: .connectionLost, message: stopCause ?? Self.stoppedMessage)
             }
             let id = lastFrameID &+ 1
             let request: HanaHelperRequest
@@ -166,17 +201,61 @@ final class HanaHelperProcess: @unchecked Sendable {
         try? input.close()
     }
 
-    private func awaitHandshake(within deadline: TimeInterval) throws {
-        let outcome: Result<Data, HanaBridgeFailure>
-        if let answered = handshake.wait(until: .now() + deadline) {
-            outcome = answered
-        } else {
-            stop(cause: "The SAP HANA helper did not answer within \(Int(deadline)) seconds of starting.")
-            outcome = handshake.wait()
+    private func awaitHandshake(
+        within deadline: TimeInterval,
+        interruption: HanaOpenInterruption?
+    ) throws -> HanaHelperGreeting {
+        if let interruption, !watch(handshake, frameID: nil, for: interruption) {
+            stop(cause: Self.interruptionCause)
+            throw Self.interruptedFailure
         }
-        if case .failure(let failure) = outcome {
-            throw failure
+        defer { interruption?.stopWatching() }
+        let seconds = HanaHelperDuration.secondsText(deadline)
+        let lateness = "The SAP HANA helper did not answer within \(seconds) seconds of starting."
+        _ = try answer(to: handshake, frameID: nil, within: deadline, lateness: lateness).get()
+        guard let greeting = stateLock.withLock({ greeting }) else {
+            stop(cause: nil)
+            throw HanaHelperFrameError.unexpectedHandshake.failure
         }
+        return greeting
+    }
+
+    private func watch(
+        _ pending: HanaHelperPendingCall,
+        frameID: UInt64?,
+        for interruption: HanaOpenInterruption
+    ) -> Bool {
+        interruption.whenInterrupted { [weak self] in
+            self?.abandon(pending, frameID: frameID, failure: Self.interruptedFailure, cause: Self.interruptionCause)
+        }
+    }
+
+    private func answer(
+        to pending: HanaHelperPendingCall,
+        frameID: UInt64?,
+        within deadline: TimeInterval,
+        lateness: String
+    ) -> Result<Data, HanaBridgeFailure> {
+        if let answered = pending.wait(until: .now() + deadline) {
+            return answered
+        }
+        let failure = HanaBridgeFailure(kind: .internalFailure, message: lateness)
+        abandon(pending, frameID: frameID, failure: failure, cause: lateness)
+        return pending.wait()
+    }
+
+    private func abandon(
+        _ pending: HanaHelperPendingCall,
+        frameID: UInt64?,
+        failure: HanaBridgeFailure,
+        cause: String
+    ) {
+        if let frameID {
+            stateLock.withLock { _ = pendingCalls.removeValue(forKey: frameID) }
+        }
+        guard pending.complete(with: .failure(failure)) else { return }
+        Self.logger.error("SAP HANA helper \(self.processIdentifier) is being stopped: \(cause, privacy: .public)")
+        stop(cause: cause)
     }
 
     private func startThreads(errorHandle: FileHandle) {
@@ -206,6 +285,7 @@ final class HanaHelperProcess: @unchecked Sendable {
                     return .violation(.truncatedHeader(receivedByteCount: received))
                 }
                 let header = try HanaHelperFrameHeader(decoding: headerBytes)
+                try admit(header)
                 let expected = Int(header.bodyLength)
                 switch try HanaHelperPipe.read(exactly: expected, from: descriptor) {
                 case .complete(let body):
@@ -221,9 +301,18 @@ final class HanaHelperProcess: @unchecked Sendable {
         }
     }
 
+    private func admit(_ header: HanaHelperFrameHeader) throws {
+        let limit = isHandshaken ? HanaHelperReply.maximumBodyLength : HanaHelperHandshake.maximumBodyLength
+        let length = Int(header.bodyLength)
+        guard length <= limit else {
+            throw HanaHelperFrameError.frameTooLarge(byteCount: length, limit: limit)
+        }
+    }
+
     private func deliver(_ header: HanaHelperFrameHeader, body: Data) throws {
         guard isHandshaken else {
-            try HanaHelperHandshake.validate(header, body: body)
+            let greeting = try HanaHelperHandshake.greeting(from: header, body: body)
+            stateLock.withLock { self.greeting = greeting }
             isHandshaken = true
             handshake.complete(with: .success(body))
             return
@@ -255,21 +344,23 @@ final class HanaHelperProcess: @unchecked Sendable {
             stop(cause: "TablePro stopped the SAP HANA helper after reading its output failed with errno \(code).")
         }
         let report = exitReport()
-        let lostFailure = HanaBridgeFailure(kind: .connectionLost, message: report.message)
-        let violationFailure: HanaBridgeFailure?
+        let handshakeFailure: HanaBridgeFailure
         if case .violation(let violation) = end {
-            violationFailure = violation.failure
+            handshakeFailure = violation.failure
         } else {
-            violationFailure = nil
+            handshakeFailure = HanaBridgeFailure(kind: .internalFailure, message: report.message)
         }
-        let (stranded, wasShuttingDown) = stateLock.withLock { () -> ([HanaHelperPendingCall], Bool) in
-            deathFailure = lostFailure
+        let (stranded, strandedFailure, wasShuttingDown) = stateLock.withLock {
+            () -> ([HanaHelperPendingCall], HanaBridgeFailure, Bool) in
+            let kind: HanaBridgeFailure.Kind = isShuttingDown ? .closed : .connectionLost
+            let failure = HanaBridgeFailure(kind: kind, message: report.message)
+            deathFailure = failure
             let stranded = Array(pendingCalls.values)
             pendingCalls.removeAll()
-            return (stranded, isShuttingDown)
+            return (stranded, failure, isShuttingDown)
         }
-        handshake.complete(with: .failure(violationFailure ?? HanaBridgeFailure(kind: .internalFailure, message: report.message)))
-        stranded.forEach { $0.complete(with: .failure(violationFailure ?? lostFailure)) }
+        handshake.complete(with: .failure(handshakeFailure))
+        stranded.forEach { $0.complete(with: .failure(strandedFailure)) }
         writer.async { self.closeInput() }
         log(report, strandedCalls: stranded.count, wasShuttingDown: wasShuttingDown)
     }
