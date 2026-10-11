@@ -1,9 +1,9 @@
-# TablePro 0.79.0
+# TablePro 0.80.0
 
-SSH tunnel, Cloudflare Tunnel and SOCKS proxy for Weaviate, Typesense and Elasticsearch.
+Google Cloud IAM sign-in for MySQL and PostgreSQL on Cloud SQL, with no Cloud SQL Auth Proxy.
 
-An Elasticsearch connection takes several nodes and moves to the next when one stops answering.
+MySQL and MariaDB connect through a local Unix socket.
 
-MySQL 4.1 to 5.1 servers list and open their tables.
+A geometry value opens on a map in the row inspector, and the status bar shows Sum, Average and Count of the selected cells.
 
-MongoDB, Redis, etcd and SAP HANA reads run at Read-Only and skip the Alert prompt.
+Connections and groups take custom icons. Connection exports carry saved queries and open only in 0.80.0 or later.
