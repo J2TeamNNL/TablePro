@@ -23,10 +23,8 @@ sqlx = { workspace = true, features = ["sqlite-unbundled", "migrate", "macros"] 
 chrono.workspace = true
 gio.workspace = true
 glib.workspace = true
-tracing.workspace = true
 
 [dev-dependencies]
-tablepro-core = { path = "../core" }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
 

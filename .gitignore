@@ -181,9 +181,6 @@ Native/DamengBridge/lib
 .docs/
 /plans/reports
 
-# Linux dev sysroot (see linux/scripts/dev-env.sh)
-.local-deps/
-
 # Linux meson build directory
 linux/_build/
 

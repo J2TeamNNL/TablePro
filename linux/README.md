@@ -46,8 +46,11 @@ Verify the right versions are present:
 
 ```bash
 pkg-config --modversion gtk4 libadwaita-1 gtksourceview-5 glib-2.0 sqlite3   # need 4.22+ / 1.9+ / 5.18+ / 2.88+ / 3.46+
-rustc --version                                                             # need 1.98+
 ```
+
+Install Rust with [rustup](https://rustup.rs). `rust-toolchain.toml` pins
+1.98, and rustup fetches it on the first `cargo` call in this directory.
+Distribution `rustc` packages are usually older than that.
 
 Build and run:
 
@@ -55,12 +58,12 @@ Build and run:
 cd linux
 meson setup _build -Dprofile=development
 meson compile -C _build
-./_build/crates/app/tablepro
+meson devenv -C _build ./crates/app/tablepro
 ```
 
-`meson devenv -C _build cargo run -p tablepro` runs the same build through
-Cargo. Plain `cargo run -p tablepro` also works and falls back to the
-`app.tablepro.TablePro.Devel` application ID.
+`meson devenv` puts the compiled GSettings schema and the askpass helper on
+the search paths. Starting `./_build/crates/app/tablepro` outside it aborts
+with `GSettings schema app.tablepro.TablePro is not installed`.
 
 Install with `meson install -C _build`, which places the binary, the
 askpass helper, the desktop entry, the D-Bus service, the AppStream
@@ -68,8 +71,6 @@ metainfo and the icons. See
 [ADR 0006](docs/decisions/0006-meson-cargo-build.md).
 
 Before pushing, run the [fast-job commands](CONTRIBUTING.md#fast-job-commands).
-
-Optional: if the system `-dev` packages above are missing, extract the package payloads under `../.local-deps/root/` (so headers land in `../.local-deps/root/usr/include`) and `source scripts/dev-env.sh` before cargo. Debian-family layouts only.
 
 `libsqlite3-dev` is there because the SQLite driver and the query history
 link the system SQLite through sqlx's `sqlite-unbundled` feature rather
