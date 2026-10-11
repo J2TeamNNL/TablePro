@@ -29,7 +29,12 @@ struct ConnectionListView: View {
     @State private var groupPendingDeletion: ConnectionGroup?
     @State private var isConfirmingSampleReset = false
     @State private var showingFileImporter = false
-    @State private var importAfterCoverDismissal: URL?
+
+    /// Whether SwiftUI has the connection cover on screen, which is not the same question as whether
+    /// a connection is selected. Measured on iOS 27: a cover whose item the body already read is
+    /// still cancelled without a trace when a handler in the same update clears it, so only a cover
+    /// that is on screen dismisses, and only one that is on screen can be waited on.
+    @State private var isConnectionCoverOnScreen = false
     @State private var importResultCount: Int?
     @State private var actionErrorMessage: String?
     @State private var iCloudAccountAvailable = false
@@ -39,12 +44,19 @@ struct ConnectionListView: View {
         selectedConnectionIdString.flatMap { UUID(uuidString: $0) }
     }
 
+    /// The connection the cover is to show. A held restore keeps the stored id and presents nothing,
+    /// which is how a locked launch reaches Face ID before anything dials, and how a link that has
+    /// not been delivered yet keeps the stored connection from opening ahead of it. A hold postpones
+    /// a restore; it never closes a connection that is already open.
+    private var presentedConnection: DatabaseConnection? {
+        guard let id = selectedConnectionUUID,
+              presenter.presentsConnectionCover(isOnScreen: isConnectionCoverOnScreen) else { return nil }
+        return coordinatorStore.presentedRecord(for: id, in: appState.connections)
+    }
+
     private var openConnection: Binding<DatabaseConnection?> {
         Binding(
-            get: {
-                guard !presenter.holdsConnectionRestore, let id = selectedConnectionUUID else { return nil }
-                return appState.connections.first { $0.id == id }
-            },
+            get: { presentedConnection },
             set: { selectedConnectionIdString = $0?.id.uuidString }
         )
     }
@@ -153,13 +165,15 @@ struct ConnectionListView: View {
                     iCloudAccountAvailable = await appState.syncCoordinator.accountStatus() == .available
                 }
                 .task {
+                    clearUnknownSelection()
                     presenter.beginLaunch(with: appState)
                     deliverPendingIntent()
                 }
         }
-        .fullScreenCover(item: openConnection, onDismiss: presentImportAfterCoverDismissal) { connection in
+        .fullScreenCover(item: openConnection, onDismiss: connectionCoverDidDismiss) { connection in
             ConnectedView(connection: connection)
                 .id(connection.id)
+                .onAppear { isConnectionCoverOnScreen = true }
         }
         .sheet(item: $presenter.sheet, onDismiss: sheetDidDismiss) { sheet in
             sheetContent(sheet)
@@ -178,11 +192,19 @@ struct ConnectionListView: View {
         .onChange(of: presenter.holdsConnectionRestore) { _, _ in
             deliverPendingIntent()
         }
-        .onChange(of: lockState.isLocked) { _, _ in
+        .onChange(of: presenter.isHeldByEditor) { _, _ in
+            deliverPendingIntent()
+        }
+        .onChange(of: lockState.isLocked) { _, locked in
+            presenter.lockDidChange(locked)
             deliverPendingIntent()
         }
         .onChange(of: appState.loadStatus) { _, _ in
+            clearUnknownSelection()
             deliverPendingIntent()
+        }
+        .onChange(of: appState.connections) { _, _ in
+            clearUnknownSelection()
         }
         .alert(importResultMessage, isPresented: importResultPresented) {
             Button(String(localized: "OK")) { importResultCount = nil }
@@ -215,7 +237,7 @@ struct ConnectionListView: View {
             openSample: openSampleDatabase,
             turnOnICloud: !isSyncEnabled && iCloudAccountAvailable ? { appState.setCloudSyncEnabled(true) } : nil,
             importConnections: { showingFileImporter = true },
-            retrySync: { Task { await appState.syncCoordinator.sync() } },
+            performSyncAction: { appState.performSyncAction($0) },
             retryLoad: { appState.retryLoadIfFailed() }
         )
     }
@@ -229,8 +251,8 @@ struct ConnectionListView: View {
         return List(selection: $selection) {
             if let syncProblem {
                 Section {
-                    ConnectionListSyncProblemRow(error: syncProblem) {
-                        Task { await appState.syncCoordinator.sync() }
+                    ConnectionListSyncProblemRow(error: syncProblem) { action in
+                        appState.performSyncAction(action)
                     }
                 }
             }
@@ -284,7 +306,7 @@ struct ConnectionListView: View {
             Label(token.name, systemImage: "tag")
         }
         .modifier(SyncRefreshModifier(isEnabled: isSyncEnabled) {
-            await appState.syncCoordinator.sync()
+            await appState.syncCoordinator.sync(.userRequest)
         })
         .confirmationDialog(deletionTitle, isPresented: deletionPresented, titleVisibility: .visible) {
             Button(String(localized: "Delete"), role: .destructive) {
@@ -544,9 +566,15 @@ struct ConnectionListView: View {
         ToolbarItemGroup(placement: .topBarTrailing) {
             moreMenu
             if hasLibraryItems {
-                Button(isEditing ? String(localized: "Done") : String(localized: "Edit")) {
+                Button {
                     withAnimation {
                         editMode = isEditing ? .inactive : .active
+                    }
+                } label: {
+                    if isEditing {
+                        Label("Done", systemImage: "checkmark")
+                    } else {
+                        Label("Edit", systemImage: "checklist")
                     }
                 }
             }
@@ -561,15 +589,17 @@ struct ConnectionListView: View {
         if isEditing {
             ToolbarItemGroup(placement: .bottomBar) {
                 let ids = selectedConnectionIds
-                Button("Move") {
+                Button {
                     presenter.present(.moveConnections(ids))
+                } label: {
+                    Label("Move", systemImage: "folder")
                 }
                 .disabled(ids.isEmpty)
-                Spacer()
                 selectionFavoriteButton(ids)
-                Spacer()
-                Button(String(localized: "Delete"), role: .destructive) {
+                Button(role: .destructive) {
                     connectionsPendingDeletion = Set(ids)
+                } label: {
+                    Label("Delete", systemImage: "trash")
                 }
                 .disabled(ids.isEmpty)
             }
@@ -584,9 +614,9 @@ struct ConnectionListView: View {
             appState.setFavorite(selected, isFavorite: !allFavorites)
         } label: {
             if allFavorites {
-                Text("Unfavorite")
+                Label("Unfavorite", systemImage: "star.slash")
             } else {
-                Text("Favorite")
+                Label("Favorite", systemImage: "star")
             }
         }
         .disabled(ids.isEmpty)
@@ -653,26 +683,19 @@ struct ConnectionListView: View {
         case .whatsNew(let version):
             WhatsNewSheet(version: version)
         case .addConnection:
-            ConnectionFormView { connection in
-                appState.addConnection(connection)
+            ConnectionFormView { _ in
                 presenter.sheet = nil
             }
         case .editConnection(let connection):
-            ConnectionFormView(editing: connection) { updated in
-                appState.updateConnection(updated)
-                coordinatorStore.invalidate(updated.id)
+            ConnectionFormView(editing: connection) { _ in
                 presenter.sheet = nil
             }
         case .moveConnections(let ids):
             MoveToGroupSheet(connectionIds: ids)
         case .newGroup(let parentId):
-            GroupFormSheet(parentId: parentId) { group in
-                appState.addGroup(group)
-            }
+            GroupFormSheet(parentId: parentId)
         case .editGroup(let group):
-            GroupFormSheet(editing: group) { updated in
-                appState.updateGroup(updated)
-            }
+            GroupFormSheet(editing: group)
         case .tags:
             TagManagementView()
         case .settings:
@@ -836,19 +859,23 @@ struct ConnectionListView: View {
             presenter.requestTable(table, in: connectionId)
             open(connectionId)
         case .importConnections(let url):
-            guard selectedConnectionUUID != nil else {
-                presenter.present(.importFile(url))
-                return
-            }
-            importAfterCoverDismissal = url
             selectedConnectionIdString = nil
+            presenter.presentImportFile(url, coverIsOnScreen: isConnectionCoverOnScreen)
         }
     }
 
-    private func presentImportAfterCoverDismissal() {
-        guard let url = importAfterCoverDismissal else { return }
-        importAfterCoverDismissal = nil
-        presenter.present(.importFile(url))
+    private func clearUnknownSelection() {
+        guard appState.loadStatus == .ready,
+              let id = selectedConnectionUUID,
+              coordinatorStore.presentedRecord(for: id, in: appState.connections) == nil else { return }
+        selectedConnectionIdString = nil
+    }
+
+    private func connectionCoverDidDismiss() {
+        isConnectionCoverOnScreen = false
+        presenter.dismissConnectionEditor()
+        coordinatorStore.discardRemovedRecords()
+        presenter.presentHeldImport()
     }
 }
 

@@ -6,39 +6,34 @@
 import Foundation
 @testable import TablePro
 import TableProPluginKit
+import TableProSQLGrammar
 import Testing
 
 private enum AutocommitOnlyFixture {
-    static let postgres = SQLLexicalRules(dialect: .postgres)
-    static let mysql = SQLLexicalRules(dialect: .mysql)
-    static let sqlite = SQLLexicalRules(dialect: .sqlite)
-    static let sqlServer = SQLLexicalRules(
-        dialect: .generic,
-        backslashEscapes: false,
-        bracketsDelimitIdentifiers: true
-    )
+    static let sqlServer = TestGrammar.standard.union(.bracketQuotedIdentifiers)
 
     static func matches(_ statement: String, _ family: TransactionEngineFamily) -> Bool {
-        AutocommitOnlyStatement.matches(statement, family: family, rules: rules(for: family))
+        AutocommitOnlyStatement.matches(statement, family: family, grammar: grammar(for: family))
     }
 
-    static func rules(for family: TransactionEngineFamily) -> SQLLexicalRules {
+    static func grammar(for family: TransactionEngineFamily) -> SQLLexicalGrammar {
         switch family {
         case .postgres, .redshift, .cockroach:
-            return postgres
+            return TestGrammar.postgres
         case .mysql:
-            return mysql
+            return TestGrammar.mysql
         case .sqlite, .duckdb:
-            return sqlite
+            return TestGrammar.sqlite
         case .sqlServer:
             return sqlServer
+        case .oracle:
+            return TestGrammar.oracle
         case .redis, .other:
-            return SQLLexicalRules(dialect: .generic)
+            return TestGrammar.standard
         }
     }
 }
 
-@Suite("Autocommit-only statements, PostgreSQL")
 struct AutocommitOnlyStatementPostgreSQLTests {
     @Test(
         "PostgreSQL 17 refuses these inside a transaction block",
@@ -129,7 +124,6 @@ struct AutocommitOnlyStatementPostgreSQLTests {
     }
 }
 
-@Suite("Autocommit-only statements, Redshift and CockroachDB")
 struct AutocommitOnlyStatementWarehouseTests {
     @Test(
         "Redshift restricts its own statements as well as PostgreSQL's",
@@ -169,7 +163,6 @@ struct AutocommitOnlyStatementWarehouseTests {
     }
 }
 
-@Suite("Autocommit-only statements, MySQL")
 struct AutocommitOnlyStatementMySQLTests {
     @Test(
         "MySQL 8.4 and MariaDB 11.4 refuse these inside a transaction",
@@ -261,7 +254,6 @@ struct AutocommitOnlyStatementMySQLTests {
     }
 }
 
-@Suite("Autocommit-only statements, SQLite and DuckDB")
 struct AutocommitOnlyStatementEmbeddedTests {
     @Test(
         "SQLite refuses or silently ignores these inside a transaction",
@@ -341,7 +333,6 @@ struct AutocommitOnlyStatementEmbeddedTests {
     }
 }
 
-@Suite("Autocommit-only statements, SQL Server and unknown engines")
 struct AutocommitOnlyStatementSQLServerTests {
     @Test(
         "T-SQL cannot hold these in an explicit transaction",
@@ -389,5 +380,15 @@ struct AutocommitOnlyStatementSQLServerTests {
     )
     func unknownEnginesKeepTheWrap(statement: String) {
         #expect(!AutocommitOnlyFixture.matches(statement, .other))
+    }
+
+    /// Oracle has no statement it refuses inside a transaction: DDL commits the open one on its own
+    /// instead of failing, so nothing forces an Oracle batch out of the wrap.
+    @Test(
+        "Oracle keeps the wrap for every statement",
+        arguments: ["CREATE TABLE t (a NUMBER)", "ALTER SESSION SET CURRENT_SCHEMA = hr", "SET TRANSACTION READ ONLY"]
+    )
+    func oracleKeepsTheWrap(statement: String) {
+        #expect(!AutocommitOnlyFixture.matches(statement, .oracle))
     }
 }

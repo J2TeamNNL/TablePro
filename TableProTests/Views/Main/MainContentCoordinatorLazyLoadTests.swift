@@ -14,7 +14,6 @@ import Testing
 
 @testable import TablePro
 
-@Suite("MainContentCoordinator lazyLoadCurrentTabIfNeeded")
 @MainActor
 struct MainContentCoordinatorLazyLoadTests {
     private func makeCoordinator() -> (MainContentCoordinator, QueryTabManager) {
@@ -120,6 +119,42 @@ struct MainContentCoordinatorLazyLoadTests {
         coordinator.lazyLoadCurrentTabIfNeeded()
         #expect(coordinator.pendingLoadTrigger == nil)
         #expect(coordinator.tabSessionRegistry.tableRows(for: tabId).rows.count == 5)
+    }
+
+    @Test("A tab whose table changed after its rows were fetched asks to load again")
+    func loadsAStaleTabWithRows() {
+        let (coordinator, tabManager) = makeCoordinator()
+        let tabId = addTableTab(to: tabManager)
+        seedRows(coordinator, for: tabId, rowCount: 5)
+        guard let idx = tabManager.tabs.firstIndex(where: { $0.id == tabId }) else {
+            Issue.record("expected tab to exist")
+            return
+        }
+        tabManager.tabs[idx].execution.lastExecutedAt = Date()
+        coordinator.tabSessionRegistry.recordChange(TableFreshness.Change(extent: .rows, at: .now), for: tabId)
+
+        coordinator.lazyLoadCurrentTabIfNeeded()
+
+        #expect(coordinator.pendingLoadTrigger == .userInitiated)
+        #expect(coordinator.tabSessionRegistry.tableRows(for: tabId).rows.count == 5)
+    }
+
+    @Test("A stale tab holding edits is not reloaded behind the user")
+    func skipsAStaleTabWithPendingEdits() {
+        let (coordinator, tabManager) = makeCoordinator()
+        let tabId = addTableTab(to: tabManager)
+        seedRows(coordinator, for: tabId, rowCount: 1)
+        guard let idx = tabManager.tabs.firstIndex(where: { $0.id == tabId }) else {
+            Issue.record("expected tab to exist")
+            return
+        }
+        tabManager.tabs[idx].execution.lastExecutedAt = Date()
+        tabManager.tabs[idx].pendingChanges.deletedRowIDs = [.existing(0)]
+        coordinator.tabSessionRegistry.recordChange(TableFreshness.Change(extent: .rows, at: .now), for: tabId)
+
+        coordinator.lazyLoadCurrentTabIfNeeded()
+
+        #expect(coordinator.pendingLoadTrigger == nil)
     }
 
     @Test("Returns early when tab has pending edits in the change manager")
@@ -254,6 +289,26 @@ struct MainContentCoordinatorLazyLoadTests {
 
         #expect(coordinator.deferredRestoreLoadTabId == nil)
         #expect(coordinator.pendingLoadTrigger == .restore)
+    }
+
+    /// A link or an agent can select another tab before the restored window comes forward. The
+    /// deferral used to outlive that, and refused every later load of the deferred tab, including
+    /// a table opened into it from the sidebar.
+    @Test("Becoming key ends a deferral even when another tab is selected")
+    func becomingKeyEndsADeferralForAnUnselectedTab() {
+        let (coordinator, tabManager) = makeCoordinator()
+        let deferredId = addTableTab(to: tabManager)
+        _ = addTableTab(to: tabManager, tableName: "orders", query: "SELECT * FROM orders")
+        coordinator.deferredRestoreLoadTabId = deferredId
+
+        coordinator.handleWindowDidBecomeKey()
+        #expect(coordinator.deferredRestoreLoadTabId == nil)
+
+        tabManager.selectedTabId = deferredId
+        coordinator.pendingLoadTrigger = nil
+        coordinator.lazyLoadCurrentTabIfNeeded()
+
+        #expect(coordinator.pendingLoadTrigger == .userInitiated)
     }
 
     // MARK: - Idempotency

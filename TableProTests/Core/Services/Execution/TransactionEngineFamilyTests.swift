@@ -7,7 +7,6 @@ import Foundation
 @testable import TablePro
 import Testing
 
-@Suite("Transaction engine family")
 struct TransactionEngineFamilyTests {
     @Test(
         "Every PostgreSQL-compatible engine reads the PostgreSQL rules",
@@ -50,16 +49,28 @@ struct TransactionEngineFamilyTests {
 
     @Test(
         "An engine with no curated rules falls back to keeping the wrap",
-        arguments: ["Databend", "Cloudflare D1", "Oracle", "ClickHouse", "MongoDB", "FutureDB"]
+        arguments: ["Databend", "Cloudflare D1", "Snowflake", "ClickHouse", "MongoDB", "FutureDB"]
     )
     func unknownEnginesFallBack(typeId: String) {
         #expect(TransactionEngineFamily.of(DatabaseType(rawValue: typeId)) == .other)
     }
 
-    @Test("Only SQLite opens a transaction with a savepoint")
-    func savepointOpensATransactionOnSQLiteAlone() {
+    @Test("Oracle reads its own rules")
+    func oracleIsItsOwnFamily() {
+        #expect(TransactionEngineFamily.of(.oracle) == .oracle)
+    }
+
+    @Test("Only SQLite and Oracle open a transaction with a savepoint")
+    func savepointOpensATransactionOnSQLiteAndOracle() {
         for family in TransactionEngineFamily.allCases {
-            #expect(family.savepointOpensTransaction == (family == .sqlite))
+            #expect(family.savepointOpensTransaction == (family == .sqlite || family == .oracle))
+        }
+    }
+
+    @Test("Only Oracle opens a transaction with SET TRANSACTION")
+    func setTransactionOpensATransactionOnOracleAlone() {
+        for family in TransactionEngineFamily.allCases {
+            #expect(family.setTransactionOpensTransaction == (family == .oracle))
         }
     }
 

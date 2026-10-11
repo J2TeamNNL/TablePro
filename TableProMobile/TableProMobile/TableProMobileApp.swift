@@ -4,6 +4,7 @@ import SwiftUI
 import TableProAnalytics
 import TableProDatabase
 import TableProModels
+import TableProSyncTransport
 
 @main
 struct TableProMobileApp: App {
@@ -24,11 +25,12 @@ struct TableProMobileApp: App {
 
     var body: some Scene {
         WindowGroup {
-            SceneRootView(connectionManager: appState.connectionManager)
+            SceneRootView(
+                connectionManager: appState.connectionManager,
+                isLockedAtLaunch: lockState.isLocked
+            )
                 .environment(appState)
                 .environment(lockState)
-                .hostKeyPrompt()
-                .entraSignInPrompt()
         }
         .onChange(of: scenePhase) { _, phase in
             guard !TestRuntime.isActive else { return }
@@ -42,7 +44,7 @@ struct TableProMobileApp: App {
                 if appState.onboarding.isCloudSyncEnabled && appState.loadStatus == .ready {
                     syncTask?.cancel()
                     syncTask = Task {
-                        await appState.syncCoordinator.sync()
+                        await appState.syncCoordinator.sync(.activation)
                     }
                 }
                 startHeartbeatIfConsented()
@@ -98,7 +100,7 @@ struct TableProMobileApp: App {
         do {
             try BGTaskScheduler.shared.submit(request)
         } catch {
-            Self.backgroundLogger.warning("Failed to schedule background sync: \(error.localizedDescription, privacy: .public)")
+            Self.backgroundLogger.warning("Failed to schedule background sync: \(error.localizedDescription, privacy: .private)")
         }
     }
 
@@ -113,7 +115,7 @@ struct TableProMobileApp: App {
             return
         }
         Self.backgroundLogger.info("Background sync starting")
-        await appState.syncCoordinator.sync()
+        await appState.syncCoordinator.sync(.activation)
         Self.backgroundLogger.info("Background sync completed")
     }
 }

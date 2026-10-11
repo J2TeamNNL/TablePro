@@ -15,6 +15,7 @@
 import Foundation
 @testable import TablePro
 import TableProPluginKit
+import TableProSQLGrammar
 import Testing
 
 @Suite("Tab query isolation", .serialized)
@@ -64,9 +65,10 @@ struct TabQueryIsolationTests {
     @Test("Explaining in another tab leaves the first tab's batch alone")
     func explainLeavesTheOtherTabAlone() async {
         await withTwoTabs { coordinator, _, _ in
-            coordinator.runExplain(
+            coordinator.executionGate = AlwaysAllowGate()
+            await coordinator.runExplain(
                 variant: ExplainVariant(id: "plain", label: "Explain", sqlPrefix: "EXPLAIN")
-            )
+            )?.value
         }
     }
 
@@ -209,13 +211,13 @@ struct TabQueryIsolationTests {
     private func withTwoTabs(
         selectedIsTable: Bool = false,
         startsExecution: Bool = true,
-        _ start: (MainContentCoordinator, RunningTab, UUID) -> Void
+        _ start: (MainContentCoordinator, RunningTab, UUID) async -> Void
     ) async {
         let harness = makeHarness(selectedIsTable: selectedIsTable)
         defer { harness.tearDown() }
         let running = harness.running
 
-        start(harness.coordinator, running, harness.selectedTabId)
+        await start(harness.coordinator, running, harness.selectedTabId)
 
         /// Without this the case could pass by doing nothing at all, which is what a start path that
         /// silently returns early looks like from the other tab.

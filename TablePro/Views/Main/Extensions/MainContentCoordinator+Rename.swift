@@ -82,6 +82,7 @@ extension MainContentCoordinator {
             /// is, so its leases on that database are closed first.
             if let database = ref.database {
                 MetadataConnectionPool.shared.closeAll(connectionId: connectionId, database: database)
+                DatabaseManager.shared.sessionLanes.close(database: database, for: connectionId)
             }
             guard let scope = browseScope else { throw DatabaseError.notConnected }
             let route = DatabaseManager.shared.executionRoute(for: scope)
@@ -112,7 +113,7 @@ extension MainContentCoordinator {
     /// statement, and for MongoDB and SQL Server there is no statement to show. The two names are
     /// what the user is being asked to approve, and the description carries both.
     private func authorizeRename(describing description: String) async -> Bool {
-        let decision = await ExecutionGateProvider.shared.authorize(
+        let decision = await executionGate.authorize(
             OperationRequest(
                 connectionId: connectionId,
                 databaseType: connection.type,

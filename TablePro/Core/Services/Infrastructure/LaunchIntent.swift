@@ -8,17 +8,25 @@ import TableProImport
 
 internal enum LaunchIntent: @unchecked Sendable {
     case openConnection(UUID)
-    case openTable(connectionId: UUID, database: String?, schema: String?, table: String, isView: Bool)
+    case openTable(
+        connectionId: UUID,
+        database: String?,
+        schema: String?,
+        table: String,
+        isView: Bool,
+        objectType: TableInfo.TableType? = nil
+    )
     case openQuery(connectionId: UUID, sql: String)
-    /// Open a connection in Agent mode, optionally carrying the question the user already typed.
     case openAgentSession(connectionId: UUID, prompt: String?)
-    case importConnection(ExportableConnection)
+    case importConnection(ConnectionBundle)
     case openSQLFile(URL)
     case openDatabaseFile(URL, DatabaseType)
-    case openInspectorFile(URL)
+    case openDataFile(URL)
     case openConnectionShare(URL)
     case pairIntegration(PairingRequest)
     case startMCPServer
+    /// nil opens the last-used pane.
+    case openSettings(SettingsPane?)
     case openDatabaseURL(URL)
     case installPlugin(URL)
     case reopenClosedTab(RecentlyClosedTabEntry)
@@ -27,7 +35,7 @@ internal enum LaunchIntent: @unchecked Sendable {
     internal var targetConnectionId: UUID? {
         switch self {
         case .openConnection(let id),
-             .openTable(let id, _, _, _, _),
+             .openTable(let id, _, _, _, _, _),
              .openQuery(let id, _),
              .openAgentSession(let id, _):
             return id
@@ -36,12 +44,13 @@ internal enum LaunchIntent: @unchecked Sendable {
         case .openSampleDatabase,
              .openDatabaseURL,
              .openDatabaseFile,
-             .openInspectorFile,
+             .openDataFile,
              .openSQLFile,
              .importConnection,
              .openConnectionShare,
              .pairIntegration,
              .startMCPServer,
+             .openSettings,
              .installPlugin:
             return nil
         }

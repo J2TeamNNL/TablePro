@@ -439,11 +439,11 @@ extension WelcomeViewModel {
             ClipboardService.shared.writeSecretText(connectionString(for: connection))
         case .copyTableProLink(let id):
             guard let connection = connectionsById[id],
-                  let link = ConnectionExportService.buildImportDeeplink(for: connection) else { return }
+                  let link = ConnectionShareLink.deeplink(for: connection) else { return }
             ClipboardService.shared.writeText(link)
         case .copyJSON(let id):
             guard let connection = connectionsById[id] else { return }
-            ClipboardService.shared.writeText(ConnectionExportService.buildCompactJSON(for: connection))
+            ClipboardService.shared.writeText(ConnectionShareLink.compactJSON(for: connection))
         case .exportToFile(let ids):
             exportConnections(ids.compactMap { connectionsById[$0] })
         case .publishToTeamCatalog(let ids):
@@ -467,6 +467,8 @@ extension WelcomeViewModel {
             NSWorkspace.shared.activateFileViewerSelecting([linked.sourceFileURL])
         case .newSubgroup(let parentId):
             requestNewGroup(parentId: parentId, movingConnectionIds: [])
+        case .editGroup(let id):
+            requestEditGroup(id)
         case .setGroupColor(let id, let color):
             setGroupColor(id, color)
         case .moveGroup(let id, let parentId):

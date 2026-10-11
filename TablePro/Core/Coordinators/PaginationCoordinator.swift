@@ -10,6 +10,7 @@ import os
 import TableProPluginKit
 
 private let progressLog = Logger(subsystem: "com.TablePro", category: "ProgressiveLoad")
+private let exactCountLog = Logger(subsystem: "com.TablePro", category: "ExactRowCount")
 
 @MainActor
 final class PaginationCoordinator: ObservableObject {
@@ -170,6 +171,9 @@ final class PaginationCoordinator: ObservableObject {
         let schemaName = tab.tableContext.schemaName
         let filters = tab.filterState.hasAppliedFilters ? tab.filterState.appliedFilters : []
         let logicMode = tab.filterState.filterLogicMode
+        /// A browse narrowed by the plugin's own search runs that search instead of the table
+        /// filters, so the count has to read the same search or it counts the whole table.
+        let browseFilters = parent.filterCoordinator.activeBrowseSearch(for: tab.filterState)?.pluginQueryFilters
         let isNonSQL = PluginManager.shared.editorLanguage(for: parent.connection.type) != .sql
         let queryColumns = parent.queryColumns(for: tab)
         let countSQL = isNonSQL ? nil : parent.queryBuilder.buildFilteredCountQuery(
@@ -189,11 +193,12 @@ final class PaginationCoordinator: ObservableObject {
         let token = UUID()
         parent.claimExactCount(for: tabId, token: token)
         let task = Task(priority: .userInitiated) { [parent] in
-            let count = await Self.exactRowCount(
+            let outcome = await Self.exactRowCount(
                 scope: scope,
                 tableName: tableName,
                 filters: filters,
                 logicMode: logicMode,
+                browseFilters: browseFilters,
                 countSQL: countSQL
             )
 
@@ -210,25 +215,54 @@ final class PaginationCoordinator: ObservableObject {
                 if ownsIndicator {
                     tab.pagination.isCountingExact = false
                 }
-                guard isCurrent, let count, count >= 0 else { return }
-                tab.pagination.totalRowCount = count
-                tab.pagination.isApproximateRowCount = false
+                guard isCurrent else { return }
+                Self.applyExactCount(outcome, to: &tab)
             }
         }
         parent.setRowCountTask(task, token: token, for: tabId)
     }
 
+    static func applyExactCount(_ outcome: Result<Int?, Error>, to tab: inout QueryTab) {
+        switch outcome {
+        case .success(let count):
+            if let shown = tab.pagination.exactCountError, tab.execution.errorMessage == shown {
+                tab.execution.errorMessage = nil
+            }
+            tab.pagination.exactCountError = nil
+            guard let count, count >= 0 else { return }
+            tab.pagination.totalRowCount = count
+            tab.pagination.isApproximateRowCount = false
+        case .failure(let error):
+            guard !DatabaseCancellationDiagnosis.isCancellation(error) else { return }
+            let message = DatabaseWriteRejectionDiagnosis.formatted(error)
+            tab.execution.errorMessage = message
+            tab.pagination.exactCountError = message
+        }
+    }
+
+    /// The user asked for this count, so a failure is shown on the tab rather than dropped: an engine whose count
+    /// only its driver can run, such as a throttled DynamoDB scan, has no other answer to fall back on.
     private static func exactRowCount(
         scope: DatabaseScope,
         tableName: String,
         filters: [TableFilter],
         logicMode: FilterLogicMode,
+        browseFilters: [PluginQueryFilter]?,
         countSQL: String?
-    ) async -> Int? {
-        try? await DatabaseManager.shared.withMetadataDriver(scope: scope, workload: .bulk) { driver in
-            try await ExactRowCounter.count(
-                on: driver, table: tableName, filters: filters, logicMode: logicMode, countSQL: countSQL
-            )
+    ) async -> Result<Int?, Error> {
+        do {
+            let count = try await DatabaseManager.shared.withMetadataDriver(scope: scope, workload: .bulk) { driver in
+                if let browseFilters {
+                    return try await driver.fetchExactRowCount(table: tableName, browseFilters: browseFilters)
+                }
+                return try await ExactRowCounter.count(
+                    on: driver, table: tableName, filters: filters, logicMode: logicMode, countSQL: countSQL
+                )
+            }
+            return .success(count)
+        } catch {
+            exactCountLog.warning("Exact row count failed: \(error.publicLogShape, privacy: .public)")
+            return .failure(error)
         }
     }
 
@@ -353,7 +387,7 @@ final class PaginationCoordinator: ObservableObject {
                     guard let idx = parent.tabManager.tabs.firstIndex(where: { $0.id == tabId }) else { return }
 
                     let replaceDelta = parent.mutateActiveTableRows(for: tabId) { rows in
-                        rows.replace(rows: result.rows)
+                        rows.replace(rows: result.rows, rowLocators: isTableTab ? result.rowLocators : nil, absentCells: result.absentCells)
                     }
                     parent.tabManager.mutate(at: idx) { tab in
                         tab.execution.executionTime = result.executionTime

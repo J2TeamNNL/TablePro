@@ -37,20 +37,23 @@ To run the whole tab, press `Cmd+Shift+Enter`, choose **Run All Statements** fro
 
 A batch runs top to bottom and stops at the first statement that fails. The error names its place in the run: "Statement 3/5 failed: …". Each statement gets its own result, and each is recorded separately in [query history](/features/query-history).
 
+A SQL Server script runs a batch at a time instead, cut at its `GO` lines, so a `DECLARE`d variable reaches every statement after it. See [Scripts and batches](/databases/mssql#scripts-and-batches).
+
 ### Which transaction the batch runs in
 
 | The batch | Runs in | A failure or Stop |
 |---|---|---|
 | Ordinary statements | A transaction TablePro opens and commits | Everything rolls back |
-| One that manages its own: `BEGIN`, `START TRANSACTION`, `XA START`, `SET autocommit`, `SET IMPLICIT_TRANSACTIONS ON` on SQL Server, `SAVEPOINT` on SQLite | The script's own transaction | The transaction it left open is rolled back |
+| One that manages its own: `BEGIN`, `START TRANSACTION`, `XA START`, `SET autocommit`, `SAVEPOINT` on SQLite, `SET TRANSACTION` on Oracle | The script's own transaction | The transaction it left open is rolled back |
 | One holding a [statement a transaction cannot hold](#statements-a-transaction-cannot-hold) | No transaction | Each statement that ran stays applied, and the banner counts them |
+| A script on SQL Server | No transaction, unless the script opens one with `BEGIN TRAN` | What ran stays applied, and a transaction the script left open is reported |
 | Anything, on a connection that already has a transaction open | That transaction | The transaction stays open and the message says so |
 
-The last row wins over the other three. The open transaction comes from a `BEGIN` you ran with `Cmd+Enter`, a `SET autocommit = 0`, `LOCK TABLES` on MySQL or MariaDB, or an [MCP client's](/external-api/mcp-tools) `begin`, and a batch that joins it sends no `BEGIN`, `COMMIT` or `ROLLBACK` at all: the script's own text decides, so a script ending in `COMMIT` commits. Where a failed statement has left the transaction unable to commit, the message says to roll it back rather than offering the choice. A `BEGIN` left running here reaches the rest of the window too, so a grid save and a **Users & Roles** apply land inside it.
+The last row wins over the rest. The open transaction comes from a `BEGIN` you ran with `Cmd+Enter`, a `SET autocommit = 0`, `LOCK TABLES` on MySQL or MariaDB, a `SET TRANSACTION`, `SAVEPOINT` or `LOCK TABLE` on Oracle, or an [MCP client's](/developers/mcp-tools) `begin`, and a batch that joins it sends no `BEGIN`, `COMMIT` or `ROLLBACK` at all: the script's own text decides, so a script ending in `COMMIT` commits. Where a failed statement has left the transaction unable to commit, the message says to roll it back rather than offering the choice. A `BEGIN` left running here reaches the rest of the window too, so a grid save and a **Users & Roles** apply land inside it.
 
-PostgreSQL, Redshift, CockroachDB, MySQL, MariaDB, TiDB, SQLite, DuckDB and SQL Server report what their session holds. Anywhere else there is no answer to be had, so a plain batch is wrapped as it always was and a self-managed script is left alone after a failure, since the transaction its text opened may well predate the run.
+PostgreSQL, Redshift, CockroachDB, MySQL, MariaDB, TiDB, SQLite, DuckDB, SQL Server and Oracle report what their session holds. Anywhere else there is no answer to be had, so a plain batch is wrapped as it always was and a self-managed script is left alone after a failure, since the transaction its text opened may well predate the run.
 
-Two things survive a rollback in any of those four cases. MySQL and MariaDB commit a `CREATE`, `ALTER` or `DROP` the moment it runs, along with everything before it, and CockroachDB commits the open transaction before it processes any DDL at all.
+Two things survive a rollback in any of those four cases. MySQL, MariaDB and Oracle commit a `CREATE`, `ALTER` or `DROP` the moment it runs, along with everything before it, and CockroachDB commits the open transaction before it processes any DDL at all.
 
 ### Statements a transaction cannot hold
 
@@ -90,7 +93,7 @@ The editor marks which statement it is about to send.
 - Move the pointer over the gutter and a run button appears beside every statement. Click one to run that statement while the cursor is elsewhere. Their column is reserved at all times, so revealing them never shifts the text.
 - A run button takes the same [safe mode](/features/safe-mode) checks and [parameter](/features/query-parameters) prompts as any other run, and dims while a query is running.
 - VoiceOver reads each button as a button naming the line its statement starts on.
-- A `BEGIN … END` body counts as one statement, so a trigger or stored procedure gets one button rather than one per line inside it. `BEGIN;` and `BEGIN TRANSACTION;` are statements of their own.
+- A `BEGIN … END` body counts as one statement, so a trigger or stored procedure gets one button rather than one per line inside it. `BEGIN;` and `BEGIN TRANSACTION;` are statements of their own. On Oracle, a whole [PL/SQL block or unit](/databases/oracle#pl%2Fsql) is one statement.
 
 Turn either marker off in **Settings > Editor** with **Highlight current statement** and **Run button beside each statement**.
 
@@ -153,6 +156,8 @@ Full-width letters and digits inside a name written in another script, such as `
 
 Text between `'`, `"` or `` ` `` quotes and text in a `--` or `/* */` comment is not checked. Neither is a `#` comment on MySQL and MariaDB, a `$$` body on PostgreSQL, or a `[bracketed]` name on SQL Server and SQLite. On other engines, a `#` comment, a `$$` body or a bracketed name is checked like the rest of the query.
 
+On Elasticsearch, Typesense and Weaviate the request body is checked and the request line is not, so the `/*` in `GET /_cat/indices/*` is a wildcard, not a comment. Redis and etcd commands are not checked, because a bracket in an argument is plain text.
+
 A half-written statement is never flagged. An opener you have not closed yet, a string you are still typing, and brackets inside a string or a comment are all left alone. Documents over 100,000 characters are not checked at all.
 
 Switching tabs or loading a query checks the new text the same way, without a keystroke. Rest the pointer on an underline to read its message. In VoiceOver, the rotor lists every underline under **Query Issues**, each read with its message.
@@ -168,6 +173,8 @@ PostgreSQL, Redshift and CockroachDB reconnect the session to change database, s
 ## Find and replace
 
 Press `Cmd+F` to open the find panel, `Cmd+G` and `Cmd+Shift+G` to walk the matches. Switch the panel to Replace mode to replace the current match or all of them. Match modes are contains, matches word, starts with, ends with, and regular expression, each with match case and wrap around toggles.
+
+Replace moves on to the next match. All replaces every match in one step, and one `Cmd+Z` undoes it. With a regular expression, `$1` in the replacement inserts the first capture group. A read-only editor offers find only.
 
 The editor also carries multiple cursors, for editing several places at once.
 
@@ -195,6 +202,8 @@ GROUP BY u.id, u.name
 HAVING COUNT(o.id) > 5
 ORDER BY order_count DESC;
 ```
+
+In an Elasticsearch, Typesense or Weaviate console, formatting indents each JSON request body and leaves the request line as typed. A body that is not a single JSON value, such as a `_bulk` body or a GraphQL query, is left alone. Redis and etcd commands, SurrealQL and KafkaQL have no formatter, so Format is not offered there.
 
 ## Invisible characters
 
@@ -226,7 +235,7 @@ To hide the marks in the editor, turn off **Show invisible characters** in **Set
 
 ## AI assistance
 
-**Explain with AI** (`Cmd+L`) explains the query at the cursor and **Optimize with AI** (`Cmd+Option+L`) suggests improvements. When a query fails, **Fix with AI** in the error banner rewrites it. Inline suggestions complete your SQL as ghost text: `Tab` accepts, `Escape` dismisses. See [AI Assistant](/features/ai-assistant) for setup.
+**Review** in the query bar sends the statement at the cursor, with the structure of the tables it names, for a review. Its menu holds **Explain with AI** (`Cmd+L`) and **Optimize with AI** (`Cmd+Option+L`), which send the same statement. When a query fails, **Fix with AI** in the error banner rewrites it. Inline suggestions complete your SQL as ghost text: `Tab` accepts, `Escape` dismisses. See [AI Assistant](/features/ai-assistant#review-explain-optimize-and-fix) for what each action sends.
 
 For the execution plan rather than an opinion, press `Cmd+Option+E` and see [Explain Visualization](/features/explain-visualization).
 

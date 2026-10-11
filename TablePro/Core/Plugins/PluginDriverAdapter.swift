@@ -10,13 +10,28 @@ import TableProNumberFormatting
 import TableProPluginKit
 
 final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseReporting {
+    private struct ConnectAttempt {
+        let generation: UInt64
+        let gate: ConnectionSingleResumeGate<Void>
+        var task: Task<Void, Never>?
+        var isAbandoned = false
+    }
+
     private struct State {
         var status: ConnectionStatus = .disconnected
         var columnTypeCache: [String: ColumnType] = [:]
+        var nextConnectGeneration: UInt64 = 0
+        var connectAttempt: ConnectAttempt?
+        var connectionMayBeOpen = false
+        var disconnectInProgress = false
     }
 
     let connection: DatabaseConnection
+    let effectiveQueryTimeoutSeconds: Int
     private let pluginDriver: any PluginDatabaseDriver
+    private let connectionDeadline: ConnectionDeadline
+    private let timeoutEndpoint: ConnectionTimeoutEndpoint
+    private let requiresHostDeadline: Bool
     private let classifier = ColumnTypeClassifier()
     private let state = OSAllocatedUnfairLock(initialState: State())
 
@@ -29,28 +44,8 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
     }
 
     var serverVersion: String? { pluginDriver.serverVersion }
+    var sessionLexicalState: PluginSessionLexicalState? { pluginDriver.sessionLexicalState }
     var parameterStyle: ParameterStyle { pluginDriver.parameterStyle }
-
-    func pluginGenerateStatements(
-        table: String,
-        columns: [String],
-        primaryKeyColumns: [String],
-        changes: [PluginRowChange],
-        insertedRowData: [Int: [String?]],
-        deletedRowIndices: Set<Int>,
-        insertedRowIndices: Set<Int>
-    ) -> [(statement: String, parameters: [String?])]? {
-        let pluginRowData = insertedRowData.mapValues { row in
-            row.map(PluginCellValue.fromOptional)
-        }
-        let result = pluginDriver.generateStatements(
-            table: table, columns: columns, primaryKeyColumns: primaryKeyColumns, changes: changes,
-            insertedRowData: pluginRowData,
-            deletedRowIndices: deletedRowIndices,
-            insertedRowIndices: insertedRowIndices
-        )
-        return result?.map { (statement: $0.statement, parameters: $0.parameters.map { $0.asText }) }
-    }
 
     /// The underlying plugin driver, exposed for DDL schema generation delegation.
     var schemaPluginDriver: any PluginDatabaseDriver { pluginDriver }
@@ -122,9 +117,24 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         }
     }
 
-    init(connection: DatabaseConnection, pluginDriver: any PluginDatabaseDriver) {
+    init(
+        connection: DatabaseConnection,
+        pluginDriver: any PluginDatabaseDriver,
+        deadline: ConnectionDeadline? = nil,
+        timeoutEndpoint: ConnectionTimeoutEndpoint? = nil,
+        effectiveQueryTimeoutSeconds: Int? = nil,
+        requiresHostDeadline: Bool? = nil
+    ) {
         self.connection = connection
         self.pluginDriver = pluginDriver
+        self.connectionDeadline = deadline ?? ConnectionDeadline(configuredSeconds: connection.connectTimeoutSeconds)
+        self.timeoutEndpoint = timeoutEndpoint ?? .database(connection.timeoutEndpointName)
+        self.requiresHostDeadline = requiresHostDeadline
+            ?? ConnectionTimeoutPolicy.requiresHostDeadline(for: connection)
+        self.effectiveQueryTimeoutSeconds = ConnectionTimeoutPolicy.effectiveQueryTimeoutSeconds(
+            configuredSeconds: effectiveQueryTimeoutSeconds ?? connection.queryTimeoutSeconds,
+            globalSeconds: 0
+        )
     }
 
     // MARK: - Connection Management
@@ -134,19 +144,190 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
     }
 
     func connectReporting(stage report: @escaping ConnectionStageReporter) async throws {
-        state.withLock { $0.status = .connecting }
+        guard state.withLock({
+            $0.connectAttempt == nil && !$0.connectionMayBeOpen && !$0.disconnectInProgress
+        }) else {
+            throw DatabaseError.connectionFailed(String(localized: "This driver is already connecting or connected."))
+        }
+        if requiresHostDeadline {
+            try connectionDeadline.check(endpoint: timeoutEndpoint)
+        }
+        let gate = ConnectionSingleResumeGate<Void>()
+        let generation = state.withLock { state -> UInt64? in
+            guard state.connectAttempt == nil, !state.connectionMayBeOpen, !state.disconnectInProgress else {
+                return nil
+            }
+            state.nextConnectGeneration &+= 1
+            let generation = state.nextConnectGeneration
+            state.status = .connecting
+            state.connectAttempt = ConnectAttempt(generation: generation, gate: gate)
+            return generation
+        }
+        guard let generation else {
+            throw DatabaseError.connectionFailed(String(localized: "This driver is already connecting or connected."))
+        }
+
+        let guardedReport: ConnectionStageReporter = { [weak self] stage in
+            guard let self, self.isCurrentConnect(generation) else { return }
+            report(stage)
+        }
+
+        let operation = Task { [self] in
+            do {
+                try await pluginDriver.connect(reportingStage: guardedReport)
+                let adopted = gate.resume(with: .success(()))
+                finishConnect(generation: generation, succeeded: true, adopted: adopted, error: nil)
+            } catch {
+                let adopted = gate.resume(with: .failure(error))
+                finishConnect(generation: generation, succeeded: false, adopted: adopted, error: error)
+            }
+        }
+        attach(operation, to: generation)
+
+        let timeout: Task<Void, Never>?
+        if requiresHostDeadline {
+            timeout = Task { [self] in
+                do {
+                    try await ContinuousClock().sleep(until: connectionDeadline.instant)
+                } catch {
+                    return
+                }
+                abandonConnect(
+                    generation: generation,
+                    gate: gate,
+                    error: connectionDeadline.timeoutError(for: timeoutEndpoint)
+                )
+            }
+        } else {
+            timeout = nil
+        }
+
         do {
-            try await pluginDriver.connect(reportingStage: report)
-            state.withLock { $0.status = .connected }
+            try await withTaskCancellationHandler(
+                operation: { try await gate.wait() },
+                onCancel: { [self] in
+                    abandonConnect(generation: generation, gate: gate, error: CancellationError())
+                }
+            )
+            timeout?.cancel()
+            await operation.value
+            guard state.withLock({ $0.status == .connected && $0.connectionMayBeOpen }) else {
+                throw CancellationError()
+            }
+            try Task.checkCancellation()
         } catch {
-            state.withLock { $0.status = .error(error.localizedDescription) }
+            timeout?.cancel()
+            if error is CancellationError {
+                disconnect()
+            }
+            state.withLock { state in
+                guard let attempt = state.connectAttempt, attempt.generation == generation else { return }
+                state.status = attempt.isAbandoned
+                    ? .disconnected
+                    : .error(error.localizedDescription)
+            }
             throw error
         }
     }
 
     func disconnect() {
+        let action = state.withLock { state -> (ConnectAttempt?, Bool) in
+            state.status = .disconnected
+            if var attempt = state.connectAttempt {
+                attempt.isAbandoned = true
+                state.connectAttempt = attempt
+                return (attempt, false)
+            }
+            guard state.connectionMayBeOpen, !state.disconnectInProgress else {
+                return (nil, false)
+            }
+            state.connectionMayBeOpen = false
+            state.disconnectInProgress = true
+            return (nil, true)
+        }
+        if let attempt = action.0 {
+            if attempt.gate.resume(with: .failure(CancellationError())) {
+                attempt.task?.cancel()
+            }
+            return
+        }
+        guard action.1 else { return }
         pluginDriver.disconnect()
-        state.withLock { $0.status = .disconnected }
+        state.withLock { $0.disconnectInProgress = false }
+    }
+
+    private func attach(_ task: Task<Void, Never>, to generation: UInt64) {
+        let shouldCancel = state.withLock { state in
+            guard var attempt = state.connectAttempt, attempt.generation == generation else {
+                return true
+            }
+            attempt.task = task
+            state.connectAttempt = attempt
+            return attempt.isAbandoned
+        }
+        if shouldCancel {
+            task.cancel()
+        }
+    }
+
+    private func isCurrentConnect(_ generation: UInt64) -> Bool {
+        state.withLock { state in
+            guard let attempt = state.connectAttempt else { return false }
+            return attempt.generation == generation && !attempt.isAbandoned
+        }
+    }
+
+    private func abandonConnect(
+        generation: UInt64,
+        gate: ConnectionSingleResumeGate<Void>,
+        error: Error
+    ) {
+        let won = gate.resume(with: .failure(error)) { [self] in
+            state.withLock { state in
+                guard var attempt = state.connectAttempt, attempt.generation == generation else { return }
+                attempt.isAbandoned = true
+                state.connectAttempt = attempt
+            }
+        }
+        if won {
+            let task: Task<Void, Never>? = state.withLock { state in
+                guard let attempt = state.connectAttempt, attempt.generation == generation else { return nil }
+                return attempt.task
+            }
+            task?.cancel()
+        }
+    }
+
+    private func finishConnect(
+        generation: UInt64,
+        succeeded: Bool,
+        adopted: Bool,
+        error: Error?
+    ) {
+        let shouldDisconnect = state.withLock { state in
+            guard let attempt = state.connectAttempt, attempt.generation == generation else {
+                return false
+            }
+            state.connectAttempt = nil
+            let keepsConnection = succeeded && adopted && !attempt.isAbandoned
+            if keepsConnection {
+                state.connectionMayBeOpen = true
+                state.status = .connected
+                return false
+            }
+            if let error, adopted {
+                state.status = .error(error.localizedDescription)
+            } else {
+                state.status = .disconnected
+            }
+            guard !state.disconnectInProgress else { return false }
+            state.connectionMayBeOpen = false
+            state.disconnectInProgress = true
+            return true
+        }
+        guard shouldDisconnect else { return }
+        pluginDriver.disconnect()
+        state.withLock { $0.disconnectInProgress = false }
     }
 
     func ping() async throws {
@@ -179,14 +360,18 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
 
     func execute(query: String) async throws -> QueryResult {
         try StatementTextValidator.validate(query)
-        let pluginResult = try await pluginDriver.execute(query: query)
+        let pluginResult = try await pluginDriver.execute(query: query, context: statementContext(query))
         return mapQueryResult(pluginResult)
     }
 
     func executeParameterized(query: String, parameters: [Any?]) async throws -> QueryResult {
         try StatementTextValidator.validate(query)
         let cellParams: [PluginCellValue] = parameters.map(Self.cellValue(for:))
-        let pluginResult = try await pluginDriver.executeParameterized(query: query, parameters: cellParams)
+        let pluginResult = try await pluginDriver.executeParameterized(
+            query: query,
+            parameters: cellParams,
+            context: statementContext(query)
+        )
         return mapQueryResult(pluginResult)
     }
 
@@ -201,7 +386,8 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         let pluginResult = try await pluginDriver.executeUserQuery(
             query: query,
             rowCap: rowCap,
-            parameters: cellParams
+            parameters: cellParams,
+            context: statementContext(query)
         )
         return mapQueryResult(pluginResult)
     }
@@ -210,7 +396,11 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         if let error = StatementTextValidator.error(for: query) {
             return AsyncThrowingStream { $0.finish(throwing: error) }
         }
-        return pluginDriver.streamRows(query: query)
+        return pluginDriver.streamRows(query: query, context: statementContext(query))
+    }
+
+    private func statementContext(_ query: String) -> PluginStatementContext {
+        .statement(query, databaseType: connection.type)
     }
 
     func executeBoundedQuery(query: String, rowCap: Int) async throws -> QueryResult? {
@@ -219,6 +409,28 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
             return nil
         }
         return mapQueryResult(pluginResult)
+    }
+
+    var supportsResultSetBatches: Bool {
+        pluginDriver.capabilities.contains(.resultSetBatches)
+    }
+
+    func executeBatch(query: String, rowCap: Int?, parameters: [Any?]?) async throws -> QueryBatchResult? {
+        try StatementTextValidator.validate(query)
+        guard let batch = try await pluginDriver.executeBatch(
+            query: query,
+            rowCap: rowCap,
+            parameters: parameters?.map(Self.cellValue(for:))
+        ) else {
+            return nil
+        }
+        return QueryBatchResult(
+            resultSets: batch.resultSets.map(mapQueryResult),
+            rowsAffected: batch.rowsAffected,
+            errors: batch.errors,
+            discardedResultSetCount: batch.discardedResultSetCount,
+            executionTime: batch.executionTime
+        )
     }
 
     // MARK: - Schema Operations
@@ -231,6 +443,17 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         let resolvedSchema = schema ?? pluginDriver.currentSchema
         let pluginTables = try await pluginDriver.fetchTables(schema: resolvedSchema)
         return pluginTables.map { mapPluginTable($0, schemaFallback: resolvedSchema) }
+    }
+
+    func fetchTablesInAllSchemas() async throws -> [TableInfo]? {
+        guard let pluginTables = try await pluginDriver.fetchTablesInAllSchemas() else { return nil }
+        return pluginTables.map { mapPluginTable($0, schemaFallback: nil) }
+    }
+
+    func fetchTables(inSchemas schemas: [String]) async throws -> [TableInfo]? {
+        guard let pluginTables = try await pluginDriver.fetchTables(inSchemas: schemas) else { return nil }
+        let schemaFallback = schemas.count == 1 ? schemas.first : nil
+        return pluginTables.map { mapPluginTable($0, schemaFallback: schemaFallback) }
     }
 
     func fetchPartitionDetails(table: String, schema: String?) async throws -> [PartitionInfo] {
@@ -391,6 +614,15 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         )
     }
 
+    func fetchExactRowCount(table: String, browseFilters: [PluginQueryFilter]) async throws -> Int? {
+        try await pluginDriver.fetchExactRowCount(
+            table: table,
+            schema: pluginDriver.currentSchema,
+            queryFilters: browseFilters,
+            logicMode: "and"
+        )
+    }
+
     func fetchTableDDL(table: String) async throws -> String {
         try await fetchTableDDL(table: table, schema: nil)
     }
@@ -478,6 +710,20 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         }
     }
 
+    /// Only a one-schema list can stamp a schema on a type that came back without one.
+    func fetchUserDefinedTypes(inSchemas schemas: [String]) async throws -> [UserDefinedTypeInfo]? {
+        let schemaFallback = schemas.count == 1 ? schemas.first : nil
+        do {
+            guard let types = try await pluginDriver.fetchUserDefinedTypes(inSchemas: schemas) else { return nil }
+            return types
+                .map { UserDefinedTypeInfo($0.adoptingSchema(schemaFallback)) }
+                .sorted { ($0.schema ?? "", $0.name) < ($1.schema ?? "", $1.name) }
+        } catch {
+            Self.logger.warning("fetchUserDefinedTypes(inSchemas:) failed: \(error.publicLogShape, privacy: .public)")
+            throw error
+        }
+    }
+
     func fetchUserDefinedType(_ type: UserDefinedTypeInfo) async throws -> UserDefinedTypeInfo {
         UserDefinedTypeInfo(try await pluginDriver.fetchUserDefinedType(type.pluginType))
     }
@@ -527,6 +773,18 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
 
     func renameSchema(name: String, to newName: String) async throws {
         try await pluginDriver.renameSchema(name: name, to: newName)
+    }
+
+    func documentWriteStatement(_ write: PluginDocumentWrite) throws -> String? {
+        try pluginDriver.documentWriteStatement(write)
+    }
+
+    func executeDocumentWrite(_ write: PluginDocumentWrite) async throws {
+        try await pluginDriver.executeDocumentWrite(write)
+    }
+
+    func fetchDocument(table: String, schema: String?, locator: String) async throws -> String? {
+        try await pluginDriver.fetchDocument(table: table, schema: schema, locator: locator)
     }
 
     func createSchemaStatements(_ definition: PluginSchemaDefinition) -> [String]? {
@@ -600,7 +858,7 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
             sizeBytes: pluginMeta.sizeBytes,
             lastAccessed: nil,
             isSystemDatabase: isSystem,
-            icon: isSystem ? "gearshape.fill" : "cylinder.fill"
+            icon: isSystem ? "gearshape" : "cylinder"
         )
     }
 
@@ -634,6 +892,10 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
 
     func sessionTransactionState() async -> PluginSessionTransactionState {
         await pluginDriver.sessionTransactionState()
+    }
+
+    func fetchServerOutput() async throws -> PluginServerOutput {
+        try await pluginDriver.fetchServerOutput()
     }
 
     // MARK: - Schema Switching
@@ -859,12 +1121,6 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         pluginDriver.allTablesMetadataSQL(schema: schema)
     }
 
-    // MARK: - EXPLAIN
-
-    func buildExplainQuery(_ sql: String) -> String? {
-        pluginDriver.buildExplainQuery(sql)
-    }
-
     // MARK: - View Templates
 
     func createViewTemplate() -> String? {
@@ -900,7 +1156,13 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
     // MARK: - Result Mapping
 
     private func mapQueryResult(_ pluginResult: PluginQueryResult) -> QueryResult {
-        let columnTypes = mapColumnTypes(rawTypeNames: pluginResult.columnTypeNames)
+        let columnTypes = mapColumnTypes(
+            rawTypeNames: pluginResult.columnTypeNames,
+            classificationHints: PluginResultColumnHints.hints(
+                from: pluginResult.columnMeta,
+                columnCount: pluginResult.columns.count
+            )
+        )
         var result = QueryResult(
             columns: pluginResult.columns,
             columnTypes: columnTypes,
@@ -915,18 +1177,26 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         result.columnMeta = pluginResult.columnMeta?.map {
             ResultColumnMeta(isPrimaryKey: $0.isPrimaryKey, isNullable: $0.isNullable, isAutoIncrement: $0.isIdentity)
         }
+        result.rowLocators = pluginResult.rowLocators
+        result.absentCells = pluginResult.absentCells ?? [:]
         return result
     }
 
-    private func mapColumnTypes(rawTypeNames: [String]) -> [ColumnType] {
+    private func mapColumnTypes(rawTypeNames: [String], classificationHints: [String?]) -> [ColumnType] {
         state.withLock { state in
-            rawTypeNames.map { rawTypeName in
-                if let cached = state.columnTypeCache[rawTypeName] { return cached }
-                let mapped = classifier.classify(rawTypeName: rawTypeName)
-                state.columnTypeCache[rawTypeName] = mapped
-                return mapped
+            rawTypeNames.enumerated().map { index, rawTypeName in
+                let hint = index < classificationHints.count ? classificationHints[index] : nil
+                guard let hint else { return classified(rawTypeName, cache: &state.columnTypeCache) }
+                return classified(hint, cache: &state.columnTypeCache).declared(as: rawTypeName)
             }
         }
+    }
+
+    private func classified(_ typeName: String, cache: inout [String: ColumnType]) -> ColumnType {
+        if let cached = cache[typeName] { return cached }
+        let mapped = classifier.classify(rawTypeName: typeName)
+        cache[typeName] = mapped
+        return mapped
     }
 }
 

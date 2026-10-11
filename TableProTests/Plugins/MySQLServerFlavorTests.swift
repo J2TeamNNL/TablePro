@@ -6,7 +6,6 @@
 import TableProPluginKit
 import Testing
 
-@Suite("MySQL server flavor")
 struct MySQLServerFlavorTests {
     private static let databendBanner = "8.0.90-v1.2.881-ca29960f5c(rust-1.94.0-nightly-2026-04-17T02:30:29.281093406Z)"
 
@@ -220,6 +219,19 @@ struct MySQLServerFlavorTests {
     ])
     func queryTimeout(flavor: MySQLServerFlavor, seconds: Int, expected: [String]) {
         #expect(flavor.queryTimeoutStatements(seconds: seconds) == expected)
+    }
+
+    @Test("Query timeout conversion clamps values unsafe for server units")
+    func queryTimeoutConversionIsBounded() {
+        let maximum = PluginQueryTimeout.maximumSeconds
+
+        #expect(MySQLServerFlavor.mysql.queryTimeoutStatements(seconds: Int.max) == [
+            "SET SESSION max_execution_time = \(maximum * 1_000)"
+        ])
+        #expect(MySQLServerFlavor.oceanbase(version: nil).queryTimeoutStatements(seconds: Int.max) == [
+            "SET SESSION ob_query_timeout = \(Int64(maximum) * 1_000_000)",
+            "SET SESSION max_execution_time = 0"
+        ])
     }
 
     @Test("OceanBase moves its own query timeout and clears a global max_execution_time, one statement each")

@@ -86,6 +86,9 @@
         }
       }
     },
+    "%1$@ on Mac socket %2$@" : {
+
+    },
     "%1$@ via %2$@" : {
       "localizations" : {
         "ko" : {
@@ -110,6 +113,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@（經由 %2$@）"
+          }
+        }
+      }
+    },
+    "%1$lld-%2$lld of %3$lld" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld-%2$lld / %3$lld"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld-%2$lld trên %3$lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld-%2$lld / %3$lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld-%2$lld / %3$lld"
           }
         }
       }
@@ -682,6 +713,9 @@
         }
       }
     },
+    "%lld changes could not be uploaded to iCloud. They stay on this device and go again on the next sync." : {
+
+    },
     "%lld of %lld" : {
       "localizations" : {
         "en" : {
@@ -772,6 +806,9 @@
         }
       }
     },
+    "1 change could not be uploaded to iCloud. It stays on this device and goes again on the next sync." : {
+
+    },
     "1 connection imported." : {
       "localizations" : {
         "ko" : {
@@ -852,6 +889,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "1 列"
+          }
+        }
+      }
+    },
+    "A database named “%@” already exists." : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@”(이)라는 이름의 데이터베이스가 이미 있습니다."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đã có cơ sở dữ liệu tên “%@”."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名为“%@”的数据库已存在。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名為「%@」的資料庫已存在。"
           }
         }
       }
@@ -969,6 +1034,26 @@
           }
         }
       }
+    },
+    "Americas" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Airplane" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Account" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Admin" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Alert" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "AND" : {
       "localizations" : {
@@ -1910,6 +1995,14 @@
         }
       }
     },
+    "App" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Antenna" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Apply" : {
       "localizations" : {
         "ko" : {
@@ -1937,6 +2030,10 @@
           }
         }
       }
+    },
+    "Archive" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Are you sure you want to delete this connection? Saved credentials will be permanently removed." : {
       "localizations" : {
@@ -2049,6 +2146,18 @@
           }
         }
       }
+    },
+    "Asia and Australia" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Atom" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Audit" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Auth" : {
       "localizations" : {
@@ -2246,6 +2355,22 @@
         }
       }
     },
+    "Bell" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Bag" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Banknote" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Bar Chart" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Blue" : {
       "localizations" : {
         "ko" : {
@@ -2273,6 +2398,38 @@
           }
         }
       }
+    },
+    "Bookmark" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Book" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Briefcase" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Brain" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Branch" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Braces" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Bolt" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Broadcast" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Browse and Edit Data" : {
       "localizations" : {
@@ -2302,6 +2459,10 @@
         }
       }
     },
+    "Bug" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Build" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2330,6 +2491,14 @@
           }
         }
       }
+    },
+    "Bus" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Building" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "CA Certificate" : {
       "localizations" : {
@@ -2387,6 +2556,14 @@
           }
         }
       }
+    },
+    "Cake" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Cable" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Can't Import" : {
       "localizations" : {
@@ -2472,6 +2649,17 @@
         }
       }
     },
+    "Cannot reach iCloud. Changes sync when this device is back online." : {
+
+    },
+    "Car" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Cart" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Certificate" : {
       "localizations" : {
         "ko" : {
@@ -2555,6 +2743,16 @@
           }
         }
       }
+    },
+    "Changes Not Saved" : {
+
+    },
+    "Changes from iCloud could not be saved on this device. They download again on the next sync." : {
+
+    },
+    "Chat" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Check your %@ username and password." : {
       "localizations" : {
@@ -2752,6 +2950,10 @@
         }
       }
     },
+    "Checkered Flag" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Checking iCloud" : {
       "localizations" : {
         "ko" : {
@@ -2779,6 +2981,10 @@
           }
         }
       }
+    },
+    "Checkmark" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Chinook (Sample)" : {
       "localizations" : {
@@ -2864,6 +3070,10 @@
           }
         }
       }
+    },
+    "Circle" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Clear" : {
       "localizations" : {
@@ -3175,6 +3385,22 @@
         }
       }
     },
+    "Cloud and Sun" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Coffee Cup" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Code" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Cloud" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Color" : {
       "localizations" : {
         "ko" : {
@@ -3259,6 +3485,10 @@
         }
       }
     },
+    "Command" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Computed by the database" : {
       "localizations" : {
         "ko" : {
@@ -3286,6 +3516,10 @@
           }
         }
       }
+    },
+    "Config File" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Configuration Error" : {
       "localizations" : {
@@ -3652,6 +3886,34 @@
         }
       }
     },
+    "Connection Not Saved" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "연결이 저장되지 않음"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chưa lưu kết nối"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连接未保存"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "連線未儲存"
+          }
+        }
+      }
+    },
     "Connection failed while waiting on the socket." : {
       "localizations" : {
         "ko" : {
@@ -3989,6 +4251,10 @@
         }
       }
     },
+    "Copies" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Copy Column Name" : {
       "localizations" : {
         "ko" : {
@@ -4270,6 +4536,62 @@
         }
       }
     },
+    "Could not copy “%1$@” into TablePro: %2$@" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%1$@”을(를) TablePro로 복사할 수 없습니다: %2$@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không thể sao chép “%1$@” vào TablePro: %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法将“%1$@”复制到 TablePro：%2$@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法將「%1$@」複製到 TablePro：%2$@"
+          }
+        }
+      }
+    },
+    "Could not create “%1$@”: %2$@" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%1$@”을(를) 만들 수 없습니다: %2$@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không thể tạo “%1$@”: %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法创建“%1$@”：%2$@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法建立「%1$@」：%2$@"
+          }
+        }
+      }
+    },
     "Could not install the sample database: %@" : {
       "localizations" : {
         "ko" : {
@@ -4524,6 +4846,22 @@
         }
       }
     },
+    "Data & Analytics" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Database & Storage" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Crown" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Credit Card" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "DEFAULT" : {
       "localizations" : {
         "ko" : {
@@ -4553,6 +4891,8 @@
       }
     },
     "Database" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "ko" : {
           "stringUnit" : {
@@ -4604,6 +4944,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "資料庫檔案"
+          }
+        }
+      }
+    },
+    "Database File Unavailable" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "데이터베이스 파일을 사용할 수 없음"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tệp cơ sở dữ liệu không khả dụng"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数据库文件不可用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "資料庫檔案無法使用"
           }
         }
       }
@@ -4688,6 +5056,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "資料庫名稱"
+          }
+        }
+      }
+    },
+    "Database names can't be blank, contain a slash, or start with a period." : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "데이터베이스 이름은 비워 둘 수 없으며, 슬래시를 포함하거나 마침표로 시작할 수 없습니다."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tên cơ sở dữ liệu không được để trống, chứa dấu gạch chéo hoặc bắt đầu bằng dấu chấm."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数据库名称不能为空，不能包含斜杠，也不能以句点开头。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "資料庫名稱不能空白、不能包含斜線，也不能以句點開頭。"
           }
         }
       }
@@ -5085,6 +5481,34 @@
         }
       }
     },
+    "Delete Tag" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "태그 삭제"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Xóa nhãn"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除标签"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刪除標籤"
+          }
+        }
+      }
+    },
     "Delete group" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5142,34 +5566,6 @@
         }
       }
     },
-    "Delete tag" : {
-      "localizations" : {
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "태그 삭제"
-          }
-        },
-        "vi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Xóa thẻ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "删除标签"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "刪除標籤"
-          }
-        }
-      }
-    },
     "Descending" : {
       "localizations" : {
         "ko" : {
@@ -5198,6 +5594,26 @@
         }
       }
     },
+    "Development" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Dice" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Diamond" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Device" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Desktop" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Disabled" : {
       "localizations" : {
         "ko" : {
@@ -5222,6 +5638,62 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已停用"
+          }
+        }
+      }
+    },
+    "Discard Changes" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "변경 사항 폐기"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bỏ các thay đổi"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放弃更改"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放棄變更"
+          }
+        }
+      }
+    },
+    "Discard Changes?" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "변경 사항을 폐기하시겠습니까?"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bỏ các thay đổi?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放弃更改？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放棄變更？"
           }
         }
       }
@@ -5253,6 +5725,18 @@
           }
         }
       }
+    },
+    "Dollar" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Display" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Document" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Don't Share" : {
       "localizations" : {
@@ -5310,7 +5794,41 @@
         }
       }
     },
+    "Downtrend" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Driver Unavailable" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "드라이버를 사용할 수 없음"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Driver không khả dụng"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "驱动不可用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "驅動程式無法使用"
+          }
+        }
+      }
+    },
     "Drop" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "ko" : {
           "stringUnit" : {
@@ -5502,6 +6020,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "編輯標籤"
+          }
+        }
+      }
+    },
+    "Edit the connection and choose the database file again." : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "연결을 편집하여 데이터베이스 파일을 다시 선택하십시오."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hãy sửa kết nối và chọn lại tệp cơ sở dữ liệu."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请编辑此连接并重新选择数据库文件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請編輯此連線並重新選擇資料庫檔案。"
           }
         }
       }
@@ -5816,6 +6362,14 @@
         }
       }
     },
+    "Environments & Status" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Envelope" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Error" : {
       "localizations" : {
         "ko" : {
@@ -5843,6 +6397,10 @@
           }
         }
       }
+    },
+    "Europe and Africa" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Every change you made to the sample database is replaced with the original data." : {
       "localizations" : {
@@ -6013,6 +6571,8 @@
       }
     },
     "Export" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "ko" : {
           "stringUnit" : {
@@ -6067,6 +6627,17 @@
           }
         }
       }
+    },
+    "External Drive" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "External Table" : {
+
+    },
+    "Eye" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Failed" : {
       "localizations" : {
@@ -6551,7 +7122,13 @@
         }
       }
     },
+    "Film" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Filter" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "ko" : {
           "stringUnit" : {
@@ -6663,6 +7240,22 @@
         }
       }
     },
+    "Fish" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Firewall" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Flag" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Flame" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Focus search" : {
       "localizations" : {
         "ko" : {
@@ -6690,6 +7283,10 @@
           }
         }
       }
+    },
+    "Folder" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Foreign Keys" : {
       "localizations" : {
@@ -6719,6 +7316,37 @@
         }
       }
     },
+    "Foreign Table" : {
+
+    },
+    "Game Controller" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Fork and Knife" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Gears" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Gear" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Function" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Gauge" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Full Tray" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Get Started" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -6747,6 +7375,14 @@
           }
         }
       }
+    },
+    "Gift" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Globe" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Go" : {
       "localizations" : {
@@ -6860,6 +7496,10 @@
         }
       }
     },
+    "Graduation Cap" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Gray" : {
       "localizations" : {
         "ko" : {
@@ -6916,6 +7556,10 @@
         }
       }
     },
+    "Grid" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Group" : {
       "localizations" : {
         "ko" : {
@@ -6940,6 +7584,62 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "群組"
+          }
+        }
+      }
+    },
+    "Group Deleted" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "그룹 삭제됨"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhóm đã bị xóa"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分组已删除"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "群組已刪除"
+          }
+        }
+      }
+    },
+    "Group Not Saved" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "그룹이 저장되지 않음"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chưa lưu nhóm"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分组未保存"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "群組未儲存"
           }
         }
       }
@@ -7001,6 +7701,26 @@
         }
       }
     },
+    "Heart" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Heartbeat" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Half Shield" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Hare" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Hammer" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Help decide what to improve next by sending one small report a day." : {
       "localizations" : {
         "ko" : {
@@ -7057,6 +7777,14 @@
           }
         }
       }
+    },
+    "Hexagon" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Hidden" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Hide Query" : {
       "localizations" : {
@@ -7144,7 +7872,13 @@
         }
       }
     },
+    "Histogram" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "History" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "ko" : {
           "stringUnit" : {
@@ -7227,6 +7961,13 @@
           }
         }
       }
+    },
+    "Icon" : {
+
+    },
+    "House" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "If items appear on another device but not here, refresh forces a full re-download from iCloud. This may take a moment on slow networks." : {
       "extractionState" : "stale",
@@ -7314,6 +8055,8 @@
       }
     },
     "Import" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "ko" : {
           "stringUnit" : {
@@ -7595,6 +8338,10 @@
         }
       }
     },
+    "Infinity" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Info" : {
       "localizations" : {
         "ko" : {
@@ -7735,6 +8482,14 @@
         }
       }
     },
+    "Institution" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Internal Drive" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Interrupted" : {
       "localizations" : {
         "ko" : {
@@ -7847,6 +8602,10 @@
         }
       }
     },
+    "JSON" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Jump host key not found: %@" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -7900,6 +8659,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將連線保留在最上方"
+          }
+        }
+      }
+    },
+    "Keep Editing" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "계속 편집"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tiếp tục sửa"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "继续编辑"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "繼續編輯"
           }
         }
       }
@@ -7961,6 +8748,10 @@
         }
       }
     },
+    "Key" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Keychain Warning" : {
       "localizations" : {
         "ko" : {
@@ -7988,6 +8779,10 @@
           }
         }
       }
+    },
+    "Laptop" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Last Connected" : {
       "localizations" : {
@@ -8045,6 +8840,22 @@
         }
       }
     },
+    "Leaf" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Ledger" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Library" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Layers" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "License" : {
       "localizations" : {
         "ko" : {
@@ -8072,6 +8883,18 @@
           }
         }
       }
+    },
+    "Light Bulb" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Link" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Line Chart" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Live Activities" : {
       "localizations" : {
@@ -8385,6 +9208,14 @@
         }
       }
     },
+    "Lock Shield" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Lock" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Locks TablePro when reopened after the selected idle time. Cold launches always require authentication." : {
       "localizations" : {
         "ko" : {
@@ -8440,6 +9271,13 @@
           }
         }
       }
+    },
+    "Mac socket %@" : {
+
+    },
+    "Magnifying Glass" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Manage Groups" : {
       "extractionState" : "stale",
@@ -8554,6 +9392,14 @@
         }
       }
     },
+    "Map Pin" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Map" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Match All Tags" : {
       "localizations" : {
         "ko" : {
@@ -8609,6 +9455,25 @@
           }
         }
       }
+    },
+    "Materialized View" : {
+
+    },
+    "Medical Case" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Merge" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Mesh" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Memory" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Microsoft Entra ID Sign-In Required" : {
       "localizations" : {
@@ -8666,6 +9531,14 @@
         }
       }
     },
+    "Moon" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Modules" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "More" : {
       "localizations" : {
         "ko" : {
@@ -8721,6 +9594,10 @@
           }
         }
       }
+    },
+    "Mountains" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Move" : {
       "localizations" : {
@@ -8834,6 +9711,10 @@
         }
       }
     },
+    "Music" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "MySQL, PostgreSQL, SQL Server, Oracle, Redis, SQLite, DuckDB, and more." : {
       "localizations" : {
         "ko" : {
@@ -8861,6 +9742,18 @@
           }
         }
       }
+    },
+    "Newspaper" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Network" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Network Drive" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "NULL" : {
       "localizations" : {
@@ -9167,6 +10060,62 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新增標籤"
+          }
+        }
+      }
+    },
+    "Next Page" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다음 페이지"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trang sau"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下一页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下一頁"
+          }
+        }
+      }
+    },
+    "Next Row" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다음 행"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dòng sau"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下一行"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下一列"
           }
         }
       }
@@ -9790,6 +10739,9 @@
         }
       }
     },
+    "Not Signed In to iCloud" : {
+
+    },
     "Not connected to SQL Server" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -9903,6 +10855,42 @@
           }
         }
       }
+    },
+    "Number 5" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Number 4" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Number 3" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Number 2" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Number 1" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Office Buildings" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Numbered List" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Number" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Object" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "OK" : {
       "localizations" : {
@@ -10044,6 +11032,9 @@
         }
       }
     },
+    "Offline" : {
+
+    },
     "One report a day: hashed device ID, versions, language, database types, first-use dates. Never hostnames, credentials, queries, or data." : {
       "localizations" : {
         "ko" : {
@@ -10156,6 +11147,9 @@
         }
       }
     },
+    "Open it on the Mac, or change it there to connect by host and port." : {
+
+    },
     "Open Sample Database" : {
       "localizations" : {
         "ko" : {
@@ -10264,6 +11258,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開啟資料表、篩選其中的列，並直接修改值。"
+          }
+        }
+      }
+    },
+    "Open this connection in TablePro to check the server's SSH host key first." : {
+      "localizations" : {
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mở kết nối này trong TablePro để kiểm tra khóa máy chủ SSH trước."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TablePro에서 이 연결을 열어 서버의 SSH 호스트 키를 먼저 확인하십시오."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先在 TablePro 中打开此连接以检查服务器的 SSH 主机密钥。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請先在 TablePro 中開啟此連線以檢查伺服器的 SSH 主機金鑰。"
           }
         }
       }
@@ -10491,6 +11513,54 @@
           }
         }
       }
+    },
+    "Party Popper" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Paw Print" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Pin" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Photo" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Phone" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Person" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Paintbrush" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Paper Plane" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Percent" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Pie Chart" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Pause" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Package" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "PING failed: %@" : {
       "localizations" : {
@@ -10997,6 +12067,10 @@
         }
       }
     },
+    "Play" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Port" : {
       "localizations" : {
         "ko" : {
@@ -11021,6 +12095,62 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "連接埠"
+          }
+        }
+      }
+    },
+    "Previous Page" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이전 페이지"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trang trước"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上一页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上一頁"
+          }
+        }
+      }
+    },
+    "Previous Row" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이전 행"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dòng trước"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上一行"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上一列"
           }
         }
       }
@@ -11194,6 +12324,10 @@
         }
       }
     },
+    "Processor" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Provide a JSON object or an array of objects." : {
       "localizations" : {
         "ko" : {
@@ -11222,6 +12356,10 @@
         }
       }
     },
+    "Pull Request" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Purple" : {
       "localizations" : {
         "ko" : {
@@ -11249,6 +12387,10 @@
           }
         }
       }
+    },
+    "Puzzle Piece" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Queries on the Lock Screen" : {
       "localizations" : {
@@ -11478,6 +12620,10 @@
         }
       }
     },
+    "Queue" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Quick Connect" : {
       "localizations" : {
         "ko" : {
@@ -11533,6 +12679,10 @@
           }
         }
       }
+    },
+    "Raised Hand" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Read-Only" : {
       "extractionState" : "stale",
@@ -11591,6 +12741,34 @@
         }
       }
     },
+    "Reconnect and try again." : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다시 연결한 후 다시 시도하십시오."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kết nối lại và thử lại."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请重新连接后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請重新連線後再試一次。"
+          }
+        }
+      }
+    },
     "Reconnecting..." : {
       "localizations" : {
         "ko" : {
@@ -11618,6 +12796,10 @@
           }
         }
       }
+    },
+    "Records" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Red" : {
       "localizations" : {
@@ -11957,6 +13139,10 @@
         }
       }
     },
+    "Report" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Requested" : {
       "localizations" : {
         "ko" : {
@@ -12294,6 +13480,10 @@
         }
       }
     },
+    "Risk" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Role" : {
       "localizations" : {
         "ko" : {
@@ -12321,6 +13511,14 @@
           }
         }
       }
+    },
+    "Rosette" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Route" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Row %d of %d" : {
       "localizations" : {
@@ -12603,6 +13801,21 @@
         }
       }
     },
+    "Search Icons" : {
+
+    },
+    "Security & Access" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Seal" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Scatter Plot" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "SELECT * FROM ..." : {
       "localizations" : {
         "ko" : {
@@ -12630,6 +13843,22 @@
           }
         }
       }
+    },
+    "Servers & Network" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Shield" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Services" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Shard" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "SID" : {
       "localizations" : {
@@ -12687,6 +13916,21 @@
         }
       }
     },
+    "Speedometer" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Snowflake" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Socket Unavailable" : {
+
+    },
+    "Sparkles" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "SQL" : {
       "localizations" : {
         "ko" : {
@@ -12714,6 +13958,10 @@
           }
         }
       }
+    },
+    "Square" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "SSH Host" : {
       "localizations" : {
@@ -12907,6 +14155,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SSH 隧道失敗"
+          }
+        }
+      }
+    },
+    "SSH Unavailable" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSH를 사용할 수 없음"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSH không khả dụng"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSH 不可用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSH 無法使用"
           }
         }
       }
@@ -13193,6 +14469,8 @@
       }
     },
     "Schema" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "ko" : {
           "stringUnit" : {
@@ -13247,6 +14525,9 @@
           }
         }
       }
+    },
+    "Screen Time or device management does not allow iCloud on this device, so TablePro cannot sync." : {
+
     },
     "Search Connections" : {
       "localizations" : {
@@ -13473,7 +14754,12 @@
         }
       }
     },
+    "Sequence" : {
+
+    },
     "Server" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "ko" : {
           "stringUnit" : {
@@ -13553,6 +14839,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "找不到服務名稱"
+          }
+        }
+      }
+    },
+    "Set a passphrase to include passwords." : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "암호를 포함하려면 암호 구문을 설정하십시오."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Để đưa mật khẩu vào, hãy đặt một cụm mật khẩu."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "若要包含密码，请设置一个密码短语。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "若要包含密碼，請設定一組通關密語。"
           }
         }
       }
@@ -13952,6 +15266,9 @@
         }
       }
     },
+    "Some Changes Not Uploaded" : {
+
+    },
     "Some credentials could not be saved to the keychain. You may need to re-enter them later." : {
       "localizations" : {
         "ko" : {
@@ -14036,6 +15353,18 @@
         }
       }
     },
+    "Star of Life" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Star" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Stack" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Stats" : {
       "localizations" : {
         "ko" : {
@@ -14092,7 +15421,37 @@
         }
       }
     },
+    "Still Closing" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "아직 닫는 중"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vẫn đang đóng"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仍在关闭"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仍在關閉"
+          }
+        }
+      }
+    },
     "Stop" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "ko" : {
           "stringUnit" : {
@@ -14119,6 +15478,10 @@
           }
         }
       }
+    },
+    "Stop Sign" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Stopped" : {
       "localizations" : {
@@ -14232,6 +15595,14 @@
         }
       }
     },
+    "Sum" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Sun" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Swipe right on a connection to add it to Favorites." : {
       "localizations" : {
         "ko" : {
@@ -14289,8 +15660,13 @@
         }
       }
     },
+    "Symbols & Objects" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Sync" : {
-      "extractionState" : "stale",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "ko" : {
           "stringUnit" : {
@@ -14317,6 +15693,12 @@
           }
         }
       }
+    },
+    "Sync Failed" : {
+
+    },
+    "Sync Is Unavailable" : {
+
     },
     "Sync Now" : {
       "extractionState" : "stale",
@@ -14575,6 +15957,33 @@
         }
       }
     },
+    "System Table" : {
+
+    },
+    "Theater Masks" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Ticket" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Team" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Terminal" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Text Search" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Test Tubes" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "TLS handshake failed: %@" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -14634,6 +16043,8 @@
       }
     },
     "Table" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "ko" : {
           "stringUnit" : {
@@ -14717,6 +16128,9 @@
         }
       }
     },
+    "TablePro Data Was Removed from iCloud" : {
+
+    },
     "TablePro Is Locked" : {
       "localizations" : {
         "ko" : {
@@ -14741,6 +16155,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "TablePro 已鎖定"
+          }
+        }
+      }
+    },
+    "TablePro can't open “%@”." : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TablePro에서 “%@”을(를) 열 수 없습니다."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TablePro không mở được “%@”."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TablePro 无法打开“%@”。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TablePro 無法開啟「%@」。"
           }
         }
       }
@@ -14828,6 +16270,9 @@
           }
         }
       }
+    },
+    "TablePro cannot upload changes until there is space in iCloud. Changes on this device are kept here and upload once you free up space or add storage." : {
+
     },
     "TablePro could not read that file." : {
       "localizations" : {
@@ -15006,6 +16451,9 @@
         }
       }
     },
+    "TablePro's data is no longer in iCloud. It may have been deleted in iCloud settings. Upload what this device has again, or turn off iCloud Sync to keep it here only." : {
+
+    },
     "Tables" : {
       "localizations" : {
         "ko" : {
@@ -15035,6 +16483,8 @@
       }
     },
     "Tag" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "ko" : {
           "stringUnit" : {
@@ -15058,6 +16508,62 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "標籤"
+          }
+        }
+      }
+    },
+    "Tag Deleted" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "태그 삭제됨"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhãn đã bị xóa"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标签已删除"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "標籤已刪除"
+          }
+        }
+      }
+    },
+    "Tag Not Saved" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "태그가 저장되지 않음"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chưa lưu nhãn"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标签未保存"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "標籤未儲存"
           }
         }
       }
@@ -15086,6 +16592,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "標籤"
+          }
+        }
+      }
+    },
+    "Tap Retry in a moment." : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "잠시 후 ‘재시도’를 탭하십시오."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhấn Thử lại sau giây lát."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "稍后轻点“重试”。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "稍後點按「重試」。"
           }
         }
       }
@@ -15793,6 +17327,9 @@
         }
       }
     },
+    "The connection was lost while a transaction was open. Check which of its changes were saved before running them again." : {
+
+    },
     "The data could not be read: %@" : {
       "localizations" : {
         "ko" : {
@@ -15906,30 +17443,30 @@
         }
       }
     },
-    "The file is not UTF-8 text." : {
+    "Line %lld of the file is not valid %@ text." : {
       "localizations" : {
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "파일이 UTF-8 텍스트가 아닙니다."
+            "value" : "파일의 %1$lld번째 줄이 올바른 %2$@ 텍스트가 아닙니다."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tệp không phải văn bản UTF-8."
+            "value" : "Dòng %1$lld của tệp không phải văn bản %2$@ hợp lệ."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "该文件不是 UTF-8 文本。"
+            "value" : "文件第 %1$lld 行不是有效的 %2$@ 文本。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "該檔案不是 UTF-8 文字。"
+            "value" : "檔案第 %1$lld 行不是有效的 %2$@ 文字。"
           }
         }
       }
@@ -16224,6 +17761,34 @@
         }
       }
     },
+    "The previous session has not finished closing." : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이전 세션이 아직 닫히지 않았습니다."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phiên trước chưa đóng xong."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上一个会话尚未关闭完毕。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上一個工作階段尚未關閉完畢。"
+          }
+        }
+      }
+    },
     "The query did not finish within the configured timeout, so the connection was reset. Run the query again." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -16393,6 +17958,50 @@
           }
         }
       }
+    },
+    "The server's SSH host key has changed. Open this connection in TablePro to check it." : {
+      "localizations" : {
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Khóa máy chủ SSH đã thay đổi. Mở kết nối này trong TablePro để kiểm tra."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "서버의 SSH 호스트 키가 변경되었습니다. TablePro에서 이 연결을 열어 확인하십시오."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务器的 SSH 主机密钥已更改。请在 TablePro 中打开此连接进行检查。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "伺服器的 SSH 主機金鑰已變更。請在 TablePro 中開啟此連線進行檢查。"
+          }
+        }
+      }
+    },
+    "The socket path contains a control or invisible character." : {
+
+    },
+    "The socket path is %d bytes. macOS allows %d at most." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The socket path is %1$d bytes. macOS allows %2$d at most."
+          }
+        }
+      }
+    },
+    "The socket path must start with /." : {
+
     },
     "The server's host key has changed." : {
       "localizations" : {
@@ -16592,6 +18201,34 @@
         }
       }
     },
+    "This build has no driver for that database type." : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 빌드에는 해당 데이터베이스 유형용 드라이버가 없습니다."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bản dựng này không có driver cho loại cơ sở dữ liệu đó."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此版本没有该数据库类型的驱动。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此版本沒有該資料庫類型的驅動程式。"
+          }
+        }
+      }
+    },
     "This certificate file needs a password. Certificate files exported without one cannot be read on iOS." : {
       "localizations" : {
         "ko" : {
@@ -16672,6 +18309,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此欄位是產生欄位，因此永遠不會寫入。"
+          }
+        }
+      }
+    },
+    "This connection goes through an SSH jump host, which TablePro on iPhone and iPad cannot dial. Open it in TablePro on the Mac." : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 연결은 SSH 점프 호스트를 거치며, iPhone과 iPad의 TablePro는 점프 호스트로 연결할 수 없습니다. Mac용 TablePro에서 여십시오."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kết nối này đi qua một SSH jump host, mà TablePro trên iPhone và iPad không kết nối tới được. Hãy mở kết nối này trong TablePro trên máy Mac."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此连接经过 SSH 跳板主机，iPhone 和 iPad 上的 TablePro 无法连接。请在 Mac 上的 TablePro 中打开。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此連線經過 SSH 跳板主機，iPhone 與 iPad 上的 TablePro 無法連線。請在 Mac 版 TablePro 中開啟。"
           }
         }
       }
@@ -16787,6 +18452,10 @@
           }
         }
       }
+    },
+    "This connection uses a socket on a Mac and cannot be opened on iPhone or iPad." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "This connection's CA certificate is not readable on this device (%@). Certificate files do not sync between devices, so add the certificate here or lower the SSL mode to Required." : {
       "extractionState" : "stale",
@@ -17046,6 +18715,62 @@
         }
       }
     },
+    "This group can't go inside the parent you chose. It may have changed on another device." : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 그룹은 선택한 상위 그룹 안에 넣을 수 없습니다. 다른 기기에서 변경되었을 수 있습니다."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không thể đặt nhóm này vào nhóm cha bạn đã chọn. Có thể nhóm đó đã thay đổi trên thiết bị khác."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法将此分组放入你选择的上级分组。它可能已在其他设备上更改。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法將此群組放入你選擇的上層群組，它可能已在其他裝置上變更。"
+          }
+        }
+      }
+    },
+    "This group no longer exists. It may have been removed from another device." : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 그룹은 더 이상 존재하지 않습니다. 다른 기기에서 제거되었을 수 있습니다."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhóm này không còn tồn tại. Có thể đã bị xóa từ thiết bị khác."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此分组已不存在。它可能已在其他设备上被移除。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此群組已不存在，可能已從其他裝置移除。"
+          }
+        }
+      }
+    },
     "This query will modify data. Are you sure you want to continue?" : {
       "localizations" : {
         "ko" : {
@@ -17270,6 +18995,37 @@
         }
       }
     },
+    "This tag no longer exists. It may have been removed from another device." : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 태그는 더 이상 존재하지 않습니다. 다른 기기에서 제거되었을 수 있습니다."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhãn này không còn tồn tại. Có thể đã bị xóa từ thiết bị khác."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此标签已不存在。它可能已在其他设备上被移除。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此標籤已不存在，可能已從其他裝置移除。"
+          }
+        }
+      }
+    },
+    "This version of TablePro can no longer sync with iCloud. Update TablePro in the App Store to resume." : {
+
+    },
     "This will insert a row into %@. Continue?" : {
       "localizations" : {
         "ko" : {
@@ -17441,6 +19197,13 @@
         }
       }
     },
+    "To free up space, open Settings, tap your name, then tap iCloud." : {
+
+    },
+    "Token" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Too many rows. Add up to %lld rows at a time." : {
       "localizations" : {
         "ko" : {
@@ -17469,6 +19232,14 @@
         }
       }
     },
+    "Tools" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Tortoise" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Touch and hold a connection to rename, duplicate, or move it to a group." : {
       "localizations" : {
         "ko" : {
@@ -17496,6 +19267,18 @@
           }
         }
       }
+    },
+    "Trophy" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Triangle" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Transfer" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Truncate" : {
       "localizations" : {
@@ -17581,6 +19364,10 @@
         }
       }
     },
+    "Trusted" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Try Again" : {
       "localizations" : {
         "ko" : {
@@ -17637,6 +19424,9 @@
         }
       }
     },
+    "Turn Off iCloud Sync" : {
+
+    },
     "Turn On iCloud Sync" : {
       "localizations" : {
         "ko" : {
@@ -17664,6 +19454,38 @@
           }
         }
       }
+    },
+    "Turn off the SSH tunnel for this connection." : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 연결의 SSH 터널을 끄십시오."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tắt đường hầm SSH cho kết nối này."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请关闭此连接的SSH隧道。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請關閉此連線的 SSH 隧道。"
+          }
+        }
+      }
+    },
+    "Two People" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Type" : {
       "localizations" : {
@@ -17720,6 +19542,14 @@
           }
         }
       }
+    },
+    "Uptrend" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Unlocked" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "UTF-8 via Latin 1" : {
       "localizations" : {
@@ -17974,6 +19804,12 @@
           }
         }
       }
+    },
+    "Update Required" : {
+
+    },
+    "Upload Again" : {
+
     },
     "Use Default" : {
       "localizations" : {
@@ -18255,6 +20091,14 @@
         }
       }
     },
+    "Vault" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Verified" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Verify CA" : {
       "localizations" : {
         "ko" : {
@@ -18282,6 +20126,12 @@
           }
         }
       }
+    },
+    "Verify CA needs a CA certificate, and an Oracle connection on this device cannot use one. Set SSL Mode to Verify Identity to check the server's certificate and hostname against the system trust store." : {
+
+    },
+    "Verify CA needs a CA certificate. Choose the CA certificate that signed the server's certificate." : {
+
     },
     "Verify Identity" : {
       "localizations" : {
@@ -18422,6 +20272,21 @@
           }
         }
       }
+    },
+    "Waiting to Retry" : {
+
+    },
+    "Waveform" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Warning" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Wand" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Welcome to TablePro" : {
       "localizations" : {
@@ -18678,6 +20543,14 @@
         }
       }
     },
+    "Window" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Wi-Fi" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Windows Authentication (Kerberos) isn't supported on iOS yet. Use SQL Server Authentication, or connect from the Mac app." : {
       "localizations" : {
         "ko" : {
@@ -18705,6 +20578,14 @@
           }
         }
       }
+    },
+    "Work & Places" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Wrench" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Write Query Blocked" : {
       "localizations" : {
@@ -18842,6 +20723,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法載入你的連線，因此目前無法新增任何項目。"
+          }
+        }
+      }
+    },
+    "Your connections could not be loaded, so this change was not saved." : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "연결을 불러올 수 없어 이 변경 사항을 저장하지 못했습니다."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không tải được các kết nối của bạn nên thay đổi này chưa được lưu."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法加载你的连接，因此此更改未保存。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法載入你的連線，因此此變更未儲存。"
           }
         }
       }
@@ -19098,6 +21007,15 @@
         }
       }
     },
+    "iCloud Is Not Ready" : {
+
+    },
+    "iCloud Is Restricted" : {
+
+    },
+    "iCloud Storage Is Full" : {
+
+    },
     "iCloud Sync" : {
       "localizations" : {
         "ko" : {
@@ -19182,6 +21100,15 @@
           }
         }
       }
+    },
+    "iCloud asked TablePro to wait. It tries again on its own shortly." : {
+
+    },
+    "iCloud could not complete the sync. TablePro tries again on the next sync." : {
+
+    },
+    "iCloud is not ready on this device yet. Sync resumes on its own when it is." : {
+
     },
     "iCloud rejected %d change(s). They stay on this device and will retry: %@" : {
       "extractionState" : "stale",
@@ -19275,6 +21202,9 @@
           }
         }
       }
+    },
+    "iCloud sync is not available in this build of TablePro." : {
+
     },
     "import" : {
       "localizations" : {
@@ -19808,6 +21738,124 @@
         }
       }
     },
+    "“%@” is not on any connection." : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” 태그가 지정된 연결이 없습니다."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không có kết nối nào gắn nhãn “%@”."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有连接使用标签“%@”。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沒有連線使用標籤「%@」。"
+          }
+        }
+      }
+    },
+    "“%@” isn't available on this device." : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 기기에서 “%@”을(를) 사용할 수 없습니다."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” không có trên thiết bị này."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@”在此设备上不可用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」在此裝置上無法使用。"
+          }
+        }
+      }
+    },
+    "“%@” will be removed from %d connections." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "“%1$@” will be removed from %2$d connections."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$d개 연결에서 “%1$@” 태그가 제거됩니다."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhãn “%1$@” sẽ bị gỡ khỏi %2$d kết nối."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将从 %2$d 个连接中移除标签“%1$@”。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將從 %2$d 個連線中移除標籤「%1$@」。"
+          }
+        }
+      }
+    },
+    "“%@” will be removed from 1 connection." : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1개 연결에서 “%@” 태그가 제거됩니다."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhãn “%@” sẽ bị gỡ khỏi 1 kết nối."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将从 1 个连接中移除标签“%@”。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將從 1 個連線中移除標籤「%@」。"
+          }
+        }
+      }
+    },
     "≤" : {
       "localizations" : {
         "ko" : {
@@ -19863,6 +21911,95 @@
           }
         }
       }
+    },
+    "The key %@ no longer exists." : {
+
+    },
+    "Keys of type %@ cannot be opened here." : {
+
+    },
+    "Permission Denied" : {
+
+    },
+    "This connection's Redis user is not allowed to run this command or reach this key. Ask an administrator to grant it in the user's ACL." : {
+
+    },
+    "Key Not Found" : {
+
+    },
+    "Pull down on the key list to refresh it." : {
+
+    },
+    "Unsupported Key Type" : {
+
+    },
+    "Read it with a command in Query." : {
+
+    },
+    "The Oracle connection closed while the statement was running. Run it again." : {
+
+    },
+    "The Oracle driver reported an error (%@)." : {
+
+    },
+    "Changes from iCloud could not be saved on this device. They will download again on the next sync." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud의 변경 사항을 이 기기에 저장하지 못했습니다. 다음 동기화 때 다시 다운로드됩니다."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không thể lưu các thay đổi từ iCloud trên thiết bị này. Chúng sẽ được tải lại ở lần đồng bộ tiếp theo."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法在本设备上保存来自 iCloud 的更改。下次同步时会重新下载。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法在本裝置上儲存來自 iCloud 的變更。下次同步時會重新下載。"
+          }
+        }
+      }
+    },
+    "%ld is not a TCP port." : {
+
+    },
+    "The host cannot be passed to FreeTDS. Use a host name or an IP address, without spaces, brackets, “=”, “;” or “#”." : {
+
+    },
+    "The CA certificate path cannot be passed to FreeTDS. Use a shorter path, without “;”, “#” or repeated spaces." : {
+
+    },
+    "The Kerberos service principal name for this server cannot be passed to FreeTDS. Connect through a shorter host name." : {
+
+    },
+    "Another connection to %@ with other settings is still logging in. Try again once it finishes." : {
+
+    },
+    "The FreeTDS configuration could not be written: %@" : {
+
+    },
+    "FreeTDS could not set up the login." : {
+
+    },
+    "The user name is longer than the 128 bytes FreeTDS takes." : {
+
+    },
+    "The password is longer than the 128 bytes FreeTDS takes." : {
+
+    },
+    "The database name is longer than the 128 bytes FreeTDS takes." : {
+
     }
   },
   "version" : "1.0"

@@ -79,7 +79,22 @@ final class HighlightRuleStorage: ObservableObject, TableScopedSettingsStore {
         commit(entries, for: connectionId)
     }
 
-    func purgeConnections(_ connectionIds: Set<UUID>) {
+    func dropTable(_ scope: TableScope) {
+        setRules([], for: scope)
+    }
+
+    func dropContainer(connectionId: UUID, database: String, schema: String?) {
+        let prefix = TableScope.storagePrefix(connectionId: connectionId, database: database, schema: schema)
+        var entries = loadEntries(for: connectionId)
+        let dropping = entries.keys.filter { $0.hasPrefix(prefix) }
+        guard !dropping.isEmpty else { return }
+        for key in dropping {
+            entries.removeValue(forKey: key)
+        }
+        commit(entries, for: connectionId)
+    }
+
+    func purgeConnections(_ connectionIds: Set<UUID>, leavesTombstones: Bool) {
         guard !connectionIds.isEmpty else { return }
         for connectionId in connectionIds {
             cache[connectionId] = [:]

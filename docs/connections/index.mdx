@@ -17,7 +17,7 @@ Press `Cmd+N` anywhere in the app to open the connection form. **New Connection�
     The chooser sheet groups drivers as Relational, Document, Key-Value, Analytical, Wide-Column, Cloud Native, Coordination & Config, and Other. Picking a driver badged **Not Installed** offers the download before the form opens. See [Plugins](/features/plugins).
   </Step>
   <Step title="Fill in the connection details">
-    Host, port, and credentials live on **General**. Everything else has a pane of its own; see [Connection form](/connections/connection-form).
+    Host, port, and credentials live on **General**. Everything else sits on **Network**, **Options** and **Appearance**; see [Connection form](/connections/connection-form).
   </Step>
   <Step title="Click Test Connection">
     On success the button becomes a green checkmark and reads **Connected**. On failure a **Connection Test Failed** sheet carries the driver's own message, and for errors the driver recognizes a diagnostic sheet appears instead, with suggested fixes and **Copy Diagnostic Info**.
@@ -57,7 +57,7 @@ A confirmation alert names the target first. Matching a saved connection on type
 
 ## Organize connections
 
-The **Customization** pane holds a color, tags, and a group. The color tints the toolbar while the connection is open.
+The connection form's **Appearance** tab holds **Icon**, **Color**, **Tags** and **Group**. Give two connections to the same engine different icons, such as a flame for production, to tell them apart at a glance. The color tints the toolbar while the connection is open.
 
 <Frame caption="Color, tags and group on the Appearance section">
   <img className="block dark:hidden" src="/images/connection-customization.png" alt="Color swatches, a tag field and a group picker" />
@@ -65,17 +65,17 @@ The **Customization** pane holds a color, tags, and a group. The color tints the
 </Frame>
 
 <Tip>
-Red for production, green for development. Set Safe Mode to **Read-Only** on production to block accidental writes. See [Safe Mode](/features/safe-mode).
+Red for production, green for development. On production, set **Safe Mode** to **Read-Only** under **Access** on the **Options** tab to block accidental writes. See [Safe Mode](/features/safe-mode).
 </Tip>
 
 | | How it works |
 |---|---|
-| **Groups** | Folders in the connection list, nested up to three levels. Choose **File > New Group…**, or right-click empty space for **New Group…**. Right-click a group for **Rename**, **New Subgroup…**, **Color**, **Move Group To**, and **Delete Group…**. Deleting a group deletes its subgroups too and leaves the connections inside ungrouped rather than deleted |
+| **Groups** | Folders in the connection list, nested up to three levels. Choose **File > New Group…**, or right-click empty space for **New Group…**. Right-click a group for **Rename**, **Edit Group…**, **New Subgroup…**, **Color**, **Move Group To**, and **Delete Group…**. **Edit Group…** changes the name, icon, color and parent group in one sheet. Deleting a group deletes its subgroups too and leaves the connections inside ungrouped rather than deleted |
 | **Tags** | Several per connection, each with a name and color. Type a tag's name in the search field and pick it to filter by it, or choose tags from **Filter by Tag** in the **View Options** menu. With two or more chosen, **Match** switches between any and all of them, and **Clear Filters** removes them |
 | **Favorites** | Right-click a connection and choose **Add to Favorites**, or drag it onto the **Favorites** header. Favorites gather in a section at the top while the connection keeps its place in its group |
-| **Recent** | The five connections you opened last, favorites left out. Right-click one for **Remove from Recent**, or the section header for **Clear Recent** |
+| **Recent** | The five connections you opened last, favorites left out. Right-click one for **Remove from Recent**, or the section header for **Clear Recent**. To hide the section, turn off **Show recent connections** in [General settings](/customization/general-settings#connections) |
 
-A connection's group, tags, and favorite sync through iCloud, to the iPhone and iPad app as well, unless it is marked local only. See [iCloud Sync](/features/icloud-sync).
+A connection's icon, group, tags, and favorite sync through iCloud, and so does a group's icon, to the iPhone and iPad app as well, unless it is marked local only. See [iCloud Sync](/features/icloud-sync).
 
 ### Arrange the list
 
@@ -83,19 +83,17 @@ Drag connections and groups into a group, or onto the **Connections** header to 
 
 To rename a connection or group, select it and choose **File > Rename**. Press `Return` to keep the new name or `Escape` to restore the old one.
 
-The sort order and the Recent section stay on this Mac.
+The sort order and the Recent section, shown or hidden, stay on this Mac.
 
 ## Switch connections and databases
 
-Press `Ctrl+Cmd+C` for **Switch Connection**. Whatever is already open sits at the top, then your favorites and the connections you opened last, and the rest are listed under the group they belong to, a nested group carrying its full path. Arrow keys move, `Return` switches the window to that connection, and `Cmd`-click opens a saved one in a window of its own. Typing searches every group at once and collapses the matches into a single list.
+Press `Ctrl+Cmd+C` for **Switch Connection**. Whatever is already open sits at the top, then your favorites and, while **Show recent connections** is on, the connections you opened last. The rest are listed under the group they belong to, a nested group carrying its full path. Arrow keys move, `Return` switches the window to that connection, and `Cmd`-click opens a saved one in a window of its own. Typing searches every group at once and collapses the matches into a single list.
 
-A footer under that list names the transport the window's connection runs on. On an SSH tunnel or a SOCKS proxy it also carries the bytes that have crossed since the transport opened, received and sent.
+Switching leaves the query tab you were in on its own connection. To take it with you, press `Ctrl+Option+Cmd+C` for **Move Tab to Connection…** instead. See [Moving a query tab to another connection](/features/tabs#moving-a-query-tab-to-another-connection).
+
+A footer under that list names the transport the window's connection runs on. On an SSH tunnel or a SOCKS proxy it also carries the bytes that have crossed since the transport opened, received and sent, with the current rate beside each direction while something is moving.
 
 The rest show their name alone. Cloudflare Tunnel, Cloud SQL Auth Proxy and Tunnel Command each run a separate binary that holds the connection end to end, a [remote database file](/connections/remote-database-files) is fetched once and then read from disk, and a direct connection's socket belongs to the database driver.
-
-### Throughput in the toolbar
-
-The same two transports put a live figure beside the connection name in the middle of the toolbar, an arrow for whichever direction is busier and the rate: `↓145 kB/s`. It reads `0 kB/s` while nothing moves, which is most of the time on a database connection. A connection on any other transport has no figure there at all.
 
 **Open Database** (`Cmd+K`) moves to another database on the same server.
 
@@ -104,7 +102,7 @@ The same two transports put a live figure beside the connection name in the midd
   <img className="hidden dark:block" src="/images/database-switcher-toolbar-dark.png" alt="Database list with the current database checked" />
 </Frame>
 
-Leaving **Database** empty on MySQL, MariaDB, MongoDB, SQL Server, and ClickHouse browses every database the user can reach. PostgreSQL and Redshift need one to connect at all: use `postgres` (Redshift: `dev`) and switch with `Cmd+K`. System databases such as `mysql`, `information_schema` and `master` sit at the end of the switcher under **System**. To hide the rest, choose **View > Filter Databases** and check the ones you want; the choice is saved per connection and never hides a system database from the switcher.
+Leaving **Database** empty on MySQL, MariaDB, MongoDB, SQL Server, and ClickHouse browses every database the user can reach. PostgreSQL and Redshift need one to connect at all: use `postgres` (Redshift: `dev`) and switch with `Cmd+K`. System databases such as `mysql`, `information_schema` and `master` sit at the end of the switcher under **System**. To hide the rest, choose **View > Filter Databases** and select the ones you want; the choice is saved per connection and never hides a system database from the switcher. **View > Filter Schemas** does the same for the schemas of the database you are in. See [Filtering schemas](/features/connection-window#filtering-schemas).
 
 ## Edit, delete, and where it all lives
 

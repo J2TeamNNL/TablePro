@@ -4,6 +4,531 @@ description: "Product updates and announcements for TablePro"
 rss: true
 ---
 
+<Update label="v0.80.0" description="October 11, 2026">
+  [Read the announcement](https://tablepro.app/blog/tablepro-0-80)
+
+  ### New Features
+
+  - **Google Cloud IAM sign-in**: Sign in to MySQL and PostgreSQL on Cloud SQL with Application Default Credentials or a service account key, without the Cloud SQL Auth Proxy, by [@i87ce](https://github.com/i87ce)
+  - **MySQL and MariaDB Unix socket**: Connect through a local Unix socket in place of a host and port
+  - **Socket in URLs**: A `socket` parameter in `mysql://` and `mariadb://` URLs and `tablepro://import` links
+  - **Map preview**: A geometry value opens on a map in the row inspector, with **Text** and **Map** segments, **Fit to Geometry** and **Open in Window**
+  - **Selection statistics**: Sum, Average and Count of the selected cells in the status bar. Click it for Minimum, Maximum and **Copy**
+  - **Select Column**: In the column header menu
+  - **Selection in the JSON and PHP viewers**: Select rows and text in the viewer trees. `Cmd+C` copies the selected values
+  - **Links in JSON**: http, https and mailto values are clickable in the JSON and PHP viewer trees and the inspector's JSON tab
+  - **Color swatches**: Beside hex, `rgb()` and `hsl()` values in the JSON and PHP viewer trees and the inspector's JSON tab
+  - **Move Tab to Connection…**: `Ctrl+Option+Cmd+C`, in the **Database** menu and the tab menu. Takes a query tab to another connection
+  - **Sidebar + button**: At the foot of the sidebar, for **New Table**, **New View**, **New Schema**, **New Database** and **New Folder**
+  - **Favorites + button**: At the foot of the Favorites sidebar, for **New Query**, **New Favorite**, **New Folder** and **Add Linked SQL Folder**
+  - **New Folder**: In the **Database** menu
+  - **Comment in Create Table**: A Comment field for the new table
+  - **Table comment in Structure**: Edit the table comment in the **Structure** tab. It saves with the other structure changes
+  - **Edit Comment…**: For MySQL, MariaDB, ClickHouse, CockroachDB, Redshift, SQL Server, Oracle, DuckDB and other engines with table comments
+  - **Custom icons**: Pick an icon for a connection or a group from a searchable set of symbols, on Mac and iPhone. Icons sync through iCloud
+  - **Edit Group…**: In the welcome window, with name, icon, color and parent group in one sheet
+  - **Saved queries in exports**: Connection exports carry saved queries with their folders and keywords, with an option to add global saved queries
+  - **Saved queries on import**: Imported with connections from TablePro files, TablePlus, Sequel Ace, DBeaver, DataGrip and Beekeeper Studio
+  - **Filter Schemas…**: In the **View** menu. Choose the schemas listed in the sidebar, its search, Open Quickly, export and the column type picker
+  - **Settings links**: `tablepro://settings` and `tablepro://settings/<pane>` open Settings on a pane
+  - **Help > Integrations**: Opens the integrations directory on tablepro.app
+  - **MCP connection details**: Group, tags and color in the MCP connection list and on the AppleScript connection class
+  - **Pairing links**: Take `state` and `response_mode`, and send a standard `code` to any redirect
+  - **`connections:display` scope**: A pairing scope, off by default, that lets a launcher list connections hidden from AI
+
+  ### Improvements
+
+  - **Settings > MCP** in place of **Settings > Integrations**, and **MCP Activity…** in place of **TablePro > Integrations…**
+  - **Settings > Sync** names what stops iCloud Sync, such as full iCloud storage or a signed-out account, with the action that clears it
+  - Value filters stay through sorting, paging and the filter bar, and clear when the tab shows another table or query
+  - **Save**, **Refresh** and sorting keep the selected rows, matched by primary key
+  - Connection files keep the full path of nested groups, and import rebuilds that path
+  - Connection files written by this version, Team Catalog files included, open only in this version or later
+  - **Keep Existing, Add Queries** in place of **Skip** for a duplicate connection on import
+  - Importing connections asks before adding their startup SQL, the same way it asks about tunnel commands
+  - Deprecated: pairing links without `response_mode`, which wrap the code in `context` for `raycast://` redirects
+
+  ### Security
+
+  - Duplicating a connection set to **Blocked** for external access making the copy readable over MCP
+  - MCP completions offering a connection for up to 15 seconds after it was set to **Never** or **Blocked**
+  - Generated SQL quoting broken by a combining mark after a quote in DuckDB names and a backslash in ClickHouse names
+  - A database link's SQL filter shown cut to 300 characters, and connecting to a trusted database before asking about it
+  - A database link through an SSH tunnel to `127.0.0.1` reusing a local database's **Always Allow** for any SSH server
+  - Pairing accepting a redirect that opens TablePro, a web browser, a database URL or another remote resource
+  - A refused or unrecognized deep link writing its query values, SQL included, to the system log
+  - AI chat on an open connection ignoring a change to its AI policy until reconnect
+
+  ### Bug Fixes
+
+  - PostgreSQL slow to connect, browse, search, commit and switch schema on databases with many schemas
+  - Export dialog and column type picker slow to open on PostgreSQL databases with many schemas
+  - Database switcher slow to open on servers with many or large databases
+  - Table sizes read on every table switch while the inspector was closed
+  - Primary keys missing for PostgreSQL roles that can only read a table
+  - Materialized views and foreign tables listed in PostgreSQL schemas the role cannot read
+  - **Table Info** showing -1 rows for a PostgreSQL table that was never analyzed
+  - MCP database statistics reporting 0 tables for another PostgreSQL database, or failing when one refuses CONNECT
+  - Opening a PostgreSQL table on iPhone and iPad slow on databases with many tables
+  - Value filter cleared by **Save**, **Refresh**, **Restore Previous Values** and hiding a column
+  - Value filter lost on a background tab whose rows were freed, or by choosing the result already shown
+  - **Save** in a query tab running the statement at the caret instead of reading its result again, and losing the sort
+  - Sort arrow left on a query tab's columns after **Run**
+  - Header sort on rows returned by an `INSERT`, `UPDATE` or `DELETE` running that statement again
+  - Header sort on a pinned result, or on one of several results, dropping the other results
+  - **New View…** offered on Redis and other engines without views
+  - Column comments typed in **Create Table** dropped on PostgreSQL, SQL Server, Oracle, DuckDB and Teradata
+  - DuckDB **Create Table** failing on an auto-increment column
+  - Oracle **Create Table** ignoring **Auto Increment**
+  - DuckDB errors shown as "Unknown DuckDB error" instead of the message DuckDB returned
+  - **Create Table** and structure saves failing on Teradata when they run more than one statement
+  - BigQuery table comments showing partition, labels and timestamps instead of the description
+  - Teradata **Table Info** counting every row of the table each time it opened
+  - **Create Table** keeping a draft that could only fail again once the table existed and a later index or comment failed
+  - An AWS IAM sign-in to MySQL failing to reconnect after an idle release, and **Stop** failing, once its token expired, by [@i87ce](https://github.com/i87ce)
+  - MySQL and MariaDB connections with SSL Disabled still using TLS when a client certificate or key was saved
+  - SQL Server empty strings and binaries shown as NULL, reverting edits on **Save** in a table without a primary key
+  - Saves to a SQL Server or Oracle table without a primary key reporting success when no row matched
+  - SQL Server `datetimeoffset` values shown, copied and exported without their offset
+  - SQL Server `geography`, `geometry` and `hierarchyid` values shown as NULL
+  - A possible crash when a result holds a SQL Server `sql_variant` value
+  - iCloud Sync errors shown as raw CloudKit text with record IDs, on Mac and iPhone
+  - Every pending change resent on each edit and app switch while iCloud storage is full or iCloud is signed out
+  - Synced and a new Last Synced time after a sync whose download failed
+  - A restricted or not yet ready iCloud account told to sign in
+  - Signing in to another iCloud account on a Mac reusing the previous account's sync state
+  - TablePro data deleted in iCloud settings uploaded again without asking
+  - Sync not resuming on its own when the network comes back
+  - iPhone and iPad downloading the same changes again on every sync while uploads failed
+  - **Apply** and Return in **Filter Values…** keeping every value after a search narrowed the list
+  - Return in **Filter Values…** hiding every row when no value was selected
+  - Clicks on the **Select All** label in **Filter Values…** doing nothing
+  - "Values from 1 loaded rows" in **Filter Values…**
+  - The connection form, Acknowledgements and MCP Activity sidebars dragged shut with no way to bring them back
+  - The **Users & Roles** list and the server dashboard's slow queries staying hidden for good once dragged shut
+  - A JSON cell edit made in the popover lost on **Save** after **Open in Window**
+  - **Copy Value** on a JSON object or array copying only the rows a tree filter left on screen
+  - The JSON tree filter matching array positions such as `[1]`, counts such as `{2 keys}` and the `…` row
+  - "JSON Too Large" in Tree mode for a minified value under the 100,000 character cap
+  - Shift-click or Cmd-click after clicking a cell selecting only the cell clicked last
+  - Cmd-click on a cell inside a selected block not deselecting it
+  - MySQL and MariaDB DECIMAL columns in results treated as text in charts, sorting and JSON copy
+  - **Column Statistics** showing very small values as 0 and rounding long integers
+  - Copying more than 50,000 rows of selected cells cutting the text without saying so
+  - Disclosure arrows in the inspector's JSON tab doing nothing under a filter, then collapsing rows once it was cleared
+  - **Copy Key Path** not quoting keys such as `a.b` and `content-type`, giving a wrong or unparseable path
+  - "Invalid JSON" in Tree mode for a NULL or empty JSON cell
+  - `{1 keys}` and `[1 items]` for a one-member object or array in the JSON and PHP viewer trees
+  - A broken character before the `…` of a long string in the JSON and PHP viewer trees
+  - Binary geometry values shown as garbled text in the row inspector, where typing replaced the bytes with text
+  - Binary values saved as text after **Set NULL** or **Set DEFAULT** was cleared in the row inspector
+  - Crash when a spatial or JSON column held a value with thousands of nested brackets
+  - Parts of a multi-part geometry missing from the map with nothing saying so
+  - Geographic SRIDs such as 4258, 4283 and 7844 refused by the map as projected coordinate systems
+  - GeoJSON with a lowercase type name such as `point` not drawn on the map
+  - A column holding only curved geometry losing the Map view, and `CIRCULARSTRINGM` called unreadable instead of named
+  - Closing the only tab of a connection first opened from a link or the query history deleting its saved tabs
+  - A reopened tab disappearing when its connection's saved tabs finished loading
+  - Picking a connection that was still connecting restarting its connect
+  - A `.sql` file opening on the connection that connected last instead of the one on screen
+  - Opening an already open `.sql` file, linked favorite, query link or database file not showing its connection and tab
+  - Picking a database in the query editor rerunning the statement at the caret, writes included, without asking
+  - "Connection Failed: Cancelled by user." after declining a connect prompt from **Switch Connection**
+  - A database link with a filter replacing the filters of a tab already showing that table
+  - A cleared group, tag, AI rule, startup command or SSH profile, or a group's old parent, returning after iCloud sync
+  - Exported connections taking the color of another group with the same name
+  - **Copy TablePro Link** dropping the connect and query timeouts, and new tags after the first
+  - The toolbar keeping a connection's old name after it was renamed while connected
+  - iOS widget icons differing from the app for Dameng, Snowflake, Beancount, SurrealDB and Kafka connections
+  - No icon for a connection to a database type no installed plugin describes
+  - MCP clients on the Mac locked out for 5 minutes after five requests sent without a token
+  - An expired MCP token answered as unknown, without the documented `-33008` code and `token expired` challenge
+  - A `%2B` in a pairing redirect's own query arriving at the callback as `+`
+  - Connections exported from iPhone, or with an SSL mode TablePro did not recognize, imported with SSL off
+  - Saving or importing connections while the connection library could not be read replacing every saved connection
+  - Import counting connections it could not save and storing their passwords in the Keychain
+  - Import creating the groups, tags and credential profiles of connections left unselected
+  - An unpredictable password when two imported rows replaced the same connection
+  - TablePlus import reading the default folder instead of the data location set in TablePlus
+</Update>
+
+<Update label="v0.79.0" description="October 9, 2026">
+  ### New Features
+
+  - **Tunnels for Weaviate, Typesense and Elasticsearch**: SSH tunnel, Cloudflare Tunnel, SOCKS proxy and Tunnel Command. Reach a server that only answers from inside a private network
+  - **Elasticsearch node list**: Several nodes per connection. When one stops answering, the connection moves to the next
+
+  ### Improvements
+
+  - Starter or Team named on license gates, badges and the welcome window, in place of "Pro"
+  - **One-time** in place of **Lifetime** for a license with no expiry in **Settings > License**
+  - **Share usage data**, with the report's fields listed, in place of **Share anonymous usage data** in **Settings > General**
+
+  ### Security
+
+  - Elasticsearch console paths starting with `//` sending the Authorization header to the host they named
+  - MongoDB writes hidden behind computed method names, escaped keys or a leading `--` passing as reads
+  - Elasticsearch writes passing Read-Only when the index name held `_search` or a GET carried a body
+  - Redis XAUTOCLAIM passing Read-Only and read-only MCP clients as a read
+  - SAP HANA helper built with Go 1.27.2, which fixes the crypto/tls flaw GO-2026-6607
+  - MongoDB reads writing through a shell function an earlier statement redefined
+  - A MongoDB raw filter row that failed to parse running as JavaScript in a table tab, even at Read-Only
+
+  ### Bug Fixes
+
+  - Kafka connections dialing a hidden localhost:9092 before the brokers listed in the form
+  - One unreachable Kafka bootstrap server using up the whole connect timeout
+  - A blank row in MongoDB **Hosts** saved as localhost:27017
+  - Elasticsearch connections to an IPv6 host failing with "Invalid host"
+  - Cloudflare Tunnel offered for BigQuery, DuckDB and other drivers that cannot use it, until their plugin was installed
+  - Oracle NCHAR, NVARCHAR2 and NCLOB columns failing to load on databases with the UTF8 national character set
+  - Oracle grid saves storing NCHAR, NVARCHAR2 and NCLOB text as ¿ or editing the wrong row on a non-Unicode database
+  - MySQL 4.1 tables not listing, and opening with no columns, indexes or DDL
+  - Table Info, row counts, routines, triggers, foreign keys and the server dashboard failing on MySQL 4.1 to 5.1
+  - MySQL before 5.5 showing Korean, Japanese, Russian and other non-English query errors as garbled text
+  - **Stop** and the query timeout not stopping a query on MySQL 4.1
+  - MongoDB, Redis, etcd and SAP HANA reads confirmed at the Alert and Safe Mode levels and blocked at Read-Only. See [Safe Mode](/features/safe-mode#what-counts-as-a-read)
+  - MongoDB reads with `$nin`, `$mergeObjects`, `.limit()` or `getCollection` refused for read-only MCP clients
+  - MongoDB `remove()` and `drop ()` running without the dangerous query warning, and a JavaScript `delete` raising it
+  - `seq.NEXTVAL` and `NEXT VALUE FOR seq`, which advance a sequence, running at Read-Only and unconfirmed at Alert
+  - MongoDB `deleteMany()`, `updateMany()` and other writes treating a missing filter as `{}` and touching every document
+  - MongoDB `count()` on an aggregate stopping at 5,000,000 and counting only the documents not yet read
+</Update>
+
+<Update label="v0.78.0" description="October 7, 2026">
+  ### New Features
+
+  - **French**: TablePro in French. Pick **Français** in **Settings > General**, by [@exaland](https://github.com/exaland)
+  - **Manage Macs**: The activation limit error links to the tablepro.app page that removes a Mac from your license
+  - **Oracle column types**: BOOLEAN, JSON and VECTOR in the Oracle column type picker
+
+  ### Improvements
+
+  - PostgreSQL, Redshift and CockroachDB hold one connection per database, with TCP keepalives on idle ones
+  - **Manage Account** replaces **Manage Billing** in **Settings > License**
+
+  ### Bug Fixes
+
+  - Switching databases on a PostgreSQL connection reconnecting and dropping the open transaction and temp tables
+  - Switching back to a PostgreSQL, Redshift or CockroachDB database reloading its object list from empty
+  - A tab left on a previous database running on a shared connection that closed after 10 minutes idle
+  - **Import** and **Copy To** committing a transaction left open on the target connection
+  - The health check reconnecting a PostgreSQL session that was sitting in a failed transaction
+  - Each switch between connections in the connections strip reloading that connection's schema
+  - Opening a connection fetching every column of its schema twice
+  - Unsaved grid edits not kept with their tab after jumping to a tab of a background connection
+  - **Users & Roles** discarding staged changes and Undo after switching tab or connection
+  - Object source, ClickHouse parts, chart and map reloading after switching connection and back, and the map losing zoom
+  - The History drawer dropping loaded pages and the selected entry after switching connection and back
+  - The assistant transcript, agent session highlight, inspector edits and Redis key filter reset by a connection switch
+  - The Structure tab stuck on a cancellation error after switching connection while it loaded
+  - A file handle leaked on each switch to a SQLite or Beancount connection
+  - A blank results pane instead of the data grid while a table loads, or after its load error is dismissed
+  - Edits saved against the wrong rows after a tab kept the previous table's primary key or row count
+  - The status bar stuck on Loading after cancelling a **Safe Mode (Full)** confirmation for a table
+  - Approving a **Safe Mode (Full)** confirmation running that table's query in a tab opened from a link meanwhile
+  - A restored table tab that never loads when another tab was opened before its window came forward
+  - Save writing a table's query into the SQL file whose tab the table was opened over
+  - Closing a database entry or connection, or disconnecting, rolling back an open transaction without asking
+  - Oracle column types shown wrong, such as NVARCHAR2(100) as nvarchar2(200) and TIMESTAMP as timestamp(6)(11)
+  - Oracle DDL and SQL exports failing to restore a column with a default and NOT NULL, or a virtual column
+  - Oracle DATE values losing the time of day, and TIMESTAMP fractions cut to milliseconds or misread after a leading 0
+  - Oracle NCHAR and JSON values shown as `<decode error>`, BFILE values shown as NULL, and long decimals shown rounded
+  - Oracle UROWID and REF columns, and index-organized table ROWIDs, failing to load and resetting the connection
+  - A crash reading an Oracle time zone west of UTC, a negative INTERVAL DAY TO SECOND, or an integer of 20 or more digits
+  - Oracle edits and deletes failing for DATE, TIMESTAMP, LOB or RAW values, or saving nothing for NCHAR or JSON
+  - Oracle tables whose first column is a CLOB or BLOB failing to open
+  - Oracle BLOB columns in query results treated as text, and an empty result listing every column of the first table
+  - Copying an Oracle table to another database turning NUMBER(10) keys into decimals and BOOLEAN or JSON into text
+  - Importing into a new Oracle table proposing TEXT columns, which Oracle rejects. Update the Oracle driver in **Settings > Plugins** to get the Oracle fixes
+</Update>
+
+<Update label="v0.77.2" description="October 5, 2026">
+  ### New Features
+
+  - **Requesty**: An OpenAI-compatible router in **Add Provider**, with its Base URL filled in, by [@Thibaultjaigu](https://github.com/Thibaultjaigu)
+
+  ### Improvements
+
+  - A new AI provider with several models and no default starts with no model picked, by [@Thibaultjaigu](https://github.com/Thibaultjaigu)
+  - Toolbar **Save** is a plain checkmark, and the **Safe Mode** icon is filled only at the two Full levels ([#3250](https://github.com/TableProApp/TablePro/issues/3250))
+  - **Actions**, filter and **Disconnect** toolbar icons lose their circle on macOS 26 and later, and **Actions** its chevron ([#3250](https://github.com/TableProApp/TablePro/issues/3250))
+
+  ### Bug Fixes
+
+  - The reasoning setting ignored on OpenRouter, OpenCode Zen, llama.cpp, MLX and custom AI providers, and a reasoning picker shown for Gemini and Ollama, where it changed nothing, by [@Thibaultjaigu](https://github.com/Thibaultjaigu)
+  - Image attachments offered for OpenRouter models that take text only, and max output tokens ignored and image attachments rejected on Ollama, by [@Thibaultjaigu](https://github.com/Thibaultjaigu)
+  - An AI provider failing with "Invalid endpoint" until relaunch after its Base URL was cleared, by [@Thibaultjaigu](https://github.com/Thibaultjaigu)
+  - **Export** in the Structure and object source views showing the Import icon ([#3250](https://github.com/TableProApp/TablePro/issues/3250))
+  - VoiceOver reading the welcome window and Integrations filter menus as "chevron.pulldown" ([#3250](https://github.com/TableProApp/TablePro/issues/3250))
+  - The database icon filled in the database switcher and query editor but outlined in the toolbar and sidebar, and status bar buttons a point or two apart in height depending on their icon ([#3250](https://github.com/TableProApp/TablePro/issues/3250))
+  - The highlighted row in the database and connection switchers drawn as white text on a grey fill ([#3249](https://github.com/TableProApp/TablePro/issues/3249))
+  - A second "#" column beside the row numbers when the data grid bounces past its left edge, and the last column's divider sitting on the grid's right edge, where it could not be dragged
+  - Cells keeping their old width or order until the mouse is released while a column is resized or dragged, and the resize cursor showing a few points from a divider, where a drag moved the column instead
+  - Elasticsearch, Typesense and Weaviate request bodies underlined as syntax errors although they run, and wildcard index paths such as `GET /_cat/indices/*` underlined as an unterminated comment
+  - Brackets in Redis and etcd command arguments underlined as unmatched
+  - Colons in Elasticsearch URLs, Redis keys and SurrealDB record IDs read as query parameters, holding the run
+  - **Format Query** joining the body onto the request line on Elasticsearch, Typesense and Weaviate, and changing Redis keys, etcd paths and SurrealDB record IDs such as `user:1`
+  - **Show All** in the sidebar running a MongoDB command on Elasticsearch, Typesense and Weaviate, and a Redis command on etcd
+  - The change preview on Elasticsearch, Typesense and Weaviate rewriting a stored `{"$oid": …}` as `ObjectId(…)`
+  - **Preview SQL** and other wrapped text splitting a quoted name such as `"public"."reviews"` across two lines
+  - Counts reading "3 table to export" in the **Export** dialog, and "1 rows" in the result status bar and query plan
+  - **Copy To** into PostgreSQL, SQLite, DuckDB or Oracle failing on an index name repeated in the copy or already in the target
+  - **Copy To** review breaking a long ENUM type mid-word, and not naming the table each type change belongs to
+  - The Safe Mode Touch ID prompt reading "TablePro is trying to Authenticate to execute database operations."
+  - VoiceOver reading no name for pickers and fields such as the AI provider pop-up, the CSV NULL text field, **Copy To** and **Create Table**
+  - A crash when VoiceOver reads **Settings > License** while a license appears in it
+  - Shortcuts **Add Row** and **Add Rows** on iPhone and iPad listing no tables until a database or schema is picked, which SQLite never offers
+  - The Shortcuts table and database pickers on iPhone and iPad showing an empty list instead of why the connection failed
+  - **Server Dashboard** metrics staying on a spinner, and slow queries never refreshing
+  - **Users & Roles** privilege checkboxes, **Review & Apply** and "Modified" not updating after a click
+  - The **Users & Roles** object tree keeping its old rows after a search or a switch to **Granted**, and search results showing a disclosure triangle that opened onto nothing
+  - **Count Exactly** on a Redis database leaving the estimate in place
+  - A Redis tab narrowed by its key pattern or type showing the whole database's key count as its "~" total
+  - The status bar truncating the row count and **Count Exactly** instead of dropping to a narrower layout
+  - The query editor bar cut off, with the editor's text over it, when the editor pane is at its smallest
+  - Long column names drawn over their type in the ER diagram
+  - Beancount BQL results showing a position as raw JSON, tags and links as a JSON list, and booleans as 1 or 0, and a commodity held in several lots listed once per lot on `rledger`. Update the Beancount driver in **Settings > Plugins**
+  - Beancount BQL results, tables, directive metadata and transaction tags coming back empty with `rledger` 0.23 and later. Update the Beancount driver in **Settings > Plugins**
+</Update>
+
+<Update label="v0.77.1" description="October 3, 2026">
+  ### New Features
+
+  - **New database file**: **New…** beside **Browse…** for SQLite, DuckDB and libSQL names a database file that does not exist yet. TablePro creates the file when the connection opens
+
+  ### Improvements
+
+  - `$1` in a regular-expression **Replace** in the SQL editor inserts the capture group, as it does in data files
+
+  ### Bug Fixes
+
+  - **Replace** in the find panel editing the wrong text after the first replacement, and crashing when a match ran past the end
+  - **Replace All** crashing on a space in an indent or after **Clear Query**, wrapping quotes and brackets in pairs, and taking minutes on a few thousand matches
+  - Two **Replace** clicks undoing as one step, and a collapsed fold hiding the wrong text after **Replace All**
+  - **Replace** and **All** offered in read-only editors, clearing the matches without changing the text
+  - Regular-expression **Replace** in data files inserting the wrong capture text when a replacement changes length
+  - **Import into Table** from a data file naming the sheet, table, error reports and history after a temporary copy
+  - The query editor staying put when Cmd+Up, Cmd+Down or a long paste moves the caret out of view ([#3239](https://github.com/TableProApp/TablePro/issues/3239))
+  - **Clear Query**, a favorite, a history entry or an AI fix sometimes not reaching the editor, or typing bringing the old query back
+  - **Run**, **Explain** and AI actions using the caret from before a find or a jump to a result's statement
+  - **Use Selection for Find** reverting to the previous search term once the caret moves
+  - Connections strip entries cutting off the database or schema line and crowding the icon against the highlight, and the strip resting partway through an entry after the sidebar was resized ([#3244](https://github.com/TableProApp/TablePro/issues/3244))
+  - Oracle closing TablePro, or failing with "unexpected message", while loading rows with `SDO_GEOMETRY` or `BLOB` columns, or when a query is stopped or the connection closed while rows load. Update the Oracle driver in **Settings > Plugins** ([#3241](https://github.com/TableProApp/TablePro/issues/3241))
+  - Oracle object columns such as `SDO_GEOMETRY` labelled "unknown" and showing a placeholder instead of NULL ([#3241](https://github.com/TableProApp/TablePro/issues/3241))
+  - DuckDB **Browse…** offering any file, and SQLite **Browse…** dimming databases saved without a known extension
+  - **File > Open File…** dimming folders reached through a symlink or a Finder alias
+</Update>
+
+<Update label="v0.77.0" description="October 2, 2026">
+  [Read the announcement](https://tablepro.app/blog/tablepro-0-77)
+
+  ### New Features
+
+  - **SAP HANA**: Connect to SAP HANA Cloud and on-premises HANA 2.0, with TLS on by default, schema browsing, catalog DDL and query plans. Install the driver from **Settings > Plugins** ([#1966](https://github.com/TableProApp/TablePro/issues/1966)), by [@J2TeamNNL](https://github.com/J2TeamNNL)
+  - **Sidebar folders**: Group the tables and views of a database or schema into folders, kept in step between Macs over iCloud. Right-click a table and choose **Move to > New Folder**, or drag tables onto a folder. Folders live in TablePro only and change nothing on the server ([#3167](https://github.com/TableProApp/TablePro/issues/3167))
+  - **Saved import mappings**: CSV, JSON and Excel imports remember each table's column mapping, and **Match by Name** and **Match by Position** fill every row at once ([#3172](https://github.com/TableProApp/TablePro/issues/3172))
+  - **More import encodings**: Shift JIS, EUC-JP, GB 18030, Big5, EUC-KR and UTF-16 for CSV and SQL import
+  - **Timeouts per connection**: **Connect timeout** and a query timeout override under a connection's **Options**. Leave a field empty to use the default ([#2525](https://github.com/TableProApp/TablePro/issues/2525))
+
+  ### Improvements
+
+  - The clipboard URL banner appears for every scheme **Import from URL** accepts, `+ssh` URLs included
+
+  ### Security
+
+  - A query tab opened from **Users & Roles** with **Open in Query Editor** saved its script with the passwords in plain text
+  - Redis **Verify Identity** accepted a server certificate issued for another host
+  - TablePro links, connection exports and the Team Library carried the pre-connect script and other settings meant to stay on one Mac
+
+  ### Bug Fixes
+
+  - **Copy as UPDATE** and **Copy as INSERT** writing identity, computed and generated columns, which SQL Server refuses, leaving out the table's schema, and matching a composite key on its first column only or on unsaved edits ([#3219](https://github.com/TableProApp/TablePro/issues/3219))
+  - SQL Server and Oracle identity, computed, virtual, `rowversion` and system-versioned period columns offered for editing and written on save, including edits staged before the table's structure loaded, and **Add Row** failing on a table that has one
+  - SQL Server saves failing on a table without a primary key that has an `ntext`, `text`, `xml` or `image` column, identity columns missed when a table or schema name contains a dot, and a new row's value dropped when a same-named table in another schema has an identity column of that name
+  - **Set Value > Default** storing the text `__DEFAULT__` on SQL Server and Oracle, and new Snowflake, Teradata and Trino rows storing it in columns left to their default
+  - **Restore Previous Values** bringing a deleted SQL Server or PostgreSQL row back under a new identity key
+  - Undo and Redo in a tab with unsaved edits replaying another tab's changes against the wrong rows
+  - Column header sort on Redis, etcd and Kafka running the last command again with `ORDER BY` appended
+  - **Explain Analyze** running a write on Read-Only connections and skipping the Alert and Safe Mode confirmation, `EXPLAIN ANALYSE` treated as a plain `EXPLAIN`, and `pg_terminate_backend`, `nextval` and other state-changing calls treated as reads by Safe Mode and external clients
+  - Safe Mode levels: **Alert (Full)**, **Safe Mode** and **Safe Mode (Full)** dropped to **Alert** by an edit on iPhone or iPad, a level lost when a connection file moves between Mac and iOS, and an unknown level from iCloud read as **Off** on iPhone and iPad
+  - iCloud sync resetting a connection's **External Clients** level and its Cloudflare, Cloud SQL, SOCKS and Tunnel Command settings, and applying remote deletions of connections, groups, tags, SSH profiles and table favorites with their sync category off
+  - **Local only** connections taking edits and deletions made on another device, and syncing their table favorites, saved queries and column layouts to iCloud
+  - Favorite tables: two whose names contain `|` mixed up by iCloud sync, one starred again during a sync disappearing when it finished, a save and a deletion both sent for one starred again or renamed back before a sync ran, database favorites and column layouts removed on another Mac staying on this one, and the app pausing while renaming or dropping a database or schema that holds many of them
+  - The **Favorites** tab missing tables starred in other schemas, and all of them on Oracle, Snowflake, BigQuery and Trino
+  - A table dropped or renamed with SQL from a query tab or an MCP client keeping its saved filters, column layout, favorite and Recent entry
+  - Import sheet: an option change ignored until the next edit and then resetting the column mapping, another table's columns shown after switching tables while the first was loading, new-table column edits lost on an option change or **Try Again**, and rows written to another database after a database switch in another window
+  - CSV and Excel imports reading a column under the wrong header when headers repeat or a blank one comes first, and CSV and JSON imports failing on every row, or writing a skipped field, when two fields differ only by case
+  - CSV import writing bytes it could not read as Latin-1 text, and merging rows at a double quote inside a field when the quote character is a single quote
+  - JSON import leaving out fields first seen after row 200, JSON Lines files with CRLF line endings, `U+2028`, `U+2029` or `U+0085` in a string failing to import, invalid UTF-8 imported as `U+FFFD`, and JSON Lines import stalling while GitHub Copilot is on
+  - **Table Transfer** emptying a destination table and then failing when two source columns map to one column
+  - Japanese, Chinese and Korean text in CSV, TSV and SQL files opening garbled, and Latin-1 and Windows-1252 SQL dumps importing double-encoded text through their own `SET NAMES` and changing the bytes of binary values
+  - Data Files window: every row of a UTF-16 file rewritten on save, an error that stayed after reloading in the wrong encoding, the encoding chosen in **File Properties** lost when another app changes the file, and another app's in-place writes missed on HFS+ and exFAT volumes
+  - Data Files window: no columns found for a JSON Lines file over 256 KB with non-ASCII text, a wrong row number and blank-looking characters in the save error for text the encoding cannot store, the Yen sign failing to save in Shift JIS and EUC-JP, and VoiceOver reading the status bar's delimiter and encoding as only "File format"
+  - Shortcuts rejecting CSV and JSON files that are not UTF-8, and **Add Row** and **Add Rows** rejecting CSV with CRLF or CR line endings
+  - CSV, XLSX and MQL exports ignoring a table's row filter, row limit and column choice, the export dialog offering a SQL row scope on MongoDB, Redis and other engines without SQL, and a row limit on **Copy To** and scoped exports failing with a syntax error on SQL Server, Oracle and Teradata
+  - MQL exports rounding 64-bit integers past 2^53 and restoring whole doubles and small 64-bit integers as 32-bit ones, and XLSX exports writing duplicate sheet names that Excel opens only after a repair
+  - Parquet exports rounding or emptying Oracle, Snowflake and Dameng `NUMBER`, losing `DECIMAL` digits, writing Oracle `BINARY_FLOAT` and `BINARY_DOUBLE` as text and PostgreSQL `money` as null, and leaving files behind when a multi-table export is stopped
+  - MongoDB exports dropping fields first seen after document 200, Elasticsearch, Typesense and SurrealDB exports cutting arrays and objects over 10,000 characters into broken JSON, and Weaviate exports failing after 10,000 objects
+  - **Copy To** on a foreign table, sequence, system table or external table preselecting every object in the schema, and refusing to copy between two schemas of one DuckDB or PGlite connection
+  - MongoDB, Elasticsearch, Typesense and SurrealDB saving a long array or object shortened for display as the cut text, and MongoDB refusing text such as `[DRAFT] Chapter one...` as a shortened value
+  - Filter-bar **between** refused on Typesense and Weaviate and given the wrong lower bound on BigQuery, SurrealDB **between**, **matches regex**, **is empty** and raw filters run as equality checks with **is not empty** showing only empty rows, and the Weaviate raw filter row sent as a property named `__RAW__`
+  - SurrealDB edits to `in` and `out` dropped when the same row had another edit
+  - etcd **Delete** and **Truncate** on `(root)` erasing the whole Key Prefix Root, or sibling keys when it has no trailing `/`, Value edits and key renames detaching the key's lease, and commands and saved edits reaching a different key when the key starts with a combining mark
+  - etcd `lease revoke`, `auth disable` and user or role deletes running without confirmation, list commands gated as writes, and commands with a flag before the key, such as `del --prefix /app`, failing with "requires a key"
+  - etcd filters failing with "Unknown command: select" on columns other than Key, Key filters ignoring most operators and OR, and **contains** and **starts with** on Key also matching values
+  - etcd TLS: an **SSL Mode** the driver ignored, URLs that lost or faked TLS on import and **Copy as URL**, a blank **TLS Mode** on new connections, an untranslated **Disabled** option, and a Verify CA error naming Advanced fields
+  - Redis Cluster through a tunnel failing to connect with advice to set **Connection Mode** to Cluster, and a `SCAN` typed in a query tab showing one page of keys with no cursor to continue from
+  - ClickHouse: the query timeout never reaching the server, capped `SELECT` queries failing at 60 seconds, **Stop** leaving the query running, connect errors such as a wrong password shown as "Failed to establish connection", and the client certificate never sent to servers that require mutual TLS
+  - PostgreSQL 18 virtual generated columns written without their expression in **Show DDL**, **Copy DDL** and SQL export, and **REINDEX VERBOSE** offered on PostgreSQL 9.1 to 9.4, where it fails, and ignored when reindexing a whole database
+  - CockroachDB showing an empty **Check Constraints** tab and no check constraints in MCP `describe_table`, and **Use ~/.pgpass** named **Use Password File** on Redshift and CockroachDB
+  - PGlite reporting server errors such as a missing database as an unreachable socket server, and saying it cannot change the order of a table's columns
+  - Remote libSQL crashing on `inf` or `nan`, storing text like `007` as a number and blobs as text, and local libSQL writes reporting success after a lock wait reached the query timeout
+  - Remote SQLite refreshes mixing a new WAL or journal with the previous cached database, and snapshots left on the server after a connection timeout
+  - Connection checks interrupting a query, import or export still running after five minutes, timeout errors naming the database when an SSH bastion stalled, connection attempts in flight restoring an edited connection's previous server, name, tags or Safe Mode, and query timeout overrides dropped by Mac sync and connection exports ([#2525](https://github.com/TableProApp/TablePro/issues/2525))
+  - Save disabled for Kafka connections set to **Verify Identity** without a CA file
+  - SSH, Cloudflare, SOCKS, Tunnel Command and Cloud SQL tunnels dropping the client certificate and key, so mutual TLS never worked through one
+  - The SOCKS proxy dialing the hidden Host instead of the first host-list entry, the tunnel command preview showing port 0 or the wrong host, "SSH password rejected" for a Password-auth tunnel with no saved password, and a host-list warning naming replica set failover for Redis and Kafka and implying Sentinel works through a tunnel
+  - Literal backticks in cloudflared, cloud-sql-proxy, SSH config, remote command and dump tool install messages
+  - The clipboard URL banner turning `sslmode=verify-full` or `verify-ca` into **Required** and ignoring `sslmode=disable`, and **Import from URL** ignoring `ssl=1`, `ssl=require` and `ssl=0`
+  - MongoDB restore into a database with a different name restoring nothing and reporting success, **Backup Dump** and **Restore** ignoring the connection's Auth Database, Hosts list, SRV and TLS options, and the restore confirmation claiming existing objects are overwritten on PostgreSQL, MongoDB, SQLite, SQL Server and DuckDB
+  - Server dashboard: **Slow Queries** failing on SQL Server, sessions, slow queries and query counts failing on Redshift, no **Terminate** button on ClickHouse sessions, SQL Server and ClickHouse listing their own monitoring session, SQLite **Cache Size** shown as "-2000 pages", and an untranslatable "% used" on Typesense
+  - MCP `describe_table` results failing the tool's own output schema, `export_data` writing numbers and booleans as strings and binary values as base64 text, `focus_query_tab` reporting a tab focused while the window stayed elsewhere, and `browse_table` ignoring a sort on a column the table does not have
+  - MCP `stop_server_session` blaming the engine for a mistyped process id or for cancel on SQL Server and ClickHouse, the `question_to_sql` prompt describing only the first six tables, and a Cassandra filter error pointing MCP clients to a **Match All** control they do not have
+  - Compare missing DuckDB rows keyed by a binary column and writing DuckDB binary values as text in sync scripts
+  - Linked Folder and Team Library connections never asking for a password, **Publish to Team Library…** sharing connections with the whole team without asking, an empty Team Library after joining a team until the next relaunch, an old Team Catalog entry left beside a renamed connection, and a folder panel pointing to a Settings pane that does not exist
+  - iPhone and iPad: the row editor saving a long text or binary value's placeholder over the full value and writing SQL Server identity and computed columns, a DuckDB connection's Info tab showing a server at 127.0.0.1:3306, and the `SELECT * FROM` template writing `LIMIT 100` on SQL Server, Oracle and Redis without the selected schema
+  - iPhone and iPad keeping the query history of deleted connections and the passwords of connections deleted on another device, and listing a repeated query twice until the connection is reopened
+  - Registry plugins refused as needing a newer TablePro on releases the registry still publishes binaries for
+  - Release highlights in the update dialog run together into one paragraph, and Removed and Deprecated listed after Fixed in GitHub release notes
+</Update>
+
+<Update label="v0.76.1" description="September 29, 2026">
+  ### Improvements
+
+  - Cassandra and ScyllaDB tables open without header sorting, **Match any** or an automatic row count, and CQL editor results are read-only, by [@yordis](https://github.com/yordis)
+
+  ### Removed
+
+  - **Verify CA** in the SSL mode picker for new Oracle connections on iPhone and iPad, which have no field for a CA certificate. Choose **Verify Identity** instead
+
+  ### Security
+
+  - Trino sent the password or access token in plain text when **SSL Mode** was **Disabled**, by [@J2TeamNNL](https://github.com/J2TeamNNL)
+  - **Verify CA** without a CA certificate accepted a certificate issued for any host on Trino, ClickHouse and etcd, by [@J2TeamNNL](https://github.com/J2TeamNNL)
+  - **Verify CA** without a CA certificate accepted a certificate issued for any host on Kafka, Oracle and Teradata. Choose the CA certificate that signed the server's certificate, or use **Verify Identity**
+
+  ### Bug Fixes
+
+  - Cassandra and ScyllaDB: syntax errors opening, paging or filtering a table, Save dropping edited numbers, dates, UUIDs and booleans while reporting success, **Add Row** replacing a row with the same primary key, and multi-row or composite-key deletes failing, by [@yordis](https://github.com/yordis)
+  - Cassandra and ScyllaDB values: `decimal` and `varint` shown as hex, `time` cut to milliseconds, and user-defined types, tuples, `duration` and `vector` shown garbled or empty, by [@yordis](https://github.com/yordis)
+  - Cassandra and ScyllaDB: query results stopping at 100,000 rows without saying so, Structure edits that failed at Save, missing functions, aggregates and triggers on ScyllaDB, trigger and function source that failed when run, and an SSL/TLS hint recommending settings for DataStax Astra, which does not connect, by [@yordis](https://github.com/yordis)
+  - CQL `BATCH` statements split at their inner semicolons, and a column named `case` running the next statement with its `CREATE TABLE`, by [@yordis](https://github.com/yordis)
+  - Endless reconnect attempts after a server started requiring TLS, stopped accepting it, or rejected the client certificate, with the certificate error shown in place of "The connection stopped responding", and ClickHouse host lookup failures reported as a TLS hostname mismatch
+  - Trino and ClickHouse on port 443, and ClickHouse on 8443, sending plain HTTP to an HTTPS port ([#3166](https://github.com/TableProApp/TablePro/issues/3166)), by [@J2TeamNNL](https://github.com/J2TeamNNL)
+  - Trino certificate failures shown as "Query was cancelled", raw HTML error pages in connection errors, PEM CA files rejected, proxy redirects followed to another address or over plain HTTP, and no warning under **Preferred** that Trino does not fall back to plain connections, by [@J2TeamNNL](https://github.com/J2TeamNNL)
+  - Trino and etcd mutual TLS crashing on an `RSA PRIVATE KEY` file, rejecting other keys, and copying them to the login keychain, by [@J2TeamNNL](https://github.com/J2TeamNNL)
+  - ClickHouse **Verify Identity** ignoring the chosen CA certificate, and certificate failures reported as a generic connection failure, by [@J2TeamNNL](https://github.com/J2TeamNNL)
+  - Verify modes refusing to save without a CA file on SQL Server, and **Verify Identity** on Trino and ClickHouse, by [@J2TeamNNL](https://github.com/J2TeamNNL)
+  - etcd rejecting a PEM CA certificate, by [@J2TeamNNL](https://github.com/J2TeamNNL)
+  - Teradata falling back to the system trust store when the CA file could not be read
+  - **Import from URL** rejecting `jdbc:` URLs and ignoring their `user` and `password`, and imported Trino and ClickHouse URLs with `SSL=true` skipping certificate checks, by [@J2TeamNNL](https://github.com/J2TeamNNL)
+  - Links opened from a browser or `open` ignoring the driver's default SSL mode, and copied connection URLs losing **SSL Disabled**, by [@J2TeamNNL](https://github.com/J2TeamNNL)
+  - A result on a plugin-browsed engine taking the selected tab's table when it finished in another tab, and plugin saves running changes out of order after an undo, by [@yordis](https://github.com/yordis)
+  - The welcome window toolbar growing and captioning its search field after choosing **Icon and Text**, by [@shuvroroy](https://github.com/shuvroroy)
+  - Generic icons for ScyllaDB, libSQL, Teradata, Trino and Cloudflare R2 SQL in the iOS widget, and for ScyllaDB in the iOS app, by [@yordis](https://github.com/yordis)
+</Update>
+
+<Update label="v0.76.0" description="September 28, 2026">
+  [Read the announcement](https://tablepro.app/blog/tablepro-0-76)
+
+  ### New Features
+
+  - **Agent mode**: One AI session that works with the whole connection window, with sessions to start and delete and a record of what each one ran. Turn it on from **View > Mode > Toggle Agent Mode** (`Cmd+Option+Shift+A`) or **Open in Agent Mode** on a connection in the welcome window. The connection is held at Safe Mode **Alert** while Agent mode is on and goes back to your level after, by [@J2TeamNNL](https://github.com/J2TeamNNL)
+  - **Outside MCP servers**: Add an MCP server you run in **Settings > Integrations** and let an AI session call its tools, with a per-connection allowlist and its token kept in the Keychain, by [@J2TeamNNL](https://github.com/J2TeamNNL)
+  - **Data Files window**: CSV, TSV, pipe-separated, `.txt` and `.dat` files open as a table, replacing the CSV inspector. JSON and JSON Lines files open and edit as a table too, and Excel `.xlsx` workbooks and compressed files such as `.csv.gz` open read-only
+  - **Working in a data file**: Find & Replace across the whole file, **Search All Columns**, the table grid's filter bar, column statistics whose top values filter the file, a Row Details pane (`Cmd+Option+I`), cleanup under **Edit > Data**, export to every bundled format, **Import into Table**, and a text encoding choice in Save As. Large files open, filter and sort in the background
+  - **MongoDB documents**: **Insert Document…** and **Edit Document…** take a whole document as Extended JSON, **Remove Field** removes a field from a cell, and **No Field** marks a field a document does not have ([#3132](https://github.com/TableProApp/TablePro/issues/3132))
+  - **MongoDB fields in Structure**: Rename or remove a field across a collection from the Structure tab. The collection's validator is carried along, and a change that would break an index, a view or a document is refused before anything is written ([#3132](https://github.com/TableProApp/TablePro/issues/3132))
+  - **DynamoDB**: Reads that query the table or an index when the grid's filters allow it, a Create Table form, API requests such as `CreateTable {…}` in the editor, global secondary indexes from the Structure tab, recovery, protection and billing under **Maintenance**, nested attribute paths in filters, and a **DynamoDB Local (no credentials)** auth method
+  - **iPad layouts**: The table list and the table browser side by side, with row previews and the editor sized to the display, on iPad and on iPhone Duo's inner display
+  - **iPhone and iPad**: A welcome sheet that asks once about iCloud sync and usage data, a sample database, What's New after an update, and tips in the connection list
+  - **Review with AI**: From the query editor bar, the **Query** menu, the editor's context menu and the `/review` command
+  - **Saved queries**: Version history with **Restore This Version**, Git status, history and **Discard Changes…** for files in a linked SQL folder, and **Global** folders that every connection shows ([#2505](https://github.com/TableProApp/TablePro/issues/2505))
+  - **SQLite extensions**: Load sqlite-vec, SpatiaLite and other libraries on connect, for SQLite and local libSQL connections ([#2502](https://github.com/TableProApp/TablePro/issues/2502))
+  - **Recent tabs**: `Control+Tab` goes back to the tab you used last, with a list of the window's tabs while Control is held ([#2524](https://github.com/TableProApp/TablePro/issues/2524))
+  - **Filter by a cell**: **Filter** in a data grid cell's context menu narrows the table to rows sharing that value ([#3066](https://github.com/TableProApp/TablePro/issues/3066))
+  - **Saved filters**: **Filter Settings** chooses whether a table's filter comes back without running, or is not saved at all, and **Always Show Filter Bar** is an option of its own ([#3006](https://github.com/TableProApp/TablePro/issues/3006))
+  - **Every schema in Open Quickly**: Tables from every schema in Open Quickly and the sidebar filter, and `schema.table` searches in both ([#3048](https://github.com/TableProApp/TablePro/issues/3048))
+  - **SQL Server scripts**: `GO` batch separators, a result tab for every result set a batch returns, and `PRINT` output in the **Output** view ([#3078](https://github.com/TableProApp/TablePro/issues/3078))
+  - **Oracle**: `DBMS_OUTPUT` lines shown with the statement that printed them and in the **Output** view, and transactions opened with `SET TRANSACTION`, `SAVEPOINT` or `LOCK TABLE` held until `COMMIT` or `ROLLBACK`
+  - **Actions menu**: A toolbar menu with the commands for the tab you are on and every import format, alongside **File > Import > Import Data From** and **File > Session**
+  - **Recent connections**: **Show recent connections** and **Clear Recent** in **Settings > General > Connections**, by [@shuvroroy](https://github.com/shuvroroy)
+  - **Foreign key picker**: Several label columns beside the key, for parent rows only a combination tells apart ([#2996](https://github.com/TableProApp/TablePro/issues/2996))
+  - **Redis**: Numbered databases on Valkey 9 clusters, and `DB <index> <command>` to run one command on another database
+  - **PostgreSQL indexes**: Invalid indexes named on the **Indexes** tab, expression keys such as `lower(email)`, and whether a materialized view can be refreshed concurrently ([#2522](https://github.com/TableProApp/TablePro/issues/2522))
+
+  ### Improvements
+
+  - The connection window's toolbar holds eight controls that follow the tab and the mode, with the rest in **Customize Toolbar**, and the **Tables** and **Favorites** chooser sits at the top of the sidebar
+  - The Inspector and the Assistant share one header, with a picker between them
+  - Assistant conversations belong to one connection and outlive the window that opened them
+  - AI query actions send the columns, indexes, foreign keys and row counts of the tables the query uses, and **Explain with AI** and **Optimize with AI** send the selection or the statement at the cursor rather than the whole tab
+  - **Base URL** replaces **Endpoint** in an AI provider's settings, with the URL requests resolve to shown under it ([#3040](https://github.com/TableProApp/TablePro/issues/3040))
+  - 537 driver and import/export strings are offered for translation, where they had only ever shown in English
+  - iCloud sync and usage data on iPhone and iPad stay off until you turn them on
+  - SQLite and libSQL connections run SQLite 3.53.4, built into the driver, in place of the macOS copy
+  - SQL Server scripts run outside a transaction TablePro opens, as in SQL Server Management Studio
+  - DynamoDB maps, lists and sets show as JSON, column types use the AWS console's names, and the region comes from the AWS profile when the connection names none
+  - The MongoDB shell sends `$regex` and `$options` objects as operator documents and stores whole numbers past 2^53 as doubles, as mongosh does
+  - A column type change from the Structure tab asks for confirmation under Safe Mode, like a dropped column
+  - ClickHouse materialized views are read-only in the data grid, as on every other engine
+
+  ### Removed
+
+  - The CSV Inspector plugin, replaced by the Data Files window
+  - **Refresh from iCloud**, **Sync Now** and the toolbar sync button on iPhone and iPad
+  - The toolbar's throughput readout, and Back, Forward, New Tab, Open Quickly, Add Row and Restore Previous Values from the default toolbar
+
+  ### Security
+
+  - Statements hidden behind a backslash, a nested comment, a bracketed identifier, dollar quotes or an engine's own literal forms skipped Safe Mode on Mac, iPhone and iPad, and passed the one-statement check on MCP and AI chat queries
+  - A quoted Redis command such as `"FLUSHALL"` skipped Safe Mode, and so did SQL Server statements written after another without a semicolon
+  - SQL Server connections set to **Required (skip verify)** were not encrypted past the login
+  - Inline suggestions sent the query and table columns to the AI provider on connections set to Ask Each Time or Never
+  - Stored MongoDB values, and collection, view and index names, could run as shell code when a row was edited, duplicated or restored, or when DDL was run
+  - Code in a plugin bundle, and its resource envelope, were not verified before the bundle was loaded
+  - The system log held query text, table names, file paths and driver errors, which can include row values
+  - Oracle and Dameng metadata reads could be captured by an object shadowing a `SYS` name in the current schema
+  - On iPhone and iPad, SSH private keys were saved in plain text, **Require Face ID** could be turned off without authenticating, and a locked launch connected before Face ID was answered
+
+  ### Bug Fixes
+
+  - MongoDB statements that failed, including writes the server rejected, reported as successful with an empty result, and the **Write Concern** setting ignored by every write except inserts
+  - MongoDB edits that deleted a field on **Set NULL**, retyped nested dates and numbers, or stored dates and ObjectIds as text, and collections that could not be created from **New Table…** ([#3131](https://github.com/TableProApp/TablePro/issues/3131))
+  - Saved queries and folders deleted at launch when their connection had not arrived from iCloud yet, and edits made during an iCloud sync reverted by it
+  - iCloud sync stopping for good once 250 records were waiting to upload
+  - Every window's front tab reloading, and asking to discard edits, after an import, a new table or a structure change, and other tabs showing old rows, columns, DDL or triggers afterwards
+  - Structure saves that could lose data asking for confirmation twice and showing an error after Cancel, and the Structure tab refusing saves on a SQLite table with an untyped column, on a renamed primary key column, or on an index named like one deleted in the same save
+  - A batch committing or aborting a transaction already open on the connection, and a query in one tab cancelled when another tab on the connection started or stopped one
+  - SQL Server variables lost after a script's first statement, later result sets shown under the first one's columns or crashing the app, and a connection that stopped answering after Stop ([#3078](https://github.com/TableProApp/TablePro/issues/3078))
+  - Oracle PL/SQL blocks split at their inner semicolons, procedures stored INVALID while the run reported success, and a crash when a query was cancelled while its rows loaded ([#2984](https://github.com/TableProApp/TablePro/issues/2984))
+  - Kafka commands failing on a cluster of more than one broker, and `CONSUME ... FROM NEWEST` returning the oldest messages ([#2993](https://github.com/TableProApp/TablePro/issues/2993))
+  - etcd connections failing once authentication is enabled ([#2994](https://github.com/TableProApp/TablePro/issues/2994))
+  - The Redis database list failing on AWS ElastiCache and Azure Cache for Redis, Redis Cluster writes reported as complete when a shard refused them, and Redis errors on iPhone and iPad shown as success ([#3036](https://github.com/TableProApp/TablePro/issues/3036))
+  - DynamoDB edits saving numbers, booleans, maps and sets as strings, filters matching nothing, and **Count Exactly** never finishing
+  - MySQL and MariaDB column defaults: NULL shown as Empty, string defaults misread on MariaDB, and errors editing a column whose default is an expression ([#3058](https://github.com/TableProApp/TablePro/issues/3058))
+  - Backup Dump failing with MariaDB's `mysqldump`, or on Verify CA and Verify Identity connections ([#3046](https://github.com/TableProApp/TablePro/issues/3046))
+  - **Highlight Rules** pull-downs snapping back, which left every rule on **equals** and the column it was created with ([#3015](https://github.com/TableProApp/TablePro/issues/3015))
+  - Filter rows typed but never applied counted as applied, and lost on closing the tab ([#3006](https://github.com/TableProApp/TablePro/issues/3006))
+  - A dropped table's saved filters, layout, highlight rules and value formats applied to a new table of the same name
+  - A wrong AI provider Base URL reported as **Model not found**, a doubled version segment in the URL, and **Connection successful** for a URL answering 404
+  - SSH tunnels on iPhone and iPad stalling part-way through a result, and every later connect hanging once a tunnel dropped
+  - Icon-only buttons silent to VoiceOver across the app, and the data grid's inline editor and cell viewer unreachable by VoiceOver
+  - `Cmd+W` closing the whole connection instead of the current tab until something in the window was clicked
+  - CSV rows merged when a file did not end with a line break, UTF-16 files read as garbage, and edits under a filter landing on a different row
+</Update>
+
 <Update label="v0.75.0" description="September 18, 2026">
   ### New Features
 
@@ -95,6 +620,8 @@ rss: true
 </Update>
 
 <Update label="v0.74.0" description="September 13, 2026">
+  [Read the announcement](https://tablepro.app/blog/tablepro-0-74)
+
   ### New Features
 
   - **Google Cloud Spanner driver**: A registry plugin over the REST API. Install it from Settings > Plugins ([#1226](https://github.com/TableProApp/TablePro/issues/1226), [#2480](https://github.com/TableProApp/TablePro/issues/2480))
@@ -167,6 +694,8 @@ rss: true
 </Update>
 
 <Update label="v0.73.0" description="September 9, 2026">
+  [Read the announcement](https://tablepro.app/blog/tablepro-0-73)
+
   ### New Features
 
   - **Connection editor rebuilt**: Four sections in a sidebar, General, Network, Options and Appearance, in place of up to eleven panes. One Connect via picker replaces five Enable switches, and Save, Cancel and Test Connection sit on a bottom action bar
@@ -231,6 +760,8 @@ rss: true
 </Update>
 
 <Update label="v0.72.0" description="September 4, 2026">
+  [Read the announcement](https://tablepro.app/blog/tablepro-0-72)
+
   ### New Features
 
   - **Backup and restore**: Back up a database with its own engine's tools and restore it again. TablePro drives `pg_dump` and `pg_restore` on PostgreSQL and Redshift, `mysqldump` on MySQL and MariaDB, `mongodump` on MongoDB, `sqlite3` on SQLite and libSQL, and `sqlpackage` on SQL Server ([#2618](https://github.com/TableProApp/TablePro/issues/2618))
@@ -316,6 +847,8 @@ rss: true
 </Update>
 
 <Update label="v0.70.0" description="September 1, 2026">
+  [Read the announcement](https://tablepro.app/blog/tablepro-0-70)
+
   ### New Features
 
   - **Row as JSON**: A JSON tab in the inspector shows the selected row as JSON, reachable from Show Row as JSON on a row's right-click menu. Click a foreign key to fetch the row it points at, five levels deep, and turn on Always Expand Foreign Keys to have them open on arrival. The filter field takes plain text or a regular expression in slashes
@@ -376,6 +909,8 @@ rss: true
 </Update>
 
 <Update label="v0.69.0" description="August 27, 2026">
+  [Read the announcement](https://tablepro.app/blog/tablepro-0-69)
+
   ### New Features
 
   - **Restore Previous Values**: Take back a save that already committed. TablePro keeps the previous values of rows you changed, so an edit, a delete or a paste can be put back from the Edit menu or the toolbar's Table Actions group after the transaction closed. Settings > Data & Results has an off switch and Clear Saved Changes. This is a Starter feature ([#2107](https://github.com/TableProApp/TablePro/issues/2107))
@@ -486,6 +1021,8 @@ rss: true
 </Update>
 
 <Update label="v0.68.0" description="August 25, 2026">
+  [Read the announcement](https://tablepro.app/blog/tablepro-0-68)
+
   ### New Features
 
   - **Compare & Sync**: Compare two databases side by side, over tables, views, procedures, functions and triggers, or over row data, and apply what differs. This is a Starter feature ([#721](https://github.com/TableProApp/TablePro/issues/721))
@@ -568,6 +1105,8 @@ rss: true
 </Update>
 
 <Update label="v0.67.0" description="August 21, 2026">
+  [Read the announcement](https://tablepro.app/blog/tablepro-0-67)
+
   ### New Features
 
   - **Code folding**: Fold statements, table bodies, CTEs, subqueries, `BEGIN` blocks and multi-line comments from the editor gutter. A collapsed region becomes a chip you can hover to peek at, folds are remembered when a tab is reopened, and Fold All, Unfold All and Toggle Fold are in the Query menu. It also works in the DDL and trigger views, the SQL import preview, the AI review sheet, chat code blocks and the JSON cell viewer

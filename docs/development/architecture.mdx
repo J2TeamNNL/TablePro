@@ -26,7 +26,7 @@ The UI is SwiftUI with AppKit underneath it for windows, menus, and the data gri
 
 <DriverCounts />
 
-A driver is one of four roles a bundle can take. `ExportFormatPlugin`, `ImportFormatPlugin`, and `DocumentInspectorPlugin` are the others, which is how the CSV, JSON, SQL, XLSX, and MQL formats and the CSV inspector ship.
+A driver is one of three roles a bundle can take. `ExportFormatPlugin` and `ImportFormatPlugin` are the others, which is how the CSV, JSON, SQL, XLSX, and MQL formats ship. `DocumentInspectorPlugin` is still declared in the kit, and the app no longer loads a bundle that provides it.
 
 ### Opt-in protocols
 
@@ -75,7 +75,7 @@ Autocomplete is three pieces. `CompletionEngine` ranks the suggestions and knows
 
 `Core/MCP/` holds a Model Context Protocol server bound to loopback, speaking plain HTTP through `NWListener`. Nothing in it is reachable off the machine: no TLS, no remote mode. `MCPProtocolDispatcher` is an actor that resolves the protocol era from the request, checks scopes, runs each handler in its own task under a 330-second deadline, and normalizes the result envelope. `MCPServerManager` owns the lifecycle on the main actor: port binding, the bridge credential, the handshake file.
 
-The wire contract, the tool catalog, and the version policy are documented for consumers: [MCP Protocol](/external-api/mcp-protocol), [MCP Tools](/external-api/mcp-tools), [Versioning](/external-api/versioning).
+The wire contract, the tool catalog, and the version policy are documented for consumers: [MCP Protocol](/developers/mcp-protocol), [MCP Tools](/developers/mcp-tools), [Versioning](/developers/versioning).
 
 ## Connecting
 
@@ -116,6 +116,6 @@ A cancelled connect is the hard case here, because `Task.cancel()` cannot interr
 | swift-certificates | SPM, 1.19.0+ | X.509 types, linked by the app target |
 | Yams | SPM, 5.1.0+ | YAML parsing for project folder import |
 
-`Plugins/DamengDriverPlugin` links a Rust wire-protocol bridge built from `Native/DamengBridge`, not an SPM package.
+`Plugins/DamengDriverPlugin` links a Rust wire-protocol bridge built from `Native/DamengBridge`. `Plugins/HanaDriverPlugin` links no Go: it starts `tablepro-hana-helper`, a Go executable built from `Native/HanaBridge` on SAP's [go-hdb](https://github.com/SAP/go-hdb) driver, as one process per session, and exchanges JSON with it over stdin and stdout. The metadata connection pool opens drivers of its own, so one SAP HANA connection can run several helpers. Neither bridge is an SPM package.
 
 For the repository layout, see [Project Structure](/development/setup#project-structure).

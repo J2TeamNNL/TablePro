@@ -40,6 +40,14 @@ public struct ColumnInfo: Sendable, Identifiable {
     public let ordinalPosition: Int
     public let isAutoIncrement: Bool
     public let isGenerated: Bool
+    /// The server refuses any value written to it, beyond what `isGenerated` says: SQL Server `IDENTITY`, which
+    /// fails an UPDATE with Msg 8102, unlike a MySQL `AUTO_INCREMENT` that takes one.
+    public let rejectsWrittenValues: Bool
+
+    /// Whether the app may send a value for the column at all.
+    public var isServerOwned: Bool {
+        isGenerated || rejectsWrittenValues
+    }
 
     public init(
         name: String,
@@ -51,7 +59,8 @@ public struct ColumnInfo: Sendable, Identifiable {
         characterMaxLength: Int? = nil,
         ordinalPosition: Int = 0,
         isAutoIncrement: Bool = false,
-        isGenerated: Bool = false
+        isGenerated: Bool = false,
+        rejectsWrittenValues: Bool = false
     ) {
         self.name = name
         self.typeName = typeName
@@ -63,6 +72,7 @@ public struct ColumnInfo: Sendable, Identifiable {
         self.ordinalPosition = ordinalPosition
         self.isAutoIncrement = isAutoIncrement
         self.isGenerated = isGenerated
+        self.rejectsWrittenValues = rejectsWrittenValues
     }
 }
 
@@ -78,6 +88,7 @@ public struct TableInfo: Hashable, Sendable, Identifiable {
         case table
         case view
         case materializedView
+        case foreignTable
         case systemTable
         case externalTable
         case sequence
@@ -92,7 +103,7 @@ public struct TableInfo: Hashable, Sendable, Identifiable {
         /// which is what happened to a MariaDB sequence.
         public var listSection: ListSection {
             switch self {
-            case .table, .systemTable, .externalTable, .sequence: return .tables
+            case .table, .foreignTable, .systemTable, .externalTable, .sequence: return .tables
             case .view, .materializedView: return .views
             }
         }
@@ -102,7 +113,7 @@ public struct TableInfo: Hashable, Sendable, Identifiable {
         public var allowsTruncate: Bool {
             switch self {
             case .table: return true
-            case .view, .materializedView, .systemTable, .externalTable, .sequence: return false
+            case .view, .materializedView, .foreignTable, .systemTable, .externalTable, .sequence: return false
             }
         }
 
@@ -115,7 +126,7 @@ public struct TableInfo: Hashable, Sendable, Identifiable {
         public var allowsDrop: Bool {
             switch self {
             case .table, .sequence: return true
-            case .view, .materializedView, .systemTable, .externalTable: return false
+            case .view, .materializedView, .foreignTable, .systemTable, .externalTable: return false
             }
         }
 
@@ -127,7 +138,7 @@ public struct TableInfo: Hashable, Sendable, Identifiable {
         /// why the Mac app withholds row editing for one and this must too.
         public var allowsRowEditing: Bool {
             switch self {
-            case .table, .systemTable: return true
+            case .table, .foreignTable, .systemTable: return true
             case .view, .materializedView, .externalTable, .sequence: return false
             }
         }
@@ -154,19 +165,25 @@ public struct IndexInfo: Sendable {
     public let isUnique: Bool
     public let isPrimary: Bool
     public let type: String
+    public let includedColumns: [String]
+    public let whereClause: String?
 
     public init(
         name: String,
         columns: [String],
         isUnique: Bool = false,
         isPrimary: Bool = false,
-        type: String = "BTREE"
+        type: String = "BTREE",
+        includedColumns: [String] = [],
+        whereClause: String? = nil
     ) {
         self.name = name
         self.columns = columns
         self.isUnique = isUnique
         self.isPrimary = isPrimary
         self.type = type
+        self.includedColumns = includedColumns
+        self.whereClause = whereClause
     }
 }
 
@@ -260,6 +277,8 @@ public extension TableInfo {
             kind = .view
         case "MATERIALIZED VIEW":
             kind = .materializedView
+        case "FOREIGN TABLE", "FOREIGN":
+            kind = .foreignTable
         case "SYSTEM TABLE":
             kind = .systemTable
         case "EXTERNAL TABLE":
@@ -300,7 +319,9 @@ public extension IndexInfo {
             columns: plugin.columns,
             isUnique: plugin.isUnique,
             isPrimary: plugin.isPrimary,
-            type: plugin.type
+            type: plugin.type,
+            includedColumns: plugin.includedColumns ?? [],
+            whereClause: plugin.whereClause
         )
     }
 }

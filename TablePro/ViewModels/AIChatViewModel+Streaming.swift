@@ -52,12 +52,14 @@ extension AIChatViewModel {
             overrideModel: selectedModel
         )
         guard let resolved else {
+            clearPendingWalkthrough()
             errorMessage = String(localized: "No AI provider configured. Go to Settings > AI to add one.")
             return
         }
 
         if connection != nil, let policy = resolveConnectionPolicy(settings: settings) {
             if policy == .never {
+                clearPendingWalkthrough()
                 errorMessage = String(localized: "AI is disabled for this connection.")
                 if let last = messages.last, last.role == .user {
                     messages.removeLast()
@@ -82,6 +84,10 @@ extension AIChatViewModel {
         guard case .pausedAtToolLimit = streamingState else { return }
 
         let settings = services.appSettings.ai
+        if connection != nil, resolveConnectionPolicy(settings: settings) == .never {
+            errorMessage = String(localized: "AI is disabled for this connection.")
+            return
+        }
         let resolved = AIProviderFactory.resolve(
             settings: settings,
             overrideProviderId: selectedProviderId,
@@ -269,7 +275,7 @@ extension AIChatViewModel {
                 let failedAssistantID = currentAssistantID
                 await MainActor.run { [weak self] in
                     guard let self else { return }
-                    self.pendingWalkthroughBeforeSQL = nil
+                    self.clearPendingWalkthrough()
                     if !Task.isCancelled {
                         Self.logger.error("Streaming failed: \(error.localizedDescription)")
                         self.errorMessage = error.localizedDescription
@@ -297,7 +303,8 @@ extension AIChatViewModel {
     @MainActor
     func resolveWalkthroughIfNeeded(id: UUID) {
         guard let beforeSQL = pendingWalkthroughBeforeSQL else { return }
-        pendingWalkthroughBeforeSQL = nil
+        let source = pendingWalkthroughSource
+        clearPendingWalkthrough()
         guard let turn = turn(withID: id) else { return }
 
         let textBlocks = turn.blocks.filter { block in
@@ -331,7 +338,7 @@ extension AIChatViewModel {
         }
 
         guard let envelope = WalkthroughEnvelopeParser.parse(from: joined) else { return }
-        let walkthrough = SqlWalkthroughBlock(beforeSQL: beforeSQL, envelope: envelope)
+        let walkthrough = SqlWalkthroughBlock(beforeSQL: beforeSQL, envelope: envelope, source: source)
         turn.appendBlock(.sqlWalkthrough(walkthrough))
     }
 
@@ -595,20 +602,22 @@ extension AIChatViewModel {
     }
 
     func preflightCheck(systemPrompt: String?, turns: [ChatTurnWire], assistantID: UUID) async -> Bool {
-        let totalSize = ((systemPrompt ?? "") as NSString).length
-            + turns.reduce(0) { $0 + ($1.plainText as NSString).length }
-        guard totalSize > 100_000 else { return true }
-        await MainActor.run { [weak self] in
-            guard let self else { return }
-            self.errorMessage = String(
-                localized: "Message too large. Try disabling 'Include schema' or 'Include query results' in AI settings."
-            )
-            if let idx = self.messages.firstIndex(where: { $0.id == assistantID }) {
-                self.messages.remove(at: idx)
-            }
-            self.streamingState = .idle
-        }
+        let preflight = ChatPreflight(systemPrompt: systemPrompt, turns: turns)
+        guard let rejection = preflight.rejection else { return true }
+        guard !Task.isCancelled else { return false }
+        rejectSubmission(rejection, messageTurnIDs: preflight.messageTurnIDs, assistantID: assistantID)
         return false
+    }
+
+    func rejectSubmission(_ rejection: ChatPreflight.Rejection, messageTurnIDs: [UUID], assistantID: UUID) {
+        clearPendingWalkthrough()
+        let rejectedIDs = Set(messageTurnIDs)
+        let draft = messages.first { rejectedIDs.contains($0.id) }?.plainText ?? ""
+        messages.removeAll { $0.id == assistantID || rejectedIDs.contains($0.id) }
+        inputText = [draft, inputText].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        errorMessage = rejection.explanation
+        streamingState = .idle
+        streamingTask = nil
     }
 
     nonisolated static func assembleToolUseBlocks(

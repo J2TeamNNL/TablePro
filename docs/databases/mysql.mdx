@@ -1,9 +1,9 @@
 ---
 title: MySQL
-description: Connect to MySQL 5.7 and later with the bundled MariaDB Connector/C driver
+description: Connect to MySQL 4.1 and later with the bundled MariaDB Connector/C driver
 ---
 
-MySQL 8 accounts on `caching_sha2_password` connect on the first try, with no auth plugin to switch over. The same bundled driver covers 5.7 and later, plus [MariaDB](/databases/mariadb), [TiDB](/databases/tidb), [Databend](/databases/databend), and [OceanBase](/databases/oceanbase).
+MySQL 8 accounts on `caching_sha2_password` connect on the first try, with no auth plugin to switch over. The same bundled driver covers every release from 4.1 (see [Older servers](#older-servers)), plus [MariaDB](/databases/mariadb), [TiDB](/databases/tidb), [Databend](/databases/databend), and [OceanBase](/databases/oceanbase).
 
 ## Quick setup
 
@@ -12,7 +12,7 @@ MySQL 8 accounts on `caching_sha2_password` connect on the first try, with no au
     Click **New Connection…** on the welcome window and pick **MySQL**
   </Step>
   <Step title="Test and Save">
-    Fill in host, port, and credentials, click **Test Connection**, then **Save & Connect**
+    Fill in host, port, and credentials, or pick **Socket** under **Connect Using** for a server on this Mac. Click **Test Connection**, then **Save & Connect**
   </Step>
 </Steps>
 
@@ -20,21 +20,46 @@ MySQL 8 accounts on `caching_sha2_password` connect on the first try, with no au
 
 | Field | Default | Notes |
 |-------|---------|-------|
-| **Host** | `localhost` | TCP only, never a Unix socket |
+| **Connect Using** | **Host and Port** | **Socket** connects through the server's socket file on this Mac. See [Unix socket](#unix-socket) |
+| **Host** | `localhost` | Always TCP, `localhost` included |
 | **Port** | `3306` | |
+| **Socket** | empty | With **Connect Using** set to **Socket**: the full path of the socket file |
 | **Username** | empty | An empty field connects as your macOS login name |
 | **Password** | empty | Stored in the macOS Keychain |
 | **Database** | empty | Optional. Leave it empty and open one with `Cmd+K` |
 
-Every connection sets its session character set to `utf8mb4` once it logs in, over any `init_connect` the server runs, so emoji and non-Latin text round-trip untouched. A connect attempt gives up after 10 seconds.
+Every connection sets its session character set to `utf8mb4` once it logs in, over any `init_connect`
+the server runs, so emoji and non-Latin text round-trip untouched. The **Connect timeout** under
+**Options** bounds the whole attempt; an empty field uses 30 seconds.
+
+## Unix socket
+
+A server on this Mac listens on a socket file as well as a port, and a server started with `skip-networking` listens only there. Set **Connect Using** to **Socket** and enter the file's path. Host and Port leave the form, and **Network** offers only **Direct**: a tunnel cannot reach a file on this Mac.
+
+The server reports its path:
+
+```sql
+SELECT @@socket;
+```
+
+| Where | Socket |
+|-------|--------|
+| Homebrew, MySQL installer | `/tmp/mysql.sock` |
+| MAMP | `/Applications/MAMP/tmp/mysql/mysql.sock` |
+| Local | `~/Library/Application Support/Local/run/<site id>/mysql/mysqld.sock` |
+
+The note under the field says when nothing is at the path or the file there is not a socket. Save still works, so a connection can be set up before its server starts. A path starting with `~` is expanded, and macOS caps a socket path at 103 bytes.
+
+**SSL Mode** still applies. **Preferred** connects without TLS over a socket, as the `mysql` client does; **Required** and stricter encrypt the connection. Backup and restore reach the server through the same socket.
 
 ## Connection URL
 
 ```text
 mysql://user:password@host:3306/database
+mysql://user:password@localhost/database?socket=%2Ftmp%2Fmysql.sock
 ```
 
-Opening a URL connects directly. See [Connection URL Reference](/connections/urls).
+`socket` replaces host and port. It needs host `localhost` or no host. Opening a URL connects directly. See [Connection URL Reference](/connections/urls#unix-socket).
 
 ## Common setups
 
@@ -44,7 +69,7 @@ Opening a URL connects directly. See [Connection URL Reference](/connections/url
 | Docker | `localhost` with the mapped port, password from `MYSQL_ROOT_PASSWORD` |
 | MAMP Pro | `localhost:8889`, user and password `root` |
 | AWS RDS / Aurora | Endpoint hostname, password or [AWS IAM](/connections/aws-iam), which signs a fresh 15-minute token on each connect |
-| Google Cloud SQL | **Connect via > Cloud SQL Auth Proxy** and the instance name. See [Cloud SQL Auth Proxy](/connections/cloud-sql-proxy) |
+| Google Cloud SQL | **Connect via > Cloud SQL Auth Proxy** and the instance name, or the instance IP with a Google Cloud IAM option in **Authentication**. See [Cloud SQL Auth Proxy](/connections/cloud-sql-proxy) |
 | Remote production | [SSH tunnel](/connections/ssh-tunneling) |
 
 ## Users & Roles
@@ -86,7 +111,23 @@ A read that fails because the server closed the connection is run once more on a
 
 A connection with startup commands that run `SET` is holding a changed session setting from the moment it opens, so it reports the error rather than retrying. **Database > Reconnect** takes a new connection and puts back the database and the startup commands.
 
-Waiting has its own limit, and reaching it is a different case. The socket gives the server the [query timeout](/customization/general-settings#query-timeout) plus 30 seconds, and a statement that outlasts that is never sent again: the first copy is almost certainly still running there. It is stopped with `KILL QUERY` from a second connection, and the error comes back after that.
+Waiting has its own limit, and reaching it is a different case. The socket gives the server the [query timeout](/customization/general-settings#query-timeout) plus 30 seconds, and a statement that outlasts that is never sent again: the first copy is almost certainly still running there. It is stopped with `KILL QUERY` from a second connection, and the error comes back after that. MySQL 4.1 has no `KILL QUERY`; see [Older servers](#older-servers).
+
+## Older servers
+
+MySQL 4.1 to 5.1 lack catalogs that newer servers have, so TablePro reads those servers through `SHOW` statements instead. Tables, structure, data, indexes and foreign keys work on all of them. Objects a version cannot have are left out rather than shown as errors: routines before 5.0.2, triggers before 5.0.10, events and partition counts before 5.1.6. A routine's parameters are listed from 5.5.3. **Users & Roles** needs 5.0.2, the release that added `CREATE USER`.
+
+### Stopping a query on MySQL 4.1
+
+Stopping a query closes its connection, because 4.1 has no `KILL QUERY`. The query timeout stops a query the same way. Closing the connection discards the session's open transaction, table locks and variables. When the session held any of those, the next statement fails with a message saying so, and TablePro reconnects before the one after it. Run the discarded statements again.
+
+### Error messages in other languages
+
+A server before 5.5 set to a non-English language, such as Korean or Japanese, sends its error messages in that language's character set. TablePro reads the language once connected and shows them correctly. An error while connecting, such as a wrong password or an unknown database, arrives before the language can be read and still shows garbled.
+
+### Pre-4.1 password hashes
+
+An account with a pre-4.1 password hash cannot sign in: the connection fails with error 5010 naming `mysql_old_password`. The hash is 16 characters long in `mysql.user`, which servers running with `old_passwords=1` write. Set a new password with `old_passwords` off to switch the account to the 4.1 hash. MySQL 4.0 and older cannot connect at all.
 
 ## Garbled non-Latin text
 
@@ -139,14 +180,24 @@ New connections default to **Preferred**: TLS first, dropping to plain text only
 
 ## Limitations
 
-- No Unix socket connections. Give the connection a host and a port, and leave networking on in the server.
 - `LOAD DATA LOCAL INFILE` is refused by the driver. Load the file with **File > Import > Import Data…** instead.
+- An index key over an expression, such as `lower(email)`, needs MySQL 8.0.13 or later. MariaDB has none, so index a generated column instead. The **Indexes** tab stops the save on either server before anything runs.
 
 ## Troubleshooting
 
 ### Connection refused
 
 Nothing answered on that host and port. Check the server is running (`brew services start mysql`), the port is right, and `skip-networking` is off.
+
+### Can't connect to local server through socket '…' (2)
+
+The number at the end says why the socket did not open:
+
+| Number | Cause |
+|--------|-------|
+| `2` | Nothing is at that path. Start the server, or copy the path from `SELECT @@socket;` |
+| `61` | The file is there and no server is listening on it, usually left behind by a server that stopped. Start the server |
+| `13` | Your macOS account cannot open the file or a folder on its path |
 
 ### Access denied for user '…'@'…' (using password: YES)
 

@@ -186,10 +186,46 @@ struct EditableColumnDefinition: Hashable, Codable, Identifiable {
 
     var isGenerated: Bool { generationExpression?.isEmpty == false }
 
+    var hasNullDefault: Bool { ColumnDefaultLiteral.isNull(defaultValue) }
+
+    /// A column that stops accepting NULL cannot keep NULL as its default: MySQL and MariaDB refuse
+    /// `NOT NULL DEFAULT NULL` with `ERROR 1067`, and elsewhere the pair only moves the failure to
+    /// the first insert that relies on it. The default goes with the nullability, in one edit, so
+    /// undo brings both back.
+    mutating func setNullable(_ isNullable: Bool) {
+        self.isNullable = isNullable
+        guard !isNullable, hasNullDefault else { return }
+        defaultValue = nil
+    }
+
+    var hasName: Bool { !name.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    var hasDataType: Bool { !dataType.trimmingCharacters(in: .whitespaces).isEmpty }
+
     /// Check if this definition is valid (not a placeholder)
-    var isValid: Bool {
-        !name.trimmingCharacters(in: .whitespaces).isEmpty &&
-            !dataType.trimmingCharacters(in: .whitespaces).isEmpty
+    var isValid: Bool { hasName && hasDataType }
+
+    /// Whether this column, as edited, lacks something a save has to write.
+    ///
+    /// A column the save adds is written from nothing, so it needs a name and a type. A loaded one
+    /// only has to keep what it had. SQLite reports a column declared without a type as type `''`,
+    /// and SQLite and MongoDB both hold a column or field whose name is empty, so an edit is never
+    /// asked for a name or a type the column did not have when it was read.
+    func isIncomplete(over loaded: EditableColumnDefinition?) -> Bool {
+        !hasSavableName(over: loaded) || !hasSavableDataType(over: loaded)
+    }
+
+    /// Whether the name this column is saved under is one the table holds.
+    ///
+    /// A blank name is a real name when the column was read with one: SQLite keeps `""` and `"   "`
+    /// as two columns, and renaming one onto the other fails with "duplicate column name". A blank
+    /// name on a column that is new, or that had a name when it was read, is still to be filled in.
+    func hasSavableName(over loaded: EditableColumnDefinition?) -> Bool {
+        hasName || loaded?.hasName == false
+    }
+
+    func hasSavableDataType(over loaded: EditableColumnDefinition?) -> Bool {
+        hasDataType || loaded?.hasDataType == false
     }
 
     /// Create from existing ColumnInfo

@@ -24,6 +24,7 @@ extension MySQLPluginDriver {
         )
         let byTable = try await catalogOrShow(
             database: database,
+            catalogExists: hasForeignKeyCatalog,
             catalog: { try await self.catalogForeignKeys(database: database, table: table) },
             show: {
                 let keys = try await self.ddlForeignKeys(
@@ -40,9 +41,17 @@ extension MySQLPluginDriver {
         let database = effectiveSchema(schema)
         return try await catalogOrShow(
             database: database,
+            catalogExists: hasForeignKeyCatalog,
             catalog: { try await self.catalogForeignKeys(database: database, table: nil) },
             show: { try await self.showForeignKeysByTable(database: database) }
         )
+    }
+
+    /// The catalog read needs `REFERENTIAL_CONSTRAINTS` as well as `KEY_COLUMN_USAGE`, and 5.0 has
+    /// only the second: measured `1109` on 5.0.96.
+    private var hasForeignKeyCatalog: Bool {
+        serverHasInformationSchema
+            && holdsForServer(MySQLServerVersion.hasReferentialConstraintsCatalog(banner:flavor:))
     }
 
     /// Two single-catalog reads merged here rather than one join run by the server.
@@ -54,7 +63,7 @@ extension MySQLPluginDriver {
         database: String,
         table: String?
     ) async throws -> [String: [PluginForeignKeyInfo]] {
-        let columns = try await execute(query: MySQLObjectQueries.foreignKeyColumns(schema: database, table: table))
+        let columns = try await execute(ownStatement: MySQLObjectQueries.foreignKeyColumns(schema: database, table: table))
         let columnRows = columns.rows.compactMap { row -> MySQLForeignKeyCatalog.ColumnRow? in
             guard let tableName = row[safe: 0]?.asText,
                   let constraint = row[safe: 1]?.asText,
@@ -73,7 +82,7 @@ extension MySQLPluginDriver {
         }
         guard !columnRows.isEmpty else { return [:] }
 
-        let actions = try await execute(query: MySQLObjectQueries.referentialActions(schema: database, table: table))
+        let actions = try await execute(ownStatement: MySQLObjectQueries.referentialActions(schema: database, table: table))
         let actionRows = actions.rows.compactMap { row -> MySQLForeignKeyCatalog.ActionRow? in
             guard let tableName = row[safe: 0]?.asText,
                   let constraint = row[safe: 1]?.asText

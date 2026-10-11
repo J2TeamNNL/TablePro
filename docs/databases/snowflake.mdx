@@ -64,7 +64,7 @@ Paste an access token issued for the account. Nothing refreshes it for you.
 
 The sidebar groups objects by database and schema. Object lists come from `SHOW` commands, which the metadata service answers with no warehouse running; column details come from `INFORMATION_SCHEMA`, which needs one.
 
-Toolbar pickers move the session to another **Warehouse** or **Role** with `USE WAREHOUSE` and `USE ROLE`, no reconnect. A tab bound to a second database stays on that session too: `USE DATABASE` runs ahead of its statements. One TablePro connection is one Snowflake session, held open while idle by a heartbeat.
+**Database > Session Context** moves the session to another **Warehouse** or **Role** with `USE WAREHOUSE` and `USE ROLE`, no reconnect. A tab bound to a second database stays on that session too: `USE DATABASE` runs ahead of its statements. One TablePro connection is one Snowflake session, held open while idle by a heartbeat.
 
 ## Editing
 
@@ -81,11 +81,11 @@ Toolbar pickers move the session to another **Warehouse** or **Role** with `USE 
 
 ## SSL/TLS
 
-No SSL/TLS section, and no plaintext option. Every request is HTTPS to the account endpoint on port 443.
+No **SSL Mode**, and no plaintext option. Every request is HTTPS to the account endpoint on port 443.
 
 ## Limitations
 
-- No SSH tunnel. The form has no SSH pane, and the endpoint is reached over HTTPS only.
+- No SSH tunnel. The form has no Network tab, and the endpoint is reached over HTTPS only.
 - A grid edit keys on the declared primary key, or on every column when there is none, and a duplicate key value updates or deletes every row that matches it. Snowflake never enforces key constraints, so check a table for duplicates before editing it.
 - `TIMESTAMP_LTZ` values read as the UTC instant, marked `Z`, rather than converted to the session's `TIMEZONE`.
 

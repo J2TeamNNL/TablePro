@@ -2,7 +2,7 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "aspen",
   "name": "TablePro",
-  "description": "TablePro is a native macOS database client for MySQL, PostgreSQL, SQLite, MongoDB, Redis and 20 more, built on AppKit and SwiftUI with a plugin-based driver system.",
+  "description": "TablePro is a native macOS database client for MySQL, PostgreSQL, SQLite, MongoDB, Redis and more, built on AppKit and SwiftUI with a plugin-based driver system.",
   "colors": {
     "primary": "#A85A00",
     "light": "#FFBB6B",
@@ -44,6 +44,10 @@
     }
   },
   "redirects": [
+    {
+      "source": "/features/csv-inspector",
+      "destination": "/features/data-files"
+    },
     {
       "source": "/features/php-viewer",
       "destination": "/features/json-viewer"
@@ -99,6 +103,70 @@
     {
       "source": "/features/ssl",
       "destination": "/connections/ssl"
+    },
+    {
+      "source": "/external-api",
+      "destination": "/developers"
+    },
+    {
+      "source": "/external-api/versioning",
+      "destination": "/developers/versioning"
+    },
+    {
+      "source": "/external-api/url-scheme",
+      "destination": "/developers/url-scheme"
+    },
+    {
+      "source": "/external-api/applescript",
+      "destination": "/developers/applescript"
+    },
+    {
+      "source": "/external-api/connection-import",
+      "destination": "/developers/connection-import"
+    },
+    {
+      "source": "/external-api/mcp-protocol",
+      "destination": "/developers/mcp-protocol"
+    },
+    {
+      "source": "/external-api/mcp-tools",
+      "destination": "/developers/mcp-tools"
+    },
+    {
+      "source": "/external-api/mcp-resources",
+      "destination": "/developers/mcp-resources"
+    },
+    {
+      "source": "/external-api/mcp-prompts",
+      "destination": "/developers/mcp-prompts"
+    },
+    {
+      "source": "/external-api/mcp-subscriptions",
+      "destination": "/developers/mcp-subscriptions"
+    },
+    {
+      "source": "/external-api/pairing",
+      "destination": "/developers/pairing"
+    },
+    {
+      "source": "/external-api/tokens",
+      "destination": "/developers/tokens"
+    },
+    {
+      "source": "/external-api/raycast",
+      "destination": "/integrations/raycast"
+    },
+    {
+      "source": "/external-api/terminal",
+      "destination": "/integrations/terminal"
+    },
+    {
+      "source": "/external-api/ios-shortcuts",
+      "destination": "/integrations/ios-shortcuts"
+    },
+    {
+      "source": "/external-api/mcp-clients",
+      "destination": "/integrations/mcp-clients"
     }
   ],
   "navigation": {
@@ -170,6 +238,7 @@
               "databases/pglite",
               "databases/postgresql",
               "databases/redis",
+              "databases/sap-hana",
               "databases/snowflake",
               "databases/spanner",
               "databases/sqlite",
@@ -204,7 +273,7 @@
               "features/filtering",
               "features/change-tracking",
               "features/json-viewer",
-              "features/csv-inspector"
+              "features/data-files"
             ]
           },
           {
@@ -242,10 +311,23 @@
             ]
           },
           {
+            "group": "Integrations",
+            "icon": "puzzle-piece",
+            "pages": [
+              "integrations/index",
+              "integrations/mcp-clients",
+              "integrations/raycast",
+              "integrations/terminal",
+              "integrations/ddev",
+              "integrations/ios-shortcuts"
+            ]
+          },
+          {
             "group": "Around the app",
             "icon": "window-maximize",
             "pages": [
               "features/overview",
+              "features/connection-window",
               "features/tabs",
               "features/workspace-rail",
               "features/open-quickly",
@@ -294,59 +376,64 @@
         ]
       },
       {
-        "tab": "External API",
+        "tab": "Developers",
         "icon": "code",
         "groups": [
           {
             "group": "Overview",
             "pages": [
-              "external-api/index",
-              "external-api/versioning"
+              "developers/index"
             ]
           },
           {
-            "group": "Drive the app",
+            "group": "API reference",
             "pages": [
-              "external-api/url-scheme",
-              "external-api/applescript",
-              "external-api/connection-import",
-              "external-api/terminal",
-              "external-api/raycast",
-              "external-api/ios-shortcuts"
+              "developers/url-scheme",
+              "developers/applescript",
+              "developers/connection-import",
+              {
+                "group": "MCP",
+                "pages": [
+                  "developers/mcp-protocol",
+                  "developers/mcp-tools",
+                  "developers/mcp-resources",
+                  "developers/mcp-prompts",
+                  "developers/mcp-subscriptions"
+                ]
+              },
+              "developers/pairing",
+              "developers/tokens",
+              "developers/versioning"
             ]
           },
           {
-            "group": "MCP",
+            "group": "Publish",
             "pages": [
-              "external-api/mcp-clients",
-              "external-api/mcp-protocol",
-              "external-api/mcp-tools",
-              "external-api/mcp-resources",
-              "external-api/mcp-prompts",
-              "external-api/mcp-subscriptions"
-            ]
-          },
-          {
-            "group": "Auth",
-            "pages": [
-              "external-api/pairing",
-              "external-api/tokens"
+              "developers/submit",
+              "developers/listing-policy",
+              "developers/review"
             ]
           }
         ]
       },
       {
-        "tab": "Development",
+        "tab": "Contributing",
+        "icon": "code-branch",
         "groups": [
           {
-            "group": "Contributing",
+            "group": "Build TablePro",
             "pages": [
               "development/overview",
               "development/setup",
               "development/architecture",
               "development/building",
               "development/releasing",
-              "development/code-style",
+              "development/code-style"
+            ]
+          },
+          {
+            "group": "Plugins",
+            "pages": [
               "development/plugin-development",
               "development/plugin-registry",
               "development/testing-plugins"
@@ -388,7 +475,11 @@
       },
       {
         "label": "Support",
-        "href": "mailto:datlechin@gmail.com"
+        "href": "mailto:hello@tablepro.app"
+      },
+      {
+        "type": "github",
+        "href": "https://github.com/TableProApp/TablePro"
       }
     ],
     "primary": {
@@ -419,6 +510,10 @@
   "integrations": {
     "ga4": {
       "measurementId": "G-GQYNPKSK83"
+    },
+    "cookies": {
+      "key": "tablepro:analytics-consent",
+      "value": "granted"
     }
   }
 }

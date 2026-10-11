@@ -2,13 +2,13 @@
 
 ## Setup
 
-Requirements: macOS 14.0+, Xcode 26.0+, [XcodeGen](https://github.com/yonaskolb/XcodeGen). Optional: SwiftLint, SwiftFormat, GitHub CLI (`gh`).
+Requirements: Xcode 26.0+, [XcodeGen](https://github.com/yonaskolb/XcodeGen). Optional: SwiftLint, GitHub CLI (`gh`).
 
 Fork the repo on GitHub, then:
 
 ```bash
 git clone https://github.com/<your-fork>/TablePro.git && cd TablePro
-brew install xcodegen swiftlint swiftformat
+brew install xcodegen swiftlint
 scripts/download-libs.sh
 scripts/generate-project.sh
 ```
@@ -54,7 +54,7 @@ xcodebuild -project TablePro.xcodeproj -scheme TablePro test -skipPackagePluginV
 
 ## Code Style
 
-`.swiftlint.yml` and `.swiftformat` are the source of truth. The short version:
+`.swiftlint.yml` is the source of truth, and CI runs it on every pull request. The short version:
 
 - 4-space indent, 120-char lines
 - Explicit access control (`private`, `internal`, `public`)
@@ -65,13 +65,12 @@ xcodebuild -project TablePro.xcodeproj -scheme TablePro test -skipPackagePluginV
 Before committing:
 
 ```bash
-swiftlint lint --strict
-swiftformat .
+swiftlint lint --strict <changed .swift files>
 ```
 
 ## Commits
 
-[Conventional Commits](https://www.conventionalcommits.org/), single line, no body.
+[Conventional Commits](https://www.conventionalcommits.org/). Pull requests are squash-merged with the PR title as the commit subject, so the title is what lands on `main`: at most 72 characters, checked by CI. Explain the change in the PR description, not in commit bodies.
 
 ```
 feat: add CSV export for query results
@@ -89,15 +88,13 @@ Branch off `main`:
 
 ## Pull Requests
 
-One logical change per PR. Make sure tests pass and lint is clean.
+One logical change per PR, described with the template the PR form opens with. Before you open it:
 
-Checklist:
-
-- [ ] Tests added or updated
-- [ ] `CHANGELOG.md` updated under `[Unreleased]` (skip for unreleased-only fixes). Leave the credit off: the release adds `(#123 by @you)` to every entry from your pull request, so there is no number to guess and no second commit to push
-- [ ] Docs updated in `docs/` if the change affects user-facing behavior
-- [ ] User-facing strings localized
-- [ ] No SwiftLint/SwiftFormat violations
+- Tests added or updated.
+- `CHANGELOG.md` updated under `[Unreleased]` (skip for a fix to something still unreleased). Leave the credit off: the release adds `(#123 by @you)` to every entry from your pull request.
+- Docs updated in `docs/` if the change affects user-facing behavior.
+- User-facing strings localized.
+- SwiftLint clean.
 
 ## Project Layout
 
@@ -121,30 +118,26 @@ Full guide: [docs/development/plugin-registry](https://docs.tablepro.app/develop
 
 ## Translating
 
-Strings live in a `.xcstrings` catalog, which interleaves every language inside every key. Editing
-one by hand means working in a 109,000-line file next to languages you do not speak.
-
-`scripts/localization.py` gives you one flat file per language instead.
+Translate through Xcode's export and import, one XLIFF file per language. Never edit
+`Localizable.xcstrings` by hand: Xcode is the only tool that writes it, so a translation diff holds
+your language and nothing else.
 
 ```bash
+xcodebuild -exportLocalizations -project TablePro.xcodeproj -scheme TablePro \
+    -localizationPath Localization -exportLanguage fr
+# translate Localization/fr.xcloc in Xcode, or its Localized Contents/fr.xliff in any XLIFF editor
+xcodebuild -importLocalizations -project TablePro.xcodeproj -localizationPath Localization/fr.xcloc
 scripts/localization.py status              # what is translated, per language
-scripts/localization.py export vi           # Localization/mac.vi.json
-# edit the "translation" values
-scripts/localization.py import vi           # merge back into the catalog
 ```
 
-Add `--target ios` for the iPhone and iPad app, which has its own catalog.
+The export builds the app first, so run `scripts/download-libs.sh` and
+`scripts/generate-project.sh` once before it. Pass an existing language code to fill gaps, or a new
+one to start a language. Commit the catalog, not the export: `Localization/` is ignored. The iPhone
+and iPad app has a catalog of its own: run the same commands on
+`TableProMobile/TableProMobile.xcodeproj` with the `TableProMobile` scheme.
 
-Commit the catalog, not the exported file: `Localization/` is ignored, and the catalog stays the
-single source of truth. A merge only rewrites the strings you actually changed, so the diff shows
-your work and nothing else.
-
-A string marked `needs_review` carries a `"state"` field in the export so you can find it. The
-merge never writes that field back: whether a string still needs review is the reviewer's call, not
-a side effect of editing the file.
-
-Run `scripts/localization.py verify` if you change the script. It checks that reading and rewriting
-each catalog reproduces it byte for byte, which is what keeps a translation diff small.
+Strings from plugins and from packages under `Packages/` live in the app's catalog too, marked
+"Managed Manually" so that Xcode keeps them. `scripts/localization.py plugins --add` adds new ones.
 
 ## Reporting Bugs
 

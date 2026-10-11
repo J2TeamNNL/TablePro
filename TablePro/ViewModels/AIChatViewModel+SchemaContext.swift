@@ -89,7 +89,7 @@ extension AIChatViewModel {
             await ensureColumnsLoaded(forTable: name)
         case .savedQuery(let id, _):
             await ensureSavedQueryLoaded(id: id)
-        case .currentQuery, .queryResult, .file:
+        case .currentQuery, .queryResult, .file, .queryContext:
             break
         }
     }
@@ -155,10 +155,18 @@ extension AIChatViewModel {
     }
 
     func resolveConnectionPolicy(settings: AISettings) -> AIConnectionPolicy? {
-        let policy = connection?.aiPolicy ?? settings.defaultConnectionPolicy
+        let policy = connection.map {
+            AIConnectionAccessGate.policy(
+                for: $0.id,
+                connectionStorage: services.connectionStorage,
+                databaseManager: services.databaseManager,
+                defaultPolicy: settings.defaultConnectionPolicy,
+                unsavedCopy: $0
+            ) ?? .never
+        } ?? settings.defaultConnectionPolicy
 
         if policy == .askEachTime {
-            if let connectionID = connection?.id, sessionApprovedConnections.contains(connectionID) {
+            if let connectionID = connection?.id, services.aiAccessApprovals.isApproved(connectionID) {
                 return .alwaysAllow
             }
             return .askEachTime

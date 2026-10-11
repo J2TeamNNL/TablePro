@@ -24,26 +24,33 @@ internal struct WelcomeTagToken: Identifiable, Hashable {
 
 enum WelcomeActiveSheet: Identifiable {
     case newGroup(WelcomeNewGroupRequest)
+    /// Carries the group as it was when the sheet opened, so a sync that deletes it meanwhile
+    /// leaves the sheet open with an error on Save rather than empty.
+    case editGroup(ConnectionGroup)
     case activation
     case importFile(URL)
     case exportConnections([DatabaseConnection])
     case importFromApp
     case importFromAWS
     case projectFolderScan(URL)
-    case deeplinkImport(ExportableConnection)
+    case deeplinkImport(ConnectionBundle)
 
     var id: String {
         switch self {
         case .newGroup(let request):
             "newGroup-\(request.parentId?.uuidString ?? "root")-"
                 + request.movingConnectionIds.map(\.uuidString).joined(separator: ",")
+        case .editGroup(let group): "editGroup-\(group.id.uuidString)"
         case .activation: "activation"
         case .importFile(let u): "importFile-\(u.absoluteString)"
         case .exportConnections: "exportConnections"
         case .importFromApp: "importFromApp"
         case .importFromAWS: "importFromAWS"
         case .projectFolderScan(let u): "projectFolderScan-\(u.absoluteString)"
-        case .deeplinkImport(let c): "deeplinkImport-\(c.type)-\(c.name)-\(c.host)-\(c.port)"
+        case .deeplinkImport(let bundle):
+            "deeplinkImport-" + bundle.connections
+                .map { "\($0.settings.type)-\($0.settings.name)-\($0.settings.host)-\($0.settings.port)" }
+                .joined(separator: ",")
         }
     }
 }
@@ -100,6 +107,7 @@ final class WelcomeViewModel: ObservableObject {
     @Published private(set) var outline: LibraryOutline = .empty
     @Published private(set) var outlineRevision = 0
     @Published private(set) var sortMode: LibrarySortMode
+    private(set) var showsRecent: Bool
     @Published var expandedGroupIds: Set<UUID> = [] {
         didSet { groupExpansionStore.save(expandedGroupIds) }
     }
@@ -131,15 +139,15 @@ final class WelcomeViewModel: ObservableObject {
     @Published var pluginDiagnostic: PluginDiagnosticItem?
 
     @Published var showImportFilePanel = false
-    @Published var importResultCount: Int?
-    /// Set when a sheet (import file / import-from-app) finishes work and is about to dismiss.
-    /// Flushed in the sheet's `onDismiss` so the result alert appears after the sheet animation.
-    @Published var pendingImportResultCount: Int?
+    @Published var importOutcome: ImportOutcome?
+    /// Shown from the sheet's `onDismiss`, so the alert waits for the sheet to finish closing.
+    @Published var pendingImportOutcome: ImportOutcome?
 
     // MARK: - Observers
 
     private var connectionUpdatedCancellable: AnyCancellable?
     private var listStateCancellable: AnyCancellable?
+    private var showsRecentCancellable: AnyCancellable?
     private var linkedFoldersCancellable: AnyCancellable?
     private var teamLibraryCancellable: AnyCancellable?
     private var licenseCancellable: AnyCancellable?
@@ -169,6 +177,7 @@ final class WelcomeViewModel: ObservableObject {
         self.recentConnections = recentConnections
         self.listPreferences = listPreferences
         self.sortMode = listPreferences.sortMode
+        self.showsRecent = listPreferences.showsRecent
         let storedExpansion = groupExpansionStore.load()
         self.hasStoredGroupExpansion = storedExpansion != nil
         self.expandedGroupIds = storedExpansion ?? []
@@ -284,6 +293,7 @@ final class WelcomeViewModel: ObservableObject {
             query: query,
             favoritesOrder: listPreferences.favoritesOrder,
             lastConnected: recentConnections.lastConnected,
+            includesRecent: showsRecent,
             externalSections: [
                 LibraryExternalSection(kind: .linkedFolders, entries: presentableLinkedConnections.map(\.libraryEntry)),
                 LibraryExternalSection(kind: .teamLibrary, entries: presentableTeamLibraryConnections.map(\.libraryEntry)),
@@ -372,6 +382,12 @@ final class WelcomeViewModel: ObservableObject {
         rebuildOutline()
     }
 
+    private func showsRecentDidChange(_ showsRecent: Bool) {
+        guard showsRecent != self.showsRecent else { return }
+        self.showsRecent = showsRecent
+        rebuildOutline()
+    }
+
     // MARK: - Setup
 
     func refreshImportableApp() {
@@ -399,6 +415,12 @@ final class WelcomeViewModel: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.listStateDidChange()
+            }
+
+        showsRecentCancellable = listPreferences.$showsRecent
+            .dropFirst()
+            .sink { [weak self] showsRecent in
+                self?.showsRecentDidChange(showsRecent)
             }
 
         linkedFoldersCancellable = services.appEvents.linkedFoldersDidUpdate
@@ -554,13 +576,7 @@ final class WelcomeViewModel: ObservableObject {
     }
 
     func connectToLinkedConnection(_ linked: LinkedConnection) {
-        let connection = ConnectionExportService.buildDatabaseConnection(
-            id: linked.id,
-            from: linked.connection,
-            name: linked.connection.name,
-            tagIdsByName: [:],
-            groupIdsByName: [:]
-        )
+        let connection = linked.databaseConnection()
         Task {
             do {
                 try await TabRouter.shared.openTransientConnection(connection)
@@ -605,8 +621,9 @@ final class WelcomeViewModel: ObservableObject {
         showImportFilePanel = true
     }
 
-    func showImportResult(count: Int) {
-        importResultCount = count
+    func finishImport(_ outcome: ImportOutcome) {
+        pendingImportOutcome = outcome
+        activeSheet = nil
     }
 
     func connectionString(for connection: DatabaseConnection) -> String {
@@ -741,8 +758,14 @@ final class WelcomeViewModel: ObservableObject {
         activeSheet = .newGroup(WelcomeNewGroupRequest(parentId: parentId, movingConnectionIds: movingConnectionIds))
     }
 
-    func createGroup(name: String, color: ConnectionColor, parentId: UUID?, moving connectionIds: [UUID]) throws {
-        let group = ConnectionGroup(name: name, color: color, parentId: parentId)
+    func createGroup(
+        name: String,
+        color: ConnectionColor,
+        iconName: String?,
+        parentId: UUID?,
+        moving connectionIds: [UUID]
+    ) throws {
+        let group = ConnectionGroup(name: name, color: color, iconName: iconName, parentId: parentId)
         try groupStorage.addGroup(group)
         expandedGroupIds.insert(group.id)
         if let parentId {
@@ -752,6 +775,19 @@ final class WelcomeViewModel: ObservableObject {
         if !connectionIds.isEmpty,
            !storage.moveConnections(connectionIds, toGroup: group.id, before: nil, validGroupIds: Set(groups.map(\.id))) {
             reportLibraryWriteFailure()
+        }
+        loadConnections()
+    }
+
+    func requestEditGroup(_ groupId: UUID) {
+        guard let group = groupsById[groupId] else { return }
+        activeSheet = .editGroup(group)
+    }
+
+    func saveGroup(id: UUID, from opening: ConnectionGroupFields, to edited: ConnectionGroupFields) throws {
+        try groupStorage.editGroup(id: id, from: opening, to: edited)
+        if let parentId = edited.parentId {
+            expandedGroupIds.formUnion(groupGraph.pathIds(to: parentId))
         }
         loadConnections()
     }

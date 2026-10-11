@@ -44,20 +44,47 @@ final class SharedSidebarState: ObservableObject {
         name: String,
         isView: Bool,
         objectType: TableInfo.TableType?,
-        isPreview: Bool
+        isPreview: Bool,
+        connectionSwitchesDatabases: Bool
     ) {
+        let frecencyKey = Self.tableFrecencyKey(
+            database: database, schema: schema, name: name,
+            connectionSwitchesDatabases: connectionSwitchesDatabases
+        )
         guard isPreview else {
             pendingRecordTask?.cancel()
             pendingRecordTask = nil
-            commitTableOpen(database: database, schema: schema, name: name, isView: isView, objectType: objectType)
+            commitTableOpen(
+                database: database, schema: schema, name: name,
+                isView: isView, objectType: objectType, frecencyKey: frecencyKey
+            )
             return
         }
         pendingRecordTask?.cancel()
         pendingRecordTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 250_000_000)
             guard let self, !Task.isCancelled else { return }
-            self.commitTableOpen(database: database, schema: schema, name: name, isView: isView, objectType: objectType)
+            self.commitTableOpen(
+                database: database, schema: schema, name: name,
+                isView: isView, objectType: objectType, frecencyKey: frecencyKey
+            )
         }
+    }
+
+    nonisolated static func tableFrecencyKey(
+        database: String?,
+        schema: String?,
+        name: String,
+        connectionSwitchesDatabases: Bool
+    ) -> String {
+        QuickSwitcherFrecencyKey.table(
+            name: name,
+            schema: schema,
+            in: QuickSwitcherFrecencyKey.DatabaseQualifier(
+                database: database,
+                connectionSwitchesDatabases: connectionSwitchesDatabases
+            )
+        )
     }
 
     private func commitTableOpen(
@@ -65,11 +92,10 @@ final class SharedSidebarState: ObservableObject {
         schema: String?,
         name: String,
         isView: Bool,
-        objectType: TableInfo.TableType?
+        objectType: TableInfo.TableType?,
+        frecencyKey: String
     ) {
-        QuickSwitcherFrecencyStore(connectionId: connectionId).recordAccess(
-            itemId: QuickSwitcherItem.tableItemId(name: name, schema: schema)
-        )
+        QuickSwitcherFrecencyStore(connectionId: connectionId).recordAccess(itemId: frecencyKey)
         guard AppSettingsManager.shared.general.showRecentTables else { return }
         recentTables = RecentTablesStore.shared.record(
             connectionId: connectionId, database: normalizedDatabase(database),
@@ -177,6 +203,63 @@ final class SharedSidebarState: ObservableObject {
         }
     }
 
+    /// Keyed by database name, "" for an engine browsed without one. Written only through the
+    /// methods below, which keep the stored copy in step.
+    @Published private(set) var schemaFilterSelected: [String: Set<String>]
+
+    func schemaFilter(for database: String?) -> Set<String> {
+        schemaFilterSelected[Self.schemaFilterKey(database)] ?? []
+    }
+
+    func setSchemaFilter(_ schemas: Set<String>, for database: String?) {
+        let key = Self.schemaFilterKey(database)
+        guard schemaFilter(for: key) != schemas else { return }
+        var selection = schemaFilterSelected
+        selection[key] = schemas.isEmpty ? nil : schemas
+        schemaFilterSelected = selection
+        DatabaseTreeFilterStorage.shared.setSelectedSchemas(schemas, database: key, connectionId: connectionId)
+    }
+
+    func moveSchemaFilter(fromDatabase oldName: String, toDatabase newName: String) {
+        let moved = schemaFilter(for: oldName)
+        guard !moved.isEmpty, oldName != newName else { return }
+        setSchemaFilter([], for: oldName)
+        setSchemaFilter(schemaFilter(for: newName).union(moved), for: newName)
+    }
+
+    func renameSchemaInFilter(database: String?, from oldName: String, to newName: String) {
+        var selected = schemaFilter(for: database)
+        guard selected.remove(oldName) != nil else { return }
+        selected.insert(newName)
+        setSchemaFilter(selected, for: database)
+    }
+
+    /// A filter whose last schema was dropped is cleared rather than left naming nothing: an empty
+    /// selection is no filter, which is the list the user saw before picking the dropped one.
+    func removeSchemaFromFilter(database: String?, schema: String) {
+        var selected = schemaFilter(for: database)
+        guard selected.remove(schema) != nil else { return }
+        setSchemaFilter(selected, for: database)
+    }
+
+    func filterSelection(for target: SidebarFilterTarget) -> Set<String> {
+        switch target {
+        case .databases: return databaseFilterSelected
+        case .schemas(let database): return schemaFilter(for: database)
+        }
+    }
+
+    func setFilterSelection(_ selection: Set<String>, for target: SidebarFilterTarget) {
+        switch target {
+        case .databases: databaseFilterSelected = selection
+        case .schemas(let database): setSchemaFilter(selection, for: database)
+        }
+    }
+
+    private static func schemaFilterKey(_ database: String?) -> String {
+        database ?? ""
+    }
+
     @Published var favoriteDatabaseEnvironmentFilter: FavoriteDatabaseEnvironmentFilter {
         didSet {
             AppStorageEnvironment.shared.defaults.set(
@@ -230,6 +313,7 @@ final class SharedSidebarState: ObservableObject {
             self.sidebarLayout = SharedSidebarState.defaultLayout
         }
         self.databaseFilterSelected = DatabaseTreeFilterStorage.shared.selectedDatabases(connectionId: connectionId)
+        self.schemaFilterSelected = DatabaseTreeFilterStorage.shared.allSelectedSchemas(connectionId: connectionId)
         let environmentFilterKey = SidebarPersistenceKey.favoriteDatabaseEnvironmentFilter(connectionId: connectionId)
         self.favoriteDatabaseEnvironmentFilter = AppStorageEnvironment.shared.defaults
             .string(forKey: environmentFilterKey)
@@ -248,6 +332,7 @@ final class SharedSidebarState: ObservableObject {
         self.selectedSidebarTab = .tables
         self.sidebarLayout = .flat
         self.databaseFilterSelected = []
+        self.schemaFilterSelected = [:]
         self.favoriteDatabaseEnvironmentFilter = .all
         self.selectedFavorite = nil
     }

@@ -1,11 +1,11 @@
 ---
 title: PostgreSQL
-description: Connect to PostgreSQL 9.1 and later with the libpq driver, including PostGIS display, AWS IAM auth, and pg_dump backups
+description: Connect to PostgreSQL 9.1 and later with the libpq driver, including PostGIS display, AWS and Google Cloud IAM auth, and pg_dump backups
 ---
 
 import DeclaredColumnType from "/snippets/declared-column-type.mdx";
 
-Unlike MySQL, PostgreSQL will not connect without a **Database**, and it changes database only by reconnecting. Everything else on the form is ordinary. The libpq driver ships inside the app and also serves [Amazon Redshift](/databases/redshift), [CockroachDB](/databases/cockroachdb), and [PGlite](/databases/pglite).
+Unlike MySQL, PostgreSQL will not connect without a **Database**, and a connection to the server serves that one database. Everything else on the form is ordinary. The libpq driver ships inside the app and also serves [Amazon Redshift](/databases/redshift), [CockroachDB](/databases/cockroachdb), and [PGlite](/databases/pglite).
 
 ## Connection settings
 
@@ -46,13 +46,17 @@ postgresql://user:password@host:5432/database
 
 Set **Authentication** to an AWS IAM option and set **Username** to a database role granted `rds_iam`. See [AWS IAM Authentication](/connections/aws-iam).
 
+### Google Cloud IAM
+
+For a Cloud SQL instance you reach directly, set **Authentication** to a Google Cloud IAM option and set **Username** to the IAM database user. See [IAM sign-in without the proxy](/connections/cloud-sql-proxy#iam-sign-in-without-the-proxy).
+
 ### Password file
 
 Turn on **Use Password File** to read the password from `~/.pgpass` instead of typing one. Entries are `hostname:port:database:username:password`, `*` matches any field, first match wins. The form reports what it found, including `~/.pgpass has incorrect permissions (needs chmod 0600)`, the one that silently blocks a connect.
 
 ## Databases and schemas
 
-Every database on the server is listed, `postgres` included; `template0` and `template1` are not. The sidebar shows every schema you have access to, and the toolbar carries the active database and schema side by side: click either to switch, or press `Cmd+K` for the database list.
+Every database on the server is listed, `postgres` included; `template0` and `template1` are not. The sidebar shows every schema you have access to, and in each one the tables, views, materialized views and foreign tables you own or hold any privilege on, a column privilege included. To list fewer schemas, choose **View > Filter Schemas**; see [Filtering schemas](/features/connection-window#filtering-schemas). The toolbar's centred control names the active database: click it, or press `Cmd+K`, for the list. The active schema has a picker at the foot of the object list in the flat layout, and **Database > Schema** everywhere.
 
 Right-click a schema to drop it. The statement is `DROP SCHEMA … CASCADE`, so views and functions in *other* schemas that depend on it go too; the confirmation says so before it runs.
 
@@ -78,7 +82,7 @@ Tables using the older `INHERITS` inheritance are listed normally, each child on
 
 <DeclaredColumnType />
 
-That is what the [Structure tab](/features/table-structure) shows, what the [MCP tools](/external-api/mcp-tools) report as `data_type`, and what the AI context and autocomplete carry. An enum column keeps its value picker, and a domain column keeps the editor, formatting and sorting of the type underneath it.
+That is what the [Structure tab](/features/table-structure) shows, what the [MCP tools](/developers/mcp-tools) report as `data_type`, and what the AI context and autocomplete carry. An enum column keeps its value picker, and a domain column keeps the editor, formatting and sorting of the type underneath it.
 
 `jsonb` renders as formatted JSON, and `uuid`, `inet`, `timestamp with time zone`, `interval` and `bytea` display natively. PostGIS `geometry` and `geography` render as EWKT with the SRID kept, `SRID=4326;POINT(-73 40.7237)`, rather than raw EWKB hex; a value that fails to convert stays hex.
 
@@ -114,9 +118,21 @@ An SQL export writes those statements back for tables, views and materialized vi
 
 The Structure tab of a view, a materialized view or a foreign table offers only the edits PostgreSQL takes on that kind of object, which is fewer than a table's and different for each. See [Table Structure](/features/table-structure#what-each-object-accepts).
 
+PostgreSQL refuses `INSERT`, `UPDATE` and `DELETE` on a materialized view, so its rows open read-only in the data grid. Edit the tables it reads from, then choose **Refresh Materialized View…**.
+
+## Invalid indexes
+
+A `CREATE INDEX CONCURRENTLY` or `REINDEX CONCURRENTLY` that fails or is cancelled leaves an invalid index on the table. The **Indexes** tab names it, and exports leave it out as `pg_dump` does. [Table Structure](/features/table-structure#invalid-indexes) covers dropping or rebuilding it.
+
 ## Cross-database tabs
 
-PostgreSQL has no in-place `USE`, so a tab bound to a database other than the connection's active one runs on a second connection opened for that database. It shares no temp tables, session variables, or open transaction with the query editor on the main connection: keep a multi-statement transaction or a `CREATE TEMP TABLE` on tabs bound to one database. Binding itself is on [Tabs](/features/tabs#where-a-tab-points).
+PostgreSQL has no in-place `USE`, so every database browsed from the [connections strip](/features/workspace-rail) gets a server connection of its own. Moving between two database entries switches between those connections without reconnecting, and each keeps its open transaction, temp tables, and `SET` values until its entry is closed or the connection ends. Closing the entry or the connection, or disconnecting, asks first when that rolls back an open transaction. A tab runs on the connection of the database it is bound to.
+
+A tab bound to a database that has no entry runs on a [metadata connection](/connections/connection-form#connection-health) instead. That one is shared with the Structure tab and closes after 10 minutes idle, so open the database from the strip before starting a transaction or a `CREATE TEMP TABLE` there. A database connection that died while idle is reopened on its next use; if it held a transaction, that statement is refused once with a message saying the server rolled it back. Binding itself is on [Tabs](/features/tabs#where-a-tab-points).
+
+## Sessions on the server
+
+In `pg_stat_activity`, each database's own connection reports `application_name` as `TablePro`, one per database entry in the strip. The [metadata connections](/connections/connection-form#connection-health) that read the sidebar and the Structure tab, and the ones a tab on a database without an entry runs on, report `TablePro Metadata`. To name them yourself, put `-c application_name=reporting` in **Connection Options**: every connection then uses that name.
 
 ## Text encoding
 
@@ -133,9 +149,9 @@ New connections default to **Preferred** (libpq `sslmode=prefer`): TLS first, pl
 ## Limitations
 
 - Columns cannot be reordered. The structure editor adds, renames, retypes, and drops; changing the order of existing columns means recreating the table.
-- A cross-database tab cannot share session state with the main connection. Statements that depend on a temp table or an open transaction have to run on one database.
+- Session state belongs to one database. A temp table or an open transaction made on `app` is not visible from a tab on `logs`, and closing the `app` entry ends it, after asking first when a transaction is open.
 - Backup and restore need `pg_dump` and `pg_restore` on your Mac. Neither is bundled; install them with Homebrew. `pg_dump` 15 and later refuse PostgreSQL 9.1, so back one up with `pg_dump` 14 or earlier.
-- Before PostgreSQL 12, the [`run_maintenance`](/external-api/mcp-tools) tool's `REINDEX` with no `table` runs without `CONCURRENTLY` and rebuilds the system catalog indexes as well. While an index rebuilds, writes to its table wait, and so do reads that use that index. Run it when the database is quiet.
+- Before PostgreSQL 12, the [`run_maintenance`](/developers/mcp-tools) tool's `REINDEX` with no `table` runs without `CONCURRENTLY` and rebuilds the system catalog indexes as well. While an index rebuilds, writes to its table wait, and so do reads that use that index. Run it when the database is quiet.
 
 ## Troubleshooting
 
@@ -145,4 +161,4 @@ New connections default to **Preferred** (libpq `sslmode=prefer`): TLS first, pl
 
 **ERROR: invalid byte sequence for encoding "UTF8": 0x…**: the database's encoding is `SQL_ASCII`, which stores bytes without checking them, and a value in the result is not UTF-8. Run `SHOW server_encoding` to confirm. Move the data to a `UTF8` database: dump it with `pg_dump --encoding=` and the encoding the text was written in, such as `EUC_JP` or `WIN1252`, then restore that dump into a database created with `ENCODING 'UTF8'`.
 
-**A Postgres-compatible engine loads no tables**: wire-compatible engines connect under the PostgreSQL type, and the catalogs they omit are probed for rather than assumed. An engine without `pg_matviews` still lists its tables; object kinds it does not expose will not appear at all.
+**A Postgres-compatible engine loads no tables**: wire-compatible engines connect under the PostgreSQL type, and the catalogs they omit are probed for rather than assumed. An engine without `pg_matviews` still lists its tables. One missing a catalog, function or column the listing reads loses table comments first, then falls back to `information_schema.tables`: tables and views appear, each partition as a table of its own, and materialized views and foreign tables do not.

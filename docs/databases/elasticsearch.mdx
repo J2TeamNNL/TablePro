@@ -11,19 +11,31 @@ Two things share this connection. A grid browses and edits documents by `_id`, a
 
 ## Quick setup
 
-Click **New Connection…**, select **Elasticsearch**, enter host and port, pick an **Auth Method**, then click **Save & Connect**.
+Click **New Connection…**, select **Elasticsearch**, enter a node under **Hosts**, pick an **Auth Method**, then click **Save & Connect**.
 
 The form shows no Database field: a connection reaches one cluster, and its indices are the objects.
+
+For a node on a private server, open the **Network** tab and set **Connect via** to **SSH Tunnel**, then enter the address Elasticsearch listens on as the SSH server sees it under **Hosts**, usually `localhost:9200`. See [SSH Tunneling](/connections/ssh-tunneling).
+
+## Clusters
+
+Add one row under **Hosts** per node of the cluster, as `host:port` or a pasted URL such as `https://10.0.0.1:9200`. **SSL Mode** decides between HTTP and HTTPS for every node, so a pasted `https://` URL needs a mode other than **Disabled**.
+
+The connection uses the first node that answers and stays on it:
+
+- A node that refuses or drops the connection sends reads to the next node at once.
+- A request that changes data moves only when it never reached the node, so it is never applied twice.
+- A request that times out is not sent again. The next request goes to the next node.
+- Over a tunnel, only the first node is used.
 
 ## Connection settings
 
 | Field | Description |
 |-------|-------------|
-| **Host** | Cluster host, `localhost` for a local node |
-| **Port** | REST port, `9200` by default |
+| **Hosts** | One or more nodes of the cluster, `localhost:9200` for a local node. A host without a port uses `9200`, a URL without one uses `443` or `80` |
 | **Auth Method** | Username & Password, API Key, or None |
 | **API Key** | Base64-encoded key. Shown when **Auth Method** is API Key |
-| **Skip TLS Verification** | Advanced section. Trusts any certificate, even under **Verify CA** or **Verify Identity** |
+| **Skip TLS Verification** | Options tab. Trusts any certificate, even under **Verify CA** or **Verify Identity** |
 
 ## Authentication
 
@@ -39,11 +51,11 @@ The form shows no Database field: a connection reaches one cluster, and its indi
 
 The sidebar lists indices as tables, hiding names that begin with `.`. Browsing an alias, or any name that resolves to several indices, shows the union of their mappings.
 
-Columns come from the index mapping. `object` fields flatten to dotted paths such as `address.city`. A `nested` field gets one JSON column for the whole array of objects, plus a dotted column per leaf (`identifiers.type`) whose cell is a JSON array with one entry per object, `null` where an object omits the field. Array and object values render as JSON in the cell. Every document also carries `_id`, `_index` and `_score`; `_id` is the primary key and all three are read-only.
+Columns come from the index mapping. `object` fields flatten to dotted paths such as `address.city`. A `nested` field gets one JSON column for the whole array of objects, plus a dotted column per leaf (`identifiers.type`) whose cell is a JSON array with one entry per object, `null` where an object omits the field. Array and object values render as JSON in the cell. Every document also carries `_id`, `_index` and `_score`, and `_id` is the primary key. Type an `_id` into a new row to name the document; any other edit to the three stops the save.
 
 Column filters translate to `term`, `range`, `wildcard`, `terms` and `exists`. Two filter rows on leaves of the same array match two different objects unless you set both rows to the same element. The **Raw SQL** filter column is the exception: its text goes over as a `query_string`, so write Lucene there, `name:Widget` or `price:>10`, matched across all fields. Sorting a `text` field targets its `.keyword` subfield when the mapping has one. A nested leaf sorts and filters; its JSON parent column does neither.
 
-Grid edits become REST calls keyed by `_id`: `POST /index/_update/{id}`, `PUT /index/_doc/{id}` and `DELETE /index/_doc/{id}`. Edit a nested array through its JSON parent column; an edit typed into one of its leaf columns is not sent.
+Grid edits become REST calls keyed by `_id`: `POST /index/_update/{id}`, `PUT /index/_doc/{id}` and `DELETE /index/_doc/{id}`. Edit a nested array through its JSON parent column. A value typed into one of its leaf columns, in an existing document or a new one, cannot be written, so Save stops, names that column, and sends nothing until you undo the edit.
 
 Deleting an index from the sidebar sends `DELETE /<index>`, the request the confirmation shows.
 
@@ -79,7 +91,7 @@ New connections start on **Disabled**, plain HTTP with no fallback to anything e
 - Paging past 10,000 documents switches to `search_after` over a point-in-time. That threshold is fixed, so an index with a lowered `max_result_window` errors before the switch; raise the index setting back to 10,000.
 - An array or object cell is cut at 10,000 characters and ends in `...`. Saving an edit to a cut cell stores the fragment; change long values in the console.
 - Truncate is not offered. The nearest thing Elasticsearch has is `_delete_by_query`, which runs asynchronously and reports conflicts per document. Run it in the console.
-- No mapping or schema editing, no transactions, no import, no [SSH tunnel](/connections/ssh-tunneling).
+- No mapping or schema editing, no transactions, no import.
 - OpenSearch is not supported.
 
 ## Troubleshooting

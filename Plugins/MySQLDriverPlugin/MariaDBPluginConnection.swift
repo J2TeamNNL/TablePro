@@ -25,6 +25,8 @@ struct MariaDBPluginError: Error {
     /// dropping the connection. The two arrive as the same `2013`, and only this one leaves a copy
     /// of the statement running on the server, so it is never replayed.
     var outlastedSocketTimeout = false
+    var isConnectionTimeout = false
+    var wasNotSentAfterSessionEnded = false
 
     /// `1317 Query execution was interrupted` is what the server answers a `KILL QUERY`, so the
     /// deadline reports its own stop under the code and SQLSTATE a native statement timeout uses.
@@ -41,8 +43,22 @@ struct MariaDBPluginError: Error {
 
     static let notConnected = MariaDBPluginError(
         code: 0, message: String(localized: "Not connected to database"), sqlState: nil)
+    static let notSentAfterSessionEnded = MariaDBPluginError(
+        code: 0,
+        message: String(localized: "Not connected to database"),
+        sqlState: nil,
+        wasNotSentAfterSessionEnded: true
+    )
     static let connectionFailed = MariaDBPluginError(
         code: 0, message: String(localized: "Failed to establish connection"), sqlState: nil)
+    static let connectionTimedOut = MariaDBPluginError(
+        code: 0,
+        message: String(localized: "Timed out while connecting to the server"),
+        sqlState: nil,
+        isConnectionTimeout: true
+    )
+    static let connectionTimeoutConfigurationFailed = MariaDBPluginError(
+        code: 0, message: String(localized: "Failed to configure the connection timeout"), sqlState: nil)
     static let initFailed = MariaDBPluginError(
         code: 0, message: String(localized: "Failed to initialize MySQL client"), sqlState: nil)
 }
@@ -80,8 +96,7 @@ final class MariaDBPluginConnection: @unchecked Sendable {
 
     internal let statementWatch = MySQLStatementWatch()
 
-    private let host: String
-    private let port: UInt32
+    private let transport: MySQLTransport
     private let user: String
     private let password: String?
     private let database: String
@@ -89,6 +104,8 @@ final class MariaDBPluginConnection: @unchecked Sendable {
     private let enableCleartextPlugin: Bool
     private let queryTimeoutSeconds: Int
     private let connectionEncoding: MySQLConnectionEncoding
+    private let connectTimeoutMilliseconds: Int
+    private let refreshPassword: (@Sendable () async throws -> String)?
 
     /// How long a read may go silent before libmariadb reports the connection lost, which is the
     /// only thing separating its own timeout from a server-side drop.
@@ -175,8 +192,50 @@ final class MariaDBPluginConnection: @unchecked Sendable {
     /// before it went out would let it arrive during the statement below instead.
     internal func absorbLatchedKillIfNeeded() {
         cancelQueue.sync {}
-        guard takeKillAbsorption(), MySQLKillLatch.absorbsLatchedKill(flavor: flavor) else { return }
+        guard takeKillAbsorption(), !sessionEndedByKill, MySQLKillLatch.absorbsLatchedKill(flavor: flavor) else { return }
         consumePendingInterrupt()
+    }
+
+    private var _sessionEndedByKill = false
+    private var _sessionEndedByApprovedKill = false
+
+    /// Set once a `KILL <id>` this connection sent went out. The handle is dead from then on.
+    var sessionEndedByKill: Bool {
+        stateLock.withLock { _sessionEndedByKill }
+    }
+
+    /// Whether the kill that ended it was one the driver was asked about first, Stop or the
+    /// deadline, rather than the cleanup of a statement the socket timeout gave up on.
+    var sessionEndedByApprovedKill: Bool {
+        stateLock.withLock { _sessionEndedByApprovedKill }
+    }
+
+    internal func recordSessionEndedByKill(approved: Bool) {
+        stateLock.withLock {
+            _sessionEndedByKill = true
+            _sessionEndedByApprovedKill = _sessionEndedByApprovedKill || approved
+        }
+    }
+
+    private var _sessionMayEnd: @Sendable () -> Bool = { false }
+
+    /// Whether the client deadline may end the session to stop a statement, answered by the driver
+    /// from what the session holds.
+    func adopt(sessionMayEnd: @escaping @Sendable () -> Bool) {
+        stateLock.withLock { _sessionMayEnd = sessionMayEnd }
+    }
+
+    /// Asked outside `stateLock`, because the driver answers under its own lock.
+    internal func deadlineMayEndSession() -> Bool {
+        let sessionMayEnd = stateLock.withLock { _sessionMayEnd }
+        return sessionMayEnd()
+    }
+
+    /// The charset a server before 5.5 sends its error text in, learned once the session is up.
+    private var _errorLanguage: String.Encoding?
+
+    private var errorLanguage: String.Encoding? {
+        stateLock.withLock { _errorLanguage }
     }
 
     func adopt(flavor: MySQLServerFlavor, killTarget: MySQLKillTarget) {
@@ -206,12 +265,24 @@ final class MariaDBPluginConnection: @unchecked Sendable {
 
     private var _isInTransaction = false
 
+    /// Whether the session runs with `NO_BACKSLASH_ESCAPES`, from the status flags of the last reply, or nil before
+    /// any reply this connection read. Measured on MySQL 8.4.11 and MariaDB 11.8.9: the flag follows every session
+    /// `sql_mode` change on the next OK packet, and a mode `init_connect` sets shows only from the first reply after
+    /// connect, which is why it is read after the session setup statement rather than from the handshake.
+    var noBackslashEscapes: Bool? {
+        stateLock.withLock { _noBackslashEscapes }
+    }
+
+    private var _noBackslashEscapes: Bool?
+
     private func recordTransactionState(on mysql: UnsafeMutablePointer<MYSQL>) {
         var serverStatus: UInt32 = 0
         guard mariadb_get_info(mysql, MARIADB_CONNECTION_SERVER_STATUS, &serverStatus) == 0 else { return }
         let isOpen = (serverStatus & UInt32(SERVER_STATUS_IN_TRANS)) != 0
+        let escapesOff = (serverStatus & UInt32(SERVER_STATUS_NO_BACKSLASH_ESCAPES)) != 0
         stateLock.lock()
         _isInTransaction = isOpen
+        _noBackslashEscapes = escapesOff
         stateLock.unlock()
     }
 
@@ -229,18 +300,18 @@ final class MariaDBPluginConnection: @unchecked Sendable {
     }
 
     init(
-        host: String,
-        port: Int,
+        transport: MySQLTransport,
         user: String,
         password: String?,
         database: String,
         sslConfig: SSLConfiguration,
         enableCleartextPlugin: Bool = false,
         queryTimeoutSeconds: Int = 0,
-        connectionEncoding: MySQLConnectionEncoding = .utf8
+        connectionEncoding: MySQLConnectionEncoding = .utf8,
+        connectTimeoutMilliseconds: Int = MySQLConnectTimeout.defaultMilliseconds,
+        refreshPassword: (@Sendable () async throws -> String)? = nil
     ) {
-        self.host = host
-        self.port = UInt32(port)
+        self.transport = transport
         self.user = user
         self.password = password
         self.database = database
@@ -248,6 +319,8 @@ final class MariaDBPluginConnection: @unchecked Sendable {
         self.enableCleartextPlugin = enableCleartextPlugin
         self.queryTimeoutSeconds = queryTimeoutSeconds
         self.connectionEncoding = connectionEncoding
+        self.connectTimeoutMilliseconds = MySQLConnectTimeout(milliseconds: connectTimeoutMilliseconds).milliseconds
+        self.refreshPassword = refreshPassword
         self.socketTimeoutSeconds = mysqlSocketTimeoutSeconds(forQueryTimeout: queryTimeoutSeconds)
     }
 
@@ -264,16 +337,22 @@ final class MariaDBPluginConnection: @unchecked Sendable {
 
     // MARK: - Connection Management
 
-    func connect() async throws {
+    func connect(deadline suppliedDeadline: MySQLConnectDeadline? = nil) async throws {
+        let deadline = suppliedDeadline
+            ?? MySQLConnectDeadline(timeout: MySQLConnectTimeout(milliseconds: connectTimeoutMilliseconds))
         try await pluginDispatchAsync(on: queue) { [self] in
+            if let issue = self.transport.pathIssue {
+                throw MariaDBPluginError(issue)
+            }
             let mode = self.sslConfig.mode
-            let handle: UnsafeMutablePointer<MYSQL>
+            let startsWithTLS = MySQLLocalSocket.attemptsTLS(mode, overSocket: self.transport.isUnixSocket)
+            let session: EstablishedSession
             do {
-                handle = try self.attemptConnect(enforceSSL: mode != .disabled)
-            } catch let error as MariaDBPluginError where mode == .preferred && MariaDBSSLClassifier.sslOnlyErrorCodes.contains(error.code) {
+                session = try self.attemptConnect(enforceSSL: startsWithTLS, deadline: deadline)
+            } catch let error as MariaDBPluginError where startsWithTLS && mode == .preferred && MariaDBSSLClassifier.sslOnlyErrorCodes.contains(error.code) {
                 logger.notice("MySQL SSL handshake failed (code \(error.code)); falling back to plaintext for .preferred mode")
                 do {
-                    handle = try self.attemptConnect(enforceSSL: false)
+                    session = try self.attemptConnect(enforceSSL: false, deadline: deadline)
                 } catch let fallbackError as MariaDBPluginError {
                     if let sslError = MariaDBSSLClassifier.classifySSLError(code: fallbackError.code, message: fallbackError.message) {
                         throw sslError
@@ -287,6 +366,7 @@ final class MariaDBPluginConnection: @unchecked Sendable {
                 throw error
             }
 
+            let handle = session.handle
             if let versionPtr = mysql_get_server_info(handle) {
                 self._cachedServerVersion = String(cString: versionPtr)
             }
@@ -299,11 +379,24 @@ final class MariaDBPluginConnection: @unchecked Sendable {
             self.stateLock.lock()
             self.mysql = handle
             self._isConnected = true
+            self._errorLanguage = session.errorLanguage
+            self._sessionEndedByKill = false
+            self._sessionEndedByApprovedKill = false
             self.stateLock.unlock()
+            self.recordTransactionState(on: handle)
         }
     }
 
-    private func attemptConnect(enforceSSL: Bool) throws -> UnsafeMutablePointer<MYSQL> {
+    private struct EstablishedSession {
+        let handle: UnsafeMutablePointer<MYSQL>
+        let errorLanguage: String.Encoding?
+    }
+
+    private func attemptConnect(
+        enforceSSL: Bool,
+        deadline: MySQLConnectDeadline
+    ) throws -> EstablishedSession {
+        var timeout = try connectSocketTimeoutSeconds(deadline: deadline)
         guard let mysql = mysql_init(nil) else {
             throw MariaDBPluginError.initFailed
         }
@@ -311,17 +404,15 @@ final class MariaDBPluginConnection: @unchecked Sendable {
         var reconnect: my_bool = 0
         mysql_options(mysql, MYSQL_OPT_RECONNECT, &reconnect)
 
-        var timeout: UInt32 = 10
         mysql_options(mysql, MYSQL_OPT_CONNECT_TIMEOUT, &timeout)
 
-        var readTimeout = socketTimeoutSeconds
+        var readTimeout = timeout
         mysql_options(mysql, MYSQL_OPT_READ_TIMEOUT, &readTimeout)
 
-        var writeTimeout = socketTimeoutSeconds
+        var writeTimeout = timeout
         mysql_options(mysql, MYSQL_OPT_WRITE_TIMEOUT, &writeTimeout)
 
-        var protocol_tcp = UInt32(MYSQL_PROTOCOL_TCP.rawValue)
-        mysql_options(mysql, MYSQL_OPT_PROTOCOL, &protocol_tcp)
+        transport.configureProtocol(on: mysql)
 
         var allowLocalInfile: UInt32 = 0
         mysql_options(mysql, MYSQL_OPT_LOCAL_INFILE, &allowLocalInfile)
@@ -332,14 +423,17 @@ final class MariaDBPluginConnection: @unchecked Sendable {
         var sslVerify: my_bool = sslConfig.verifiesCertificate ? 1 : 0
         mysql_options(mysql, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &sslVerify)
 
-        if sslConfig.verifiesCertificate, !sslConfig.caCertificatePath.isEmpty {
-            _ = sslConfig.caCertificatePath.withCString { mysql_options(mysql, MYSQL_OPT_SSL_CA, $0) }
-        }
-        if !sslConfig.clientCertificatePath.isEmpty {
-            _ = sslConfig.clientCertificatePath.withCString { mysql_options(mysql, MYSQL_OPT_SSL_CERT, $0) }
-        }
-        if !sslConfig.clientKeyPath.isEmpty {
-            _ = sslConfig.clientKeyPath.withCString { mysql_options(mysql, MYSQL_OPT_SSL_KEY, $0) }
+        // Connector/C turns TLS on for any CA, certificate or key it is given, so a plaintext attempt gets none.
+        if enforceSSL {
+            if sslConfig.verifiesCertificate, !sslConfig.caCertificatePath.isEmpty {
+                _ = sslConfig.caCertificatePath.withCString { mysql_options(mysql, MYSQL_OPT_SSL_CA, $0) }
+            }
+            if !sslConfig.clientCertificatePath.isEmpty {
+                _ = sslConfig.clientCertificatePath.withCString { mysql_options(mysql, MYSQL_OPT_SSL_CERT, $0) }
+            }
+            if !sslConfig.clientKeyPath.isEmpty {
+                _ = sslConfig.clientKeyPath.withCString { mysql_options(mysql, MYSQL_OPT_SSL_KEY, $0) }
+            }
         }
 
         mysql_options(mysql, MYSQL_SET_CHARSET_NAME, "utf8mb4")
@@ -349,50 +443,102 @@ final class MariaDBPluginConnection: @unchecked Sendable {
             mysql_options(mysql, MYSQL_ENABLE_CLEARTEXT_PLUGIN, &enableCleartext)
         }
 
-        let dbToUse = database.isEmpty ? nil : database
-        let passToUse = password
+        let result = transport.realConnect(
+            mysql,
+            user: user,
+            password: password,
+            database: database.isEmpty ? nil : database
+        )
 
-        let result: UnsafeMutablePointer<MYSQL>?
-        if let db = dbToUse, let pass = passToUse {
-            result = host.withCString { hostPtr in
-                user.withCString { userPtr in
-                    pass.withCString { passPtr in
-                        db.withCString { dbPtr in
-                            mysql_real_connect(mysql, hostPtr, userPtr, passPtr, dbPtr, port, nil, 0)
-                        }
-                    }
-                }
-            }
-        } else if let db = dbToUse {
-            result = host.withCString { hostPtr in
-                user.withCString { userPtr in
-                    db.withCString { dbPtr in
-                        mysql_real_connect(mysql, hostPtr, userPtr, nil, dbPtr, port, nil, 0)
-                    }
-                }
-            }
-        } else if let pass = passToUse {
-            result = host.withCString { hostPtr in
-                user.withCString { userPtr in
-                    pass.withCString { passPtr in
-                        mysql_real_connect(mysql, hostPtr, userPtr, passPtr, nil, port, nil, 0)
-                    }
-                }
-            }
-        } else {
-            result = host.withCString { hostPtr in
-                user.withCString { userPtr in
-                    mysql_real_connect(mysql, hostPtr, userPtr, nil, nil, port, nil, 0)
-                }
-            }
+        guard result != nil else {
+            let error = readError(from: mysql)
+            mysql_close(mysql)
+            try checkConnectDeadline(deadline)
+            throw error
         }
 
-        guard result != nil, MariaDBCharacterSet.establishSession(on: mysql, encoding: connectionEncoding) else {
-            let error = readError(from: mysql)
+        do {
+            let established = try MariaDBCharacterSet.establishSession(
+                on: mysql,
+                encoding: connectionEncoding
+            ) { operation in
+                try applyConnectSocketTimeout(deadline: deadline, to: mysql)
+                let succeeded = operation()
+                try checkConnectDeadline(deadline)
+                return succeeded
+            }
+            guard established else {
+                throw readError(from: mysql)
+            }
+            try checkConnectDeadline(deadline)
+            return EstablishedSession(handle: mysql, errorLanguage: learnErrorLanguage(on: mysql, deadline: deadline))
+        } catch {
             mysql_close(mysql)
             throw error
         }
-        return mysql
+    }
+
+    /// Best effort and bounded by the connect deadline: a probe that fails or finds no time left
+    /// leaves the error text decoded the way it always was.
+    private func learnErrorLanguage(
+        on mysql: UnsafeMutablePointer<MYSQL>,
+        deadline: MySQLConnectDeadline
+    ) -> String.Encoding? {
+        guard (try? applyConnectSocketTimeout(deadline: deadline, to: mysql)) != nil else { return nil }
+        return MariaDBCharacterSet.errorLanguage(on: mysql)
+    }
+
+    func executeConnectQuery(
+        _ query: String,
+        deadline: MySQLConnectDeadline
+    ) async throws -> MariaDBPluginQueryResult {
+        let queryToRun = String(query)
+        return try await pluginDispatchAsync(on: queue) { [self] in
+            guard !isShuttingDown, let mysql else { throw MariaDBPluginError.notConnected }
+            try applyConnectSocketTimeout(deadline: deadline, to: mysql)
+            do {
+                let result = try executeQuerySync(queryToRun)
+                try checkConnectDeadline(deadline)
+                return result
+            } catch {
+                try checkConnectDeadline(deadline)
+                throw error
+            }
+        }
+    }
+
+    func completeConnect(deadline: MySQLConnectDeadline) async throws {
+        try await pluginDispatchAsync(on: queue) { [self] in
+            guard let mysql else { throw MariaDBPluginError.notConnected }
+            try checkConnectDeadline(deadline)
+            guard tablepro_mysql_set_io_timeout(mysql, socketTimeoutSeconds) == 0 else {
+                throw MariaDBPluginError.connectionTimeoutConfigurationFailed
+            }
+            try checkConnectDeadline(deadline)
+        }
+    }
+
+    private func applyConnectSocketTimeout(
+        deadline: MySQLConnectDeadline,
+        to mysql: UnsafeMutablePointer<MYSQL>
+    ) throws {
+        let timeout = try connectSocketTimeoutSeconds(deadline: deadline)
+        guard tablepro_mysql_set_io_timeout(mysql, timeout) == 0 else {
+            throw MariaDBPluginError.connectionTimeoutConfigurationFailed
+        }
+    }
+
+    private func connectSocketTimeoutSeconds(deadline: MySQLConnectDeadline) throws -> UInt32 {
+        guard let timeout = deadline.socketTimeoutSeconds() else {
+            throw MariaDBPluginError.connectionTimedOut
+        }
+        return timeout
+    }
+
+    private func checkConnectDeadline(_ deadline: MySQLConnectDeadline) throws {
+        guard deadline.remainingMilliseconds() != nil else {
+            throw MariaDBPluginError.connectionTimedOut
+        }
     }
 
     private func readError(from mysql: UnsafeMutablePointer<MYSQL>) -> MariaDBPluginError {
@@ -433,17 +579,34 @@ final class MariaDBPluginConnection: @unchecked Sendable {
     /// The half the caller needs is the gate, which is already synchronous: it is what makes the
     /// in-flight read give up. The kill is server-side cleanup and carries only a thread id, no
     /// handle, so it is safe to finish on its own queue.
-    func cancelCurrentQuery() {
+    ///
+    /// A kill that ends the session goes out only when the caller says nothing in it would be lost;
+    /// otherwise only the gate is set, and the server runs the statement to its end.
+    func cancelCurrentQuery(mayEndSession: Bool) {
         guard let generation = cancellationGate.cancel() else { return }
 
-        guard let mysql = mysql, let statement = killStatement(for: mysql) else { return }
+        let target = killTarget
+        guard mayEndSession || !target.endsSession else { return }
+        guard let mysql = mysql, let statement = target.statement(threadId: mysql_thread_id(mysql)) else { return }
         cancelQueue.async { [self] in
-            killQueryOnServer(statement: statement, generation: generation)
+            guard deliverKill(statement) else { return }
+            if target.endsSession {
+                recordSessionEndedByKill(approved: true)
+            } else {
+                recordKillDelivered(generation: generation)
+            }
         }
     }
 
-    internal func killStatement(for mysql: UnsafeMutablePointer<MYSQL>) -> String? {
-        killTarget.statement(threadId: mysql_thread_id(mysql))
+    /// Stops a statement this connection is still reading so the rest can be drained. Never with a
+    /// kill that ends the session: only Stop sends one, and only when the driver allows it.
+    private func killStatementOnServer(on mysql: UnsafeMutablePointer<MYSQL>, generation: Int) {
+        let target = killTarget
+        guard !target.endsSession,
+              let statement = target.statement(threadId: mysql_thread_id(mysql)),
+              deliverKill(statement)
+        else { return }
+        recordKillDelivered(generation: generation)
     }
 
     /// The server thread this connection is on, read before a statement goes out so a kill still
@@ -464,14 +627,13 @@ final class MariaDBPluginConnection: @unchecked Sendable {
     /// a server without TLS failed with 2026 and Stop did nothing. Reading the configured mode
     /// instead would break `.preferred`, the default, the same way: the primary succeeds through its
     /// plaintext fallback and every kill after it repeats the attempt that already failed.
-    private func killQueryOnServer(statement killQuery: String, generation: Int) {
+    private func deliverKill(_ killQuery: String) -> Bool {
         guard let killConn = openKillConnection() else {
             logger.warning("\(killQuery, privacy: .public) could not open a connection")
-            return
+            return false
         }
         defer { mysql_close(killConn) }
-        guard sendKill(killQuery, on: killConn) else { return }
-        recordKillDelivered(generation: generation)
+        return sendKill(killQuery, on: killConn)
     }
 
     /// Opened outside any lock the statement's own completion waits on: against a server across the
@@ -480,13 +642,12 @@ final class MariaDBPluginConnection: @unchecked Sendable {
         let killConn = mysql_init(nil)
         guard let killConn = killConn else { return nil }
 
-        var killTimeout: UInt32 = 5
+        var killTimeout = Self.killTimeoutSeconds
         mysql_options(killConn, MYSQL_OPT_CONNECT_TIMEOUT, &killTimeout)
         mysql_options(killConn, MYSQL_OPT_READ_TIMEOUT, &killTimeout)
         mysql_options(killConn, MYSQL_OPT_WRITE_TIMEOUT, &killTimeout)
 
-        var killProtocol = UInt32(MYSQL_PROTOCOL_TCP.rawValue)
-        mysql_options(killConn, MYSQL_OPT_PROTOCOL, &killProtocol)
+        transport.configureProtocol(on: killConn)
 
         var killAllowLocalInfile: UInt32 = 0
         mysql_options(killConn, MYSQL_OPT_LOCAL_INFILE, &killAllowLocalInfile)
@@ -512,17 +673,12 @@ final class MariaDBPluginConnection: @unchecked Sendable {
             mysql_options(killConn, MYSQL_ENABLE_CLEARTEXT_PLUGIN, &killEnableCleartext)
         }
 
-        let killResult = host.withCString { hostPtr in
-            user.withCString { userPtr in
-                if let pass = password {
-                    return pass.withCString { passPtr in
-                        mysql_real_connect(killConn, hostPtr, userPtr, passPtr, nil, port, nil, 0)
-                    }
-                } else {
-                    return mysql_real_connect(killConn, hostPtr, userPtr, nil, nil, port, nil, 0)
-                }
-            }
-        }
+        let killResult = transport.realConnect(
+            killConn,
+            user: user,
+            password: sideConnectionPassword(),
+            database: nil
+        )
 
         guard killResult != nil else {
             logger.warning("KILL QUERY could not connect: \(self.errorMessage(from: killConn))")
@@ -530,6 +686,19 @@ final class MariaDBPluginConnection: @unchecked Sendable {
             return nil
         }
         return killConn
+    }
+
+    private static let killTimeoutSeconds: UInt32 = 5
+
+    /// The kill is a new sign-in, which an expired IAM token cannot make, so it asks the host for a
+    /// current one. Every caller is on a dispatch queue that is about to block for the kill's own
+    /// connect, so waiting for the token holds no thread the connect would not.
+    private func sideConnectionPassword() -> String? {
+        guard let refreshPassword else { return password }
+        return MySQLBlockingPasswordRefresh.wait(
+            for: refreshPassword,
+            timeout: .seconds(Int(Self.killTimeoutSeconds))
+        ) ?? password
     }
 
     /// Whether the kill went out. The caller records an interrupt only on `true`, so a refused or
@@ -568,11 +737,11 @@ final class MariaDBPluginConnection: @unchecked Sendable {
     /// is already unusable, so the thread id captured before the statement went out is the only way
     /// back to it.
     internal func killOrphanedStatement(threadId: UInt) {
-        guard let statement = killTarget.statement(threadId: threadId) else { return }
+        let target = killTarget
+        guard let statement = target.statement(threadId: threadId) else { return }
         cancelQueue.async { [self] in
-            guard let killConn = openKillConnection() else { return }
-            defer { mysql_close(killConn) }
-            sendKill(statement, on: killConn)
+            guard deliverKill(statement), target.endsSession else { return }
+            recordSessionEndedByKill(approved: false)
         }
     }
 
@@ -679,10 +848,21 @@ final class MariaDBPluginConnection: @unchecked Sendable {
     }
 
     private func executeQuerySync(_ query: String, rowCap: Int? = nil) throws -> MariaDBPluginQueryResult {
-        try runStatement(query) { try self.runTextStatement(query, rowCap: rowCap) }
+        try runStatement(query) {
+            try self.runCancellableStatement { mysql, generation in
+                try self.runTextStatement(query, rowCap: rowCap, on: mysql, generation: generation)
+            }
+        }
     }
 
-    private func runTextStatement(_ query: String, rowCap: Int?) throws -> MariaDBPluginQueryResult {
+    /// One statement on the primary handle, under its own cancellation generation.
+    ///
+    /// Below 5.0 a statement stops only with its session, and the killed statement reports that as
+    /// `1053`, `2013` or not at all (measured on 4.1.22). Once Stop has cancelled it, any failure is
+    /// the stop, and as a cancellation it is never replayed on a new session.
+    private func runCancellableStatement<T>(
+        _ body: (UnsafeMutablePointer<MYSQL>, Int) throws -> T
+    ) throws -> T {
         guard !isShuttingDown, let mysql = self.mysql else {
             throw MariaDBPluginError.notConnected
         }
@@ -691,6 +871,25 @@ final class MariaDBPluginConnection: @unchecked Sendable {
         let generation = cancellationGate.beginQuery()
         defer { cancellationGate.endQuery(generation) }
 
+        do {
+            return try body(mysql, generation)
+        } catch {
+            guard cancellationGate.isCancelled(generation), killTarget.endsSession else { throw error }
+            throw CancellationError()
+        }
+    }
+
+    private func binaryStringsAreText(in query: String, flavor: MySQLServerFlavor) -> Bool {
+        MySQLServerVersion.labelsShowTextAsBinary(banner: serverVersion(), flavor: flavor)
+            && mysqlStatementListsServerMetadata(query)
+    }
+
+    private func runTextStatement(
+        _ query: String,
+        rowCap: Int?,
+        on mysql: UnsafeMutablePointer<MYSQL>,
+        generation: Int
+    ) throws -> MariaDBPluginQueryResult {
         /// Started before the `SQL_SELECT_LIMIT` reconciliation rather than after it. That
         /// reconciliation is a round trip of its own, and leaving it outside this clock charges it
         /// to `total - firstRow`, which the breakdown presents as row transfer.
@@ -736,7 +935,8 @@ final class MariaDBPluginConnection: @unchecked Sendable {
             of: mysql_fetch_fields(resultPtr),
             count: Int(mysql_num_fields(resultPtr)),
             encoding: connectionEncoding,
-            flavor: sessionFlavor
+            flavor: sessionFlavor,
+            binaryStringsAreText: binaryStringsAreText(in: query, flavor: sessionFlavor)
         )
 
         var rows: [[PluginCellValue]] = []
@@ -774,8 +974,8 @@ final class MariaDBPluginConnection: @unchecked Sendable {
             rows.removeLast(rows.count - outcome.keptRows)
         }
         if outcome.serverIgnoredLimit {
-            if !sessionFlavor.dropsIdleSessionOnKillQuery, let statement = killStatement(for: mysql) {
-                killQueryOnServer(statement: statement, generation: generation)
+            if !sessionFlavor.dropsIdleSessionOnKillQuery {
+                killStatementOnServer(on: mysql, generation: generation)
             }
             while mysql_fetch_row(resultPtr) != nil {}
         }
@@ -1013,23 +1213,21 @@ final class MariaDBPluginConnection: @unchecked Sendable {
             return try executeQuerySync(DatabendLiteral.inline(query, parameters: parameters), rowCap: rowCap)
         }
         return try runStatement(query) {
-            try self.runPreparedStatement(query, parameters: parameters, rowCap: rowCap)
+            try self.runCancellableStatement { mysql, generation in
+                try self.runPreparedStatement(
+                    query, parameters: parameters, rowCap: rowCap, on: mysql, generation: generation
+                )
+            }
         }
     }
 
     private func runPreparedStatement(
         _ query: String,
         parameters: [PluginCellValue],
-        rowCap: Int?
+        rowCap: Int?,
+        on mysql: UnsafeMutablePointer<MYSQL>,
+        generation: Int
     ) throws -> MariaDBPluginQueryResult {
-        guard !isShuttingDown, let mysql = self.mysql else {
-            throw MariaDBPluginError.notConnected
-        }
-        defer { recordTransactionState(on: mysql) }
-
-        let generation = cancellationGate.beginQuery()
-        defer { cancellationGate.endQuery(generation) }
-
         /// Ahead of both the reconciliation and the prepare, for the reason the text path gives.
         let sentAt = Date()
         try reconcileSelectLimit(rowCap: rowCap, statement: query, on: mysql)
@@ -1095,11 +1293,13 @@ final class MariaDBPluginConnection: @unchecked Sendable {
             mysql_free_result(metadata)
         }
 
+        let sessionFlavor = flavor
         let columns = MariaDBCharacterSet.describeColumns(
             of: mysql_fetch_fields(metadata),
             count: Int(mysql_num_fields(metadata)),
             encoding: connectionEncoding,
-            flavor: flavor
+            flavor: sessionFlavor,
+            binaryStringsAreText: binaryStringsAreText(in: query, flavor: sessionFlavor)
         )
 
         let fetchResult = try fetchResultSet(
@@ -1128,7 +1328,11 @@ final class MariaDBPluginConnection: @unchecked Sendable {
             self.queue.async { [self] in
                 do {
                     try runStatement(queryToRun) {
-                        try self.streamStatement(queryToRun, continuation: continuation, abort: abort)
+                        try self.runCancellableStatement { mysql, generation in
+                            try self.streamStatement(
+                                queryToRun, continuation: continuation, abort: abort, on: mysql, generation: generation
+                            )
+                        }
                     }
                     continuation.finish()
                 } catch {
@@ -1141,16 +1345,10 @@ final class MariaDBPluginConnection: @unchecked Sendable {
     private func streamStatement(
         _ queryToRun: String,
         continuation: AsyncThrowingStream<PluginStreamElement, Error>.Continuation,
-        abort: PluginStreamAbort
+        abort: PluginStreamAbort,
+        on mysql: UnsafeMutablePointer<MYSQL>,
+        generation: Int
     ) throws {
-        guard !isShuttingDown, let mysql = self.mysql else {
-            throw MariaDBPluginError.notConnected
-        }
-        defer { recordTransactionState(on: mysql) }
-
-        let generation = cancellationGate.beginQuery()
-        defer { cancellationGate.endQuery(generation) }
-
         guard !abort.isAborted else { return }
 
         try reconcileSelectLimit(rowCap: nil, statement: queryToRun, on: mysql)
@@ -1170,11 +1368,13 @@ final class MariaDBPluginConnection: @unchecked Sendable {
             return
         }
 
+        let sessionFlavor = flavor
         let columns = MariaDBCharacterSet.describeColumns(
             of: mysql_fetch_fields(resultPtr),
             count: Int(mysql_num_fields(resultPtr)),
             encoding: connectionEncoding,
-            flavor: flavor
+            flavor: sessionFlavor,
+            binaryStringsAreText: binaryStringsAreText(in: queryToRun, flavor: sessionFlavor)
         )
 
         continuation.yield(.header(PluginStreamHeader(
@@ -1190,9 +1390,7 @@ final class MariaDBPluginConnection: @unchecked Sendable {
             if abort.isAborted || cancellationGate.isCancelled(generation) {
                 /// Same shape as the capped buffered read: stop the server first, then
                 /// drain what is already in flight so the connection stays usable.
-                if let statement = killStatement(for: mysql) {
-                    killQueryOnServer(statement: statement, generation: generation)
-                }
+                killStatementOnServer(on: mysql, generation: generation)
                 while mysql_fetch_row(resultPtr) != nil {}
                 mysql_free_result(resultPtr)
                 throw CancellationError()
@@ -1249,7 +1447,7 @@ final class MariaDBPluginConnection: @unchecked Sendable {
     }
 
     private func decodedMessage(_ message: UnsafePointer<CChar>) -> String {
-        mysqlSessionText(cString: message, encoding: connectionEncoding)
+        MySQLErrorText.decode(cString: message, language: errorLanguage, encoding: connectionEncoding)
     }
 
     private func sqlState(_ state: UnsafePointer<CChar>?) -> String? {

@@ -12,40 +12,6 @@ import Foundation
 import TableProPluginKit
 import Testing
 
-/// Driven by one task at a time, so the replies are handed out in order with no synchronisation.
-private final class StubRedisChannel: RedisCommandChannel, @unchecked Sendable {
-    private var queuedReplies: [RedisReply]
-    private(set) var sentCommands: [[String]] = []
-
-    init(_ replies: [RedisReply]) {
-        queuedReplies = replies
-    }
-
-    var isConnected: Bool { true }
-
-    func connect(reportingStage report: @escaping ConnectionStageReporter) async throws {}
-    func disconnect() {}
-    func cancelCurrentQuery() {}
-    func serverVersion() -> String? { "8.10.1" }
-    func currentDatabase() -> Int { 0 }
-    func selectDatabase(_ index: Int) async throws {}
-
-    func executeCommand(_ args: [Data]) async throws -> RedisReply {
-        sentCommands.append(args.map { String(data: $0, encoding: .utf8) ?? "" })
-        guard !queuedReplies.isEmpty else { return .null }
-        return queuedReplies.removeFirst()
-    }
-
-    func executePipeline(_ commands: [[Data]]) async throws -> [RedisReply] {
-        var replies: [RedisReply] = []
-        for command in commands {
-            replies.append(try await executeCommand(command))
-        }
-        return replies
-    }
-}
-
-@Suite("Redis reply - a queued acknowledgement is not an answer")
 struct RedisQueuedReplyShapeTests {
     @Test("A +QUEUED simple string is the acknowledgement")
     func statusIsQueued() {
@@ -97,7 +63,6 @@ struct RedisQueuedReplyShapeTests {
     }
 }
 
-@Suite("Redis command channel - the run choke point")
 struct RedisCommandChannelRunTests {
     @Test("run(_: [String]) refuses a queued acknowledgement")
     func stringOverloadRefusesQueued() async throws {
@@ -138,7 +103,6 @@ struct RedisCommandChannelRunTests {
     }
 }
 
-@Suite("Redis queued command policy")
 struct RedisQueuedCommandPolicyTests {
     /// A one-row `QUEUED` status in the data grid reads as an empty table, so the two walks the app
     /// builds for itself say the keyspace could not be read instead.
@@ -170,7 +134,6 @@ struct RedisQueuedCommandPolicyTests {
 /// one position out. The translation therefore belongs to the one function that dispatches an
 /// operation, not to a route. The plugin imports CRedis, which this target cannot, so the guard is a
 /// source scan.
-@Suite("Redis queued translation source scan")
 struct RedisQueuedTranslationSourceScanTests {
     private static let pluginDirectory: URL = {
         var directory = URL(fileURLWithPath: #filePath)
@@ -197,7 +160,6 @@ struct RedisQueuedTranslationSourceScanTests {
     }
 }
 
-@Suite("Redis command channel - the default keyspace walk")
 struct RedisCommandChannelScanTests {
     @Test("A queued SCAN is refused rather than read as an empty keyspace")
     func queuedScanIsRefused() async throws {

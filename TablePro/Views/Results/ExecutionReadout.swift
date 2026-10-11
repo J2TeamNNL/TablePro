@@ -38,13 +38,14 @@ struct ExecutionReadout: Equatable {
         execution.isStoppable(tabId)
     }
 
-    /// Nothing to draw when no query has run and none is running. The toolbar used to hold an
-    /// em-dash placeholder there, which spent width to say nothing.
-    var isActive: Bool {
-        isExecuting || lastTiming != nil
+    var startedAt: ContinuousClock.Instant? {
+        execution.startedAt(tabId)
     }
 
     static func == (lhs: ExecutionReadout, rhs: ExecutionReadout) -> Bool {
-        lhs.isExecuting == rhs.isExecuting && lhs.canStop == rhs.canStop && lhs.lastTiming == rhs.lastTiming
+        lhs.isExecuting == rhs.isExecuting
+            && lhs.canStop == rhs.canStop
+            && lhs.startedAt == rhs.startedAt
+            && lhs.lastTiming == rhs.lastTiming
     }
 }

@@ -141,7 +141,7 @@ extension MainContentCoordinator {
                     clearFilterState()
                     discardRowsForRetarget()
                     restoreLastHiddenColumnsForTable()
-                    restoreFiltersForTable(tableName)
+                    restoreFiltersForSelectedTab()
                     if let dbIndex = Int(currentDatabase) {
                         selectRedisDatabaseAndQuery(dbIndex)
                     }
@@ -281,7 +281,7 @@ extension MainContentCoordinator {
             toolbarState.isTableTab = true
         }
         restoreLastHiddenColumnsForTable()
-        restoreFiltersForTable(tableName)
+        restoreFiltersForSelectedTab()
         if isInPlace, let dbIndex = Int(currentDatabase) {
             selectRedisDatabaseAndQuery(dbIndex)
         } else {
@@ -346,7 +346,7 @@ extension MainContentCoordinator {
         clearFilterState()
         discardRowsForRetarget(resultsViewMode: showStructure ? .structure : .data)
         restoreLastHiddenColumnsForTable()
-        restoreFiltersForTable(tableName)
+        restoreFiltersForSelectedTab()
         if let tabId = tabManager.selectedTab?.id {
             if let token { TableLoadTracer.shared.stage(.cancelPreviousLoad, token: token) }
             cancelTableLoad(for: tabId)
@@ -423,38 +423,23 @@ extension MainContentCoordinator {
     }
 
     func showAllTablesMetadata() {
-        guard let sql = allTablesMetadataSQL() else { return }
-
-        let payload = EditorTabPayload(
-            connectionId: connection.id,
-            tabType: .query,
-            initialQuery: sql
-        )
-        openTabInNewWindow(payload)
+        switch allTablesListing() {
+        case .shellCommand(let command):
+            tabManager.addTab(initialQuery: command, databaseName: browseDatabaseName)
+            runQuery(viewport: .firstRow)
+        case .statement(let sql):
+            openTabInNewWindow(EditorTabPayload(connectionId: connection.id, tabType: .query, initialQuery: sql))
+        case nil:
+            return
+        }
     }
 
-    private func allTablesMetadataSQL() -> String? {
-        let editorLang = PluginManager.shared.editorLanguage(for: connection.type)
-        // Non-SQL databases: open a command tab instead
-        if editorLang == .javascript {
-            tabManager.addTab(
-                initialQuery: "db.runCommand({\"listCollections\": 1, \"nameOnly\": false})",
-                databaseName: browseDatabaseName
-            )
-            runQuery(viewport: .firstRow)
-            return nil
-        } else if editorLang == .bash {
-            tabManager.addTab(
-                initialQuery: "SCAN 0 MATCH * COUNT 100",
-                databaseName: browseDatabaseName
-            )
-            runQuery(viewport: .firstRow)
-            return nil
+    /// Nil when the engine has no listing, which is when the sidebar leaves the command out.
+    func allTablesListing() -> AllTablesListing? {
+        let pluginListing = DatabaseManager.shared.driver(for: connectionId).flatMap { driver in
+            (driver as? PluginDriverAdapter)?.allTablesMetadataSQL(schema: allTablesContainer(driver))
         }
-
-        // SQL databases: delegate to plugin driver
-        guard let driver = DatabaseManager.shared.driver(for: connectionId) else { return nil }
-        return (driver as? PluginDriverAdapter)?.allTablesMetadataSQL(schema: allTablesContainer(driver))
+        return AllTablesListing.resolve(databaseType: connection.type, pluginListing: pluginListing)
     }
 
     /// The container this listing is about, named rather than left to the driver.
@@ -701,6 +686,7 @@ extension MainContentCoordinator {
             : PluginManager.shared.containerEntityName(for: connection.type)
         let name = target.name
         let kind = target.kind
+        let connectionId = connectionId
         try await DatabaseManager.shared.runContainerOperation(
             description: String(format: String(localized: "Drop %1$@ \"%2$@\""), entity, name),
             kind: .destructiveQuery,
@@ -713,7 +699,15 @@ extension MainContentCoordinator {
             isConfirmationPreCleared: true
         ) { driver in
             switch kind {
-            case .database: try await driver.dropDatabase(name: name)
+            case .database:
+                /// PostgreSQL refuses to drop a database while a backend is attached to it, and the
+                /// connection kept for it and the pooled ones are such backends. Closed only here,
+                /// once the drop is authorized: a refused drop must not end the session on it.
+                await MainActor.run {
+                    MetadataConnectionPool.shared.closeAll(connectionId: connectionId, database: name)
+                    DatabaseManager.shared.sessionLanes.close(database: name, for: connectionId)
+                }
+                try await driver.dropDatabase(name: name)
             case .schema: try await driver.dropSchema(name: name)
             }
         }
@@ -737,6 +731,7 @@ extension MainContentCoordinator {
 
         let connId = connectionId
         let database = String(dbIndex)
+        let tabId = tabManager.selectedTabId
         redisDatabaseSwitchTask = Task { [weak self] in
             guard let self else { return }
             do {
@@ -744,47 +739,48 @@ extension MainContentCoordinator {
             } catch {
                 guard !Task.isCancelled else { return }
                 navigationLogger.error("Failed to SELECT Redis db\(dbIndex): \(error.publicLogShape, privacy: .public)")
-                if let tabId = tabManager.selectedTab?.id {
-                    declineTableLoad(for: tabId)
+                if let tabId {
+                    reportRedisSelectionFailure(error, onTab: tabId)
                 }
                 return
             }
             guard !Task.isCancelled else { return }
             toolbarState.currentDatabase = database
-            executeTableTabQueryDirectly(viewport: .firstRow)
+            if let tabId, tabManager.selectedTabId != tabId {
+                declineTableLoad(for: tabId)
+            } else {
+                executeTableTabQueryDirectly(viewport: .firstRow)
+            }
 
-            let separator = connection.additionalFields["redisSeparator"] ?? ":"
-            if sidebarViewModel?.redisKeyTreeViewModel == nil {
-                let vm = RedisKeyTreeViewModel()
-                sidebarViewModel?.redisKeyTreeViewModel = vm
-                let sidebarState = SharedSidebarState.forConnection(connId)
-                sidebarState.redisKeyTreeViewModel = vm
-            }
-            Task {
-                await self.sidebarViewModel?.redisKeyTreeViewModel?.loadKeys(
-                    connectionId: connId,
-                    database: database,
-                    separator: separator
-                )
-            }
+            loadRedisKeyTree(databaseIndex: dbIndex)
         }
     }
 
+    /// The session's own database rather than the connection's saved index: a Cluster serves
+    /// database 0 only and records no other, and neither does a server that refused the saved one.
     func initRedisKeyTreeIfNeeded() {
         guard connection.type == .redis else { return }
+        guard SharedSidebarState.forConnection(connectionId).redisKeyTreeViewModel == nil else { return }
+        let browsed = DatabaseManager.shared.session(for: connectionId)?.browseDatabase
+        loadRedisKeyTree(databaseIndex: browsed.flatMap { Int($0) } ?? 0)
+    }
+
+    /// The tree belongs to the connection's shared sidebar state rather than to this window's sidebar
+    /// view model, which may not exist yet, so the load never depends on which window asked for it.
+    private func loadRedisKeyTree(databaseIndex: Int) {
         let sidebarState = SharedSidebarState.forConnection(connectionId)
-        guard sidebarState.redisKeyTreeViewModel == nil else { return }
+        let keyTree = sidebarState.redisKeyTreeViewModel ?? makeRedisKeyTree(in: sidebarState)
+        keyTree.loadKeys(
+            connectionId: connectionId,
+            databaseIndex: databaseIndex,
+            separator: connection.additionalFields["redisSeparator"] ?? ":"
+        )
+    }
 
-        let vm = RedisKeyTreeViewModel()
-        sidebarState.redisKeyTreeViewModel = vm
-        sidebarViewModel?.redisKeyTreeViewModel = vm
-
-        let connId = connectionId
-        let database = toolbarState.currentDatabase
-        let separator = connection.additionalFields["redisSeparator"] ?? ":"
-        Task {
-            await vm.loadKeys(connectionId: connId, database: database, separator: separator)
-        }
+    private func makeRedisKeyTree(in sidebarState: SharedSidebarState) -> RedisKeyTreeViewModel {
+        let keyTree = RedisKeyTreeViewModel()
+        sidebarState.redisKeyTreeViewModel = keyTree
+        return keyTree
     }
 
     // MARK: - Redis Key Tree Navigation
@@ -793,24 +789,20 @@ extension MainContentCoordinator {
         applyBrowseSearch(BrowseSearchState(pattern: "\(prefix)*"))
     }
 
-    func openRedisKey(_ keyName: String, keyType: String) {
-        let escapedKey = keyName.replacingOccurrences(of: "\"", with: "\\\"")
-        let query: String
-        switch keyType.lowercased() {
-        case "hash":
-            query = "HGETALL \"\(escapedKey)\""
-        case "list":
-            query = "LRANGE \"\(escapedKey)\" 0 -1"
-        case "set":
-            query = "SMEMBERS \"\(escapedKey)\""
-        case "zset":
-            query = "ZRANGE \"\(escapedKey)\" 0 -1 WITHSCORES"
-        case "stream":
-            query = "XRANGE \"\(escapedKey)\" - +"
-        default:
-            query = "GET \"\(escapedKey)\""
+    func openRedisKey(_ keyName: String, keyType: String?) {
+        let keyTree = SharedSidebarState.forConnection(connectionId).redisKeyTreeViewModel
+        guard let databaseIndex = keyTree?.shownDatabaseIndex else {
+            navigationLogger.warning("Not opening a Redis key: the key tree shows no database")
+            return
         }
-        tabManager.addTab(initialQuery: query, title: keyName)
+        openRedisKey(keyName, keyType: keyType, inDatabase: databaseIndex)
+    }
+
+    func openRedisKey(_ keyName: String, keyType: String?, inDatabase databaseIndex: Int) {
+        tabManager.addTab(
+            initialQuery: RedisKeyTreeCommand.openKey(keyName, keyType: keyType, inDatabase: databaseIndex),
+            title: keyName
+        )
         runQuery(viewport: .firstRow)
     }
 }

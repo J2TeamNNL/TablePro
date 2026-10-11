@@ -50,6 +50,7 @@ final class AIChatViewModel: ObservableObject {
 
     @Published var currentQuery: String?
     @Published var queryResults: String?
+    var editorTarget: AssistantEditorTarget?
 
     var isStreaming: Bool {
         switch streamingState {
@@ -57,6 +58,17 @@ final class AIChatViewModel: ObservableObject {
             return true
         case .idle, .awaitingApproval, .pausedAtToolLimit, .failed:
             return false
+        }
+    }
+
+    var isBusy: Bool {
+        switch streamingState {
+        case .loading, .streaming, .awaitingApproval:
+            return true
+        case .idle, .pausedAtToolLimit, .failed:
+            return prepTask != nil
+                || heldTurnAwaitsConnection
+                || ToolApprovalCenter.shared.hasPending(sessionId: sessionId)
         }
     }
 
@@ -82,6 +94,8 @@ final class AIChatViewModel: ObservableObject {
     }
 
     var pendingWalkthroughBeforeSQL: String?
+    var pendingWalkthroughSource: QueryEditorAnchor?
+    var queryContextMetadata: any ScopedMetadataProviding
     var inFlightColumnFetches: [String: Task<Void, Never>] = [:]
     var inFlightSchemaLoad: Task<Void, Never>?
     nonisolated(unsafe) var streamingTask: Task<Void, Never>?
@@ -89,8 +103,8 @@ final class AIChatViewModel: ObservableObject {
 
     let services: AppServices
     var chatStorage: AIChatStorage { services.aiChatStorage }
-    @Published var sessionApprovedConnections: Set<UUID> = []
     var cachedSavedQueries: [UUID: SQLFavorite] = [:]
+    private var savedQueryCancellables: Set<AnyCancellable> = []
 
     static let maxMessageCount = 200
 
@@ -149,6 +163,8 @@ final class AIChatViewModel: ObservableObject {
         self.services = services
         self.sessionId = sessionId
         self.conversationToRestore = conversationId
+        self.queryContextMetadata = services.databaseManager
+        observeSavedQueryUpdates()
     }
 
     deinit {
@@ -201,10 +217,16 @@ final class AIChatViewModel: ObservableObject {
         let settings = services.appSettings.ai
         let configID = selectedProviderId ?? settings.activeProviderID
         guard let configID,
-              let config = settings.providers.first(where: { $0.id == configID }),
-              let descriptor = AIProviderRegistry.shared.descriptor(for: config.type.rawValue)
+              let config = settings.providers.first(where: { $0.id == configID })
         else { return false }
-        return descriptor.supportsImages
+        return Self.acceptsImages(config: config, model: selectedModel ?? config.model, catalog: .shared)
+    }
+
+    /// The provider type sets the envelope, and the provider's own model list narrows it: a
+    /// router lists text-only models beside vision ones, and an image sent to one of those fails.
+    nonisolated static func acceptsImages(config: AIProviderConfig, model: String, catalog: AIModelCatalog) -> Bool {
+        guard let descriptor = AIProviderRegistry.shared.descriptor(for: config.type.rawValue) else { return false }
+        return descriptor.supportsImages(fetched: catalog.fetchedInfo(providerID: config.id, modelID: model))
     }
 
     func sendWithContext(prompt: String) {
@@ -213,11 +235,6 @@ final class AIChatViewModel: ObservableObject {
         trimMessagesIfNeeded()
         clearError()
         startStreaming()
-    }
-
-    func sendWithWalkthroughContext(prompt: String, beforeSQL: String) {
-        pendingWalkthroughBeforeSQL = beforeSQL
-        sendWithContext(prompt: prompt)
     }
 
     func attach(_ item: ContextItem) {
@@ -235,7 +252,7 @@ final class AIChatViewModel: ObservableObject {
     }
 
     func cancelStream() {
-        pendingWalkthroughBeforeSQL = nil
+        clearPendingWalkthrough()
         prepTask?.cancel()
         prepTask = nil
         streamingTask?.cancel()
@@ -333,11 +350,11 @@ final class AIChatViewModel: ObservableObject {
         inFlightSchemaLoad = nil
         currentQuery = nil
         queryResults = nil
-        pendingWalkthroughBeforeSQL = nil
+        editorTarget = nil
+        clearPendingWalkthrough()
         messages = []
         errorMessage = nil
         activeConversationID = nil
-        sessionApprovedConnections = []
         streamingState = .idle
         for image in attachedImages {
             if case .cacheFile(let filename, _) = image.source {
@@ -347,11 +364,9 @@ final class AIChatViewModel: ObservableObject {
         attachedImages = []
     }
 
-    func handleFixError(query: String, error: String) {
-        startNewConversation()
-        let databaseType = connection?.type ?? .mysql
-        let prompt = AIPromptTemplates.fixError(query: query, error: error, databaseType: databaseType)
-        sendWithWalkthroughContext(prompt: prompt, beforeSQL: query)
+    func clearPendingWalkthrough() {
+        pendingWalkthroughBeforeSQL = nil
+        pendingWalkthroughSource = nil
     }
 
     func loadAvailableModels() async {
@@ -362,7 +377,7 @@ final class AIChatViewModel: ObservableObject {
         let results = await withTaskGroup(of: (UUID, [String]?).self) { group in
             for config in pending {
                 let apiKey: String?
-                switch config.type.authStyle {
+                switch config.authStyle {
                 case .apiKey, .optionalApiKey:
                     apiKey = services.aiKeyStorage.loadAPIKey(for: config.id)
                 case .oauth, .none:
@@ -372,7 +387,7 @@ final class AIChatViewModel: ObservableObject {
                     let transport = await AIProviderFactory.createProvider(for: config, apiKey: apiKey)
                     do {
                         let models = try await transport.fetchAvailableModels()
-                        AIModelCatalog.shared.store(providerTypeID: config.type.rawValue, models: models)
+                        AIModelCatalog.shared.store(providerID: config.id, models: models)
                         return (config.id, models.map(\.id))
                     } catch is CancellationError {
                         return (config.id, nil)
@@ -402,12 +417,32 @@ final class AIChatViewModel: ObservableObject {
         }
     }
 
+    /// The list is read once per connection and then kept current from the app-wide favorites
+    /// event, the same signal the sidebar, the Quick Switcher and the editor's keyword expansion
+    /// already follow. Without it a query saved from the editor during a session was offered by
+    /// every one of those and by nothing in the assistant, for as long as the window stayed open.
+    ///
+    /// A nil payload means a global record moved, which is every connection's business.
+    internal func observeSavedQueryUpdates() {
+        AppEvents.shared.sqlFavoritesDidUpdate
+            .receive(on: RunLoop.main)
+            .sink { [weak self] payload in
+                guard let self else { return }
+                guard payload == nil || payload == self.connection?.id else { return }
+                Task { await self.loadSavedQueries() }
+            }
+            .store(in: &savedQueryCancellables)
+    }
+
     func loadSavedQueries() async {
         guard let connectionId = connection?.id else {
             savedQueries = []
             return
         }
         let favorites = await services.sqlFavoriteManager.fetchFavorites(connectionId: connectionId)
+        /// The connection can be switched while the read is in flight, and the list belongs to the
+        /// connection that is on screen now, not the one that asked.
+        guard connection?.id == connectionId else { return }
         savedQueries = favorites
         for favorite in favorites {
             cachedSavedQueries[favorite.id] = favorite

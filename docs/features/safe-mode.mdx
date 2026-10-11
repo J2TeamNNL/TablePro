@@ -3,7 +3,7 @@ title: Safe Mode
 description: Per-connection query execution controls, from no restrictions to full read-only lockdown
 ---
 
-Six levels, one per connection, set in the **Customization** pane of its edit form. The level decides what stands between a query and the server: nothing, a confirmation, Touch ID, or a refusal.
+Six levels, one per connection. In the [connection form](/connections/connection-form#options), open the **Options** tab and set **Safe Mode** under **Access**. The level decides what stands between a query and the server: nothing, a confirmation, Touch ID, or a refusal.
 
 ## Levels
 
@@ -24,21 +24,23 @@ Four things the table cannot carry. The confirmation dialog shows the whole stat
   <img className="block dark:hidden" src="/images/safe-mode-confirmation.png" alt="Confirmation dialog over a query tab, showing a fourteen line UPDATE with Cancel and Execute" />
   <img className="hidden dark:block" src="/images/safe-mode-confirmation-dark.png" alt="Confirmation dialog over a query tab, showing a fourteen line UPDATE with Cancel and Execute" />
 </Frame>
- **Silent** is not a free pass: `DROP`, `TRUNCATE`, and a `DELETE` with no `WHERE` still raise the built-in dangerous query warning even there. And **Read-Only** goes past queries to the interface itself, disabling inline cell editing, adding, deleting and duplicating rows, table truncate and drop, and import.
+ **Silent** is not a free pass: `DROP`, `TRUNCATE`, and a `DELETE` with no `WHERE` still raise the built-in dangerous query warning even there. So does a [Structure](/features/table-structure#saving-changes) save that drops a column, changes a column's type, adds NOT NULL, changes the primary key, adds or rewrites a check constraint, or removes a MongoDB field. And **Read-Only** goes past queries to the interface itself, disabling inline cell editing, adding, deleting and duplicating rows, table truncate and drop, and import.
 
 ## Connections that are always read-only
 
-A connection that cannot take a write runs at **Read-Only** whatever level it was given. Its edit form shows the level as fixed text, and every other level is dimmed in the toolbar padlock and in **Database > Safe Mode Level**. The level you chose stays saved and applies again once the condition no longer holds.
+A connection that cannot take a write runs at **Read-Only** whatever level it was given. The connection form shows the level as fixed text, and **Read-Only** is the only level the padlock and **Database > Safe Mode Level** offer. The level you chose stays saved and applies again once the condition no longer holds.
 
 | Connection | Condition |
 |------------|-----------|
 | [Beancount](/databases/beancount) | The ledger is a projection of text files, and nothing writes it back |
 | [Cloudflare R2 SQL](/databases/cloudflare-r2-sql) | The engine runs read queries only |
-| [SQLite](/databases/sqlite) with **Remote File** | The file is a copy fetched over SFTP, and nothing writes it back |
+| [SQLite](/databases/sqlite) on **Remote Database File**, opened **As a Read-Only Copy** | The file is a copy fetched over SFTP, and nothing writes it back |
 
 ## Agent mode raises the level
 
 A connection open in [Agent mode](/features/agent-mode) runs at **Alert** or stricter for as long as the mode is on, so every write the assistant proposes waits for an answer. The level you chose is untouched and applies again on the way out. A connection already at Alert or stricter keeps its own.
+
+The reason for the floor shows in three places while the mode is on: under the level list, in the padlock's tooltip, and on the line above the agent's transcript.
 
 ## What the level gates
 
@@ -46,22 +48,32 @@ Safe Mode sits in front of query execution, saving cell edits, structure and tab
 
 It does not sit in front of reading metadata. Loading the sidebar, opening a table's structure, and exporting data are never confirmed, which is why a backup stays available on a Read-Only connection.
 
-## What always counts as a write
+## What counts as a read
 
-The Redis, MongoDB, and etcd drivers cannot open a read-only session, so Safe Mode treats every query on those connections as a write: the Alert and Safe Mode levels confirm everything, and Read-Only blocks everything. Every other driver classifies reads and writes normally.
+A statement runs as a read only when TablePro can tell for certain that it reads. Anything it cannot tell counts as a write: confirmed at the Alert and Safe Mode levels, blocked at Read-Only.
+
+On MongoDB, a read is one call on a collection or database with literal arguments, such as `db.orders.find({status: "open"}).sort({at: -1}).limit(50)`, an `aggregate` pipeline without `$out` or `$merge`, `countDocuments`, `distinct`, `explain`, `show collections` and `use`. Any other JavaScript counts as a write: a variable, a function, `forEach`, `runCommand`. Run several reads at once and each one is checked. Shell state lasts as long as the connection, so a function you redefine in one statement runs redefined in every later one. A read still cannot write through it: the MongoDB driver refuses any write while it runs a statement as a read, once the plugin in **Settings > Plugins > Installed** is updated for this release.
+
+Redis reads come from a fixed list of read commands. etcd reads are `get`, `watch`, and the commands that only list or report, such as `member list` and `endpoint health`. SAP HANA is read like any other SQL database.
 
 The server runs the text inside a MySQL conditional comment, `/*! ... */` or MariaDB's `/*M! ... */`, so a statement holding one counts as a write even when the rest of it only reads. Remove the comment to run the statement on a Read-Only connection.
 
+## Statements are counted the way the server counts them
+
+Where a string, a quoted name or a comment ends depends on the engine. A backslash escapes a quote on MySQL and not on PostgreSQL, and block comments nest on PostgreSQL and SQL Server and not on MySQL. A query is split into statements by its own engine's rules. SQL Server needs no `;` between statements, so `SELECT 1` on one line and `DELETE FROM t` on the next are a read and a write, and Read-Only blocks the pair. When a session setting changes the answer, such as `NO_BACKSLASH_ESCAPES` on MySQL or `standard_conforming_strings` on PostgreSQL, the query is read under each setting and the strictest result applies: a query that holds a write under any reading asks for confirmation, and Read-Only blocks it.
+
 ## Changing the level while connected
 
-A padlock in the toolbar carries the current level: open for **Silent**, closed for the rest. Click it for the six levels with the current one ticked. **Database > Safe Mode Level** is the same list.
+A padlock in the toolbar carries the current level: open for **Silent**, closed for **Read-Only**, a warning triangle for the two Alert levels and a shield for the two Safe Mode levels. The icon is filled at the two **Full** levels, the ones that also ask before a read. Click it for the levels this connection may run at, with the current one ticked. **Database > Safe Mode Level** is the same list.
+
+Four things can hold the level above the one you chose: a read-only engine, a read-only copy of a [remote database file](/connections/remote-database-files), a [managed policy](#managed-by-an-organization), and [Agent mode](/features/agent-mode). The weaker levels are then left out of both lists, the reason sits under them, and the padlock's tooltip carries the same sentence. Picking the level already in force writes nothing.
 
 <Frame caption="The padlock reads the level without opening the menu">
   <img className="block dark:hidden" src="/images/safe-mode-toolbar-badge.png" alt="Toolbar padlock with the six Safe Mode levels listed beneath it" />
   <img className="hidden dark:block" src="/images/safe-mode-toolbar-badge-dark.png" alt="Toolbar padlock with the six Safe Mode levels listed beneath it" />
 </Frame>
 
-There is no session-only override. A change here writes back to the saved connection, so it holds across tables and tabs, shows up on the Options section, and reaches your other Macs when iCloud Sync is on. Editing the level in the form works the same way round and reaches an open connection right away.
+There is no session-only override. A change here writes back to the saved connection, so it holds across tables and tabs, shows up in the connection form, and reaches your other Macs when iCloud Sync is on. Editing the level in the form works the same way round and reaches an open connection right away.
 
 ## Server read-only is not Safe Mode
 
@@ -100,7 +112,7 @@ An administrator can impose a minimum level through a macOS configuration profil
 |---|---|---|
 | `com.TablePro.policy.minimumSafeModeLevel` | String | `silent`, `alert`, `alertFull`, `safeMode`, `safeModeFull`, or `readOnly` |
 
-A connection set below the floor runs at it, and a stricter choice is left alone: the policy is a floor, never a ceiling. A value TablePro does not recognize imposes no floor at all. While the policy is in force, the levels below the floor are dimmed in the toolbar padlock and in **Database > Safe Mode Level**, and the connection form lists only the levels at or above it. The level you chose stays saved and applies again once the profile is removed.
+A connection set below the floor runs at it, and a stricter choice is left alone: the policy is a floor, never a ceiling. A value TablePro does not recognize imposes no floor at all. While the policy is in force, the padlock, **Database > Safe Mode Level** and the connection form each list only the levels at or above it. The level you chose stays saved and applies again once the profile is removed.
 
 This is a floor on TablePro's own behavior, not on the database. It stops the app issuing a write; it does not stop the same person connecting with `psql`. Pair it with server-side privileges for anything that has to hold.
 
@@ -108,10 +120,10 @@ This is a floor on TablePro's own behavior, not on the database. It stops the ap
 
 A write from an external client (Raycast, Cursor, Claude Desktop, any MCP client) clears three locks in order:
 
-1. **External Clients** (per connection: **Blocked** / **Read Only** / **Read & Write**), in the connection form's **Advanced** pane. A Read Only connection rejects a write before the request reaches the database.
-2. **Token scope** (per integration: `readOnly` / `readWrite` / `fullAccess`), issued by the [pairing flow](/external-api/pairing). The effective permission is `MIN(token.scope, connection.externalAccess)`.
+1. **External Clients** (per connection: **Blocked** / **Read Only** / **Read & Write**), next to **Safe Mode** under **Access** on the connection form's **Options** tab. A Read Only connection rejects a write before the request reaches the database.
+2. **Token scope** (per integration: `readOnly` / `readWrite` / `fullAccess`), issued by the [pairing flow](/developers/pairing). The effective permission is `MIN(token.scope, connection.externalAccess)`.
 3. **Safe Mode**, per query. Everything on this page then applies, Touch ID prompts and confirmation dialogs included.
 
-`DROP` and `TRUNCATE` always go through the `confirm_destructive_operation` tool, which needs a `fullAccess` token and the user's approval every time. No token scope skips it. See the [External API security model](/external-api/index#security-model).
+`DROP` and `TRUNCATE` always go through the `confirm_destructive_operation` tool, which needs a `fullAccess` token and the user's approval every time. No token scope skips it. See the [integration security model](/developers#security-model).
 
 A client that answers its own approval prompt has only answered its own. Only a `fullAccess` token stands in for TablePro's dialog. On every other token the dialog still appears on the Mac, so a `readWrite` client asks twice.

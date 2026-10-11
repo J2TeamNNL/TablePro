@@ -5,6 +5,7 @@
 
 import Foundation
 import TableProPluginKit
+import TableProSQLGrammar
 
 extension QueryExecutionCoordinator {
     func executeMultipleStatements(
@@ -37,8 +38,9 @@ extension QueryExecutionCoordinator {
         result: QueryResult,
         sql: String,
         index: Int,
-        baseQuery: String,
+        baseQuery: String?,
         baseQueryParameterValues: [String?]? = nil,
+        namedParameterStatement: NamedParameterStatement? = nil,
         tabId: UUID,
         anchor: StatementAnchor? = nil
     ) -> ResultSet {
@@ -46,7 +48,8 @@ extension QueryExecutionCoordinator {
         let rows = TableRows.from(
             queryRows: result.rows,
             columns: result.columns.map { String($0) },
-            columnTypes: result.columnTypes
+            columnTypes: result.columnTypes,
+            absentCells: result.absentCells
         )
         let resultSet = ResultSet(
             label: ResultSet.label(tableName: tableName, anchor: anchor, index: index),
@@ -56,10 +59,12 @@ extension QueryExecutionCoordinator {
         resultSet.executionTime = result.executionTime
         resultSet.rowsAffected = result.rowsAffected
         resultSet.statusMessage = result.statusMessage
+        resultSet.serverOutput = result.serverOutput
         if !result.columns.isEmpty {
             resultSet.isTruncated = result.isTruncated
             resultSet.baseQuery = baseQuery
             resultSet.baseQueryParameterValues = baseQueryParameterValues
+            resultSet.namedParameterStatement = namedParameterStatement
         }
         resultSet.origin = statementOrigin(sql: sql, tabId: tabId, producesRows: !result.columns.isEmpty)
         return resultSet

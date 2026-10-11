@@ -10,7 +10,6 @@ import Combine
 import os
 import SwiftUI
 import TableProPluginKit
-import UniformTypeIdentifiers
 
 struct ImportDialog: View {
     @ObservedObject private var pluginManager = PluginManager.shared
@@ -35,6 +34,7 @@ struct ImportDialog: View {
     @State private var statementCount: Int = 0
     @State private var isCountingStatements = false
     @State private var selectedEncoding: ImportEncoding
+    @State private var detectedEncoding: ImportEncoding?
     @State private var selectedFormatId: String = "sql"
     @State private var settingsSnapshot: PluginSettingsSnapshot?
     @State private var importSucceeded = false
@@ -346,10 +346,15 @@ struct ImportDialog: View {
 
     private func recordSuccessfulImport() {
         importSucceeded = true
-        TransferDialogStorage.shared.saveLastImportEncoding(selectedEncoding)
+        if selectedEncoding != detectedEncoding {
+            TransferDialogStorage.shared.saveLastImportEncoding(selectedEncoding)
+        }
         settingsSnapshot = nil
     }
 
+    /// This dialog runs a file of statements, so Change File… offers the statement formats and no
+    /// others. It goes through `ImportFilePanel` for the validation `allowedContentTypes` cannot
+    /// give: a file it dims can still be double-clicked through (#3047).
     @MainActor
     private func selectFile() async {
         guard let window = hostWindow else {
@@ -357,17 +362,23 @@ struct ImportDialog: View {
             return
         }
 
-        let panel = NSOpenPanel()
+        let options = availableFormats.map {
+            ImportFormatOption(
+                id: type(of: $0).formatId,
+                name: type(of: $0).formatDisplayName,
+                acceptedFileExtensions: type(of: $0).acceptedFileExtensions
+            )
+        }
+        guard !options.isEmpty else { return }
 
-        let extensions = currentPlugin.map { type(of: $0).acceptedFileExtensions } ?? ["sql", "gz"]
-        let allowedTypes = extensions.compactMap { UTType(filenameExtension: $0) }
-        panel.allowedContentTypes = allowedTypes.isEmpty ? [.data] : allowedTypes
-        panel.allowsMultipleSelection = false
-        panel.message = "Select file to import"
+        let url = await ImportFilePanel.present(
+            matching: options,
+            message: String(localized: "Select a file to import"),
+            in: window
+        )
+        guard let url, case .format(let formatId) = ImportFileFormatResolver.match(url, among: options) else { return }
 
-        let response = await panel.presentAsSheet(for: window)
-        guard response == .OK, let url = panel.url else { return }
-
+        selectedFormatId = formatId
         self.loadFileTask = Task {
             await self.loadFile(url)
         }
@@ -426,6 +437,17 @@ struct ImportDialog: View {
             if let preview = decoder.decode(previewData) {
                 filePreview = preview
                 hasPreviewError = false
+            } else if let detected = SQLDumpEncodingChoice.encoding(
+                replacing: selectedEncoding,
+                forPreview: previewData,
+                isWholeFile: previewData.count < maxPreviewSize,
+                family: TransactionEngineFamily.of(connection.type),
+                grammar: connection.type.lexicalGrammar
+            ) {
+                Self.logger.info("Preview did not decode as \(selectedEncoding.rawValue, privacy: .public); switching to the detected \(detected.rawValue, privacy: .public)")
+                detectedEncoding = detected
+                selectedEncoding = detected
+                return
             } else {
                 filePreview = String(format: String(localized: "Failed to load preview using encoding: %@. Try selecting a different text encoding."), selectedEncoding.label)
                 hasPreviewError = true
@@ -448,10 +470,10 @@ struct ImportDialog: View {
 
         do {
             let encoding = selectedEncoding.encoding
-            let dialect = SqlDialect.from(databaseTypeId: connection.type.rawValue)
+            let grammar = connection.type.lexicalGrammar
             let parser = SQLFileParser()
             let count = try await Task.detached {
-                try await parser.countStatements(url: url, encoding: encoding, dialect: dialect)
+                try await parser.countStatements(url: url, encoding: encoding, grammar: grammar)
             }.value
             statementCount = count
         } catch {
@@ -476,10 +498,17 @@ struct ImportDialog: View {
 
         importTask = Task {
             do {
+                /// The scope the driver is already on, not the connection's saved default: a tab may
+                /// have moved it, and on an engine that reconnects to change database, pinning
+                /// somewhere else would refuse the import outright.
+                guard let scope = DatabaseManager.shared.browseScope(for: connection.id) else {
+                    throw DatabaseError.notConnected
+                }
                 let result = try await service.importFile(
                     from: url,
                     formatId: selectedFormatId,
                     encoding: selectedEncoding.encoding,
+                    scope: scope,
                     decompressedURL: decompressedURL,
                     ownsDecompressedFile: ownsDecompressedFile,
                     knownStatementCount: statementCount > 0 ? statementCount : nil

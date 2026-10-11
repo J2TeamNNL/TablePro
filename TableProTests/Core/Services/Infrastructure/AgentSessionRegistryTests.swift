@@ -7,7 +7,6 @@ import Foundation
 @testable import TablePro
 import Testing
 
-@Suite("AgentSessionRegistry")
 @MainActor
 struct AgentSessionRegistryTests {
     private func makeStore() -> AgentSessionStore {
@@ -47,6 +46,23 @@ struct AgentSessionRegistryTests {
         let registry = AgentSessionRegistry(store: makeStore())
         let session = try #require(registry.resolveSession(for: UUID(), startingIfNeeded: true))
         #expect(session.viewModel.sessionId == session.id)
+    }
+
+    /// The conversation flushes a held prompt from a `task`, and a reparent re-runs that task on the
+    /// same view: a mode toggle and a connection switch are both one. Taking the prompt rather than
+    /// reading it is what keeps each re-run from sending it again.
+    @Test("A held prompt is handed over once, and only once the connection is up")
+    func heldPromptIsTakenOnce() throws {
+        let registry = AgentSessionRegistry(store: makeStore())
+        let session = try #require(registry.resolveSession(for: UUID(), startingIfNeeded: true))
+        session.pendingPrompt = "Which orders shipped late?"
+
+        #expect(session.takePendingPrompt(isConnecting: true) == nil)
+        #expect(session.pendingPrompt == "Which orders shipped late?")
+
+        #expect(session.takePendingPrompt(isConnecting: false) == "Which orders shipped late?")
+        #expect(session.takePendingPrompt(isConnecting: false) == nil)
+        #expect(session.pendingPrompt == nil)
     }
 
     /// Stopping keeps the transcript. Window close, disconnect and a lost session all reach it, and
@@ -161,6 +177,121 @@ struct AgentSessionRegistryTests {
         #expect(registry.session(id: session.id) == nil)
     }
 
+    // MARK: - Order
+
+    /// The rail lists the latest first, and going to work is what makes a session the latest. Opening
+    /// one is not work: ordered by that, the row someone double-clicked in the middle of the list
+    /// would jump to the top from under the pointer that opened it.
+    @Test("The rail lists the session that last went to work first")
+    func sessionsAreOrderedByActivity() throws {
+        let registry = AgentSessionRegistry(store: makeStore())
+        let connectionId = UUID()
+        let first = registry.startSession(for: connectionId)
+        let second = registry.startSession(for: connectionId)
+        #expect(registry.sessions(for: connectionId).map(\.id) == [second.id, first.id])
+
+        first.markActive()
+
+        #expect(registry.sessions(for: connectionId).map(\.id) == [first.id, second.id])
+    }
+
+    @Test("Opening a session leaves the order alone")
+    func openingDoesNotReorder() {
+        let registry = AgentSessionRegistry(store: makeStore())
+        let connectionId = UUID()
+        let first = registry.startSession(for: connectionId)
+        let second = registry.startSession(for: connectionId)
+
+        registry.setDisplayedSession(first.id, for: connectionId)
+
+        #expect(registry.sessions(for: connectionId).map(\.id) == [second.id, first.id])
+        #expect(registry.currentSession(for: connectionId) === first)
+    }
+
+    /// With nothing named, the latest live session is the one two panes share, not the oldest.
+    @Test("The shared session is the latest live one")
+    func currentSessionPrefersTheLatestLiveOne() {
+        let registry = AgentSessionRegistry(store: makeStore())
+        let connectionId = UUID()
+        let first = registry.startSession(for: connectionId)
+        let second = registry.startSession(for: connectionId)
+        registry.stopSession(id: second.id)
+
+        #expect(registry.currentSession(for: connectionId) === first)
+    }
+
+    // MARK: - Closing and deleting the session on screen
+
+    /// Close used to stop the session and tell nothing, so the conversation column went on drawing it
+    /// with a composer that still took messages.
+    @Test("Closing the session on screen hands the window the next live one")
+    func closingHandsOverToTheNextLiveSession() {
+        let registry = AgentSessionRegistry(store: makeStore())
+        let connectionId = UUID()
+        let first = registry.startSession(for: connectionId)
+        let second = registry.startSession(for: connectionId)
+        #expect(registry.currentSession(for: connectionId) === second)
+
+        registry.stopSession(id: second.id)
+
+        #expect(second.status == .stopped)
+        #expect(registry.currentSession(for: connectionId) === first)
+        #expect(registry.sessions(for: connectionId).count == 2, "A closed session stays in the rail")
+    }
+
+    @Test("Closing the last live session leaves the window with none")
+    func closingTheLastLiveSessionShowsNothing() {
+        let registry = AgentSessionRegistry(store: makeStore())
+        let connectionId = UUID()
+        let session = registry.startSession(for: connectionId)
+
+        registry.stopSession(id: session.id)
+
+        #expect(registry.currentSession(for: connectionId) == nil)
+        #expect(registry.sessions(for: connectionId).count == 1)
+    }
+
+    /// Nothing on screen is a state the user asked for, and entering the mode again is them asking
+    /// for a session; resolving is what mints it.
+    @Test("A window with no session open starts one when it is asked to")
+    func resolvingAfterClosingStartsAnother() throws {
+        let registry = AgentSessionRegistry(store: makeStore())
+        let connectionId = UUID()
+        let closed = registry.startSession(for: connectionId)
+        registry.stopSession(id: closed.id)
+
+        #expect(registry.resolveSession(for: connectionId, startingIfNeeded: false) == nil)
+        let started = try #require(registry.resolveSession(for: connectionId, startingIfNeeded: true))
+
+        #expect(started !== closed)
+        #expect(registry.currentSession(for: connectionId) === started)
+    }
+
+    @Test("Deleting the session on screen hands the window the next live one")
+    func deletingHandsOverToTheNextLiveSession() {
+        let registry = AgentSessionRegistry(store: makeStore())
+        let connectionId = UUID()
+        let first = registry.startSession(for: connectionId)
+        let second = registry.startSession(for: connectionId)
+
+        registry.removeSession(id: second.id)
+
+        #expect(registry.currentSession(for: connectionId) === first)
+        #expect(registry.sessions(for: connectionId).map(\.id) == [first.id])
+    }
+
+    @Test("Deleting a session nobody is looking at leaves the open one alone")
+    func deletingAnotherSessionKeepsTheOpenOne() {
+        let registry = AgentSessionRegistry(store: makeStore())
+        let connectionId = UUID()
+        let other = registry.startSession(for: connectionId)
+        let open = registry.startSession(for: connectionId)
+
+        registry.removeSession(id: other.id)
+
+        #expect(registry.currentSession(for: connectionId) === open)
+    }
+
     /// A reply that was still arriving when the app went away did not finish, and saying so is more
     /// honest than leaving it reading as busy for ever.
     @Test("A session still working at terminate is recorded as failed")
@@ -175,5 +306,58 @@ struct AgentSessionRegistryTests {
         #expect(session.status == .failed)
         let records = store.load()
         #expect(records.first?.status == .failed)
+    }
+
+    @Test("An explicit action runs in the session on screen while it is idle")
+    func idleSessionTakesTheAction() {
+        let registry = AgentSessionRegistry(store: makeStore())
+        let connectionId = UUID()
+        let current = registry.startSession(for: connectionId)
+
+        let resolved = registry.resolveIdleSession(for: connectionId)
+
+        #expect(resolved === current)
+        #expect(registry.sessions(for: connectionId).count == 1)
+    }
+
+    @Test("An explicit action beside a busy session starts a new one and leaves the busy one running")
+    func busySessionIsLeftRunning() {
+        let registry = AgentSessionRegistry(store: makeStore())
+        let connectionId = UUID()
+        let busy = registry.startSession(for: connectionId)
+        let assistantID = UUID()
+        busy.viewModel.streamingState = .streaming(assistantID: assistantID)
+
+        let resolved = registry.resolveIdleSession(for: connectionId)
+
+        #expect(resolved !== busy)
+        #expect(registry.currentSession(for: connectionId) === resolved)
+        #expect(registry.sessions(for: connectionId).contains { $0 === busy })
+        #expect(!busy.status.isEnded)
+        guard case .streaming(let streamingID) = busy.viewModel.streamingState else {
+            Issue.record("The busy session's reply was cancelled")
+            return
+        }
+        #expect(streamingID == assistantID)
+    }
+
+    @Test("A paused tool loop is not busy, so the action takes its session")
+    func pausedSessionTakesTheAction() {
+        let registry = AgentSessionRegistry(store: makeStore())
+        let connectionId = UUID()
+        let paused = registry.startSession(for: connectionId)
+        paused.viewModel.streamingState = .pausedAtToolLimit(count: 25)
+
+        #expect(registry.resolveIdleSession(for: connectionId) === paused)
+    }
+
+    @Test("An explicit action with no session on screen starts one")
+    func actionStartsTheFirstSession() {
+        let registry = AgentSessionRegistry(store: makeStore())
+        let connectionId = UUID()
+
+        let resolved = registry.resolveIdleSession(for: connectionId)
+
+        #expect(registry.currentSession(for: connectionId) === resolved)
     }
 }

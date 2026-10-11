@@ -4,6 +4,8 @@
 //
 
 import Foundation
+import TableProPluginKit
+import TableProSQLGrammar
 
 /// How the app treats the transaction around a multi-statement run, decided from the text alone
 /// before any driver is leased.
@@ -27,19 +29,19 @@ internal enum BatchTransactionPolicy {
     internal static func plan(
         for statements: [String],
         databaseType: DatabaseType,
-        rules: SQLLexicalRules
+        grammar: SQLLexicalGrammar
     ) -> BatchTransactionPlan {
         let family = TransactionEngineFamily.of(databaseType)
-        guard family.wrapsBatchInTransaction else { return queuedBlockPlan(for: statements, rules: rules) }
+        guard family.wrapsBatchInTransaction else { return queuedBlockPlan(for: statements, grammar: grammar) }
         var runsInAutocommit = false
         var holdsASavepoint = false
         for statement in statements {
             let text = statement as NSString
-            if takesTransactionControl(text, family: family, rules: rules) { return .scriptTransaction }
-            if !runsInAutocommit, AutocommitOnlyStatement.matches(text, family: family, rules: rules) {
+            if takesTransactionControl(text, family: family, grammar: grammar) { return .scriptTransaction }
+            if !runsInAutocommit, AutocommitOnlyStatement.matches(text, family: family, grammar: grammar) {
                 runsInAutocommit = true
             }
-            if family.savepointOpensTransaction, !holdsASavepoint, startsWithSavepoint(text, rules: rules) {
+            if family.savepointOpensTransaction, !holdsASavepoint, startsWithSavepoint(text, grammar: grammar) {
                 holdsASavepoint = true
             }
         }
@@ -54,10 +56,10 @@ internal enum BatchTransactionPolicy {
     /// anything else.
     private static func queuedBlockPlan(
         for statements: [String],
-        rules: SQLLexicalRules
+        grammar: SQLLexicalGrammar
     ) -> BatchTransactionPlan {
         let opensABlock = statements.contains { statement in
-            var cursor = SQLTokenCursor(statement as NSString, rules: rules)
+            var cursor = SQLTokenCursor(statement as NSString, grammar: grammar)
             return cursor.next()?.word == "MULTI"
         }
         return opensABlock ? .scriptTransaction : .autocommit
@@ -66,12 +68,13 @@ internal enum BatchTransactionPolicy {
     private static func takesTransactionControl(
         _ statement: NSString,
         family: TransactionEngineFamily,
-        rules: SQLLexicalRules
+        grammar: SQLLexicalGrammar
     ) -> Bool {
-        var cursor = SQLTokenCursor(statement, rules: rules)
+        var cursor = SQLTokenCursor(statement, grammar: grammar)
         guard let keyword = cursor.next()?.word else { return false }
         switch keyword {
         case "BEGIN":
+            guard !grammar.contains(.plsqlBlocks) else { return false }
             return SqlBlockStructure.beginStartsTransaction(followedBy: cursor.next()?.word)
         case "START":
             return cursor.next()?.word == "TRANSACTION"
@@ -79,6 +82,7 @@ internal enum BatchTransactionPolicy {
             let following = cursor.next()?.word
             return following == "START" || following == "BEGIN"
         case "SET":
+            guard !family.setTransactionOpensTransaction else { return cursor.next()?.word == "TRANSACTION" }
             return setsCommitMode(&cursor, family: family)
         default:
             return false
@@ -107,8 +111,8 @@ internal enum BatchTransactionPolicy {
         return false
     }
 
-    private static func startsWithSavepoint(_ statement: NSString, rules: SQLLexicalRules) -> Bool {
-        var cursor = SQLTokenCursor(statement, rules: rules)
+    private static func startsWithSavepoint(_ statement: NSString, grammar: SQLLexicalGrammar) -> Bool {
+        var cursor = SQLTokenCursor(statement, grammar: grammar)
         return cursor.next()?.word == "SAVEPOINT"
     }
 }

@@ -9,7 +9,7 @@ import TableProPluginKit
 extension PostgreSQLPluginDriver {
     func fetchColumns(table: String, schema: String?) async throws -> [PluginColumnInfo] {
         let resolvedSchema = schema ?? core.currentSchema
-        let catalog = try await fetchTypeCatalog()
+        let catalog = try await fetchTypeCatalog(schema: resolvedSchema, table: table)
         let query = PostgreSQLSchemaQueries.columnsQuery(
             schema: resolvedSchema,
             table: table,
@@ -25,7 +25,7 @@ extension PostgreSQLPluginDriver {
 
     func fetchAllColumns(schema: String?) async throws -> [String: [PluginColumnInfo]] {
         let resolvedSchema = schema ?? core.currentSchema
-        let catalog = try await fetchTypeCatalog()
+        let catalog = try await fetchTypeCatalog(schema: resolvedSchema, table: nil)
         let query = PostgreSQLSchemaQueries.columnsQuery(
             schema: resolvedSchema,
             table: nil,
@@ -56,26 +56,8 @@ extension PostgreSQLPluginDriver {
         return PostgreSQLSchemaQueries.columnDDL(rows: result.rows)
     }
 
-    func fetchCheckConstraints(table: String, schema: String?) async throws -> [PluginCheckConstraintInfo] {
-        let query = PostgreSQLSchemaQueries.checkConstraintsQuery(
-            schema: schema ?? core.currentSchema,
-            table: table
-        )
-        let result = try await execute(query: query)
-        return result.rows.compactMap { row in
-            guard let name = row[safe: 0]?.asText,
-                  let definition = row[safe: 1]?.asText else { return nil }
-            return PluginCheckConstraintInfo(
-                name: name,
-                expression: PostgreSQLCheckConstraintDefinition.expression(fromConstraintDef: definition),
-                columns: PostgreSQLTextArray.values(row[safe: 3]?.asText),
-                isValidated: PostgreSQLCatalogBoolean.isTrue(row[safe: 2]?.asText)
-            )
-        }
-    }
-
-    fileprivate func fetchEnumLabelMap() async throws -> [String: [String]] {
-        let result = try await execute(query: PostgreSQLSchemaQueries.enumLabelQuery)
+    fileprivate func fetchEnumLabelMap(schema: String, table: String?) async throws -> [String: [String]] {
+        let result = try await execute(query: PostgreSQLSchemaQueries.enumLabelQuery(schema: schema, table: table))
         var map: [String: [String]] = [:]
         for row in result.rows {
             guard let schemaName = row[safe: 0]?.asText,
@@ -90,8 +72,8 @@ extension PostgreSQLPluginDriver {
         return map
     }
 
-    fileprivate func fetchArrayTypeMap() async throws -> [String: PostgresArrayTypeInfo] {
-        let result = try await execute(query: PostgreSQLSchemaQueries.arrayTypeQuery)
+    fileprivate func fetchArrayTypeMap(schema: String, table: String?) async throws -> [String: PostgresArrayTypeInfo] {
+        let result = try await execute(query: PostgreSQLSchemaQueries.arrayTypeQuery(schema: schema, table: table))
         var map: [String: PostgresArrayTypeInfo] = [:]
         for row in result.rows {
             guard let schemaName = row[safe: 0]?.asText,
@@ -104,9 +86,11 @@ extension PostgreSQLPluginDriver {
         return map
     }
 
-    fileprivate func fetchTypeCatalog() async throws -> PostgresTypeCatalog {
-        let enumLabels = try await fetchEnumLabelMap()
-        let arrayTypes = try await fetchArrayTypeMap()
+    /// Scoped to the types the read's own columns use, and read fresh each time: a cache would go
+    /// stale on the next `CREATE TYPE`, and the scoped read costs about 0.4 ms for one table.
+    fileprivate func fetchTypeCatalog(schema: String, table: String?) async throws -> PostgresTypeCatalog {
+        let enumLabels = try await fetchEnumLabelMap(schema: schema, table: table)
+        let arrayTypes = try await fetchArrayTypeMap(schema: schema, table: table)
         return PostgresTypeCatalog(enumLabels: enumLabels, arrayTypes: arrayTypes)
     }
 
