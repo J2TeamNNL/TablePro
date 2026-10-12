@@ -16,6 +16,7 @@ struct AISettingsView: View {
     @State private var pendingDeleteID: UUID?
     @ObservedObject private var chatGPTCodexService = ChatGPTCodexService.shared
     @ObservedObject private var claudeAgentService = ClaudeAgentService.shared
+    @ObservedObject private var copilotService = CopilotService.shared
     @State private var providersWithKey: Set<UUID> = []
 
     var body: some View {
@@ -188,6 +189,12 @@ struct AISettingsView: View {
                 .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 2)
+        .task {
+            // Sign-in state lives in the language server, so a configured Copilot row has nothing
+            // true to show until it runs.
+            guard provider.type == .copilot else { return }
+            await copilotService.start()
+        }
     }
 
     private var addProviderMenu: some View {
