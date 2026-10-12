@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Settings > Editor grouped into Display, Gutter and Editing.
 - Editor Font and Data Grid Font moved to Settings > Editor and Settings > Data, and kept per Mac.
 - Editor font size range of 10 to 24 points everywhere, including zoom.
+- iCloud Sync watches the network and the iCloud account only while it is turned on.
 - tablepro command ships inside the app. Settings > General shows the Terminal line that links it; no administrator prompt.
 - MCP server runs only while Enable MCP Server is on in Settings > MCP. Clients and pairing no longer start it while it is off.
 - Edit > Data shown only in data file windows.
