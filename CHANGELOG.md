@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Interface, Sidebar and Toolbar color groups from the theme editor and the theme file.
 - Fonts from the theme file.
+- Cursor AI provider. A saved Cursor provider is dropped; Cursor still reaches TablePro through the MCP server.
+- Sign in with xAI. An xAI provider now needs an xAI API key.
 
 ### Fixed
 
@@ -41,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JSON and PHP tree values colored differently from the same values in the row inspector.
 - Autocomplete icon colors ignoring the theme.
 - Theme color wells and the theme preview unreadable to VoiceOver.
+- One unreadable setting, or one unknown AI provider, resetting its whole settings group to defaults.
 
 ## [0.80.0] - 2026-10-11
 
