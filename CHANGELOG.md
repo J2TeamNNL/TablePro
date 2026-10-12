@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Interface, Sidebar and Toolbar color groups from the theme editor and the theme file.
 - Fonts from the theme file.
+- Loading plugins signed by other developers, and Trusted Plugin Developers in Settings > Plugins.
+- Browse tab and plugin download counts in Settings > Plugins.
+- On/off switch for each plugin in Settings > Plugins.
+- Theme install from the plugin registry.
 - HTML and XML export.
 - File > Server-Side Export… for Oracle, Snowflake and BigQuery. Run the unload statement in a query tab instead.
 - Cursor AI provider. A saved Cursor provider is dropped; Cursor still reaches TablePro through the MCP server.
