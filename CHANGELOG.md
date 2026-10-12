@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Interface, Sidebar and Toolbar color groups from the theme editor and the theme file.
 - Fonts from the theme file.
+- Enum label editing and New Type… for PostgreSQL types. Run `ALTER TYPE` or `CREATE TYPE` in a query tab.
 - Server Dashboard for SQLite and DuckDB.
 - Dashboard button from Customize Toolbar. Open the Server Dashboard from the Database menu or Actions.
 - Loading plugins signed by other developers, and Trusted Plugin Developers in Settings > Plugins.
