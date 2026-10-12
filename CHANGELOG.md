@@ -64,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Theme color wells and the theme preview unreadable to VoiceOver.
 - Reopen Last Session forgetting its connections after an MCP client launched TablePro in the background.
 - GitHub Copilot starting at launch when not in use, and running on after AI was turned off or Copilot was removed.
+- Settings > AI reading sign-in tokens and running command line tools for providers that were never added.
 
 ### Security
 
