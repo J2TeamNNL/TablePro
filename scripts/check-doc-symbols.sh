@@ -5,12 +5,14 @@
 # Prose does not fail a build when the code moves underneath it, so a renamed type or a deleted
 # script stays named in the docs until something asks. This asks.
 #
-# Scope: CLAUDE.md, AGENTS.md, and every .md under .claude/rules and .claude/skills.
+# Scope: CLAUDE.md, AGENTS.md, the same two under linux/, and every .md under .claude/rules and
+# .claude/skills.
 #
 # What is checked. Only mechanical claims, because those are the ones that rot silently:
 #   paths    a backticked repo-relative path must exist
-#   symbols  a backticked CamelCase identifier must exist in this tree, the macOS SDK, or the
-#            Swift toolchain's feature list
+#   symbols  a backticked CamelCase identifier must exist in this tree (Swift, C headers or Rust),
+#            the macOS SDK, the installed GObject Introspection files, or the Swift toolchain's
+#            feature list
 #   scripts  every .sh named must exist, and be executable unless it is a sourced lib/ file
 #   skills   every Skill(name) and hyphenated $name reference must resolve
 #   counts   a stated plugin-bundle count must match the tree
@@ -19,6 +21,8 @@
 # an example. A placeholder (`SomeType`, `TypeName`) and an absolute or home path are not claims
 # about the tree either. Without Xcode the SDK half is skipped, and a framework-prefixed name (NS,
 # CK, UI and the like) that the tree itself does not use is counted as skipped rather than stale.
+# GTK, libadwaita and GLib names (Gtk, Adw, G and the like) are skipped the same way on a machine
+# without their introspection files.
 #
 # Usage:
 #   scripts/check-doc-symbols.sh          # exit 1 if anything is stale
@@ -33,7 +37,7 @@ LIST=0
 [ "${1:-}" = "--list" ] && LIST=1
 
 DOCS=()
-for top in CLAUDE.md AGENTS.md; do
+for top in CLAUDE.md AGENTS.md linux/CLAUDE.md linux/AGENTS.md; do
     [ -f "$top" ] && DOCS+=("$top")
 done
 while IFS= read -r f; do DOCS+=("$f"); done < <(
@@ -55,6 +59,9 @@ CloudKit Security CoreText QuartzCore CoreGraphics OSLog"
 
 PLACEHOLDER_PATTERN='^(Some|My|Your|Foo|Bar|Example)[A-Z][a-z]|^(TypeName|ClassName|SuiteType|TestClassName)$'
 FRAMEWORK_PREFIX_PATTERN='^(NS|CK|CF|CG|CA|CT|UI|XC|OS)[A-Z]'
+GNOME_PREFIX_PATTERN='^(Gtk|Gdk|Gsk|Adw|GtkSource|Gio|GLib|GObject|Pango|Secret)[A-Z]'
+# The GObject Introspection files the Linux app's ground truth comes from, when installed.
+GIR_FILES="Gtk-4.0 Gdk-4.0 Gsk-4.0 Adw-1 GtkSource-5 Gio-2.0 GObject-2.0 GLib-2.0 Pango-1.0 Secret-1"
 TAB="$(printf '\t')"
 SCRIPT_PATH_REGEX='(\.claude/hooks|([A-Za-z0-9_.-]+/)*scripts)(/[A-Za-z0-9_-]+)*/[A-Za-z0-9_.-]+\.sh'
 
@@ -63,11 +70,15 @@ SCRIPT_PATH_REGEX='(\.claude/hooks|([A-Za-z0-9_.-]+/)*scripts)(/[A-Za-z0-9_-]+)*
 # and blog-post.md runs every command from there, so the names it uses are the site's own.
 SITE_REPO_ROOTS="app public resources routes tests"
 SITE_REPO_DOCS=".claude/skills/release/references/blog-post.md"
+# The docs site is its own repository, cloned beside this one. A path under it names that repo, so
+# it is checked against the clone when one is there and skipped when it is not.
+DOCS_REPO="../tablepro-docs"
 
 findings=0
 checked=0
 skipped=0
 sdk_indexed=0
+gir_indexed=0
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -114,6 +125,7 @@ build_symbol_index() {
     {
         find TablePro Plugins Packages TableProTests TableProUITests TableProMobile \
             -name '*.swift' -type f 2> /dev/null | uncommented_identifiers
+        find linux/crates -name '*.rs' -type f 2> /dev/null | uncommented_identifiers
         grep -rhoE '\b[A-Za-z][A-Za-z0-9_]{3,}\b' --include='*.h' Plugins 2> /dev/null
         grep -hoE '^  [A-Za-z][A-Za-z0-9_+-]*:' project.yml 2> /dev/null | tr -d ' :'
         printf '%s\n' $HARNESS_TOOLS $ENV_NAMES
@@ -135,6 +147,14 @@ build_symbol_index() {
         done
         uncommented_identifiers < "$WORK/sdk-headers" >> "$WORK/symbols.raw"
     fi
+    local gir dir
+    for gir in $GIR_FILES; do
+        for dir in /usr/share/gir-1.0 /usr/lib/*/gir-1.0; do
+            [ -f "$dir/$gir.gir" ] || continue
+            gir_indexed=1
+            grep -hoE 'c:type="[A-Za-z_][A-Za-z0-9_]*"' "$dir/$gir.gir" | sed 's/^c:type="//; s/"$//' >> "$WORK/symbols.raw"
+        done
+    done
     LC_ALL=C sort -u "$WORK/symbols.raw" > "$WORK/symbols"
 }
 
@@ -175,7 +195,9 @@ resolve_path() {
     done
     # A gitignored path is per-developer or downloaded, so a fresh checkout not having it is the
     # expected state, and flagging Secrets.xcconfig or Libs/*.a would train everyone to ignore this.
-    if git check-ignore -q "$token" 2> /dev/null; then
+    # A pattern ending in a slash, like Libs/dylibs/, matches only a directory, and git cannot tell
+    # that a path it has never seen is one, so an absent directory is asked about with the slash.
+    if git check-ignore -q "$token" 2> /dev/null || git check-ignore -q "$token/" 2> /dev/null; then
         printf '%s\t (gitignored, optional by design)\n' "$token"
         return 0
     fi
@@ -199,6 +221,18 @@ check_paths() {
         line="${hit%%:*}"; token="${hit#*:}"
         case "$token" in
             http* | /* | *' '* | *'*'* | *'<'* | *'$'* | *'|'* | *'{'*) continue ;;
+        esac
+        case "$token" in
+            "$DOCS_REPO" | "$DOCS_REPO"/*)
+                if [ ! -d "$DOCS_REPO" ]; then
+                    skip "$token (docs repo, not cloned)" "$doc:$line"
+                elif [ -e "${token%/}" ]; then
+                    pass "$token (docs repo)" "$doc:$line"
+                else
+                    report "$doc:$line" "path does not exist in the docs repo: $token"
+                fi
+                continue
+                ;;
             # A first segment carrying a dot is a hostname, not a path in this tree.
             *.*/*) [ "${token%%/*}" != "${token%%.*}" ] && continue ;;
         esac
@@ -245,8 +279,10 @@ check_symbols() {
             skip "$token (marketing site repo)" "$doc:$line"
         elif [ "$sdk_indexed" -eq 0 ] && printf '%s\n' "$token" | grep -qE "$FRAMEWORK_PREFIX_PATTERN"; then
             skip "$token (SDK name, no SDK to check against)" "$doc:$line"
+        elif [ "$gir_indexed" -eq 0 ] && printf '%s\n' "$token" | grep -qE "$GNOME_PREFIX_PATTERN"; then
+            skip "$token (GNOME name, no introspection files to check against)" "$doc:$line"
         else
-            report "$doc:$line" "symbol is in no Swift source, SDK header or toolchain feature list: $token"
+            report "$doc:$line" "symbol is in no Swift or Rust source, SDK header, GIR file or toolchain feature list: $token"
         fi
     done < "$WORK/symbol-hits"
 }
