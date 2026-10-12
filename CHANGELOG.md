@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Interface, Sidebar and Toolbar color groups from the theme editor and the theme file.
 - Fonts from the theme file.
+- Server Dashboard for SQLite and DuckDB.
+- Dashboard button from Customize Toolbar. Open the Server Dashboard from the Database menu or Actions.
 - Loading plugins signed by other developers, and Trusted Plugin Developers in Settings > Plugins.
 - Browse tab and plugin download counts in Settings > Plugins.
 - On/off switch for each plugin in Settings > Plugins.
