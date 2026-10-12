@@ -46,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File > Server-Side Export… for Oracle, Snowflake and BigQuery. Run the unload statement in a query tab instead.
 - Cursor AI provider. A saved Cursor provider is dropped; Cursor still reaches TablePro through the MCP server.
 - Sign in with xAI. An xAI provider now needs an xAI API key.
+- Require authentication switch in Settings > MCP. Every MCP request needs a token, including one from this Mac.
 
 ### Fixed
 
