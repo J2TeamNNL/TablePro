@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Interface, Sidebar and Toolbar color groups from the theme editor and the theme file.
 - Fonts from the theme file.
+- Clipboard URL banner in the New Connection form. Import from URL fills the form from a pasted link.
+- Share > Copy as JSON in the connection list. Copy as JSON in the data grid stays.
 - Export as SQL in the ER diagram. File > Export > Export Tables… to SQL with Structure writes the DDL.
 - Enum label editing and New Type… for PostgreSQL types. Run `ALTER TYPE` or `CREATE TYPE` in a query tab.
 - Server Dashboard for SQLite and DuckDB.
