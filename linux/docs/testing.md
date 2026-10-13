@@ -117,13 +117,15 @@ Each flag adds cases and needs its engine trait:
 
 | Flag | Adds | Needs |
 |---|---|---|
-| `endpoint: network` | a dropped caller stops the server's statement; a lost transport reports `ConnectionLost` | `NetworkConformanceEngine` |
+| `endpoint: network` | a dropped `query_bound` caller stops the server's statement; a lost transport reports `ConnectionLost` | `NetworkConformanceEngine` |
 | `pool: pooled` | a probe succeeds while every pool slot is busy | `PooledConformanceEngine` |
 | `editor_transactions: true` | the row limit keeps the transaction and the statements after it | `EditorTransactionEngine` |
 | `unsupported_types: true` | an unsupported type never decodes as NULL | `TypedConformanceEngine` |
 | `bounded_ddl: true` | a schema-change batch is not cut off by the statement timeout | `BoundedDdlEngine` |
 
-A flag that is off emits no test. `suite_flags_match_driver_capabilities` is always emitted and never ignored: it fails when `endpoint` or `editor_transactions` disagrees with the driver's `DriverCapabilities`, so a driver cannot skip a case by declaring less. `docker: true` marks every other case `#[ignore = "requires docker"]`; SQLite passes `docker: false` and `endpoint: file`, so its suite runs in the unit suite.
+A flag that is off emits no test. `suite_flags_match_driver_capabilities` is always emitted and never ignored: it fails when `endpoint` or `editor_transactions` disagrees with the driver's `DriverCapabilities`, so those cases cannot be skipped by declaring less. `pool`, `unsupported_types` and `bounded_ddl` have no capability behind them: they describe the server, and MySQL and MariaDB differ on `bounded_ddl` under one driver, so the adapter states them and review checks them. `docker: true` marks every other case `#[ignore = "requires docker"]`; SQLite passes `docker: false` and `endpoint: file`, so its suite runs in the unit suite.
+
+Each case starts its own engine, then has two minutes (`CASE_LIMIT`) to finish. A driver that ignores a deadline or a cancel fails the case with its name instead of holding the test run.
 
 ### TLS conformance
 
