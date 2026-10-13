@@ -901,9 +901,6 @@
       "extractionState" : "manual",
       "generatesSymbol" : false
     },
-    "\"%@\" is not a system color TablePro knows." : {
-
-    },
     "\"%@\" is not a URL. Enter an endpoint such as http://localhost:8000." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -930,7 +927,7 @@
         }
       }
     },
-    "\"%@\" is not a valid color." : {
+    "\"%@\" is not a valid color. Use #RRGGBB or #RRGGBBAA." : {
 
     },
     "\"%@\" is not a valid entry point name." : {
@@ -2987,6 +2984,9 @@
         }
       }
     },
+    "%@ changed on disk since it was opened. The newer file was kept and reloaded." : {
+
+    },
     "%@ changed while its documents were being checked, so nothing was changed. Save again." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -3090,6 +3090,9 @@
           }
         }
       }
+    },
+    "%@ Copy" : {
+
     },
     "%@ could not be loaded" : {
       "localizations" : {
@@ -6883,6 +6886,12 @@
           }
         }
       }
+    },
+    "%1$@ is a dark theme, so %2$@ is used." : {
+
+    },
+    "%1$@ is a light theme, so %2$@ is used." : {
+
     },
     "%1$@ is the local port, %2$@ and %3$@ are this connection's host and port. The command runs directly rather than through a shell, so start it with /usr/bin/env if you need environment variables." : {
       "localizations" : {
@@ -51231,6 +51240,9 @@
         }
       }
     },
+    "Could not create the theme" : {
+
+    },
     "Could not decode image" : {
       "localizations" : {
         "fr" : {
@@ -51302,6 +51314,9 @@
           }
         }
       }
+    },
+    "Could not delete the theme" : {
+
     },
     "could not derive the SCRAM key" : {
       "extractionState" : "manual",
@@ -51734,6 +51749,9 @@
           }
         }
       }
+    },
+    "Could not import the theme" : {
+
     },
     "Could not initialize SQL projection" : {
       "extractionState" : "manual",
@@ -52505,6 +52523,9 @@
         }
       }
     },
+    "Could not rename the theme" : {
+
+    },
     "Could Not Render This Image" : {
       "localizations" : {
         "fr" : {
@@ -52646,6 +52667,9 @@
           }
         }
       }
+    },
+    "Could not save the theme" : {
+
     },
     "Could not search the referenced table" : {
       "localizations" : {
@@ -55611,7 +55635,7 @@
         }
       }
     },
-    "Custom theme" : {
+    "Custom Themes" : {
 
     },
     "Custom…" : {
@@ -55949,6 +55973,9 @@
         }
       }
     },
+    "Dark theme" : {
+
+    },
     "Dashboard" : {
       "localizations" : {
         "fr" : {
@@ -56204,6 +56231,7 @@
       }
     },
     "Data Grid Font" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -66612,9 +66640,6 @@
         }
       }
     },
-    "Duplicate it to change its colors." : {
-
-    },
     "Duplicate it to customize colors." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -66736,10 +66761,8 @@
         }
       }
     },
-    "Duplicate Selected" : {
-
-    },
     "Duplicate Theme" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -68347,6 +68370,7 @@
       }
     },
     "Editor Font" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -78932,9 +78956,6 @@
           }
         }
       }
-    },
-    "Field Background" : {
-
     },
     "Field name" : {
       "localizations" : {
@@ -99465,6 +99486,9 @@
       "extractionState" : "manual",
       "generatesSymbol" : false
     },
+    "Light theme" : {
+
+    },
     "Limit" : {
       "localizations" : {
         "fr" : {
@@ -111690,6 +111714,9 @@
         }
       }
     },
+    "New Theme Based On" : {
+
+    },
     "New Trigger" : {
       "localizations" : {
         "fr" : {
@@ -113310,6 +113337,9 @@
           }
         }
       }
+    },
+    "No Custom Themes" : {
+
     },
     "No Data" : {
       "localizations" : {
@@ -127570,15 +127600,6 @@
         }
       }
     },
-    "Pane Background" : {
-
-    },
-    "Pane Text" : {
-
-    },
-    "Panels" : {
-
-    },
     "Panels to read. Omit for all." : {
       "localizations" : {
         "fr" : {
@@ -133022,6 +133043,9 @@
           }
         }
       }
+    },
+    "Preview of %@" : {
+
     },
     "Preview Query" : {
       "localizations" : {
@@ -144058,6 +144082,9 @@
           }
         }
       }
+    },
+    "Rename Theme" : {
+
     },
     "Rename…" : {
       "localizations" : {
@@ -156057,6 +156084,7 @@
       }
     },
     "Secondary Text" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -173335,7 +173363,11 @@
         }
       }
     },
+    "Syntax" : {
+
+    },
     "Syntax Colors" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -175789,6 +175821,9 @@
     "TablePro does not run a pre-connect script on its own." : {
 
     },
+    "TablePro does not use these theme keys: %@." : {
+
+    },
     "TablePro doesn't recognize the database type “%@”." : {
       "localizations" : {
         "fr" : {
@@ -177993,6 +178028,7 @@
       }
     },
     "Tertiary Text" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -180122,6 +180158,9 @@
           }
         }
       }
+    },
+    "The chosen theme is not on this Mac, so %@ is used." : {
+
     },
     "The client certificate at %@ could not be read as a PEM or DER certificate." : {
       "extractionState" : "manual",
@@ -188259,13 +188298,13 @@
         }
       }
     },
-    "The theme declares %1$d colors TablePro does not use, starting with \"%2$@\"." : {
-
-    },
-    "The theme is missing %1$d required colors, starting with \"%2$@\"." : {
+    "The theme identifier \"%1$@\" is already used by %2$@." : {
 
     },
     "The theme is missing the required field \"%@\"." : {
+
+    },
+    "The theme sets \"%@\" more than once." : {
 
     },
     "the TLS handshake failed" : {
@@ -189047,6 +189086,9 @@
           }
         }
       }
+    },
+    "Themes color the SQL editor and the data grid. Everything else follows the system appearance." : {
+
     },
     "There are no connections to publish." : {
       "localizations" : {
@@ -192280,6 +192322,7 @@
       }
     },
     "This is a built-in theme." : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -192332,6 +192375,7 @@
       }
     },
     "This is a registry theme." : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -203524,9 +203568,6 @@
           }
         }
       }
-    },
-    "Use System Color (%@)" : {
-
     },
     "Use text mode to enter JSON." : {
 
