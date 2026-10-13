@@ -171522,16 +171522,6 @@
     "Sum %@" : {
 
     },
-    "Sum %@ · Average %@ · Count %lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Sum %1$@ · Average %2$@ · Count %3$lld"
-          }
-        }
-      }
-    },
     "Sum %@, Average %@, Count %lld" : {
       "localizations" : {
         "en" : {
@@ -189087,7 +189077,7 @@
         }
       }
     },
-    "Themes color the SQL editor and the data grid. Everything else follows the system appearance." : {
+    "Themes color the editor, the data grid, other content views and the window background. Controls, sidebars and Settings follow the system appearance." : {
 
     },
     "There are no connections to publish." : {
