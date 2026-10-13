@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JSON and PHP tree values use the editor's syntax colors, matching the same value shown as text.
 - Theme file format 3, where every color is optional. Themes written for earlier versions are not read and need to be recreated.
 - Triggers and ClickHouse Parts in table structure shown as data grids, with multiple selection and Copy.
+- Filter and maintenance SQL previews highlighted as SQL in the editor font.
+- Details in Quick Switcher, autocomplete, Settings, query plans, tooltips and the result bar separated by commas or space instead of a dot.
 - Filter and maintenance previews highlighted in the editor font, DynamoDB's as JSON.
 - Settings > Editor grouped into Display, Gutter and Editing.
 - Editor Font and Data Grid Font moved to Settings > Editor and Settings > Data, and kept per Mac.
@@ -80,6 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reopen Last Session forgetting its connections after an MCP client launched TablePro in the background.
 - GitHub Copilot starting at launch when not in use, and running on after AI was turned off or Copilot was removed.
 - Settings > AI reading sign-in tokens and running command line tools for providers that were never added.
+- Database type icon and checkmark hard to see on the selected row in Choose a Database.
 - Oracle connection timing out after 30 seconds when the password is about to expire. (#3401)
 - Oracle session left open on the server when a connect was canceled during login.
 - Only the first statement running on iPhone and iPad when the query holds several. (#3399)
