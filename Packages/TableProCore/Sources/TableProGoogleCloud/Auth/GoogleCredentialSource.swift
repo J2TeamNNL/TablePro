@@ -11,9 +11,6 @@ public enum GoogleCredentialSource: Sendable, Equatable {
 public struct GoogleCredentials: Sendable {
     public let tokenProvider: any GoogleAccessTokenProviding
     public let projectHint: String?
-    /// The project a user login bills API calls to, sent as `x-goog-user-project`. Nil for a
-    /// service account, which bills its own project.
-    public let quotaProject: String?
 }
 
 public extension GoogleTokenProviders {
@@ -30,8 +27,7 @@ public extension GoogleTokenProviders {
             let key = try GoogleServiceAccountKey.parse(fieldValue: fieldValue, readFile: readFile)
             return GoogleCredentials(
                 tokenProvider: serviceAccount(key, scopes: scopes, http: http),
-                projectHint: key.projectId,
-                quotaProject: nil
+                projectHint: key.projectId
             )
         case .applicationDefault:
             let credentials = try GoogleApplicationDefaultCredentials.load(
@@ -46,8 +42,7 @@ public extension GoogleTokenProviders {
                     restrictsUserLogin: restrictsUserLogin,
                     http: http
                 ),
-                projectHint: credentials.projectHint,
-                quotaProject: credentials.quotaProject
+                projectHint: credentials.projectHint
             )
         }
     }

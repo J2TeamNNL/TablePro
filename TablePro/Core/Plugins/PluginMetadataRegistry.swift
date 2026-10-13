@@ -495,7 +495,6 @@ final class PluginMetadataRegistry: @unchecked Sendable {
         reverseTypeIndex["PGlite"] = "PostgreSQL"
         reverseTypeIndex["ScyllaDB"] = "Cassandra"
         reverseTypeIndex["Turso"] = "libSQL"
-        reverseTypeIndex["Firebase Realtime Database"] = "Firestore"
     }
 
     func register(snapshot: PluginMetadataSnapshot, forTypeId typeId: String, preserveIcon: Bool = false) {
@@ -825,7 +824,7 @@ final class PluginMetadataRegistry: @unchecked Sendable {
             return .analytical
         case "Spanner":
             return .relational
-        case "MongoDB", "Elasticsearch", "SurrealDB", "Typesense", "Weaviate", "Firestore", "Firebase Realtime Database":
+        case "MongoDB", "Elasticsearch", "SurrealDB", "Typesense", "Weaviate":
             return .document
         case "Redis":
             return .keyValue
@@ -868,8 +867,6 @@ final class PluginMetadataRegistry: @unchecked Sendable {
         case "Kafka":          return String(localized: "Event streaming platform")
         case "Typesense":      return String(localized: "Typo-tolerant open-source search engine")
         case "Weaviate":       return String(localized: "Open-source vector database")
-        case "Firestore":      return String(localized: "Serverless document database from Google")
-        case "Firebase Realtime Database": return String(localized: "JSON tree database that syncs in real time")
         default:               return ""
         }
     }

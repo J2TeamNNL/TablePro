@@ -38,7 +38,6 @@ struct GoogleCredentialSourceTests {
             "scope": Self.loginScope
         ])
         #expect(credentials.projectHint == "quota")
-        #expect(credentials.quotaProject == "quota")
     }
 
     @Test("An unrestricted user login keeps every scope it was granted")
@@ -65,7 +64,6 @@ struct GoogleCredentialSourceTests {
             http: http
         )
         #expect(pasted.projectHint == "key-project")
-        #expect(pasted.quotaProject == nil)
 
         let read = LockedBox<[String]>([])
         let fromPath = try GoogleTokenProviders.credentials(
