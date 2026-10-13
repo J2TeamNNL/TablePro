@@ -8,10 +8,9 @@ use relm4::{Component, ComponentController, ComponentSender, adw, gtk};
 
 use uuid::Uuid;
 
-use crate::services::database_service;
 use crate::services::workspace_state::{self, ConnectionWorkspaceState, WorkspaceTabRecord};
 use crate::ui::browse_tab::{BrowseTab, BrowseTabInit, BrowseTabInput, BrowseTabOutput};
-use crate::ui::editor::{SqlEditor, SqlEditorInit, SqlEditorInput, SqlEditorOutput, derive_tab_label};
+use crate::ui::editor::{SqlEditor, SqlEditorInit, derive_tab_label};
 
 use super::{
     App, AppMsg, CLOSED_TABS_CAPACITY, ClosedTabDescriptor, EditorTabSlot, OpenMode, WorkspaceTab,
@@ -168,29 +167,25 @@ impl App {
         let settings_for_create = self.settings.clone();
         let history_for_create = self.history.store();
         let tasks_for_create = self.tasks.clone();
+        let session_for_create = self.context.active.clone();
+        let hold_for_create = self.context.hold.clone();
+        let close_timeout_for_create = self.context.close_timeout();
         let sender_for_create = sender.clone();
+        let toasts_for_create = self.toast_overlay.clone();
         tab_overview.connect_create_tab(move |_| {
             let tab_id = Uuid::new_v4();
-            let editor = SqlEditor::builder()
-                .launch(SqlEditorInit {
-                    schema_buffer: schema_buffer_for_create.clone(),
-                    initial_query: None,
-                    settings: settings_for_create.clone(),
-                    history: history_for_create.clone(),
-                    tasks: tasks_for_create.clone(),
-                })
-                .forward(sender_for_create.input_sender(), move |out| match out {
-                    SqlEditorOutput::RunStateChanged(running) => AppMsg::EditorTabRunStateChanged(tab_id, running),
-                    SqlEditorOutput::QueryChanged(text) => AppMsg::EditorTabQueryChanged(tab_id, text),
-                    SqlEditorOutput::CopyToClipboard(text) => AppMsg::CopyToClipboard(text),
-                    SqlEditorOutput::ShowToast(msg) => AppMsg::ShowToast(msg),
-                    SqlEditorOutput::ExportResults { result, name } => AppMsg::ExportResults {
-                        result,
-                        name,
-                        target: None,
-                    },
-                });
-            let page = tab_view_for_create.append(editor.widget());
+            let editor = SqlEditor::new(SqlEditorInit {
+                schema_buffer: schema_buffer_for_create.clone(),
+                initial_query: None,
+                settings: settings_for_create.clone(),
+                history: history_for_create.clone(),
+                tasks: tasks_for_create.clone(),
+                session: session_for_create.clone(),
+                hold: hold_for_create.clone(),
+                close_timeout: close_timeout_for_create,
+            });
+            connect_editor(&editor, tab_id, &sender_for_create, &toasts_for_create);
+            let page = tab_view_for_create.append(&editor);
             let editor_count = workspace_tabs_for_create
                 .borrow()
                 .values()
@@ -202,7 +197,7 @@ impl App {
             // via on_editor_tab_query_changed.
             write_workspace_tab_id(&page, tab_id);
             let slot = EditorTabSlot {
-                controller: editor,
+                editor,
                 page: page.clone(),
                 draft: tablepro_storage::DraftId::new(),
                 query: String::new(),
@@ -419,15 +414,13 @@ impl App {
             return;
         };
         let tab_id = Uuid::new_v4();
-        let driver_id = self.driver_id().to_string();
-        let connection_id = database_service::instance().active_id();
+        let connection_id = self.context.active.metadata().map(|metadata| metadata.id);
         let read_only = self.read_only;
 
         let browse_init = BrowseTabInit {
             tab_id,
             schema: schema.clone(),
             table: table.clone(),
-            driver_id,
             connection_id,
             read_only,
             page_size,
@@ -452,10 +445,15 @@ impl App {
                 BrowseTabOutput::ShowSelectionAlert { title, body } => AppMsg::ShowAlert { title, body },
                 BrowseTabOutput::ShowToast(msg) => AppMsg::ShowToast(msg),
                 BrowseTabOutput::DirtyChanged(dirty) => AppMsg::BrowseTabDirtyChanged(tab_id, dirty),
-                BrowseTabOutput::ExecuteTransaction { statements, sources } => AppMsg::ExecuteBrowseTransaction {
+                BrowseTabOutput::ExecuteTransaction {
+                    table,
+                    columns,
+                    changes,
+                } => AppMsg::ExecuteBrowseTransaction {
                     tab_id,
-                    statements,
-                    sources,
+                    table,
+                    columns,
+                    changes,
                 },
             });
 
@@ -576,26 +574,18 @@ impl App {
         };
         let tab_id = Uuid::new_v4();
         let query = initial_query.clone().unwrap_or_default();
-        let editor = SqlEditor::builder()
-            .launch(SqlEditorInit {
-                schema_buffer: self.schema_buffer.clone(),
-                initial_query,
-                settings: self.settings.clone(),
-                history: self.history.store(),
-                tasks: self.tasks.clone(),
-            })
-            .forward(sender.input_sender(), move |out| match out {
-                SqlEditorOutput::RunStateChanged(running) => AppMsg::EditorTabRunStateChanged(tab_id, running),
-                SqlEditorOutput::QueryChanged(text) => AppMsg::EditorTabQueryChanged(tab_id, text),
-                SqlEditorOutput::CopyToClipboard(text) => AppMsg::CopyToClipboard(text),
-                SqlEditorOutput::ShowToast(msg) => AppMsg::ShowToast(msg),
-                SqlEditorOutput::ExportResults { result, name } => AppMsg::ExportResults {
-                    result,
-                    name,
-                    target: None,
-                },
-            });
-        let page = tab_view.append(editor.widget());
+        let editor = SqlEditor::new(SqlEditorInit {
+            schema_buffer: self.schema_buffer.clone(),
+            initial_query,
+            settings: self.settings.clone(),
+            history: self.history.store(),
+            tasks: self.tasks.clone(),
+            session: self.context.active.clone(),
+            hold: self.context.hold.clone(),
+            close_timeout: self.context.close_timeout(),
+        });
+        connect_editor(&editor, tab_id, &sender, &self.toast_overlay);
+        let page = tab_view.append(&editor);
         let label = match query.trim().is_empty() {
             true => default_editor_tab_label(self.editor_tab_count() + 1),
             false => derive_tab_label(&query),
@@ -608,13 +598,10 @@ impl App {
 
         // Track the buffer from the start, so text restored into a tab
         // is written back even if the user never types in it.
-        self.drafts.schedule(
-            &tablepro_storage::DraftScope::default(),
-            draft,
-            &editor.model().buffer(),
-        );
+        self.drafts
+            .schedule(&tablepro_storage::DraftScope::default(), draft, &editor.buffer());
         let slot = EditorTabSlot {
-            controller: editor,
+            editor,
             page: page.clone(),
             draft,
             query,
@@ -656,6 +643,14 @@ impl App {
                 _ => None,
             })
             .unwrap_or(false);
+        let open_transaction = matches!(
+            self.workspace_tabs.borrow().get(&id),
+            Some(WorkspaceTab::Editor(slot)) if slot.editor.has_open_transaction()
+        );
+        if open_transaction {
+            self.confirm_close_with_open_transaction(id, &tab_view, sender);
+            return;
+        }
         if pending {
             let page = self.workspace_tabs.borrow().get(&id).map(|t| match t {
                 WorkspaceTab::Editor(s) => s.page.clone(),
@@ -750,6 +745,39 @@ impl App {
         self.finish_close_workspace_tab(id, &tab_view);
     }
 
+    /// An editor tab's connection ends with the tab, and the server
+    /// rolls back whatever transaction it held, so closing one with a
+    /// transaction open asks first.
+    fn confirm_close_with_open_transaction(&self, id: Uuid, tab_view: &adw::TabView, sender: ComponentSender<Self>) {
+        let Some(page) = self.workspace_tabs.borrow().get(&id).map(|tab| match tab {
+            WorkspaceTab::Editor(s) => s.page.clone(),
+            WorkspaceTab::Structure(s) => s.page.clone(),
+            WorkspaceTab::Table(s) => s.page.clone(),
+        }) else {
+            return;
+        };
+        let dialog = adw::AlertDialog::new(
+            Some(&crate::i18n::gettext("Close Tab With an Open Transaction?")),
+            Some(&crate::i18n::gettext(
+                "Closing the tab ends its connection, and the server rolls back the changes the transaction has not committed.",
+            )),
+        );
+        dialog.add_response("cancel", &crate::i18n::gettext("Cancel"));
+        dialog.add_response("close", &crate::i18n::gettext("Close Tab"));
+        dialog.set_response_appearance("close", adw::ResponseAppearance::Destructive);
+        dialog.set_default_response(Some("cancel"));
+        dialog.set_close_response("cancel");
+        let tab_view = tab_view.clone();
+        dialog.connect_response(None, move |_, response| {
+            if response == "close" {
+                sender.input(AppMsg::WorkspaceTabClosed(id));
+            } else {
+                tab_view.close_page_finish(&page, false);
+            }
+        });
+        dialog.present(Some(&self.window));
+    }
+
     /// Tear down a tab without prompting. Internal helper called once
     /// the close-with-pending dialog (if any) has resolved.
     pub(super) fn finish_close_workspace_tab(&mut self, id: Uuid, tab_view: &adw::TabView) {
@@ -775,7 +803,7 @@ impl App {
         self.close_after_save.borrow_mut().remove(&id);
         match &removed {
             WorkspaceTab::Editor(slot) => {
-                let _ = slot.controller.sender().send(SqlEditorInput::Cancel);
+                slot.editor.shutdown();
                 // The record no longer names this draft, so the file has
                 // nothing left pointing at it.
                 self.drafts
@@ -950,8 +978,11 @@ impl App {
         // end rather than once at the start and never again.
         let workspace_tabs = self.workspace_tabs.clone();
         let tab_view = self.workspace_tab_view.clone();
+        // The tabs belong to the session open now, even if the write
+        // lands after a switch to another one.
+        let connection_id = self.context.active.metadata().map(|metadata| metadata.id);
         self.persist_debouncer.request(move || {
-            do_persist_workspace_state(&workspace_tabs, tab_view.as_ref());
+            do_persist_workspace_state(connection_id, &workspace_tabs, tab_view.as_ref());
         });
     }
 
@@ -960,15 +991,17 @@ impl App {
     /// only via `persist_workspace_state`'s debounced timer or
     /// directly from teardown paths that need a synchronous flush.
     pub(super) fn do_persist_workspace_state_now(&self) {
-        do_persist_workspace_state(&self.workspace_tabs, self.workspace_tab_view.as_ref());
+        let connection_id = self.context.active.metadata().map(|metadata| metadata.id);
+        do_persist_workspace_state(connection_id, &self.workspace_tabs, self.workspace_tab_view.as_ref());
     }
 }
 
 fn do_persist_workspace_state(
+    connection_id: Option<Uuid>,
     workspace_tabs: &std::rc::Rc<std::cell::RefCell<std::collections::HashMap<Uuid, WorkspaceTab>>>,
     tab_view: Option<&adw::TabView>,
 ) {
-    let Some(connection_id) = database_service::instance().active_id() else {
+    let Some(connection_id) = connection_id else {
         return;
     };
     let tabs = workspace_tabs.borrow();
@@ -1191,10 +1224,12 @@ impl App {
         self.workspace_tabs.borrow_mut().clear();
     }
 
+    /// Stop every editor run and close each editor tab's connection,
+    /// for a disconnect that takes the tabs with it.
     pub(super) fn cancel_all_editor_runs(&self) {
         for tab in self.workspace_tabs.borrow().values() {
             if let WorkspaceTab::Editor(s) = tab {
-                let _ = s.controller.sender().send(SqlEditorInput::Cancel);
+                s.editor.shutdown();
             }
         }
     }
@@ -1233,7 +1268,7 @@ impl App {
             let tooltip = editor_tab_tooltip(&query, &label).unwrap_or_default();
             slot.page.set_tooltip(&tooltip);
             slot.query = query;
-            (slot.draft, slot.controller.model().buffer())
+            (slot.draft, slot.editor.buffer())
         };
         // The buffer is read once when the write fires, not once per
         // keystroke, so a long script costs nothing to type in.
@@ -1257,7 +1292,7 @@ impl App {
         if let Some(id) = self.selected_workspace_tab_id()
             && let Some(WorkspaceTab::Editor(slot)) = self.workspace_tabs.borrow().get(&id)
         {
-            let _ = slot.controller.sender().send(SqlEditorInput::ReplaceQuery(text));
+            slot.editor.replace_query(&text);
             return;
         }
         self.append_editor_tab(Some(text), sender);
@@ -1407,4 +1442,39 @@ fn editor_tab_tooltip(query: &str, label: &str) -> Option<String> {
     }
     let preview = format!("{}…", &q[..last_idx]);
     if preview == label { None } else { Some(preview) }
+}
+
+/// Forward an editor tab's signals into the window. The toast overlay
+/// is the window's, so a replaced query's Undo button lives there.
+fn connect_editor(editor: &SqlEditor, tab_id: Uuid, sender: &ComponentSender<App>, toasts: &adw::ToastOverlay) {
+    let input = sender.input_sender().clone();
+    editor.connect_run_state_changed(move |_, running| {
+        input.emit(AppMsg::EditorTabRunStateChanged(tab_id, running));
+    });
+    let input = sender.input_sender().clone();
+    editor.connect_query_changed(move |_, text| input.emit(AppMsg::EditorTabQueryChanged(tab_id, text)));
+    let input = sender.input_sender().clone();
+    editor.connect_copy_to_clipboard(move |_, text| input.emit(AppMsg::CopyToClipboard(text)));
+    let input = sender.input_sender().clone();
+    editor.connect_toast(move |_, text| input.emit(AppMsg::ShowToast(text)));
+    let input = sender.input_sender().clone();
+    editor.connect_export_results(move |_, result, name| {
+        input.emit(AppMsg::ExportResults {
+            result,
+            name,
+            target: None,
+        });
+    });
+    let toasts = toasts.clone();
+    editor.connect_undoable_toast(move |editor, title| {
+        let toast = adw::Toast::new(&title);
+        toast.set_button_label(Some(&crate::i18n::gettext("Undo")));
+        let editor = editor.downgrade();
+        toast.connect_button_clicked(move |_| {
+            if let Some(editor) = editor.upgrade() {
+                editor.undo();
+            }
+        });
+        toasts.add_toast(toast);
+    });
 }

@@ -58,6 +58,9 @@ impl AskpassPrompt {
                 secret: true,
             }]
         };
+        // Nothing an askpass answer gives is stored: the prompt comes
+        // from inside ssh, which knows nothing of the keyring, so it
+        // never offers to remember.
         let (purpose, fields, offer_remember) = match self {
             Self::Notification { .. } => return None,
             Self::HostKeyConfirmation {
@@ -80,9 +83,9 @@ impl AskpassPrompt {
                     reason,
                 },
                 secret_field("Passphrase"),
-                true,
+                false,
             ),
-            Self::Password { .. } => (PromptPurpose::SshPassword { reason }, secret_field("Password"), true),
+            Self::Password { .. } => (PromptPurpose::SshPassword { reason }, secret_field("Password"), false),
             Self::KeyboardInteractive { text } | Self::Other { text } => (
                 PromptPurpose::SshKeyboardInteractive {
                     name: String::new(),
@@ -91,6 +94,11 @@ impl AskpassPrompt {
                 secret_field(text.trim()),
                 false,
             ),
+        };
+        // Behind a jump host, the host asking is not the destination.
+        let target = match self {
+            Self::Password { user_host } => user_host.as_str(),
+            _ => target,
         };
         Some(CredentialPrompt {
             purpose,
@@ -228,9 +236,8 @@ mod tests {
         let password = AskpassPrompt::Password {
             user_host: "deploy@bastion".to_owned(),
         };
-        let prompt = password
-            .credential_prompt("deploy@bastion", PromptReason::NotStored)
-            .unwrap();
+        let prompt = password.credential_prompt("prod", PromptReason::NotStored).unwrap();
+        assert_eq!(prompt.target, "deploy@bastion", "the host asking, not the destination");
         assert_eq!(
             prompt.purpose,
             PromptPurpose::SshPassword {
@@ -238,7 +245,7 @@ mod tests {
             }
         );
         assert_eq!(prompt.fields.len(), 1);
-        assert!(prompt.offer_remember);
+        assert!(!prompt.offer_remember, "an askpass answer is never stored");
 
         let other = AskpassPrompt::Other {
             text: "PIN: ".to_owned(),

@@ -46,13 +46,14 @@ deny = [
     { crate = "rustls:<0.23", reason = "rustls before 0.23 has no pluggable provider and carries fixed advisories" },
     { crate = "rustls-pemfile", reason = "unmaintained; rustls-pki-types parses PEM" },
     { crate = "bigdecimal", reason = "decimals use tablepro_core::value::SqlDecimal" },
+    { crate = "rust_decimal", reason = "decimals use tablepro_core::value::SqlDecimal; rust_decimal stops at 28 digits and has no NaN or infinity" },
     { crate = "backoff", reason = "unmaintained" },
     { crate = "instant", reason = "unmaintained" },
-    { crate = "tablepro-test-fixtures", wrappers = ["tablepro-driver-postgres"], reason = "container fixtures are a dev-only leaf; extend the wrappers with each new dependent" },
+    { crate = "tablepro-test-fixtures", wrappers = ["tablepro-driver-clickhouse", "tablepro-driver-mssql", "tablepro-driver-mysql", "tablepro-driver-postgres"], reason = "container fixtures are a dev-only leaf; extend the wrappers with each new dependent" },
     { crate = "libsqlite3-sys", deny-multiple-versions = true, reason = "two SQLite builds in one binary conflict" },
 ]
 
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-allow-git = ["https://github.com/tiberius-rs/tiberius"]
+allow-git = []

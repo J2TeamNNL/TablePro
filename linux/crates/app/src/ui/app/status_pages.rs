@@ -19,7 +19,7 @@ impl App {
     /// resolves, at which point `dismiss_loading_page` clears it. Replaces
     /// the prior fire-and-forget toast which auto-dismissed at 2 s, well
     /// before remote / SSH-tunnelled connections resolve.
-    pub(super) fn set_loading_page(&mut self, title: &str, description: &str) {
+    pub(super) fn set_loading_page(&mut self, title: &str, description: &str, sender: &ComponentSender<Self>) {
         if let Some(prev) = self.connect_progress_toast.take() {
             prev.dismiss();
         }
@@ -34,6 +34,11 @@ impl App {
             format!("{title} · {description}")
         };
         let toast = adw::Toast::builder().title(&body).timeout(0).build();
+        // A connect through SSH or to a server that drops packets can
+        // take the whole connect timeout, so it can be stopped here.
+        toast.set_button_label(Some(&crate::i18n::gettext("Cancel")));
+        let cancel = sender.clone();
+        toast.connect_button_clicked(move |_| cancel.input(AppMsg::CancelConnect));
         self.toast_overlay.add_toast(toast.clone());
         self.connect_progress_toast = Some(toast);
     }
@@ -85,9 +90,7 @@ impl App {
         let dialog = SavedQueriesDialog::builder()
             .launch(SavedQueriesDialogInit {
                 store: self.history.store().map(|history| history.saved_queries()),
-                active_connection: crate::services::database_service::instance()
-                    .active_metadata()
-                    .map(|metadata| metadata.id),
+                active_connection: self.context.active.metadata().map(|metadata| metadata.id),
             })
             .forward(sender.input_sender(), |out| match out {
                 SavedQueriesDialogOutput::OpenInNewTab(text) => AppMsg::OpenHistoryQuery(text),
@@ -112,10 +115,7 @@ impl App {
             self.show_toast(&crate::i18n::gettext("There is nothing in the editor to save."));
             return;
         }
-        if crate::services::database_service::instance()
-            .active_metadata()
-            .is_none()
-        {
+        if !self.context.active.is_connected() {
             self.show_toast(&crate::i18n::gettext(
                 "Connect to a database first: a saved query is kept under its connection.",
             ));
@@ -157,7 +157,7 @@ impl App {
             self.show_toast(&crate::i18n::gettext("The query database is not open yet."));
             return;
         };
-        let Some(metadata) = crate::services::database_service::instance().active_metadata() else {
+        let Some(metadata) = self.context.active.metadata() else {
             self.show_toast(&crate::i18n::gettext(
                 "Connect to a database first: a saved query is kept under its connection.",
             ));

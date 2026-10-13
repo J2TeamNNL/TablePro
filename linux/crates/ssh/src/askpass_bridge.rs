@@ -1,10 +1,11 @@
 use std::io;
 
-use futures::{SinkExt, StreamExt};
+use futures::StreamExt;
 use secrecy::{ExposeSecret, SecretString};
 use tablepro_core::credentials::{CredentialInteraction, PromptReason, PromptReply};
+use tokio::io::AsyncWriteExt;
 use tokio::net::UnixStream;
-use tokio_util::bytes::{BufMut, Bytes, BytesMut};
+use tokio_util::bytes::BytesMut;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use zeroize::Zeroizing;
 
@@ -26,6 +27,8 @@ pub(crate) struct AskpassBridge {
     target: String,
     interaction: CredentialInteraction,
     password: Option<SecretString>,
+    /// The `user@host` whose password prompt the stored password answers.
+    password_owner: Option<String>,
     passphrase: Option<SecretString>,
     used_password: bool,
     used_passphrase: bool,
@@ -33,7 +36,13 @@ pub(crate) struct AskpassBridge {
 }
 
 impl AskpassBridge {
-    pub fn new(owner_uid: u32, target: String, interaction: CredentialInteraction, auth: &SshAuth) -> Self {
+    pub fn new(
+        owner_uid: u32,
+        target: String,
+        interaction: CredentialInteraction,
+        auth: &SshAuth,
+        password_owner: Option<String>,
+    ) -> Self {
         let (password, passphrase) = match auth {
             SshAuth::Password { password } => (Some(password.clone()), None),
             SshAuth::PrivateKey { passphrase, .. } => (None, passphrase.clone()),
@@ -44,11 +53,18 @@ impl AskpassBridge {
             target,
             interaction,
             password,
+            password_owner,
             passphrase,
             used_password: false,
             used_passphrase: false,
             declined_host_key: None,
         }
+    }
+
+    fn owns_password(&self, user_host: &str) -> bool {
+        self.password_owner
+            .as_deref()
+            .is_some_and(|owner| owner.eq_ignore_ascii_case(user_host))
     }
 
     pub fn declined_host_key(&self) -> Option<&DeclinedHostKey> {
@@ -65,7 +81,10 @@ impl AskpassBridge {
         let text = next_frame(&mut framed).await?;
         let prompt = AskpassPrompt::classify(&String::from_utf8_lossy(&hint), &String::from_utf8_lossy(&text));
         let reply = self.reply_to(&prompt).await;
-        framed.send(encode(reply)).await
+        // The reply goes out through a buffer this side wipes, rather
+        // than the codec's, which would keep a copy of the secret.
+        let mut stream = framed.into_inner();
+        stream.write_all(&encode(reply)).await
     }
 
     async fn reply_to(&mut self, prompt: &AskpassPrompt) -> Reply {
@@ -73,7 +92,10 @@ impl AskpassBridge {
             tracing::info!(notification = %text, "ssh notification");
             return Reply::Answer(Zeroizing::new(String::new()));
         }
-        if matches!(prompt, AskpassPrompt::Password { .. })
+        // A jump host asks first, through the same askpass, and must not be
+        // handed the destination's password.
+        if let AskpassPrompt::Password { user_host } = prompt
+            && self.owns_password(user_host)
             && let Some(secret) = self.password.take()
         {
             self.used_password = true;
@@ -91,7 +113,9 @@ impl AskpassBridge {
             return Reply::Cancel;
         };
         let reason = match prompt {
-            AskpassPrompt::Password { .. } if self.used_password => PromptReason::Rejected,
+            AskpassPrompt::Password { user_host } if self.used_password && self.owns_password(user_host) => {
+                PromptReason::Rejected
+            }
             AskpassPrompt::Passphrase { .. } if self.used_passphrase => PromptReason::Rejected,
             _ => PromptReason::NotStored,
         };
@@ -146,16 +170,19 @@ fn answer(secret: &SecretString) -> Reply {
     Reply::Answer(Zeroizing::new(secret.expose_secret().to_owned()))
 }
 
-fn encode(reply: Reply) -> Bytes {
-    match reply {
-        Reply::Answer(text) => {
-            let mut frame = BytesMut::with_capacity(1 + text.len());
-            frame.put_u8(ANSWER);
-            frame.put_slice(text.as_bytes());
-            frame.freeze()
-        }
-        Reply::Cancel => Bytes::from_static(&[CANCEL]),
-    }
+/// One length-prefixed frame. The capacity is exact, so the vector
+/// never reallocates and leaves an unwiped copy behind.
+fn encode(reply: Reply) -> Zeroizing<Vec<u8>> {
+    let (tag, text) = match &reply {
+        Reply::Answer(text) => (ANSWER, text.as_bytes()),
+        Reply::Cancel => (CANCEL, &[][..]),
+    };
+    let length = 1 + text.len();
+    let mut frame = Zeroizing::new(Vec::with_capacity(4 + length));
+    frame.extend_from_slice(&u32::try_from(length).unwrap_or(u32::MAX).to_be_bytes());
+    frame.push(tag);
+    frame.extend_from_slice(text);
+    frame
 }
 
 #[cfg(test)]
@@ -163,9 +190,10 @@ mod tests {
     use std::os::unix::fs::MetadataExt;
     use std::sync::Arc;
 
+    use futures::SinkExt;
     use tablepro_core::credentials::PromptPurpose;
     use tablepro_test_support::FakePrompter;
-    use tokio::io::AsyncWriteExt;
+    use tokio_util::bytes::Bytes;
 
     use super::*;
 
@@ -180,7 +208,13 @@ mod tests {
     }
 
     fn bridge(interaction: CredentialInteraction, auth: &SshAuth) -> AskpassBridge {
-        AskpassBridge::new(current_uid(), "deploy@bastion".to_owned(), interaction, auth)
+        AskpassBridge::new(
+            current_uid(),
+            "deploy@bastion".to_owned(),
+            interaction,
+            auth,
+            Some("deploy@bastion".to_owned()),
+        )
     }
 
     async fn exchange(bridge: &mut AskpassBridge, hint: &str, text: &str) -> Vec<u8> {
@@ -238,6 +272,52 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn a_jump_host_is_never_given_the_destination_password() {
+        let prompter = Arc::new(FakePrompter::new([PromptReply::Submitted {
+            values: vec![SecretString::from("jump-typed")],
+            remember: false,
+        }]));
+        let auth = SshAuth::Password {
+            password: SecretString::from("s3cret"),
+        };
+        let mut bridge = bridge(CredentialInteraction::Attended(prompter.clone()), &auth);
+
+        assert_eq!(
+            exchange(&mut bridge, "", "ops@jump1's password: ").await,
+            b"\x00jump-typed"
+        );
+        let requests = prompter.requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].target, "ops@jump1");
+        assert_eq!(
+            requests[0].purpose,
+            PromptPurpose::SshPassword {
+                reason: PromptReason::NotStored
+            }
+        );
+        assert_eq!(
+            exchange(&mut bridge, "", "deploy@bastion's password: ").await,
+            b"\x00s3cret"
+        );
+    }
+
+    #[tokio::test]
+    async fn without_a_resolved_owner_the_stored_password_is_not_sent() {
+        let auth = SshAuth::Password {
+            password: SecretString::from("s3cret"),
+        };
+        let mut bridge = AskpassBridge::new(
+            current_uid(),
+            "bastion".to_owned(),
+            CredentialInteraction::Unattended,
+            &auth,
+            None,
+        );
+
+        assert_eq!(exchange(&mut bridge, "", "deploy@bastion's password: ").await, [CANCEL]);
+    }
+
     /// The bridge has to answer the older wording too, or ssh gets no
     /// answer and reports the host key as unverified.
     #[tokio::test]
@@ -288,6 +368,7 @@ mod tests {
             "bastion".to_owned(),
             CredentialInteraction::Unattended,
             &SshAuth::Agent,
+            None,
         );
         let (client, server) = UnixStream::pair().unwrap();
         bridge.handle(server).await.unwrap();

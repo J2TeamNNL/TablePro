@@ -1,4 +1,7 @@
+use std::sync::Mutex;
+
 use crate::column::{ColumnInfo, ColumnType, SqlExpression, SqlTypeExpr};
+use crate::ddl::{DdlCapabilities, DdlDialect};
 use crate::meta::{EngineRowId, EngineRowIdPart};
 use crate::sql_syntax::{ExpressionSyntaxError, SqlGrammar, TypeSyntaxError, parse_expression, parse_type};
 use crate::statement::{BoundParam, ParamType};
@@ -6,20 +9,135 @@ use crate::value::Value;
 
 use super::{BindError, BindTarget, DialectCapabilities, KeysetDirection, LiteralError, Placeholder, SqlDialect};
 
-/// A plain ANSI dialect, for the core builders' own tests.
+/// The one ANSI dialect the core builders' own tests share.
 ///
-/// It numbers its placeholders, because that is the style whose
-/// ordinals can actually disagree with the parameter list, and records
-/// nothing: a test that needs to see what was bound reads the
-/// statement's parameters.
-#[derive(Debug, Default)]
+/// It records every bind it is asked for, so a test can check which
+/// target each value was bound for and in what order, and it can switch
+/// marker style to prove a builder keeps positional markers in bind
+/// order.
+#[derive(Debug)]
 pub struct TestDialect {
-    pub exact_row_counts: bool,
+    exact_row_counts: bool,
+    markers: TestMarkers,
+    row_ids: bool,
+    default_row: bool,
+    count_all: &'static str,
+    binds: Mutex<Vec<RecordedBind>>,
+    ddl: Option<TestDdl>,
+}
+
+/// The standard DDL spelling, for the builders that render through
+/// `ddl()`. No core test reads its capabilities.
+#[derive(Debug, Default)]
+struct TestDdl {
+    capabilities: DdlCapabilities,
+}
+
+impl DdlDialect for TestDdl {
+    fn capabilities(&self) -> &DdlCapabilities {
+        &self.capabilities
+    }
+}
+
+/// How the test dialect spells a marker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TestMarkers {
+    /// `$1`, `$2`: the style whose ordinals can disagree with the list.
+    #[default]
+    Numbered,
+    /// `?`, where only the position in the text names the parameter.
+    Positional,
+    /// `{p0:Type}`, a server-side parameter named by its index.
+    ServerNamed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RecordedTarget {
+    Column(String),
+    Pattern,
+    EngineRowId(EngineRowIdPart),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RecordedBind {
+    ordinal: usize,
+    target: RecordedTarget,
+}
+
+impl Default for TestDialect {
+    fn default() -> Self {
+        Self {
+            exact_row_counts: false,
+            markers: TestMarkers::Numbered,
+            row_ids: true,
+            default_row: true,
+            count_all: "COUNT(*)",
+            binds: Mutex::new(Vec::new()),
+            ddl: Some(TestDdl::default()),
+        }
+    }
 }
 
 impl TestDialect {
     pub fn exact() -> Self {
-        Self { exact_row_counts: true }
+        Self {
+            exact_row_counts: true,
+            ..Self::default()
+        }
+    }
+
+    pub fn estimated() -> Self {
+        Self::default()
+    }
+
+    pub fn with_markers(self, markers: TestMarkers) -> Self {
+        Self { markers, ..self }
+    }
+
+    pub fn without_row_ids(self) -> Self {
+        Self { row_ids: false, ..self }
+    }
+
+    pub fn without_default_row(self) -> Self {
+        Self {
+            default_row: false,
+            ..self
+        }
+    }
+
+    /// An engine whose structure the app does not edit.
+    pub fn without_ddl(self) -> Self {
+        Self { ddl: None, ..self }
+    }
+
+    pub fn counting_with(self, count_all: &'static str) -> Self {
+        Self { count_all, ..self }
+    }
+
+    pub fn targets(&self) -> Vec<RecordedTarget> {
+        self.recorded().into_iter().map(|bind| bind.target).collect()
+    }
+
+    pub fn ordinals(&self) -> Vec<usize> {
+        self.recorded().into_iter().map(|bind| bind.ordinal).collect()
+    }
+
+    fn recorded(&self) -> Vec<RecordedBind> {
+        self.binds.lock().map(|binds| binds.clone()).unwrap_or_default()
+    }
+
+    fn record(&self, ordinal: usize, target: RecordedTarget) {
+        if let Ok(mut binds) = self.binds.lock() {
+            binds.push(RecordedBind { ordinal, target });
+        }
+    }
+
+    fn marker(&self, ordinal: usize, declaration: &str) -> String {
+        match self.markers {
+            TestMarkers::Numbered => format!("${}", ordinal + 1),
+            TestMarkers::Positional => "?".to_owned(),
+            TestMarkers::ServerNamed => format!("{{p{ordinal}:{declaration}}}"),
+        }
     }
 }
 
@@ -30,18 +148,36 @@ impl SqlDialect for TestDialect {
         }
     }
 
+    fn grammar(&self) -> SqlGrammar {
+        SqlGrammar::PostgreSql
+    }
+
     fn quote_identifier(&self, name: &str) -> String {
         format!("\"{}\"", name.replace('"', "\"\""))
     }
 
     fn placeholder(&self, ordinal: usize, value: Value, target: BindTarget<'_>) -> Result<Placeholder, BindError> {
-        let param_type = match target {
-            BindTarget::Pattern => ParamType::Text,
-            BindTarget::EngineRowId(_) => ParamType::Text,
-            BindTarget::Column(column) => param_type_for(column),
+        let (param_type, declaration, recorded) = match target {
+            BindTarget::Pattern => (ParamType::Text, "String".to_owned(), RecordedTarget::Pattern),
+            BindTarget::EngineRowId(part) => (
+                row_id_param_type(part),
+                row_id_type(part).to_owned(),
+                RecordedTarget::EngineRowId(part),
+            ),
+            BindTarget::Column(column) => (
+                param_type_for(column),
+                column
+                    .column_type
+                    .catalog
+                    .as_ref()
+                    .map(|catalog| catalog.declaration.as_sql().to_owned())
+                    .unwrap_or_else(|| column.column_type.name.clone()),
+                RecordedTarget::Column(column.name.clone()),
+            ),
         };
         let param = BoundParam::new(value, param_type)?;
-        Ok(Placeholder::bound(format!("${ordinal}"), param))
+        self.record(ordinal, recorded);
+        Ok(Placeholder::bound(self.marker(ordinal, &declaration), param))
     }
 
     fn literal(&self, value: &Value, _column: &ColumnType) -> Result<String, LiteralError> {
@@ -61,7 +197,7 @@ impl SqlDialect for TestDialect {
     }
 
     fn escape_like_text(&self, text: &str) -> String {
-        text.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+        text.replace('!', "!!").replace('%', "!%").replace('_', "!_")
     }
 
     fn row_window(&self, order_by: Option<&str>, limit: u64, offset: u64) -> String {
@@ -81,45 +217,107 @@ impl SqlDialect for TestDialect {
         )
     }
 
-    fn engine_row_id(&self, _id: EngineRowId) -> Option<String> {
-        None
+    fn engine_row_id(&self, id: EngineRowId) -> Option<String> {
+        let projections: Option<Vec<String>> = id
+            .parts()
+            .iter()
+            .map(|part| {
+                let column = self.engine_row_id_column(*part)?;
+                Some(format!(
+                    "{column} AS {}",
+                    self.quote_identifier(part.projection_alias())
+                ))
+            })
+            .collect();
+        projections.map(|projections| projections.join(", "))
     }
 
-    fn engine_row_id_column(&self, _part: EngineRowIdPart) -> Option<String> {
-        None
+    fn engine_row_id_column(&self, part: EngineRowIdPart) -> Option<String> {
+        if !self.row_ids {
+            return None;
+        }
+        Some(
+            match part {
+                EngineRowIdPart::PostgresTableOid => "tableoid",
+                EngineRowIdPart::PostgresCtid => "ctid",
+                EngineRowIdPart::PostgresXmin => "xmin",
+                EngineRowIdPart::SqliteRowid => "rowid",
+            }
+            .to_owned(),
+        )
+    }
+
+    fn count_all(&self) -> &'static str {
+        self.count_all
+    }
+
+    fn insert_default_row(&self, table_sql: &str) -> Option<String> {
+        self.default_row
+            .then(|| format!("INSERT INTO {table_sql} DEFAULT VALUES"))
     }
 
     fn parse_type(&self, text: &str) -> Result<ColumnType, TypeSyntaxError> {
         let parsed = parse_type(SqlGrammar::PostgreSql, text, crate::sql_syntax::MAX_TYPE_LEN)?;
-        Ok(ColumnType::untyped_text(SqlTypeExpr::from_catalog_text(parsed.text)))
+        Ok(ColumnType::untyped_text(parsed.text))
     }
 
     fn parse_expression(&self, text: &str) -> Result<SqlExpression, ExpressionSyntaxError> {
         let parsed = parse_expression(SqlGrammar::PostgreSql, text, crate::sql_syntax::MAX_EXPRESSION_LEN)?;
         Ok(SqlExpression::from_catalog_text(parsed.text))
     }
+
+    fn ddl(&self) -> Option<&dyn DdlDialect> {
+        self.ddl.as_ref().map(|ddl| ddl as &dyn DdlDialect)
+    }
+}
+
+fn row_id_type(part: EngineRowIdPart) -> &'static str {
+    match part {
+        EngineRowIdPart::PostgresTableOid => "oid",
+        EngineRowIdPart::PostgresCtid => "tid",
+        EngineRowIdPart::PostgresXmin => "xid",
+        EngineRowIdPart::SqliteRowid => "Int64",
+    }
+}
+
+fn row_id_param_type(part: EngineRowIdPart) -> ParamType {
+    match part {
+        EngineRowIdPart::SqliteRowid => ParamType::Int64,
+        other => ParamType::ServerText(SqlTypeExpr::from_catalog_text(row_id_type(other))),
+    }
 }
 
 /// The parameter type a column takes, reduced to what the tests need.
 fn param_type_for(column: &ColumnInfo) -> ParamType {
-    use crate::column::{ColumnKind, FloatKind, IntegerKind};
+    use crate::column::{BoolStorage, ColumnKind, FloatWidth, IntegerWidth, TemporalZone};
 
-    match column.column_type.kind() {
-        ColumnKind::Boolean => ParamType::Bool,
-        ColumnKind::Integer(IntegerKind::I16 | IntegerKind::U8 | IntegerKind::I8) => ParamType::Int16,
-        ColumnKind::Integer(IntegerKind::I32 | IntegerKind::U16) => ParamType::Int32,
-        ColumnKind::Integer(IntegerKind::U64 | IntegerKind::U128) => ParamType::UInt64,
-        ColumnKind::Integer(_) => ParamType::Int64,
-        ColumnKind::Decimal => ParamType::Decimal,
-        ColumnKind::Float(FloatKind::F32) => ParamType::Float32,
-        ColumnKind::Float(FloatKind::F64) => ParamType::Float64,
+    match &column.column_type.kind {
+        ColumnKind::Bool(BoolStorage::Native) => ParamType::Bool,
+        ColumnKind::Bool(BoolStorage::Integer) => ParamType::Int64,
+        ColumnKind::Integer(kind) => match (kind.width, kind.signed) {
+            (IntegerWidth::W8 | IntegerWidth::W16, true) | (IntegerWidth::W8, false) => ParamType::Int16,
+            (IntegerWidth::W24 | IntegerWidth::W32, true) | (IntegerWidth::W16 | IntegerWidth::W24, false) => {
+                ParamType::Int32
+            }
+            (IntegerWidth::W64 | IntegerWidth::W128 | IntegerWidth::W256, false) => ParamType::UInt64,
+            _ => ParamType::Int64,
+        },
+        ColumnKind::Decimal { .. } | ColumnKind::Money { .. } => ParamType::Decimal,
+        ColumnKind::Float(FloatWidth::F32) => ParamType::Float32,
+        ColumnKind::Float(FloatWidth::F64) => ParamType::Float64,
         ColumnKind::Uuid => ParamType::Uuid,
-        ColumnKind::Json => ParamType::Json,
+        ColumnKind::Json { .. } => ParamType::Json,
         ColumnKind::Date => ParamType::Date,
-        ColumnKind::Time => ParamType::Time,
-        ColumnKind::Timestamp => ParamType::Timestamp,
+        ColumnKind::Time { with_offset: false, .. } => ParamType::Time,
+        ColumnKind::Time { with_offset: true, .. } => ParamType::TimeTz,
+        ColumnKind::Timestamp {
+            zone: TemporalZone::Offset,
+            ..
+        } => ParamType::TimestampTz,
+        ColumnKind::Timestamp { .. } => ParamType::Timestamp,
         ColumnKind::Interval => ParamType::Interval,
-        ColumnKind::Binary | ColumnKind::BitString => ParamType::Bytes,
+        ColumnKind::Bytes { .. } => ParamType::Bytes,
+        ColumnKind::BitString { .. } => ParamType::Bits,
         _ => ParamType::Text,
     }
 }

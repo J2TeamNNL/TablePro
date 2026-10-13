@@ -5,6 +5,7 @@ mod ran_statements;
 mod row_ops;
 mod status_pages;
 mod structure;
+mod teardown_guard;
 mod workspace_tabs;
 
 use std::sync::Arc;
@@ -15,7 +16,9 @@ use relm4::gtk::{gio, glib};
 use relm4::prelude::*;
 use relm4::{Controller, adw, gtk};
 
-use tablepro_core::{ColumnInfo, DriverRegistry, QueryResult, TableInfo, Value};
+use tablepro_core::meta::ObjectInfo;
+use tablepro_core::{ColumnInfo, QueryResult};
+use tablepro_session::SessionHealth;
 use tablepro_storage::SavedConnection;
 use uuid::Uuid;
 
@@ -26,7 +29,9 @@ use super::editor::{SqlEditor, build_schema_buffer};
 use super::history_dialog::HistoryDialog;
 use super::sidebar_row::{SidebarRow, SidebarRowOutput};
 use super::welcome_view::{WelcomeView, WelcomeViewInit, WelcomeViewOutput};
-use crate::services::database_service::ConnectionHealth;
+use crate::services::session_context::SessionContext;
+
+pub(crate) use connection::{ConnectRetry, ReadySession};
 
 /// Decrement a tab's pending-save counter in the close-after-save map.
 /// Returns `true` if the entry just dropped to zero (the caller should
@@ -47,10 +52,12 @@ pub(super) fn dec_close_after_save(map: &mut std::collections::HashMap<Uuid, u32
     false
 }
 
-/// What `run()` hands the root component: the driver registry and the
+/// What `run()` hands the root component: the session services and the
 /// settings it opened before GTK started.
 pub struct AppInit {
-    pub registry: Arc<DriverRegistry>,
+    pub context: std::rc::Rc<SessionContext>,
+    /// Credential prompts waiting for a window to show them in.
+    pub prompts: crate::ui::credential_prompt::PromptQueue,
     pub settings: std::rc::Rc<tablepro_storage::AppSettings>,
     pub storage: crate::storage::SharedStorage,
     pub tasks: tablepro_session::runtime::Tasks,
@@ -58,7 +65,14 @@ pub struct AppInit {
 }
 
 pub struct App {
-    registry: Arc<DriverRegistry>,
+    context: std::rc::Rc<SessionContext>,
+    /// The adopted session's claim and watchers. Dropping it releases
+    /// the registry key and stops the banner and sidebar updates.
+    session_links: Option<connection::SessionLinks>,
+    /// Ends the credential prompt loop with the window.
+    prompt_presenter: glib::JoinHandle<()>,
+    /// Which connect attempt is current, so a late result is discarded.
+    connect_attempts: tablepro_session::ConnectAttempts,
     settings: std::rc::Rc<tablepro_storage::AppSettings>,
     storage: crate::storage::SharedStorage,
     tasks: tablepro_session::runtime::Tasks,
@@ -88,7 +102,6 @@ pub struct App {
     /// be reinstalled whenever the list changes.
     connections_listbox: gtk::ListBox,
     connections_popover: gtk::Popover,
-    health_state: Option<ConnectionHealth>,
     row_op_spinner: adw::Spinner,
     read_only_badge: gtk::Label,
     table_search: gtk::SearchEntry,
@@ -106,7 +119,7 @@ pub struct App {
     /// HashMap for O(1) tab_id lookup; display order is read from
     /// `tab_view.pages()` since HashMap is unordered.
     workspace_tabs: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<Uuid, WorkspaceTab>>>,
-    dialog: Option<Controller<ConnectDialog>>,
+    dialog: Option<ConnectDialog>,
     schema_buffer: gtk::TextBuffer,
     history_dialog: Option<Controller<HistoryDialog>>,
     saved_queries_dialog: Option<Controller<super::saved_queries_dialog::SavedQueriesDialog>>,
@@ -197,7 +210,7 @@ pub(super) const CLOSED_TABS_CAPACITY: usize = 10;
 const WORKSPACE_PERSIST_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
 
 pub struct EditorTabSlot {
-    pub controller: Controller<SqlEditor>,
+    pub editor: SqlEditor,
     pub page: adw::TabPage,
     /// The file this tab's text is written to. The text itself lives in
     /// the buffer, not here.
@@ -309,10 +322,30 @@ pub(super) fn read_workspace_tab_id(page: &adw::TabPage) -> Option<Uuid> {
 #[derive(Debug)]
 pub enum AppMsg {
     OpenConnect,
-    Connected {
-        tables: Vec<TableInfo>,
-        driver_id: String,
+    /// A connect worked; adopt its session in this window.
+    SessionReady(Box<ReadySession>),
+    /// The connect dialog's Connect: connect, then save the entry.
+    ConnectSubmitted(Box<super::connect_dialog::ConnectSubmission>),
+    /// The same, once the user agreed to close the open workspace.
+    ConnectSubmissionConfirmed(Box<super::connect_dialog::ConnectSubmission>),
+    /// A connect failed. `None` when the user cancelled it, which needs
+    /// no error. `edit` reopens the dialog on what was submitted.
+    ConnectFailed {
+        generation: tablepro_session::connect::AttemptGeneration,
+        message: Option<String>,
+        edit: Option<Box<ConnectRetry>>,
     },
+    /// The Cancel button on the Connecting toast.
+    CancelConnect,
+    /// Open the connect dialog on a connection that failed to connect,
+    /// with the focus on the row that fixes it.
+    EditConnection(Box<ConnectRetry>),
+    /// The banner's Retry: ask the monitor to reconnect now.
+    RetryConnection,
+    /// The adopted session's health moved.
+    HealthChanged(SessionHealth),
+    /// A reconnect read the catalog again.
+    CatalogChanged(Vec<ObjectInfo>),
     DialogClosed,
     SelectTable {
         schema: Option<String>,
@@ -324,13 +357,15 @@ pub enum AppMsg {
     /// `Some(tab_id)` for tab-scoped failures; `None` for app-level
     /// failures (e.g. connect failure during open_saved).
     LoadFailed(Option<Uuid>, String),
-    RowOpStarted,
     ReloadConnections,
     ConnectionsLoaded(Vec<SavedConnection>),
     ConnectionListUnavailable,
     ResetConnectionList,
     SecretDeleteFailed(Uuid),
     OpenSaved(SavedConnection),
+    /// Open a saved connection once the user agreed to close the open
+    /// workspace.
+    OpenSavedConfirmed(SavedConnection),
     DeleteConnection(Uuid),
     DuplicateConnection(SavedConnection),
     /// "+ New query" button or Ctrl+T → append a new editor tab.
@@ -384,11 +419,9 @@ pub enum AppMsg {
     OpenHistoryQuery(String),
     ReplaceActiveTabQuery(String),
     Disconnect,
-    /// Skip the dirty-state confirmation and tear the connection
-    /// down immediately. Fired from the disconnect-with-pending
-    /// AlertDialog's "Discard and disconnect" response.
+    /// Tear the connection down, once nothing would be lost or the user
+    /// agreed to lose it.
     ForceDisconnect,
-    PollHealth,
     RefreshPage,
     ShowAbout,
     ShowPreferences,
@@ -427,25 +460,22 @@ pub enum AppMsg {
     /// triggers persistence (writes the current display order + each
     /// slot's state to workspace_state.json).
     WorkspaceTabsChanged,
-    /// Run a sequence of pending-changeset statements inside a single
-    /// DB transaction. Materialised by a BrowseTab's change tracker
-    /// when the user clicks Save. App calls
-    /// `Connection::execute_in_transaction` and dispatches
+    /// Save a BrowseTab's pending changes as one batch, planned on the
+    /// connection that runs it. App dispatches
     /// `BrowseTabInput::SaveCompleted` / `SaveFailed` back via the
     /// per-tab controller.
     ExecuteBrowseTransaction {
         tab_id: Uuid,
-        statements: Vec<(String, Vec<Value>)>,
-        sources: Vec<crate::services::change_tracker::StatementSource>,
+        table: tablepro_core::meta::TableRef,
+        columns: Vec<ColumnInfo>,
+        changes: crate::services::change_tracker::TrackedChanges,
     },
     /// Inline-Save resolved successfully for a specific browse tab.
     /// Routes through App.update so we can reset the row-op spinner
     /// before forwarding `BrowseTabInput::SaveCompleted` to the tab.
-    /// `warning` is `Some(msg)` when the transaction committed but at
-    /// least one UPDATE / DELETE statement matched zero rows — typically
-    /// a concurrent modification by another session. The user sees a
-    /// toast so a phantom save doesn't pass silently.
-    SaveCompletedForTab(Uuid, Option<String>),
+    /// A row another session changed fails the save's row guard, so a
+    /// completed save touched exactly the rows it named.
+    SaveCompletedForTab(Uuid),
     /// Inline-Save failed; transaction was already rolled back.
     SaveFailedForTab(Uuid, String),
     /// Driver reported `DriverError::Transaction { statement_index }`.
@@ -543,19 +573,16 @@ pub enum AppMsg {
     },
     /// Structure tab Save failed; tracker is intact for retry.
     StructureSaveFailed(Uuid, String),
-    /// Structure tab Edit-mode init triggers introspection. App fans
-    /// out fetch_columns / fetch_indexes / fetch_foreign_keys and
-    /// dispatches the Loaded variants below.
+    /// Structure tab Edit-mode init triggers introspection.
     FetchStructureData {
         tab_id: Uuid,
     },
-    /// Coalesced load result — columns + indexes + FKs together so
-    /// the Structure tab rebuilds its list views once, not three times.
+    /// The table as one definition, read in one call, with the dialect
+    /// of the connection that read it, which the tab spells its DDL in.
     StructureDataLoaded {
         tab_id: Uuid,
-        columns: Vec<ColumnInfo>,
-        indexes: Vec<tablepro_core::IndexInfo>,
-        fks: Vec<tablepro_core::ForeignKeyInfo>,
+        definition: Box<tablepro_core::ddl::TableDefinition>,
+        dialect: Arc<dyn tablepro_core::dialect::SqlDialect>,
     },
     StructureLoadFailed {
         tab_id: Uuid,
@@ -575,7 +602,7 @@ pub enum AppMsg {
     /// Result of `list_tables` after a SchemaChanged event. Rebuilds
     /// the sidebar factory without going through the full Connected
     /// path.
-    TablesReloaded(Vec<TableInfo>),
+    TablesReloaded(Vec<ObjectInfo>),
     /// Ctrl+Shift+T → pop the most recent closed-tab descriptor and
     /// reopen it. No-op when the stack is empty (e.g. no tabs closed
     /// yet, or just reconnected). Editor tabs come back with their
@@ -787,7 +814,8 @@ impl SimpleComponent for App {
 
     fn init(init: Self::Init, root: Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         let AppInit {
-            registry,
+            context,
+            prompts,
             settings,
             storage,
             tasks,
@@ -1248,8 +1276,12 @@ impl SimpleComponent for App {
                     WelcomeViewOutput::SetGroup(id, group) => AppMsg::SetConnectionGroup(id, group),
                 });
 
+        let prompt_presenter = crate::ui::credential_prompt::CredentialPromptPresenter::start(prompts, &root);
         let model = App {
-            registry,
+            context,
+            session_links: None,
+            prompt_presenter,
+            connect_attempts: tablepro_session::ConnectAttempts::new(),
             settings: settings.clone(),
             storage: storage.clone(),
             tasks: tasks.clone(),
@@ -1271,7 +1303,6 @@ impl SimpleComponent for App {
             connections_factory,
             connections_listbox,
             connections_popover: widgets.connections_popover.clone(),
-            health_state: None,
             row_op_spinner: widgets.row_op_spinner.clone(),
             read_only_badge: widgets.read_only_badge.clone(),
             table_search: widgets.table_search.clone(),
@@ -1315,18 +1346,12 @@ impl SimpleComponent for App {
 
         let banner_sender = sender.clone();
         widgets.reconnect_banner.connect_button_clicked(move |_| {
-            banner_sender.input(AppMsg::RefreshPage);
+            banner_sender.input(AppMsg::RetryConnection);
         });
 
         let list_banner_sender = sender.clone();
         widgets.connection_list_banner.connect_button_clicked(move |_| {
             list_banner_sender.input(AppMsg::ResetConnectionList);
-        });
-
-        let poll_sender = sender.clone();
-        glib::timeout_add_seconds_local(1, move || {
-            poll_sender.input(AppMsg::PollHealth);
-            glib::ControlFlow::Continue
         });
 
         ComponentParts { model, widgets }
@@ -1336,12 +1361,26 @@ impl SimpleComponent for App {
         // The gate holds the window's action, so it has to stop before
         // the window does.
         self.history_gate.abort();
+        self.prompt_presenter.abort();
+        self.session_links = None;
     }
 
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
             AppMsg::OpenConnect => self.on_open_connect(sender),
-            AppMsg::Connected { tables, driver_id } => self.on_connected(tables, driver_id, sender),
+            AppMsg::SessionReady(ready) => self.on_session_ready(*ready, sender),
+            AppMsg::ConnectSubmitted(submission) => self.on_connect_submission(*submission, sender),
+            AppMsg::ConnectSubmissionConfirmed(submission) => self.connect_submission(*submission, sender),
+            AppMsg::ConnectFailed {
+                generation,
+                message,
+                edit,
+            } => self.on_connect_failed(generation, message, edit, sender),
+            AppMsg::CancelConnect => self.on_cancel_connect(),
+            AppMsg::EditConnection(retry) => self.on_edit_connection(*retry, sender),
+            AppMsg::HealthChanged(health) => self.refresh_health_banner(&health),
+            AppMsg::RetryConnection => self.on_retry_connection(),
+            AppMsg::CatalogChanged(objects) => self.on_tables_reloaded(objects),
             AppMsg::Disconnect => self.on_disconnect(sender),
             AppMsg::ForceDisconnect => self.do_disconnect(sender),
             AppMsg::DialogClosed => self.dialog = None,
@@ -1361,24 +1400,22 @@ impl SimpleComponent for App {
             AppMsg::WorkspaceSchemaWordsChanged => self.rebuild_schema_buffer(),
             AppMsg::ExecuteBrowseTransaction {
                 tab_id,
-                statements,
-                sources,
+                table,
+                columns,
+                changes,
             } => {
-                self.on_execute_browse_transaction(tab_id, statements, sources, sender);
+                self.on_execute_browse_transaction(tab_id, table, columns, changes, sender);
             }
-            AppMsg::SaveCompletedForTab(tab_id, warning) => {
+            AppMsg::SaveCompletedForTab(tab_id) => {
                 self.set_row_op_in_flight(false);
                 self.in_flight_saves.set(self.in_flight_saves.get().saturating_sub(1));
-                // GNOME HIG toast pattern: confirm one-shot events.
-                // Concurrency warning takes precedence (it implicitly
-                // confirms the save *and* explains the partial-match);
-                // otherwise the plain "Saved" reads as a successful
-                // commit. No Undo button — the transaction has already
-                // committed; users have explicit Ctrl+Z before Save.
-                // 4s timeout (vs the default 5) so the success toast
-                // doesn't hang around long after the user has moved on.
-                let msg = warning.unwrap_or_else(|| crate::i18n::gettext("Saved"));
-                let toast = adw::Toast::builder().title(msg).timeout(4).build();
+                // No Undo button: the save has already committed, and
+                // Ctrl+Z is for edits before Save. A shorter timeout
+                // keeps the confirmation from outstaying the moment.
+                let toast = adw::Toast::builder()
+                    .title(crate::i18n::gettext("Saved"))
+                    .timeout(4)
+                    .build();
                 self.toast_overlay.add_toast(toast);
                 self.dispatch_to_tab(tab_id, BrowseTabInput::SaveCompleted);
                 // If the user picked Save in a close-confirmation
@@ -1457,15 +1494,13 @@ impl SimpleComponent for App {
             AppMsg::FetchStructureData { tab_id } => self.on_fetch_structure_data(tab_id, sender),
             AppMsg::StructureDataLoaded {
                 tab_id,
-                columns,
-                indexes,
-                fks,
-            } => self.on_structure_data_loaded(tab_id, columns, indexes, fks),
+                definition,
+                dialect,
+            } => self.on_structure_data_loaded(tab_id, *definition, dialect),
             AppMsg::StructureLoadFailed { tab_id, message } => self.on_structure_load_failed(tab_id, message),
             AppMsg::StructureTabDirtyChanged(tab_id, dirty) => self.refresh_structure_tab_dirty(tab_id, dirty),
             AppMsg::SchemaChanged { schema, table } => self.on_schema_changed(schema, table, sender),
             AppMsg::TablesReloaded(tables) => self.on_tables_reloaded(tables),
-            AppMsg::RowOpStarted => self.set_row_op_in_flight(true),
             AppMsg::ReloadConnections => self.on_reload_connections(sender),
             AppMsg::ConnectionListUnavailable => self.show_connection_list_banner(),
             AppMsg::SecretDeleteFailed(id) => self.on_secret_delete_failed(id, sender),
@@ -1509,7 +1544,6 @@ impl SimpleComponent for App {
                     self.show_toast(&crate::i18n::gettext("Connect to a database first to run SQL."));
                 }
             }
-            AppMsg::PollHealth => self.on_poll_health(),
             AppMsg::RefreshPage => self.on_refresh_active_tab(),
             AppMsg::ShowAbout => self.on_show_about(),
             AppMsg::ShowPreferences => super::preferences_dialog::PreferencesDialog::new(
@@ -1520,13 +1554,23 @@ impl SimpleComponent for App {
             )
             .present(Some(&self.window)),
             AppMsg::ExportResults { result, name, target } => {
-                super::export_dialog::present(&self.window, &self.toast_overlay, result, name, target, &self.settings)
+                let dialect = self.context.active.get().and_then(|session| session.current_dialect());
+                super::export_dialog::present(
+                    &self.window,
+                    &self.toast_overlay,
+                    result,
+                    name,
+                    target,
+                    dialect,
+                    &self.settings,
+                )
             }
             AppMsg::CopyToClipboard(text) => self.on_copy_to_clipboard(text),
             AppMsg::CopyRowAsInsert { tab_id, row_position } => self.on_copy_row_as_insert(tab_id, row_position),
             AppMsg::DeleteConnection(id) => self.on_delete_connection(id, sender),
             AppMsg::DuplicateConnection(saved) => self.on_duplicate_connection(saved, sender),
             AppMsg::OpenSaved(saved) => self.on_open_saved(saved, sender),
+            AppMsg::OpenSavedConfirmed(saved) => self.connect_saved(saved, sender),
             AppMsg::ReopenClosedTab => self.on_reopen_closed_tab(sender),
             AppMsg::ShowFilterDialog => self.on_show_filter_dialog(),
         }

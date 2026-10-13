@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tablepro_core::credentials::CredentialInteraction;
-use tablepro_core::{LivenessPolicy, SshFailure, TimeoutPhase, TransportError};
+use tablepro_core::{LivenessPolicy, NetworkEndpoint, SshFailure, TimeoutPhase, TransportError};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::net::UnixListener;
 use tokio::process::{Child, ChildStderr, Command};
@@ -18,10 +18,12 @@ use tokio_util::sync::{CancellationToken, WaitForCancellationFutureOwned};
 
 use crate::argv::{ControlOp, master_args};
 use crate::askpass_bridge::AskpassBridge;
+use crate::first_hop::resolve_first_hop;
 use crate::known_hosts::spawn_failure;
+use crate::password_owner::resolve_password_owner;
 use crate::stderr_classify::{ClassifyContext, classify};
 use crate::supervisor::{ForwardCancel, Supervisor, TASKS, run_control};
-use crate::{SshConfig, SshServices, lock};
+use crate::{SshAuth, SshConfig, SshServices, lock};
 
 const CONTROL_SUFFIX: &str = ".0123456789abcdef";
 const STDERR_TAIL_LIMIT: usize = 65_536;
@@ -34,6 +36,7 @@ pub struct SshSession {
     pub(crate) master_dir: PathBuf,
     pub(crate) control: PathBuf,
     pub(crate) master_pid: Option<u32>,
+    pub(crate) first_hop: Option<NetworkEndpoint>,
     pub(crate) closed: CancellationToken,
     pub(crate) shutdown: CancellationToken,
     pub(crate) exit_status: Arc<Mutex<Option<i32>>>,
@@ -69,6 +72,10 @@ impl SshSession {
                 return Err(error);
             }
         };
+        let password_owner = match config.auth {
+            SshAuth::Password { .. } => resolve_password_owner(&services.ssh_program, config).await,
+            SshAuth::Agent | SshAuth::PrivateKey { .. } | SshAuth::KeyboardInteractive => None,
+        };
         let spawned = Command::new(&services.ssh_program)
             .args(master_args(config, &control, liveness))
             .env("SSH_ASKPASS", &services.askpass_program)
@@ -93,17 +100,25 @@ impl SshSession {
             .stderr
             .take()
             .map(|stderr| TASKS.spawn(collect_stderr(stderr, stderr_tail.clone())));
-        let mut bridge = AskpassBridge::new(owner_uid, config.destination.to_string(), interaction, &config.auth);
-        let outcome = handshake(
-            &mut child,
-            &listener,
-            &mut bridge,
-            services,
-            &control,
-            liveness,
-            &cancel,
-        )
-        .await;
+        let mut bridge = AskpassBridge::new(
+            owner_uid,
+            config.destination.to_string(),
+            interaction,
+            &config.auth,
+            password_owner,
+        );
+        let (outcome, first_hop) = tokio::join!(
+            handshake(
+                &mut child,
+                &listener,
+                &mut bridge,
+                services,
+                &control,
+                liveness,
+                &cancel,
+            ),
+            resolve_first_hop(&services.ssh_program, config),
+        );
         drop(listener);
         if let Err(error) = tokio::fs::remove_file(master_dir.join("askpass")).await {
             tracing::debug!(%error, "could not remove the askpass socket");
@@ -143,6 +158,7 @@ impl SshSession {
             master_dir: master_dir.clone(),
             control: control.clone(),
             master_pid: child.id(),
+            first_hop,
             closed: closed.clone(),
             shutdown: shutdown.clone(),
             exit_status: exit_status.clone(),
@@ -181,6 +197,14 @@ impl SshSession {
 
     pub fn destination(&self) -> &str {
         &self.destination
+    }
+
+    /// Where the session's first TCP connection goes, as ssh resolved
+    /// it: the first jump host, or the destination behind its alias.
+    /// `None` for a ProxyCommand route, whose first hop only that
+    /// command knows.
+    pub fn first_hop_endpoint(&self) -> Option<&NetworkEndpoint> {
+        self.first_hop.as_ref()
     }
 
     pub async fn shutdown(&self, grace: Duration) {
