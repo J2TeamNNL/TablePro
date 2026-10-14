@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Password prompt on connect when the keyring holds no password, with a choice to remember it.
+- Password prompt on connect when the keyring holds no password or the server refused it, with a choice to remember it.
 - SSH tunnels through the system OpenSSH client, with your agent, host aliases and jump hosts, confirming new host keys.
 - Security group in the connect dialog: encryption mode, CA certificate, client certificate and TLS server name.
 - SQLite file chooser in the connect dialog, with New Database to create a file.
@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Save Changes dialog on close that lists every tab with unsaved changes and saves only the ones left checked.
 - Logout waits while there are unsaved changes, and logout and suspend wait while a save is running.
 - Auto-increment on and off for PostgreSQL columns in the Structure tab, numbering on from the largest existing value.
+- SQLite column type, nullability, default and primary key changes, and foreign keys added or removed, in the Structure tab.
+- Delete button in the table grid, with the reason in its tooltip when the selected rows can't be deleted.
+- Set to DEFAULT in a new row's cell menu, for columns the server fills.
+- New Window (Ctrl+Shift+N, or `tablepro --new-window`) opens another window in the running TablePro.
+- Connections wait offline while the network can't reach their server, and reconnect once it can or after a suspend.
+- Review Key in a connection's banner when its SSH host key is refused, to trust a new key, replace a changed one, or retry once the key is fixed outside TablePro.
+- Read-only or read-write choice before opening a SQLite file on a network share or FUSE filesystem.
+- Locate… for a saved SQLite connection whose file was moved or renamed.
+- Open SQLite files from the file manager's Open With, or with `tablepro file.sqlite3`.
+- Review before a structure save that drops data, rebuilds the table or can stop halfway, with the SQL it runs.
+- Arrow keys move between grid cells; F2 or Return edits one, Tab carries an edit to the next cell, and Shift+F10 opens the cell menu.
+- Screen readers say when a grid cell is modified and when a row is new or marked for deletion.
+- Connections open when TablePro quits open again at the next launch; Restore session in Preferences turns it off.
+- Save query history in Preferences turns the query history off and keeps the entries already saved.
 
 ### Changed
 
@@ -27,17 +41,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Show CREATE TABLE gives the server's own statement on MySQL, ClickHouse and SQLite.
 - Structure tab sets a column NOT NULL when it joins the primary key, and gives its nullability back when it leaves.
 - Auto increment in the Structure tab no longer needs the primary key on PostgreSQL and SQL Server.
+- SQLite foreign keys show the name their CREATE TABLE gives them.
+- Delete, Duplicate and Copy as in a grid cell's menu act on every selected row when the clicked row is selected.
+- Grid cells edit in place with the keyboard each type needs; dates open a calendar, and JSON, XML and long text a larger editor.
+- Set Value in a grid cell's menu is Set to Empty, Set to NULL and Set to DEFAULT, each shown only where the column takes it.
+- Set a grid cell to NULL with Ctrl+Backspace instead of Ctrl+Shift+N.
+- Quit asks each window about its unsaved changes in turn, and waits for open connections to close.
+- Each window holds one connection: opening one already open brings its window forward, and Disconnect returns to the list.
+- Connecting shows in the window with Cancel, and a failed connect says why, with Retry, Edit Connection and Choose Connection.
+- Deleting a connection asks once, offers its window when it is open, and can delete its query history too.
+- SQLite files shared through the document portal show their own path instead of the portal's.
+- Add Index and Add Foreign Key check the form as you type, and pick the referenced table and columns from the database.
+- Denser grid rows, with numbers aligned right in even-width digits at the precision their column declares.
+- A grid value too long to draw says how many bytes it leaves out, and its tooltip points to Show Row as JSON.
+
+### Removed
+
+- Connection buttons in a connected window's header bar; New Window opens another connection.
 
 ### Fixed
 
 - Format, a query opened from history and a loaded SQL file could not be undone with Ctrl+Z.
 - Format could split `+=`, `b'01'` or `@@version`, or detach a MySQL function from its parenthesis, and change the statement.
 - Opening a SQL, CSV or connections file from a pipe or a device never finished, or read past its size limit.
+- Exporting results or query history, or opening the connect dialog, froze the window on a slow disk or network folder.
+- A query saved just before quitting could be lost.
+- The sidebar's table search button had no name for screen readers.
 - PostgreSQL statement timeouts showed as a plain server error when the server's messages were not in English.
 - MySQL and MariaDB connections that verify the certificate did not trust certificate authorities installed on the system.
 - SQL Server money and smallmoney in the SQL editor and query results showed as approximate floats.
 - Saving a SQL Server row with a char or varchar key locked the whole table until the save ended.
 - Stop could not end a SQLite statement waiting for another connection's lock.
+- Launching TablePro while it was running did nothing instead of showing the open window.
+- Deleting a connection left its saved tabs and editor drafts on disk.
+- A change to the connection list made just before quitting could be lost.
 - A SQLite save that failed in a way SQLite rolls back itself closed the connection and its temporary tables.
 - A SQLite script ending in an unclosed comment showed later results under the first statement's columns.
 - SQLite text containing a NUL character exported as SQL that SQLite cannot read.
@@ -47,11 +84,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ClickHouse DateTime values showed as UTC text when the server profile or session set ISO output.
 - ClickHouse save with an unknown outcome could read as applied because of another table's mutation.
 - A new row removed with Delete stayed in the grid while the save left it out.
+- Structure tab collapsed open columns on each add or remove, and lost an edit typed right after one.
+- Structure tab column summary and the Default field's error did not update as the column was edited.
+- SQLite `INTEGER PRIMARY KEY DESC` columns showed as auto-increment in the Structure tab.
+- Undoing a delete of many rows took one Ctrl+Z per row and could not bring back more than 50.
+- Editing a number in the grid could round it: integers past 2^53 and floats past six decimal places.
+- Setting a new row's cell to NULL saved the column's default instead.
+- Setting a NOT NULL cell to NULL was accepted and failed at save.
+- The Menu key on a read-only grid cell opened a text selection menu instead of the cell's menu.
+- Text with a NUL character showed cut short in the grid, copied cut short, and editing it saved the cut value.
 - An edit, Set Value or row action in the table grid could land on another row once a row above it came or went.
 - Editing, undoing or deleting a row in the table grid dropped it from a selection of several rows.
 - Copy as INSERT could copy the wrong row, drop the schema or unsaved edits, or write a value where the server fills one.
 - Duplicate left out the row's unsaved edits.
 - Cells of a table without a primary key opened for editing, then dropped what was typed.
+- A row whose primary key the driver could not read opened for editing, then failed to save.
 - A save that failed on a new row did not flash that row.
 - Undo after editing a cell twice restored the fetched value instead of the first edit.
 - An edit made while a save ran was dropped when it set the cell back to the value it was read with.
@@ -76,7 +123,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Turning a column's primary key on or off in the Structure tab saved nothing.
 - Dropping a SQL Server column that has a default failed.
 - Creating a SQLite table with a foreign key failed.
-- Changing a column in the Structure tab lost its collation, SRID, SPARSE, CHECK or other attributes it had.
+- Changing a column in the Structure tab lost its collation, SRID, SPARSE, CHECK, storage, compression or other attributes it had.
 - Saving a MySQL column whose default or generated expression held a quoted string failed.
 - Save in a Structure tab's close prompt skipped the tab's checks and dropped a default that did not parse.
 - The Structure tab refused every save on a SQLite table keyed by INTEGER PRIMARY KEY.
@@ -96,6 +143,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ctrl+S did nothing in a Structure tab.
 - Structure tab could not save two columns swapping names, or a column taking the name of one being removed.
 - Changing the type of a SQL Server column with a default failed.
+- A bulk delete confirmed after the table's primary key changed marked rows by their old key.
+- Ctrl+Home and Ctrl+End jumped to the first or last tab instead of the start or end of the SQL editor or table.
 
 ### Security
 
@@ -103,3 +152,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQL run in the editor, a typed filter or a column default, and the values in them, reached the journal at debug level.
 - Column types and defaults typed in the Structure tab reached the SQL after a text filter instead of the database's own parser.
 - Changing a SQL Server column's type or nullability in the Structure tab removed its data mask.
+- A jump host whose ssh_config sets StrictHostKeyChecking to accept-new or no was trusted without the host key dialog.
+- Editor SQL saved by an earlier build stayed on disk in a tab file nothing reads any more.
+- Statements that set a password, an encryption key or a connection secret were saved in the query history.

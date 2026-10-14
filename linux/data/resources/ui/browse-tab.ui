@@ -76,6 +76,16 @@
               </object>
             </child>
             <child type="start">
+              <object class="GtkButton" id="delete_button">
+                <property name="icon-name">list-remove-symbolic</property>
+                <property name="action-name">tab.delete-rows</property>
+                <property name="tooltip-text" translatable="yes">Delete selected rows (Delete)</property>
+                <style>
+                  <class name="flat"/>
+                </style>
+              </object>
+            </child>
+            <child type="start">
               <!-- One linked group reads as one navigation control, as
                    the back and forward buttons do in Files. -->
               <object class="GtkBox">
@@ -116,7 +126,7 @@
               <object class="GtkLabel" id="paginator_label">
                 <property name="accessible-role">status</property>
                 <style>
-                  <class name="dim-label"/>
+                  <class name="dimmed"/>
                 </style>
               </object>
             </child>
@@ -164,7 +174,7 @@
                         <style>
                           <class name="numeric"/>
                           <class name="caption-heading"/>
-                          <class name="dim-label"/>
+                          <class name="dimmed"/>
                         </style>
                       </object>
                     </child>
@@ -180,7 +190,7 @@
                 <property name="label" translatable="yes">Rows:</property>
                 <property name="mnemonic-widget">page_size_dropdown</property>
                 <style>
-                  <class name="dim-label"/>
+                  <class name="dimmed"/>
                 </style>
               </object>
             </child>
@@ -197,7 +207,7 @@
                 <child type="start">
                   <object class="GtkLabel" id="pending_label">
                     <style>
-                      <class name="dim-label"/>
+                      <class name="dimmed"/>
                       <class name="caption"/>
                     </style>
                   </object>

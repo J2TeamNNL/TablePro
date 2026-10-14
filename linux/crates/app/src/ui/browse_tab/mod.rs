@@ -7,9 +7,12 @@
 
 mod browse_command;
 mod browse_request_kind;
+mod confirming_delete;
 mod fetch;
 mod imp;
 mod page_reply;
+mod page_state;
+mod row_deletion;
 #[cfg(test)]
 mod tests;
 
@@ -19,13 +22,13 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gtk4 as gtk;
-use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
+use gtk4::{gdk, gio, glib};
 use libadwaita as adw;
 use libadwaita::prelude::*;
 use tablepro_core::dialect::SqlDialect;
-use tablepro_core::edit::{CellInput, EditContext, EditParseError};
+use tablepro_core::edit::{CellInput, EditParseError, parse_edit_text};
 use tablepro_core::export::RenderInsertError;
 use tablepro_core::meta::{RowIdentity, TableRef};
 use tablepro_core::{ColumnInfo, QueryResult, Value};
@@ -34,16 +37,21 @@ use tablepro_session::{LinkGeneration, Session};
 
 pub(crate) use self::browse_command::{BrowseCommand, ColumnsReply};
 pub(crate) use self::browse_request_kind::BrowseRequestKind;
+use self::confirming_delete::ConfirmingDelete;
 pub(crate) use self::page_reply::PageReply;
+use self::page_state::PageState;
+use self::row_deletion::{RowDeletion, plan_row_deletion};
 use super::grid::{
-    CellPreset, ColumnWidthBinding, GridCell, GridMsg, GridRowId, GridRowIndex, GridSink, RowObject, TabGridContext,
-    build_column_view, cell_editability,
+    CellPreset, ColumnWidthBinding, DeleteAvailability, GridContent, GridMsg, GridRowId, GridRowIndex, GridSink,
+    RowKeyBuilder, RowObject, TabGridContext, build_column_view, cell_editability, cell_presets, delete_availability,
+    edit_context, edit_row, export_snapshot, snapshot_result,
 };
 use crate::runtime::{FailedRequests, RequestSequencer};
-use crate::services::change_tracker::{RowKey, StatementSource, pk_identity};
+use crate::services::change_tracker::{RowKey, StatementSource, new_draft_cell, pk_identity};
+use crate::services::column_relayout::ColumnRelayout;
 use crate::services::save_batch::SaveTarget;
 use crate::services::tab_tracker_handle::TabTrackerHandle;
-use crate::services::tracker_delta::{TrackerDelta, VisualChange};
+use crate::services::tracker_delta::TrackerDelta;
 use crate::services::tracker_edit::TrackerEdit;
 
 const PAGE_SIZE_OPTIONS: &[u64] = &[100, 500, 1_000, 5_000, 10_000];
@@ -138,6 +146,7 @@ impl BrowseTab {
         imp.toolbar.add_top_bar(&filter_strip.widget);
         tab.collapse_top_bars_with(&filter_strip.widget);
         tab.connect_widgets();
+        let delete_action = tab.install_delete_action();
 
         // Handled at once: a tracked change redraws the cells bound to its
         // row in place, so the cell that sent it is still there for the
@@ -176,7 +185,7 @@ impl BrowseTab {
             current_sort: init.initial_sort,
             current_filter: initial_filter,
             current_columns: Vec::new(),
-            current_result: None,
+            page: None,
             shown_view: None,
             current_selection: None,
             current_total_rows: None,
@@ -201,6 +210,8 @@ impl BrowseTab {
             filter_badge: imp.filter_badge.get(),
             filter_strip: Some(filter_strip),
             insert_button: imp.insert_button.get(),
+            delete_button: imp.delete_button.get(),
+            delete_action,
             pending_revealer: imp.pending_revealer.get(),
             save_button: imp.save_button.get(),
             discard_button: imp.discard_button.get(),
@@ -209,6 +220,8 @@ impl BrowseTab {
             pending_label: imp.pending_label.get(),
             grid_sink,
             suppress_combo_emit: Cell::new(true),
+            confirming_delete: None,
+            next_confirmation: 0,
         };
         imp.model.replace(Some(model));
         imp.link_watch.replace(Some(WatchForwarder::new(
@@ -278,10 +291,6 @@ impl BrowseTab {
         self.imp().model.try_borrow().ok()?.as_ref().map(read)
     }
 
-    pub fn snapshot(&self) -> Option<QueryResult> {
-        self.read(|model| model.current_result.clone()).flatten()
-    }
-
     pub fn columns(&self) -> Vec<ColumnInfo> {
         self.read(|model| model.current_columns.clone()).unwrap_or_default()
     }
@@ -315,7 +324,9 @@ impl BrowseTab {
         self.connect_closure(
             "copy-to-clipboard",
             false,
-            glib::closure_local!(move |tab: &Self, text: String| f(tab, text)),
+            glib::closure_local!(move |tab: &Self, text: glib::BoxedAnyObject| {
+                f(tab, text.borrow::<String>().clone());
+            }),
         )
     }
 
@@ -371,7 +382,9 @@ impl BrowseTab {
     fn emit_output(&self, output: BrowseTabOutput) {
         match output {
             BrowseTabOutput::StateChanged => self.emit_by_name::<()>("state-changed", &[]),
-            BrowseTabOutput::CopyToClipboard(text) => self.emit_by_name::<()>("copy-to-clipboard", &[&text]),
+            BrowseTabOutput::CopyToClipboard(text) => {
+                self.emit_by_name::<()>("copy-to-clipboard", &[&glib::BoxedAnyObject::new(text)]);
+            }
             BrowseTabOutput::ExportResults(request) => {
                 self.emit_by_name::<()>("export-results", &[&glib::BoxedAnyObject::new(request)]);
             }
@@ -444,26 +457,30 @@ impl BrowseTab {
         });
     }
 
-    /// Set the focused cell to NULL, for Ctrl+Shift+N. A locked cell
-    /// lets the key go on.
-    fn set_focused_cell_null(&self) -> glib::Propagation {
-        // `RootExt::focus` would return the window itself.
-        let focus = self
-            .root()
-            .and_downcast::<gtk::Window>()
-            .and_then(|window| gtk::prelude::GtkWindowExt::focus(&window));
-        let Some(cell) = focus.as_ref().and_then(GridCell::from_focus) else {
-            return glib::Propagation::Proceed;
-        };
-        let (None, Some(row)) = (cell.lock(), cell.row()) else {
-            return glib::Propagation::Proceed;
-        };
-        self.send(BrowseTabInput::GridSetCellValue {
-            row,
-            column: cell.column(),
-            preset: CellPreset::Null,
+    /// `tab.delete-rows`, which the Delete key and the Delete button
+    /// both name. While it is disabled the key goes on to the window.
+    fn install_delete_action(&self) -> gio::SimpleAction {
+        let action = gio::SimpleAction::new("delete-rows", None);
+        action.set_enabled(false);
+        let tab = self.downgrade();
+        action.connect_activate(move |_, _| {
+            let Some(tab) = tab.upgrade() else {
+                return;
+            };
+            let rows = tab.read(BrowseModel::selected_rows).unwrap_or_default();
+            tab.send(BrowseTabInput::DeleteRows(rows));
         });
-        glib::Propagation::Stop
+        let group = gio::SimpleActionGroup::new();
+        group.add_action(&action);
+        self.insert_action_group("tab", Some(&group));
+
+        let shortcuts = gtk::ShortcutController::new();
+        shortcuts.add_shortcut(gtk::Shortcut::new(
+            Some(gtk::KeyvalTrigger::new(gdk::Key::Delete, gdk::ModifierType::empty())),
+            Some(gtk::NamedAction::new("tab.delete-rows")),
+        ));
+        self.add_controller(shortcuts);
+        action
     }
 }
 
@@ -471,15 +488,15 @@ impl From<GridMsg> for BrowseTabInput {
     fn from(msg: GridMsg) -> Self {
         match msg {
             GridMsg::SortChanged(col_idx, ascending) => Self::SortChanged { col_idx, ascending },
-            GridMsg::CellEdited { row, column, input } => Self::GridCellEdited { row, column, input },
+            GridMsg::Edit { row, column, edit } => Self::GridEdit { row, column, edit },
             GridMsg::CopyToClipboard(text) => Self::GridCopyToClipboard(text),
             GridMsg::ShowToast(text) => Self::GridShowToast(text),
-            GridMsg::CopyRowAsInsert { row } => Self::GridCopyRowAsInsert { row },
+            GridMsg::CopyRowsAsInsert { rows } => Self::GridCopyRowsAsInsert(rows),
             GridMsg::SetCellValue { row, column, preset } => Self::GridSetCellValue { row, column, preset },
             GridMsg::ExportResults(result) => Self::GridExportResults(result),
-            GridMsg::DeleteRowAt { row } => Self::GridDeleteRowAt { row },
+            GridMsg::DeleteRows { rows } => Self::DeleteRows(rows),
             GridMsg::InsertRow => Self::InsertRow,
-            GridMsg::DuplicateRow { row } => Self::DuplicateRow { row },
+            GridMsg::DuplicateRows { rows } => Self::DuplicateRows(rows),
         }
     }
 }
@@ -549,9 +566,10 @@ pub(crate) struct BrowseModel {
     /// schema and table.
     current_filter: tablepro_core::FilterSet,
     current_columns: Vec<ColumnInfo>,
-    current_result: Option<QueryResult>,
-    /// What `current_result` was read under. A read that fails while
-    /// asking for that same page again leaves it on screen.
+    /// The page on screen, whose rows the grid's store holds.
+    page: Option<PageState>,
+    /// What `page` was read under. A read that fails while asking for
+    /// that same page again leaves it on screen.
     shown_view: Option<PageView>,
     current_selection: Option<gtk::MultiSelection>,
     current_total_rows: Option<u64>,
@@ -588,6 +606,9 @@ pub(crate) struct BrowseModel {
     filter_badge: gtk::Label,
     filter_strip: Option<crate::ui::filter_strip::FilterStrip>,
     insert_button: gtk::Button,
+    delete_button: gtk::Button,
+    /// `tab.delete-rows`, enabled while the selection can be deleted.
+    delete_action: gio::SimpleAction,
     pending_revealer: gtk::Revealer,
     save_button: gtk::Button,
     discard_button: gtk::Button,
@@ -598,6 +619,8 @@ pub(crate) struct BrowseModel {
     /// Set until the first page lands, so the page-size dropdown being
     /// set from a restored state does not count as the user choosing.
     suppress_combo_emit: Cell<bool>,
+    confirming_delete: Option<ConfirmingDelete>,
+    next_confirmation: u64,
 }
 
 #[derive(Debug)]
@@ -632,16 +655,15 @@ pub(crate) enum BrowseTabInput {
     /// Queued after an insert, so the focus lands on the column view
     /// as it is once the insert is drawn.
     FocusInsertedDraft,
-    DeleteSelectedRow,
-    GridCellEdited {
+    DeleteRows(Vec<RowObject>),
+    /// Checked against the cell's lock before the tracker takes it.
+    GridEdit {
         row: RowObject,
         column: usize,
-        input: String,
+        edit: TrackerEdit,
     },
-    /// Cell context-menu "Set Value". The grid names the preset; the
-    /// tab resolves it against the column's declared type, because
-    /// only the tab holds the column metadata that says whether an
-    /// empty string is a value the column can hold.
+    /// A preset from a cell's menu or Ctrl+Backspace. The tab resolves it
+    /// against the column, so both paths reach the same value.
     GridSetCellValue {
         row: RowObject,
         column: usize,
@@ -650,15 +672,8 @@ pub(crate) enum BrowseTabInput {
     GridShowToast(String),
     GridExportResults(QueryResult),
     ExportCurrentPage,
-    GridDeleteRowAt {
-        row: RowObject,
-    },
-    GridCopyRowAsInsert {
-        row: RowObject,
-    },
-    DuplicateRow {
-        row: RowObject,
-    },
+    GridCopyRowsAsInsert(Vec<RowObject>),
+    DuplicateRows(Vec<RowObject>),
     GridCopyToClipboard(String),
     Undo,
     Redo,
@@ -670,9 +685,11 @@ pub(crate) enum BrowseTabInput {
     DiscardAndRefresh,
     /// A delete the user confirmed, or one small enough to need no
     /// confirmation.
-    MarkRowsDeleted {
-        rows: Vec<(RowKey, Vec<Value>)>,
-        drafts: Vec<u64>,
+    MarkRowsDeleted(RowDeletion),
+    /// The user answered the bulk delete confirmation `ticket` opened.
+    BulkDeleteAnswered {
+        ticket: u64,
+        confirmed: bool,
     },
     /// The save landed. Edits made while it ran stay pending.
     SaveCommitted,
@@ -743,17 +760,6 @@ impl BrowseModel {
         }
     }
 
-    /// A page's rows, each named by its primary key, which is the key
-    /// the tracker files its edits under.
-    fn page_rows(&self, result: &QueryResult) -> Vec<RowObject> {
-        let pk_indices = self.pk_indices();
-        result
-            .rows
-            .iter()
-            .map(|cells| RowObject::persisted(persisted_key(cells, &pk_indices), cells.clone().into()))
-            .collect()
-    }
-
     /// Checked again here because a keyboard shortcut or a late event
     /// can reach a locked cell.
     fn refuses_edit(&self, row: &RowObject, column: usize) -> bool {
@@ -771,51 +777,41 @@ impl BrowseModel {
         false
     }
 
-    fn pk_indices(&self) -> Vec<usize> {
-        self.current_columns
-            .iter()
-            .enumerate()
-            .filter(|(_, c)| c.primary_key)
-            .map(|(i, _)| i)
-            .collect()
-    }
-
-    /// What the paginator's Export button writes. Built from the live
-    /// grid so it matches the context menu's Export Results row for
-    /// row; falls back to the fetch itself before the grid exists.
+    /// What the paginator's Export button writes: the grid's rows, so
+    /// it matches the context menu's Export Results row for row.
     fn export_payload(&self) -> Option<QueryResult> {
-        let current = self.current_result.as_ref()?;
-        let Some(column_view) = self.current_column_view.as_ref() else {
-            return Some(current.clone());
+        let page = self.page.as_ref()?;
+        let rows = self
+            .current_column_view
+            .as_ref()
+            .map(|column_view| export_snapshot(column_view, &self.grid_context()))
+            .unwrap_or_default();
+        Some(snapshot_result(page.result_columns.clone(), &rows, page.truncated))
+    }
+
+    /// Resolve a preset against the column it lands in. The menu offers
+    /// only the ones the cell can take; the keyboard's Set NULL reaches
+    /// here for any cell, and a column that refuses the value says why,
+    /// as committing an empty cell would.
+    fn resolve_cell_preset(
+        &self,
+        preset: CellPreset,
+        row: &RowObject,
+        col: usize,
+    ) -> Option<Result<CellInput, String>> {
+        let Some(column) = self.current_columns.get(col) else {
+            tracing::error!(col, "a preset reached a column the tab does not have");
+            return None;
         };
-        Some(super::grid::export_snapshot(
-            column_view,
-            &current.columns,
-            current.truncated,
-            &self.grid_context(),
-        ))
-    }
-
-    /// Resolve a "Set Value" preset against the column it lands in.
-    /// The grid offers Empty only on free-text columns, so the
-    /// fallback here is for the keyboard and action-activation paths:
-    /// an empty string means NULL on a column that takes one, and is
-    /// refused on a column that does not, exactly as typing an empty
-    /// value into the cell would be.
-    fn resolve_cell_preset(&self, preset: CellPreset, col_index: usize, context: EditContext) -> Result<Value, String> {
-        match preset {
-            CellPreset::Null => Ok(Value::Null),
-            CellPreset::Empty => parse_input_for_column("", self.current_columns.get(col_index), context),
-        }
-    }
-
-    /// Whether an edit lands in a draft row, which is the one place an
-    /// empty cell can mean the server's default.
-    fn edit_context_for(row: &RowObject) -> EditContext {
-        match row.id() {
-            GridRowId::Draft(_) => EditContext::InsertDraft,
-            GridRowId::Result | GridRowId::Unkeyed | GridRowId::Persisted(_) => EditContext::UpdateRow,
-        }
+        let presets = cell_presets(column, row.id());
+        Some(match preset {
+            CellPreset::Empty => parse_edit_text("", column, edit_context(row.id()))
+                .map_err(|error| crate::ui::error_text::edit_parse_message(&error)),
+            CellPreset::Null if presets.null => Ok(CellInput::Value(Value::Null)),
+            CellPreset::Null => Err(crate::ui::error_text::edit_parse_message(&EditParseError::Required)),
+            CellPreset::Default if presets.default => Ok(CellInput::Default),
+            CellPreset::Default => Err(crate::i18n::gettext("This cell can't take the column's default")),
+        })
     }
 
     fn table_label(&self) -> String {
@@ -855,16 +851,30 @@ impl BrowseModel {
     /// row keeps its object, so the selection and the focus stay on it.
     fn apply_tracker_delta(&mut self, delta: &TrackerDelta, fx: &mut Effects) {
         if let Some(store) = self.list_store() {
-            for change in &delta.visual {
-                apply_visual_change(&store, &mut self.row_index, change);
-            }
+            apply_draft_changes(&store, &mut self.row_index, delta);
         }
-        for key in &delta.rows {
+        for key in &delta.changed {
             if let Some(row) = self.row_index.get(key) {
                 row.bump_revision();
             }
         }
         self.sync_pending_chrome(delta.pending_count, fx);
+        self.sync_delete_action();
+    }
+
+    fn selected_rows(&self) -> Vec<RowObject> {
+        self.current_selection.as_ref().map(selected_rows).unwrap_or_default()
+    }
+
+    /// The rows on screen can change under the selection without it
+    /// changing, so this runs on every delta and page as well.
+    fn sync_delete_action(&self) {
+        show_delete_availability(
+            &self.delete_action,
+            &self.delete_button,
+            &self.selected_rows(),
+            self.read_only,
+        );
     }
 
     /// The footer and the tab's dirty flag, which App turns into the
@@ -887,21 +897,21 @@ impl BrowseModel {
         self.apply_tracker_delta(&delta, fx);
     }
 
-    /// A typed or preset value for one cell, against the row the edit
-    /// was made on, wherever it sits now.
-    fn edit_cell(&mut self, row: &RowObject, col: usize, value: Value, fx: &mut Effects) {
-        match row.id() {
-            GridRowId::Draft(draft_id) => {
+    /// A preset value for one cell, against the row the edit was made
+    /// on, wherever it sits now.
+    fn edit_cell(&mut self, row: &RowObject, col: usize, input: CellInput, fx: &mut Effects) {
+        match (row.id(), input) {
+            (GridRowId::Draft(draft_id), input) => {
                 self.apply_edit(
                     TrackerEdit::DraftCell {
                         draft_id: *draft_id,
                         col,
-                        value,
+                        input,
                     },
                     fx,
                 );
             }
-            GridRowId::Persisted(row_key) => {
+            (GridRowId::Persisted(row_key), CellInput::Value(value)) => {
                 let Some(original) = row.cell(col).cloned() else {
                     return;
                 };
@@ -915,7 +925,7 @@ impl BrowseModel {
                     fx,
                 );
             }
-            GridRowId::Result | GridRowId::Unkeyed => {}
+            (GridRowId::Persisted(_), CellInput::Default) | (GridRowId::Result | GridRowId::Unkeyed, _) => {}
         }
     }
 
@@ -1007,42 +1017,20 @@ impl BrowseModel {
         *self.pending_focus_restore.borrow_mut() = row.id().tracker_key();
     }
 
-    /// Scroll + focus + select the freshly-prepended draft row, then
-    /// open its first editable cell for input. Queued on idle so the
-    /// inner-stack flip (empty → grid) has time to allocate the
-    /// ScrolledWindow's adjustments before `cv.scroll_to(...)` runs:
-    /// in the same tick GTK aborts with
+    /// Edit the first editable cell of the new draft, which is always
+    /// the top row. Queued on idle so the inner-stack flip (empty to
+    /// grid) has allocated the ScrolledWindow's adjustments before the
+    /// grid scrolls: in the same tick GTK aborts with
     /// `gtk_list_base_update_adjustments: bounds.y == 0`.
     fn focus_inserted_draft(&self) {
         let Some(cv) = self.current_column_view.clone() else {
             return;
         };
-        let selection = self.current_selection.clone();
         glib::idle_add_local_once(move || {
-            // The column view may be detached by now (F5 between the
-            // insert and this idle). The row was inserted; only the
-            // auto-edit is missed.
-            if cv.root().is_none() {
-                return;
-            }
-            // New drafts always land at position 0 (prepended).
-            if let Some(sel) = selection.as_ref() {
-                sel.select_item(0, true);
-            }
-            cv.scroll_to(
-                0,
-                None,
-                gtk::ListScrollFlags::FOCUS | gtk::ListScrollFlags::SELECT,
-                None,
-            );
-            let Some(window) = cv.root().and_then(|r| r.dynamic_cast::<gtk::Window>().ok()) else {
-                return;
-            };
-            let Some(focused) = gtk::prelude::GtkWindowExt::focus(&window) else {
-                return;
-            };
-            if let Some(cell) = GridCell::from_focus(&focused) {
-                super::grid::enter_edit_mode(&cell);
+            // F5 between the insert and this idle detaches the column
+            // view. The row was inserted; only the edit is missed.
+            if cv.root().is_some() {
+                edit_row(&cv, 0);
             }
         });
     }
@@ -1068,60 +1056,75 @@ impl BrowseModel {
         }
     }
 
-    /// Build the `ColumnView` once both the columns and the current
-    /// page are in. Until then the stack stays on the loading page, so
-    /// the user cannot edit cells whose editability is not known yet.
+    /// The columns came back the same, so the page on screen still
+    /// stands under them: only the chrome follows.
     fn render_grid_if_ready(&mut self, fx: &mut Effects) {
-        let Some(result) = self.current_result.clone() else {
-            return;
-        };
-        if self.current_columns.is_empty() {
+        if self.page.is_none() || !self.column_view_matches_current_columns() {
             return;
         }
+        self.refresh_grid_chrome();
+        self.restore_focused_row();
+        fx.output(BrowseTabOutput::StateChanged);
+    }
 
-        // Same columns as the last render (sort flips, page changes,
-        // save reloads): keep the `ColumnView` and only refresh the
-        // `ListStore`.
+    /// Put a page's rows on screen. Under the same columns the store
+    /// takes them in one splice, which the column view sees as a single
+    /// change; otherwise the view is built for them.
+    fn show_page(&mut self, rows: Vec<RowObject>, fx: &mut Effects) {
+        let Some(page) = self.page.as_ref() else {
+            return;
+        };
         if self.column_view_matches_current_columns()
             && let Some(store) = self.list_store()
         {
-            self.refresh_grid_data(&result, &store);
-            self.refresh_grid_chrome(&result);
+            store.splice(0, store.n_items(), &rows);
+            self.reindex_rows();
+            self.sync_delete_action();
+            self.refresh_grid_chrome();
             self.restore_focused_row();
             fx.output(BrowseTabOutput::StateChanged);
             return;
         }
 
         clear_box(&self.grid_holder);
-        let tab_ctx = self.grid_context();
+        let content = GridContent {
+            columns: page.result_columns.clone(),
+            rows,
+            truncated: page.truncated,
+        };
         let (column_view, selection) = build_column_view(
-            &result,
-            self.page_rows(&result),
+            content,
             &self.current_columns,
             self.grid_sink.clone(),
             self.current_sort,
             true,
-            tab_ctx,
+            self.grid_context(),
         );
         self.current_selection = Some(selection);
         self.current_column_view = Some(column_view.clone());
         self.rendered_columns = self.current_columns.clone();
 
         // The selection model is new per rebuild, so the previous
-        // handler goes with the old one.
-        let selection_label_for_signal = self.selection_label.clone();
+        // handler goes with the old one. The tab holds the selection, so
+        // the handler holds the tab's widgets weakly.
         if let Some(sel) = self.current_selection.as_ref() {
+            let label = self.selection_label.downgrade();
+            let button = self.delete_button.downgrade();
+            let action = self.delete_action.clone();
+            let read_only = self.read_only;
             sel.connect_selection_changed(move |sel, _, _| {
+                let (Some(label), Some(button)) = (label.upgrade(), button.upgrade()) else {
+                    return;
+                };
                 let n = u32::try_from(sel.selection().size()).unwrap_or(u32::MAX);
-                update_selection_chrome(&selection_label_for_signal, n);
+                update_selection_chrome(&label, n);
+                show_delete_availability(&action, &button, &selected_rows(sel), read_only);
             });
             update_selection_chrome(&self.selection_label, 0);
         }
 
-        // Pending draft rows survive page changes, sort flips and F5:
-        // the tracker holds them, and the rebuilt store would not.
-        self.reprepend_drafts();
         self.reindex_rows();
+        self.sync_delete_action();
 
         let scrolled = gtk::ScrolledWindow::builder()
             .child(&column_view)
@@ -1129,7 +1132,7 @@ impl BrowseModel {
             .vexpand(true)
             .build();
         self.grid_holder.append(&scrolled);
-        self.refresh_grid_chrome(&result);
+        self.refresh_grid_chrome();
         self.restore_focused_row();
         fx.output(BrowseTabOutput::StateChanged);
     }
@@ -1159,18 +1162,8 @@ impl BrowseModel {
         self.rendered_columns.clear();
         self.row_index = GridRowIndex::default();
         update_selection_chrome(&self.selection_label, 0);
+        self.sync_delete_action();
         self.show_loading();
-    }
-
-    /// New rows under the same columns. The drafts go back on top so
-    /// they survive the swap.
-    fn refresh_grid_data(&mut self, result: &QueryResult, store: &gtk::gio::ListStore) {
-        store.remove_all();
-        for row in self.page_rows(result) {
-            store.append(&row);
-        }
-        self.reprepend_drafts();
-        self.reindex_rows();
     }
 
     fn reindex_rows(&mut self) {
@@ -1181,14 +1174,14 @@ impl BrowseModel {
     }
 
     /// Paginator label, button sensitivity and stack child: chrome that
-    /// depends on the result but not the column structure.
-    fn refresh_grid_chrome(&self, result: &QueryResult) {
+    /// depends on the page but not the column structure.
+    fn refresh_grid_chrome(&self) {
         self.refresh_crud_buttons();
         self.update_paginator_label();
         let on_first_page = self.current_offset == 0;
         self.first_button.set_sensitive(!on_first_page);
         self.prev_button.set_sensitive(!on_first_page);
-        let n_rows = result.rows.len() as u64;
+        let n_rows = self.page.as_ref().map_or(0, |page| page.row_count as u64);
         self.next_button.set_sensitive(n_rows == self.page_size);
         // Last only enables when the total is known and the tab is not
         // already on the last page.
@@ -1208,17 +1201,8 @@ impl BrowseModel {
     /// status page hid the column view, and inserting a draft into it
     /// then scrolled a view with no allocated adjustments.
     fn refresh_inner_stack_visibility(&self) {
-        if self.current_result.is_some() {
+        if self.page.is_some() {
             self.inner_stack.set_visible_child_name("grid");
-        }
-    }
-
-    fn reprepend_drafts(&self) {
-        let Some(store) = self.list_store() else {
-            return;
-        };
-        for draft in self.tracker.drafts() {
-            store.insert(0, &RowObject::draft(draft.draft_id));
         }
     }
 
@@ -1269,11 +1253,11 @@ impl BrowseModel {
     }
 
     fn update_paginator_label(&self) {
-        let Some(result) = self.current_result.as_ref() else {
+        let Some(page) = self.page.as_ref() else {
             self.paginator_label.set_label("");
             return;
         };
-        let n_rows = result.rows.len();
+        let n_rows = page.row_count;
         if n_rows == 0 {
             // Reachable when the user navigated past the end of a
             // table that shrank in another session, before the count
@@ -1282,8 +1266,8 @@ impl BrowseModel {
                 .set_label(&crate::i18n::gettext("No rows on this page"));
             return;
         }
-        let start = self.current_offset + 1;
-        let end = self.current_offset + n_rows as u64;
+        let start = page.start_ordinal + 1;
+        let end = page.start_ordinal + n_rows as u64;
         let start_s = format_thousands(start);
         let end_s = format_thousands(end);
         let label = match self.current_total_rows {
@@ -1312,7 +1296,7 @@ impl BrowseModel {
     /// before are dropped, so a later reload does not render against
     /// them before its own page arrives.
     fn show_error(&mut self, message: &str) {
-        self.current_result = None;
+        self.page = None;
         self.shown_view = None;
         self.current_total_rows = None;
         self.paginator_label.set_label("");
@@ -1324,16 +1308,43 @@ impl BrowseModel {
         self.inner_stack.set_visible_child_name("error");
     }
 
-    fn on_rows_loaded(&mut self, offset: u64, mut result: QueryResult, fx: &mut Effects) {
+    /// Take the page apart into rows the store owns. Each row's cells
+    /// move into it, and the identity cells after them name the row and
+    /// are dropped, so nothing past the visible columns reaches a copy
+    /// or an export. The tab's drafts stay on top.
+    fn on_rows_loaded(&mut self, offset: u64, reply: PageReply, fx: &mut Effects) {
         self.current_offset = offset;
-        // A zero-row page has no columns of its own; the catalog's list
-        // lets the headers render anyway.
-        if result.columns.is_empty() && !self.current_columns.is_empty() {
-            result.columns = result_columns(&self.current_columns);
-        }
-        self.current_result = Some(result);
+        let PageReply { result, layout, .. } = reply;
+        let QueryResult {
+            columns,
+            rows,
+            truncated,
+        } = result;
+        // The tracker saves a row by its primary key, so that is what
+        // names it here too.
+        let keys = RowKeyBuilder::for_page(&pk_identity(&self.current_columns), &self.current_columns, &layout);
+        let row_count = rows.len();
+        let drafts = self.tracker.drafts();
+        let mut objects = Vec::with_capacity(drafts.len() + row_count);
+        objects.extend(drafts.iter().rev().map(|draft| RowObject::draft(draft.draft_id)));
+        let visible_end = layout.visible.end;
+        objects.extend(rows.into_iter().map(|mut cells| {
+            let identity = cells.split_off(visible_end.min(cells.len()));
+            let key = keys.as_ref().and_then(|keys| keys.key_for(&cells, &identity));
+            RowObject::persisted(key, cells.into())
+        }));
+        let result_columns = match columns.len() == layout.visible.len() {
+            true => columns,
+            false => columns.get(layout.visible.clone()).map(Arc::from).unwrap_or_default(),
+        };
+        self.page = Some(PageState {
+            result_columns,
+            truncated,
+            row_count,
+            start_ordinal: offset,
+        });
         self.shown_view = Some(self.page_view());
-        self.render_grid_if_ready(fx);
+        self.show_page(objects, fx);
     }
 
     fn page_view(&self) -> PageView {
@@ -1349,7 +1360,7 @@ impl BrowseModel {
     /// and a schema change do, the page stays and a toast says why; any
     /// other page on screen no longer matches what the tab asks for.
     fn on_read_failed(&mut self, message: &str, fx: &mut Effects) {
-        if self.current_result.is_some() && self.shown_view.as_ref() == Some(&self.page_view()) {
+        if self.page.is_some() && self.shown_view.as_ref() == Some(&self.page_view()) {
             self.refresh_inner_stack_visibility();
             fx.output(BrowseTabOutput::ShowToast(crate::i18n::gettext_f(
                 "Couldn't refresh the rows: {error}",
@@ -1364,21 +1375,17 @@ impl BrowseModel {
         // A page read under other columns would put their names in the
         // headers, so the grid waits for the page read under these.
         if self.current_columns != columns {
-            self.current_result = None;
+            self.page = None;
             self.shown_view = None;
             self.drop_grid();
         }
         self.current_columns = columns.clone();
+        self.rebase_confirming_delete(fx);
         let delta = self.tracker.set_target(SaveTarget {
             table: self.table_ref(),
             columns: columns.clone(),
         });
         self.apply_tracker_delta(&delta, fx);
-        if let Some(result) = self.current_result.as_mut()
-            && result.columns.is_empty()
-        {
-            result.columns = result_columns(&columns);
-        }
         self.refresh_crud_buttons();
         // Operator lists narrow per type, so the strip rebuilds against
         // the new columns.
@@ -1519,28 +1526,33 @@ impl BrowseModel {
                 self.fetch(BrowseRequestKind::Page, fx);
                 fx.output(BrowseTabOutput::StateChanged);
             }
-            BrowseTabInput::DuplicateRow { row } => {
-                if self.current_columns.is_empty() || self.grid_is_stale() {
+            BrowseTabInput::DuplicateRows(rows) => {
+                if self.current_columns.is_empty() || self.grid_is_stale() || rows.is_empty() {
                     return;
                 }
-                // With its pending edits, since the copy is of the row the
-                // user is looking at.
-                let source_cells = self.grid_context().effective_cells(&row);
-                // The duplicate is a new row, so values the database owns
-                // (key, identity, generated) are left to it.
-                let values: Vec<Value> = self
-                    .current_columns
+                let ctx = self.grid_context();
+                let copies = rows
                     .iter()
-                    .enumerate()
-                    .map(|(i, col)| {
-                        if col.primary_key || col.is_auto_increment || col.is_generated {
-                            Value::Null
-                        } else {
-                            source_cells.get(i).cloned().unwrap_or(Value::Null)
-                        }
+                    .map(|row| {
+                        // With its pending edits, since the copy is of the
+                        // row the user is looking at.
+                        let source = ctx.effective_inputs(row);
+                        // The duplicate is a new row, so values the database
+                        // owns (key, identity, generated) are left to it.
+                        self.current_columns
+                            .iter()
+                            .enumerate()
+                            .map(|(i, col)| {
+                                if col.primary_key || col.is_auto_increment || col.is_generated {
+                                    new_draft_cell(col)
+                                } else {
+                                    source.get(i).cloned().unwrap_or(CellInput::Value(Value::Null))
+                                }
+                            })
+                            .collect()
                     })
                     .collect();
-                self.apply_edit(TrackerEdit::Insert { values }, fx);
+                self.apply_edit(TrackerEdit::InsertDrafts { rows: copies }, fx);
                 self.refresh_inner_stack_visibility();
                 fx.input(BrowseTabInput::FocusInsertedDraft);
             }
@@ -1548,51 +1560,33 @@ impl BrowseModel {
                 if self.current_columns.is_empty() {
                     return;
                 }
-                let values: Vec<Value> = self.current_columns.iter().map(|_| Value::Null).collect();
-                self.apply_edit(TrackerEdit::Insert { values }, fx);
+                let cells = self.current_columns.iter().map(new_draft_cell).collect();
+                self.apply_edit(TrackerEdit::InsertDrafts { rows: vec![cells] }, fx);
                 self.refresh_inner_stack_visibility();
                 fx.input(BrowseTabInput::FocusInsertedDraft);
             }
-            BrowseTabInput::DeleteSelectedRow => self.delete_selected_rows(fx),
-            BrowseTabInput::GridCellEdited { row, column, input } => {
+            BrowseTabInput::DeleteRows(rows) => self.delete_rows(&rows, fx),
+            BrowseTabInput::GridEdit { row, column, edit } => {
                 // The cell shows what was typed until its row is drawn again.
                 if self.refuses_edit(&row, column) {
                     row.bump_revision();
                     return;
                 }
-                // A column that holds line breaks keeps them; everywhere
-                // else a pasted newline would reach the SQL layer.
-                let keeps_line_breaks = self
-                    .current_columns
-                    .get(column)
-                    .is_some_and(|c| c.column_type.kind.accepts_line_breaks());
-                let normalized = match keeps_line_breaks {
-                    true => input,
-                    false => normalize_single_line_input(&input),
-                };
-                let col = self.current_columns.get(column);
-                let new = match parse_input_for_column(&normalized, col, Self::edit_context_for(&row)) {
-                    Ok(v) => v,
-                    Err(message) => {
-                        fx.output(BrowseTabOutput::ShowToast(message));
-                        row.bump_revision();
-                        return;
-                    }
-                };
-                self.edit_cell(&row, column, new, fx);
+                self.apply_edit(edit, fx);
             }
             BrowseTabInput::GridSetCellValue { row, column, preset } => {
                 if self.refuses_edit(&row, column) {
                     return;
                 }
-                let value = match self.resolve_cell_preset(preset, column, Self::edit_context_for(&row)) {
-                    Ok(value) => value,
-                    Err(message) => {
+                let input = match self.resolve_cell_preset(preset, &row, column) {
+                    Some(Ok(input)) => input,
+                    Some(Err(message)) => {
                         fx.output(BrowseTabOutput::ShowToast(message));
                         return;
                     }
+                    None => return,
                 };
-                self.edit_cell(&row, column, value, fx);
+                self.edit_cell(&row, column, input, fx);
             }
             BrowseTabInput::GridShowToast(message) => {
                 fx.output(BrowseTabOutput::ShowToast(message));
@@ -1600,7 +1594,7 @@ impl BrowseModel {
             BrowseTabInput::GridExportResults(mut result) => {
                 // The grid owns the rows it shows; whether the fetch was
                 // cut short belongs to the tab.
-                result.truncated = self.current_result.as_ref().is_some_and(|r| r.truncated);
+                result.truncated = self.page.as_ref().is_some_and(|page| page.truncated);
                 fx.output(BrowseTabOutput::ExportResults(ExportRequest {
                     result,
                     name: self.export_name(),
@@ -1618,24 +1612,9 @@ impl BrowseModel {
                     target: Some(self.sql_target()),
                 }));
             }
-            BrowseTabInput::GridDeleteRowAt { row } => {
-                if self.grid_is_stale() {
-                    return;
-                }
-                let (Some(row_key), Some(cells)) = (row.key(), row.cells()) else {
-                    return;
-                };
-                self.apply_edit(
-                    TrackerEdit::Delete {
-                        row_key: row_key.clone(),
-                        original_values: cells.to_vec(),
-                    },
-                    fx,
-                );
-            }
-            BrowseTabInput::GridCopyRowAsInsert { row } => {
+            BrowseTabInput::GridCopyRowsAsInsert(rows) => {
                 if !self.grid_is_stale() {
-                    self.copy_row_as_insert(&row, fx);
+                    self.copy_rows_as_insert(&rows, fx);
                 }
             }
             BrowseTabInput::GridCopyToClipboard(text) => {
@@ -1664,19 +1643,33 @@ impl BrowseModel {
                 self.apply_tracker_delta(&delta, fx);
                 self.fetch(BrowseRequestKind::Page, fx);
             }
-            BrowseTabInput::MarkRowsDeleted { rows, drafts } => {
-                for (row_key, original_values) in rows {
-                    self.apply_edit(
-                        TrackerEdit::Delete {
-                            row_key,
-                            original_values,
-                        },
-                        fx,
-                    );
+            BrowseTabInput::BulkDeleteAnswered { ticket, confirmed } => {
+                // An answer to a confirmation the tab already cancelled
+                // or replaced.
+                if self
+                    .confirming_delete
+                    .as_ref()
+                    .is_none_or(|pending| pending.ticket != ticket)
+                {
+                    return;
                 }
-                for draft_id in drafts {
-                    self.apply_edit(TrackerEdit::DiscardDraft { draft_id }, fx);
+                if !confirmed {
+                    self.confirming_delete = None;
+                    return;
                 }
+                self.rebase_confirming_delete(fx);
+                if let Some(pending) = self.confirming_delete.take() {
+                    fx.input(BrowseTabInput::MarkRowsDeleted(pending.deletion));
+                }
+            }
+            BrowseTabInput::MarkRowsDeleted(deletion) => {
+                self.apply_edit(
+                    TrackerEdit::DeleteRows {
+                        persisted: deletion.persisted,
+                        drafts: deletion.drafts,
+                    },
+                    fx,
+                );
                 // A bulk action ends the selection it acted on.
                 if let Some(selection) = self.current_selection.as_ref() {
                     selection.unselect_all();
@@ -1742,112 +1735,155 @@ impl BrowseModel {
         );
     }
 
-    /// Mark the selected rows for deletion: persisted rows go to the
-    /// tracker, drafts are dropped. Nothing leaves the tab until Save.
-    fn delete_selected_rows(&self, fx: &mut Effects) {
-        let Some(selection) = self.current_selection.as_ref() else {
-            return;
-        };
-        let positions = super::grid::selected_positions(selection);
-        if positions.is_empty() {
+    /// Mark saved rows for deletion and drop drafts. Nothing leaves the
+    /// tab until Save. The action is off for rows this cannot delete, so
+    /// such rows reaching here is a bug, which changes nothing.
+    fn delete_rows(&mut self, rows: &[RowObject], fx: &mut Effects) {
+        if self.grid_is_stale() {
             return;
         }
-        let mut snapshot: Vec<(RowKey, Vec<Value>)> = Vec::new();
-        let mut draft_ids: Vec<u64> = Vec::new();
-        let mut had_unkeyed_row = false;
-        for row in positions
-            .iter()
-            .filter_map(|position| selection.item(*position).and_downcast::<RowObject>())
-        {
-            match row.id() {
-                GridRowId::Draft(draft_id) => draft_ids.push(*draft_id),
-                GridRowId::Persisted(key) => {
-                    snapshot.push((key.clone(), row.cells().map(|cells| cells.to_vec()).unwrap_or_default()));
-                }
-                GridRowId::Unkeyed | GridRowId::Result => had_unkeyed_row = true,
-            }
-        }
-        // A selection of drafts only needs no key.
-        if had_unkeyed_row {
-            fx.output(BrowseTabOutput::ShowSelectionAlert {
-                title: crate::i18n::gettext("Cannot delete"),
-                body: crate::i18n::gettext("This table has no primary key, so editing is disabled."),
-            });
+        if self.read_only {
+            tracing::error!("Delete reached a read-only tab");
             return;
         }
-        if snapshot.is_empty() && draft_ids.is_empty() {
+        let deletion = plan_row_deletion(rows);
+        if deletion.unkeyed > 0 {
+            tracing::error!(unkeyed = deletion.unkeyed, "Delete reached rows with no key");
             return;
         }
-        let count = snapshot.len() + draft_ids.len();
-        if count < BULK_DELETE_CONFIRM_THRESHOLD {
-            fx.input(BrowseTabInput::MarkRowsDeleted {
-                rows: snapshot,
-                drafts: draft_ids,
-            });
+        if deletion.is_empty() {
             return;
         }
+        if deletion.len() < BULK_DELETE_CONFIRM_THRESHOLD {
+            fx.input(BrowseTabInput::MarkRowsDeleted(deletion));
+            return;
+        }
+        self.confirm_delete(deletion);
+    }
+
+    fn confirm_delete(&mut self, deletion: RowDeletion) {
+        let count = deletion.len();
         let title = crate::i18n::ngettext_f(
             "Delete {n} row?",
             "Delete {n} rows?",
             u32::try_from(count).unwrap_or(u32::MAX),
             &[("n", &count.to_string())],
         );
-        let body =
-            crate::i18n::gettext("These rows will be marked for deletion. They aren't removed until you click Save.");
+        let body = deletion.confirmation_body();
         let dialog = adw::AlertDialog::new(Some(&title), Some(&body));
         dialog.add_response("cancel", &crate::i18n::gettext("Cancel"));
         dialog.add_response("delete", &crate::i18n::gettext("Delete"));
         dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
         dialog.set_default_response(Some("cancel"));
         dialog.set_close_response("cancel");
-        let pending = RefCell::new(Some((snapshot, draft_ids)));
+        // A second Delete while one waits replaces it.
+        self.cancel_confirming_delete();
+        let ticket = self.next_confirmation;
+        self.next_confirmation += 1;
         let tab = self.this.clone();
-        dialog.connect_response(None, move |dlg, response| {
-            dlg.close();
-            if response == "delete"
-                && let Some((rows, drafts)) = pending.borrow_mut().take()
-                && let Some(tab) = tab.upgrade()
-            {
-                tab.send(BrowseTabInput::MarkRowsDeleted { rows, drafts });
+        dialog.connect_response(None, move |_, response| {
+            if let Some(tab) = tab.upgrade() {
+                tab.send(BrowseTabInput::BulkDeleteAnswered {
+                    ticket,
+                    confirmed: response == "delete",
+                });
             }
         });
         dialog.present(Some(&self.inner_stack));
+        self.confirming_delete = Some(ConfirmingDelete {
+            ticket,
+            deletion,
+            columns: self.current_columns.clone(),
+            dialog,
+        });
     }
 
-    /// One row as an INSERT for the server the tab is connected to,
+    fn cancel_confirming_delete(&mut self) {
+        if let Some(pending) = self.confirming_delete.take() {
+            pending.dialog.force_close();
+        }
+    }
+
+    /// Moves a waiting delete's rows onto the columns the tab read
+    /// since. A key read under another primary key can name another
+    /// row, so then the delete is cancelled rather than sent with it.
+    fn rebase_confirming_delete(&mut self, fx: &mut Effects) {
+        let Some(pending) = self.confirming_delete.as_mut() else {
+            return;
+        };
+        if pending.columns == self.current_columns {
+            return;
+        }
+        let layout = ColumnRelayout::new(&pending.columns, &self.current_columns);
+        let moved: Option<Vec<(RowKey, Arc<[Value]>)>> = pending
+            .deletion
+            .persisted
+            .iter()
+            .map(|(key, values)| {
+                layout
+                    .key(key)
+                    .ok()
+                    .map(|()| (key.clone(), layout.fetched(values).into()))
+            })
+            .collect();
+        match moved {
+            Some(rows) => {
+                pending.deletion.persisted = rows;
+                pending.columns = self.current_columns.clone();
+            }
+            None => {
+                self.cancel_confirming_delete();
+                fx.output(BrowseTabOutput::ShowToast(crate::i18n::gettext(
+                    "The table's primary key changed, so no rows were marked for deletion. Select them again.",
+                )));
+            }
+        }
+    }
+
+    /// Each row as an INSERT for the server the tab is connected to,
     /// pending edits included. A draft's is the INSERT its save would
     /// run, so the columns the server fills stay out of it.
-    fn copy_row_as_insert(&self, row: &RowObject, fx: &mut Effects) {
+    fn copy_rows_as_insert(&self, rows: &[RowObject], fx: &mut Effects) {
         let Some(dialect) = self.session.current_dialect() else {
             fx.output(BrowseTabOutput::ShowToast(crate::i18n::gettext(
                 "Connect to a database first.",
             )));
             return;
         };
-        let cells = match row.id() {
-            GridRowId::Draft(draft_id) => self
-                .tracker
-                .draft_cells(*draft_id, &self.current_columns)
-                .unwrap_or_default(),
-            _ => self
-                .grid_context()
-                .effective_cells(row)
-                .into_iter()
-                .map(CellInput::Value)
-                .collect(),
-        };
-        match tablepro_core::export::render_insert(&*dialect, &self.table_ref(), &self.current_columns, &cells) {
-            Ok(sql) => fx.output(BrowseTabOutput::CopyToClipboard(sql)),
-            Err(error) => {
-                tracing::debug!(%error, "a row could not be written as an INSERT");
-                let message = match error {
-                    RenderInsertError::Literal(_) => {
-                        crate::i18n::gettext("This row has a value that can't be written as SQL")
-                    }
-                    RenderInsertError::NoValues => crate::i18n::gettext("This row has no value to put in an INSERT"),
-                };
-                fx.output(BrowseTabOutput::ShowToast(message));
+        let ctx = self.grid_context();
+        let mut statements = Vec::with_capacity(rows.len());
+        for row in rows {
+            let cells = match row.id() {
+                GridRowId::Draft(draft_id) => self
+                    .tracker
+                    .draft_cells(*draft_id, &self.current_columns)
+                    .unwrap_or_default(),
+                _ => ctx
+                    .snapshot(row)
+                    .to_values()
+                    .into_iter()
+                    .map(CellInput::Value)
+                    .collect(),
+            };
+            match tablepro_core::export::render_insert(&*dialect, &self.table_ref(), &self.current_columns, &cells) {
+                Ok(sql) => statements.push(sql),
+                Err(error) => {
+                    tracing::debug!(%error, "a row could not be written as an INSERT");
+                    let message = match error {
+                        RenderInsertError::Literal(_) => {
+                            crate::i18n::gettext("This row has a value that can't be written as SQL")
+                        }
+                        RenderInsertError::NoValues => {
+                            crate::i18n::gettext("This row has no value to put in an INSERT")
+                        }
+                    };
+                    fx.output(BrowseTabOutput::ShowToast(message));
+                    return;
+                }
             }
+        }
+        if !statements.is_empty() {
+            fx.output(BrowseTabOutput::CopyToClipboard(statements.join("\n")));
         }
     }
 
@@ -1865,7 +1901,7 @@ impl BrowseModel {
         let rows: Vec<Vec<Value>> = positions
             .iter()
             .filter_map(|position| selection.item(*position).and_downcast::<RowObject>())
-            .map(|row| ctx.effective_cells(&row))
+            .map(|row| ctx.snapshot(&row).to_values())
             .collect();
         if rows.is_empty() {
             return;
@@ -1887,51 +1923,46 @@ fn qualified(schema: Option<&str>, table: &str) -> String {
     }
 }
 
-fn apply_visual_change(store: &gtk::gio::ListStore, index: &mut GridRowIndex, change: &VisualChange) {
-    match change {
-        VisualChange::InsertDraft { draft_id } => {
-            let row = RowObject::draft(*draft_id);
-            store.insert(0, &row);
-            index.insert(&row);
+/// The one place the store gains or loses draft rows.
+fn apply_draft_changes(store: &gtk::gio::ListStore, index: &mut GridRowIndex, delta: &TrackerDelta) {
+    for draft_id in &delta.removed_drafts {
+        let key = RowKey::Draft(*draft_id);
+        if let Some(position) = index.position_in(store, &key) {
+            store.remove(position);
         }
-        VisualChange::RemoveDraft { draft_id } => {
-            let key = RowKey::Draft(*draft_id);
-            if let Some(position) = index.position_in(store, &key) {
-                store.remove(position);
-            }
-            index.remove(&key);
-        }
+        index.remove(&key);
     }
+    for draft_id in &delta.inserted_drafts {
+        let row = RowObject::draft(*draft_id);
+        store.insert(0, &row);
+        index.insert(&row);
+    }
+}
+
+fn selected_rows(selection: &gtk::MultiSelection) -> Vec<RowObject> {
+    super::grid::selected_positions(selection)
+        .into_iter()
+        .filter_map(|position| selection.item(position).and_downcast::<RowObject>())
+        .collect()
+}
+
+/// The Delete key and button follow the action; the button's tooltip
+/// says why it is off.
+fn show_delete_availability(action: &gio::SimpleAction, button: &gtk::Button, rows: &[RowObject], read_only: bool) {
+    let availability = delete_availability(rows.iter().map(RowObject::id), read_only);
+    action.set_enabled(availability == DeleteAvailability::Available);
+    let explanation = match availability {
+        DeleteAvailability::Unavailable(block) => block.explanation(),
+        DeleteAvailability::Available => None,
+    };
+    let tooltip = explanation.unwrap_or_else(|| crate::i18n::gettext("Delete selected rows (Delete)"));
+    button.set_tooltip_text(Some(&tooltip));
 }
 
 fn clear_box(b: &gtk::Box) {
     while let Some(child) = b.first_child() {
         b.remove(&child);
     }
-}
-
-/// Collapse newlines / carriage returns to spaces, then squash any
-/// resulting consecutive whitespace runs to a single space. Applied
-/// at cell-edit commit time for non-JSON columns so a multi-line
-/// clipboard paste into a single-line cell never reaches the SQL
-/// layer with embedded `\n`.
-fn normalize_single_line_input(text: &str) -> String {
-    let replaced: String = text
-        .chars()
-        .map(|c| if matches!(c, '\n' | '\r') { ' ' } else { c })
-        .collect();
-    replaced.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-/// A fetched row's key from its primary key cells, in the table's
-/// column order. `None` when the table has no primary key or the row is
-/// too short to hold it.
-fn persisted_key(cells: &[Value], pk_indices: &[usize]) -> Option<RowKey> {
-    let pk_values: Vec<Value> = pk_indices
-        .iter()
-        .map(|&i| cells.get(i).cloned())
-        .collect::<Option<_>>()?;
-    RowKey::from_pk_values(&pk_values)
 }
 
 /// Update the selection-count badge in response to a `MultiSelection`
@@ -1949,28 +1980,6 @@ fn update_selection_chrome(label: &gtk::Label, n: u32) {
         &[("n", &count)],
     ));
     label.set_visible(true);
-}
-
-/// The value the user typed, as the column's own type.
-///
-/// Parsing against the typed column rather than a type-name string is
-/// what makes an out-of-range number a message beside the cell instead
-/// of a failed transaction. What an empty cell means is core's rule:
-/// the empty string where the column holds one, the server's default
-/// in a draft row, NULL where the column takes it, and a refusal
-/// otherwise.
-fn parse_input_for_column(text: &str, col: Option<&ColumnInfo>, context: EditContext) -> Result<Value, String> {
-    let Some(col) = col else {
-        return Ok(Value::Text(text.to_string()));
-    };
-    match tablepro_core::edit::parse_edit_text(text, col, context) {
-        Ok(CellInput::Value(value)) => Ok(value),
-        // A draft holds NULL for a cell left to the server; the save
-        // leaves that column out of the INSERT.
-        Ok(CellInput::Default) => Ok(Value::Null),
-        Err(EditParseError::Required) => Err(crate::i18n::gettext("Field is required")),
-        Err(error) => Err(error.to_string()),
-    }
 }
 
 /// Format a positive integer with thousands separators (1000 → 1,000).

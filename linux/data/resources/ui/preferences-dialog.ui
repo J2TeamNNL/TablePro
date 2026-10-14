@@ -11,6 +11,17 @@
         <property name="icon-name">preferences-system-symbolic</property>
         <child>
           <object class="AdwPreferencesGroup">
+            <property name="title" translatable="yes">Startup</property>
+            <child>
+              <object class="AdwSwitchRow" id="restore_session_row">
+                <property name="title" translatable="yes">Restore session</property>
+                <property name="subtitle" translatable="yes">Reopen the connections that were open when TablePro quit</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwPreferencesGroup">
             <property name="title" translatable="yes">Data browser</property>
             <property name="description" translatable="yes">Tunes the row paginator and destructive-action confirmation.</property>
             <child>
@@ -38,7 +49,12 @@
         <child>
           <object class="AdwPreferencesGroup">
             <property name="title" translatable="yes">Query history</property>
-            <property name="description" translatable="yes">Persistent record of every SQL query you run.</property>
+            <child>
+              <object class="AdwSwitchRow" id="save_history_row">
+                <property name="title" translatable="yes">Save query history</property>
+                <property name="subtitle" translatable="yes">Keep a searchable record of the SQL you run. Statements that contain passwords or connection secrets are never saved.</property>
+              </object>
+            </child>
             <child>
               <object class="AdwSpinRow" id="retention_row">
                 <property name="title" translatable="yes">Retention (days)</property>

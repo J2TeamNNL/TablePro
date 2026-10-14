@@ -1,11 +1,17 @@
+use std::path::Path;
+
 use relm4::adw::prelude::*;
 use relm4::factory::{DynamicIndex, FactoryComponent, FactorySender};
-use relm4::gtk::gio;
+use relm4::gtk::{gio, glib};
 use relm4::{adw, gtk};
 use uuid::Uuid;
 
 use tablepro_core::AuthMode;
+use tablepro_session::runtime::Tasks;
 use tablepro_storage::{ConnectionColor, SavedConnection};
+
+use crate::runtime::DeliverInput;
+use crate::services::file_location;
 
 /// What a row needs to build itself: the connection, plus the groups
 /// the rest of the list is filed under so its menu can offer them.
@@ -13,25 +19,25 @@ use tablepro_storage::{ConnectionColor, SavedConnection};
 pub struct ConnectionRowInit {
     pub saved: SavedConnection,
     pub groups: Vec<String>,
+    /// Reads the file a portal path stands for. `None` names the file
+    /// alone.
+    pub tasks: Option<Tasks>,
 }
 
 #[derive(Debug)]
 pub struct ConnectionRow {
     saved: SavedConnection,
     groups: Vec<String>,
-    /// AdwActionRow root widget. Cached so the trash button's
-    /// confirmation dialog can `present()` against it (the dialog
-    /// walks up to find the GtkWindow, but it needs *some* widget
-    /// in the tree to start from).
+    tasks: Option<Tasks>,
+    /// The row, which the New Group dialog presents over: a dialog
+    /// finds its window from any widget inside it.
     root: Option<gtk::Widget>,
 }
 
 #[derive(Debug)]
 pub enum ConnectionRowMsg {
     Open,
-    /// Trash button pressed. Triggers a confirmation dialog before
-    /// any actual delete is dispatched — saved connections include
-    /// credentials and SSH config and a misclick is unrecoverable.
+    /// Delete from the row's menu. The window confirms it.
     RequestDelete,
     /// Copy the connection under a free name, so a second database on
     /// the same server does not have to be typed out again.
@@ -66,9 +72,9 @@ impl FactoryComponent for ConnectionRow {
     view! {
         adw::ActionRow {
             set_title: &self.saved.name,
-            set_subtitle: &subtitle_for(&self.saved),
+            set_subtitle: &subtitle_for(&self.saved, None),
             set_activatable: true,
-            connect_activated => ConnectionRowMsg::Open,
+            connect_activated[sender] => move |_| sender.deliver(ConnectionRowMsg::Open),
 
             // The colour the user put on this connection, as a dot
             // ahead of the name. Absent rather than grey when there is
@@ -98,6 +104,7 @@ impl FactoryComponent for ConnectionRow {
         Self {
             saved: init.saved,
             groups: init.groups,
+            tasks: init.tasks,
             root: None,
         }
     }
@@ -112,17 +119,18 @@ impl FactoryComponent for ConnectionRow {
         let widgets = view_output!();
         // Stash for the destructive-confirm dialog in update().
         self.root = Some(root.clone().upcast::<gtk::Widget>());
+        self.show_host_path(&root);
 
         // Each row owns its actions, so the menu on one row cannot
         // act on another.
         let actions = gio::SimpleActionGroup::new();
         let duplicate_sender = sender.clone();
         let duplicate = gio::ActionEntry::builder("duplicate")
-            .activate(move |_, _, _| duplicate_sender.input(ConnectionRowMsg::RequestDuplicate))
+            .activate(move |_, _, _| duplicate_sender.deliver(ConnectionRowMsg::RequestDuplicate))
             .build();
         let remove_sender = sender.clone();
         let remove = gio::ActionEntry::builder("remove")
-            .activate(move |_, _, _| remove_sender.input(ConnectionRowMsg::RequestDelete))
+            .activate(move |_, _, _| remove_sender.deliver(ConnectionRowMsg::RequestDelete))
             .build();
         actions.add_action_entries([duplicate, remove]);
 
@@ -139,7 +147,7 @@ impl FactoryComponent for ConnectionRow {
                 return;
             };
             action.set_state(&id.to_variant());
-            color_sender.input(ConnectionRowMsg::SetColor(ConnectionColor::from_id(&id)));
+            color_sender.deliver(ConnectionRowMsg::SetColor(ConnectionColor::from_id(&id)));
         });
         actions.add_action(&color);
 
@@ -156,7 +164,7 @@ impl FactoryComponent for ConnectionRow {
                 return;
             };
             action.set_state(&name.to_variant());
-            group_sender.input(ConnectionRowMsg::SetGroup(match name.trim().is_empty() {
+            group_sender.deliver(ConnectionRowMsg::SetGroup(match name.trim().is_empty() {
                 true => None,
                 false => Some(name),
             }));
@@ -164,7 +172,7 @@ impl FactoryComponent for ConnectionRow {
         actions.add_action(&group);
         let new_group_sender = sender.clone();
         let new_group = gio::ActionEntry::builder("new-group")
-            .activate(move |_, _, _| new_group_sender.input(ConnectionRowMsg::NewGroupRequested))
+            .activate(move |_, _, _| new_group_sender.deliver(ConnectionRowMsg::NewGroupRequested))
             .build();
         actions.add_action_entries([new_group]);
         root.insert_action_group("connection", Some(&actions));
@@ -199,8 +207,7 @@ impl FactoryComponent for ConnectionRow {
                 dialog.set_close_response("cancel");
                 let id = self.saved.id;
                 let output = sender.output_sender().clone();
-                dialog.connect_response(None, move |dlg, response| {
-                    dlg.close();
+                dialog.connect_response(None, move |_, response| {
                     if response != "add" {
                         return;
                     }
@@ -212,41 +219,45 @@ impl FactoryComponent for ConnectionRow {
                 });
                 dialog.present(self.root.as_ref());
             }
+            // The window asks before anything is deleted, with the
+            // choices only it can offer: an open connection, its history.
             ConnectionRowMsg::RequestDelete => {
-                // GNOME HIG: destructive actions need explicit
-                // confirmation. AdwAlertDialog with a destructive-
-                // appearance Remove button is the documented pattern;
-                // the Cancel default + Esc-cancellable close response
-                // make a misclick a no-op. Body copy spells out the
-                // blast radius so the user knows what's actually lost.
-                let dialog = adw::AlertDialog::new(None, None);
-                dialog.set_heading(Some(&crate::i18n::gettext_f(
-                    "Remove “{name}”?",
-                    &[("name", &self.saved.name)],
-                )));
-                dialog.set_body(&crate::i18n::gettext("The saved credentials and SSH settings will be deleted from this device. The database itself is unaffected."));
-                dialog.add_response("cancel", &crate::i18n::gettext("Cancel"));
-                dialog.add_response("remove", &crate::i18n::gettext("Remove"));
-                dialog.set_response_appearance("remove", adw::ResponseAppearance::Destructive);
-                dialog.set_default_response(Some("cancel"));
-                dialog.set_close_response("cancel");
-                let id = self.saved.id;
-                let output = sender.output_sender().clone();
-                dialog.connect_response(None, move |dlg, response| {
-                    dlg.close();
-                    if response == "remove" {
-                        let _ = output.send(ConnectionRowOutput::Delete(id));
-                    }
-                });
-                dialog.present(self.root.as_ref());
+                let _ = sender.output(ConnectionRowOutput::Delete(self.saved.id));
             }
         }
     }
 }
 
-fn subtitle_for(saved: &SavedConnection) -> String {
-    if saved.driver_id == "sqlite" {
-        return format!("sqlite · {}", saved.database);
+impl ConnectionRow {
+    /// A portal path's folder is an id, so the row names the file the
+    /// portal stands for once it is read.
+    fn show_host_path(&self, root: &adw::ActionRow) {
+        let path = std::path::PathBuf::from(&self.saved.database);
+        if !is_sqlite(&self.saved) || !file_location::is_portal_path(&path) {
+            return;
+        }
+        let Some(tasks) = &self.tasks else {
+            return;
+        };
+        let looking = tasks.spawn_blocking_task(move || file_location::portal_host_path_blocking(&path));
+        let (saved, row) = (self.saved.clone(), root.downgrade());
+        glib::spawn_future_local(async move {
+            if let (Ok(Some(host)), Some(row)) = (looking.await, row.upgrade()) {
+                row.set_subtitle(&subtitle_for(&saved, Some(&host)));
+            }
+        });
+    }
+}
+
+fn is_sqlite(saved: &SavedConnection) -> bool {
+    saved.driver_id == "sqlite"
+}
+
+/// `host_path` names the file a portal path stands for.
+fn subtitle_for(saved: &SavedConnection, host_path: Option<&Path>) -> String {
+    if is_sqlite(saved) {
+        let shown = file_location::display_path(Path::new(&saved.database), host_path);
+        return format!("sqlite · {shown}");
     }
     match saved.auth_mode {
         AuthMode::Kerberos => format!("{} · {}:{}", saved.driver_id, saved.host, saved.port),
@@ -254,7 +265,7 @@ fn subtitle_for(saved: &SavedConnection) -> String {
     }
 }
 
-/// The row's own menu. Remove sits in its own section so a destructive
+/// The row's own menu. Delete sits in its own section so a destructive
 /// action is never the neighbour of an ordinary one.
 fn row_menu(groups: &[String]) -> gio::Menu {
     let menu = gio::Menu::new();
@@ -262,7 +273,8 @@ fn row_menu(groups: &[String]) -> gio::Menu {
     menu.append_submenu(Some(&crate::i18n::gettext("Colour")), &color_menu());
     menu.append_submenu(Some(&crate::i18n::gettext("Group")), &group_menu(groups));
     let danger = gio::Menu::new();
-    danger.append(Some(&crate::i18n::gettext("Remove…")), Some("connection.remove"));
+    // Named as the dialog it opens names it.
+    danger.append(Some(&crate::i18n::gettext("Delete…")), Some("connection.remove"));
     menu.append_section(None, &danger);
     menu
 }
@@ -402,13 +414,28 @@ mod tests {
     #[test]
     fn a_kerberos_row_has_no_username_separator_to_dangle() {
         assert_eq!(
-            subtitle_for(&saved("", AuthMode::Kerberos)),
+            subtitle_for(&saved("", AuthMode::Kerberos), None),
             "mssql · sql.corp.example:1433"
         );
         assert_eq!(
-            subtitle_for(&saved("sa", AuthMode::Password)),
+            subtitle_for(&saved("sa", AuthMode::Password), None),
             "mssql · sa@sql.corp.example:1433"
         );
+    }
+
+    #[test]
+    fn portal_path_shows_host_path() {
+        let mut file = saved("", AuthMode::Password);
+        file.driver_id = "sqlite".into();
+        file.database = "/run/user/1000/doc/1a2b3c/app.db".into();
+
+        assert_eq!(
+            subtitle_for(&file, Some(Path::new("/srv/data/app.db"))),
+            "sqlite · /srv/data/app.db"
+        );
+        assert_eq!(subtitle_for(&file, None), "sqlite · app.db");
+        file.database = "/home/me/app.db".into();
+        assert_eq!(subtitle_for(&file, None), "sqlite · /home/me/app.db");
     }
 
     #[test]

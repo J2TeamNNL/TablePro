@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::sync::Arc;
 
-use tablepro_core::browse::{PageRequest, SortKey, build_count, build_page, split_page};
+use tablepro_core::browse::{BrowseSqlError, PageLayout, PageRequest, SortKey, build_count, build_page};
 use tablepro_core::meta::{PagePosition, RowIdentity, TableRef};
 use tablepro_core::statement::StatementBuilder;
 use tablepro_core::{ColumnInfo, FilterSet, QueryResult, RowLimit};
@@ -123,14 +123,15 @@ impl BrowseModel {
                         )?;
                         let limit = RowLimit::new(plan.limit).unwrap_or(RowLimit::EDITOR_DEFAULT);
                         let result = lease.query_bound(&spec.statement, limit, options).await?;
-                        let page = split_page(result, &spec)?;
-                        Ok(QueryResult::new(page.columns, page.rows).truncated(page.truncated))
+                        check_shape(&result, &spec.layout)?;
+                        Ok((result, spec.layout))
                     }
                 })
                 .await
-                .map(|result| PageReply {
+                .map(|(result, layout)| PageReply {
                     position: reply_position,
                     result,
+                    layout,
                 })
         };
         self.deliver(ticket, work, BrowseCommand::Page, OperationError::from);
@@ -218,7 +219,7 @@ impl BrowseModel {
     /// stays with a toast; without one, the error page says why rather
     /// than a spinner that nothing will replace.
     fn on_filter_problem(&mut self, message: &str, fx: &mut Effects) {
-        if self.current_result.is_some() {
+        if self.page.is_some() {
             self.refresh_inner_stack_visibility();
             fx.output(BrowseTabOutput::ShowToast(message.to_owned()));
             return;
@@ -242,7 +243,11 @@ impl BrowseModel {
                         }
                     }
                     Err(error) => {
-                        tracing::warn!(%error, "could not read the table's columns");
+                        tracing::warn!(
+                            kind = failure_kind(&error),
+                            category = ?error.category(),
+                            "could not read the table's columns"
+                        );
                         self.on_read_failed(&crate::ui::error_text::operation_error_message(&error), fx);
                         self.retry_if_link_moved(BrowseRequestKind::Columns, fx);
                     }
@@ -256,7 +261,7 @@ impl BrowseModel {
                 match value {
                     Ok(reply) => {
                         let offset = reply.offset().unwrap_or(self.current_offset);
-                        self.on_rows_loaded(offset, reply.result, fx);
+                        self.on_rows_loaded(offset, reply, fx);
                     }
                     Err(error) => {
                         self.on_read_failed(&crate::ui::error_text::operation_error_message(&error), fx);
@@ -272,7 +277,11 @@ impl BrowseModel {
                 match value {
                     Ok(count) => self.on_row_count_loaded(count, fx),
                     Err(error) => {
-                        tracing::debug!(%error, "the row count could not be read");
+                        tracing::debug!(
+                            kind = failure_kind(&error),
+                            category = ?error.category(),
+                            "the row count could not be read"
+                        );
                         self.retry_if_link_moved(BrowseRequestKind::Count, fx);
                     }
                 }
@@ -321,5 +330,31 @@ impl BrowseModel {
                 }
             }
         }
+    }
+}
+
+/// Every row has the columns the page asked for, visible then identity,
+/// so the split on the GTK thread takes each row apart at the same place.
+fn check_shape(result: &QueryResult, layout: &PageLayout) -> Result<(), BrowseSqlError> {
+    let expected = layout.width();
+    let found = std::iter::once(result.columns.len())
+        .chain(result.rows.iter().map(Vec::len))
+        .find(|width| *width != expected);
+    match found {
+        Some(found) => Err(BrowseSqlError::ShapeMismatch { expected, found }),
+        None => Ok(()),
+    }
+}
+
+/// What a failed read was, for the log. A server's message can quote
+/// the statement it rejected, and with it a literal from the user's
+/// filter, so the log names the failure and leaves its text to the UI.
+fn failure_kind(error: &OperationError) -> &'static str {
+    match error {
+        OperationError::Driver(_) => "driver",
+        OperationError::Sql(_) | OperationError::Browse(_) | OperationError::Build(_) => "statement",
+        OperationError::Panicked(_) => "panic",
+        OperationError::Cancelled => "cancelled",
+        OperationError::Closed => "closed",
     }
 }

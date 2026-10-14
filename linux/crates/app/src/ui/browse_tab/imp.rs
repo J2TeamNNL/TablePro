@@ -34,6 +34,8 @@ pub struct BrowseTab {
     #[template_child]
     pub insert_button: TemplateChild<gtk::Button>,
     #[template_child]
+    pub delete_button: TemplateChild<gtk::Button>,
+    #[template_child]
     pub first_button: TemplateChild<gtk::Button>,
     #[template_child]
     pub prev_button: TemplateChild<gtk::Button>,
@@ -108,20 +110,10 @@ fn install_bindings(klass: &mut <BrowseTab as ObjectSubclass>::Class) {
         send(|| BrowseTabInput::ClearSelection, glib::Propagation::Proceed),
     );
     klass.add_binding(
-        gdk::Key::Delete,
-        none,
-        send(|| BrowseTabInput::DeleteSelectedRow, glib::Propagation::Stop),
-    );
-    klass.add_binding(
         gdk::Key::n,
         ctrl,
         send(|| BrowseTabInput::InsertRow, glib::Propagation::Stop),
     );
-    // No GNOME precedent for "set NULL"; Ctrl+Backspace is delete-word
-    // in every text field, so the null shortcut is Ctrl+Shift+N.
-    klass.add_binding(gdk::Key::n, ctrl | gdk::ModifierType::SHIFT_MASK, |tab| {
-        tab.set_focused_cell_null()
-    });
     // A cell editor's text field consumes Ctrl+C and Ctrl+V first, so
     // these only see the grid's own copy and paste.
     klass.add_binding(
@@ -169,8 +161,10 @@ impl ObjectImpl for BrowseTab {
         SIGNALS.get_or_init(|| {
             vec![
                 Signal::builder("state-changed").build(),
+                // Boxed: a GValue string ends at a NUL, and a copied cell
+                // can hold one.
                 Signal::builder("copy-to-clipboard")
-                    .param_types([String::static_type()])
+                    .param_types([glib::BoxedAnyObject::static_type()])
                     .build(),
                 Signal::builder("export-results")
                     .param_types([glib::BoxedAnyObject::static_type()])

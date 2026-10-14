@@ -1,17 +1,24 @@
 //! A window's workspace: which tabs were open and what the editor ones
 //! held, kept between sessions, and the saves its tabs run and the
-//! prompts that decide whether they may close.
+//! prompts that decide whether they may close. Also which sessions the
+//! windows show, so a launch opens them again.
 
 mod close_decision;
 mod close_guard;
 mod close_guards;
+mod close_reason;
 mod close_scope;
 mod close_step;
-mod dialog_response;
+pub(crate) mod dialog_response;
 mod dirty_kind;
 mod dirty_tab;
 mod draft_writer;
+mod engine_profile;
 mod inhibit_reason;
+mod legacy_tab_file;
+mod open_sessions;
+mod open_sessions_load;
+mod open_sessions_record;
 mod open_transaction_dialog;
 mod pending_state;
 mod persist_debouncer;
@@ -28,7 +35,10 @@ mod save_snapshot;
 mod save_start;
 mod save_ticket;
 mod schema_write;
+mod session_key_record;
 mod sort_record;
+#[cfg(test)]
+mod structure_review_tests;
 mod tab_directory;
 mod tab_entry;
 mod tab_record;
@@ -47,16 +57,26 @@ mod workspace_record;
 mod workspace_save_error;
 mod workspace_store;
 mod write_job;
+mod writes_in_flight;
 
 pub use close_decision::CloseDecision;
 pub(crate) use close_guard::CloseGuard;
 pub(crate) use close_guards::CloseGuards;
+pub use close_reason::CloseReason;
 pub use close_scope::CloseScope;
 pub use close_step::{CloseStep, next_close_step};
+pub(crate) use dialog_response::respond;
+#[cfg(test)]
+pub(crate) use dialog_response::{answer, visible_alert};
 pub use dirty_kind::DirtyKind;
 pub use dirty_tab::DirtyTab;
 pub use draft_writer::DraftWriter;
+pub use engine_profile::EngineProfile;
 pub use inhibit_reason::InhibitReason;
+pub(crate) use legacy_tab_file::remove_legacy_tab_file;
+pub use open_sessions::OpenSessions;
+pub use open_sessions_load::OpenSessionsLoad;
+pub use open_sessions_record::OpenSessionsRecord;
 pub use pending_state::PendingState;
 pub use persist_debouncer::PersistDebouncer;
 pub(crate) use ran_statements::RanStatements;
@@ -71,11 +91,14 @@ pub use save_snapshot::SaveSnapshot;
 pub use save_start::SaveStart;
 pub use save_ticket::SaveTicket;
 pub(crate) use schema_write::run_schema_plan;
+pub use session_key_record::SessionKeyRecord;
 pub use sort_record::SortRecord;
 pub use tab_directory::TabDirectory;
 pub use tab_entry::TabEntry;
 pub use tab_record::TabRecord;
 pub use unknown_cause::UnknownCause;
+#[cfg(test)]
+pub use window_inhibitor::InhibitTarget;
 pub use window_inhibitor::{ApplicationInhibit, WindowInhibitor};
 pub use workspace_event::WorkspaceEvent;
 pub use workspace_file_name::WorkspaceFileName;

@@ -75,6 +75,16 @@ impl AppSettings {
         self.set_boolean(keys::CONFIRM_DESTRUCTIVE, confirm)
     }
 
+    /// Whether runs go into the query history. Off records nothing and
+    /// leaves the entries already there.
+    pub fn save_query_history(&self) -> bool {
+        self.settings.boolean(keys::SAVE_QUERY_HISTORY)
+    }
+
+    pub fn set_save_query_history(&self, save: bool) -> Result<(), SettingsError> {
+        self.set_boolean(keys::SAVE_QUERY_HISTORY, save)
+    }
+
     pub fn history_retention_days(&self) -> u32 {
         self.settings.uint(keys::HISTORY_RETENTION_DAYS)
     }
@@ -130,6 +140,15 @@ impl AppSettings {
 
     pub fn set_connect_dialog_driver(&self, driver_id: &str) -> Result<(), SettingsError> {
         self.set_string(keys::CONNECT_DIALOG_DRIVER, driver_id)
+    }
+
+    /// Whether the connections open at quit are opened again at launch.
+    pub fn restore_session(&self) -> bool {
+        self.settings.boolean(keys::RESTORE_SESSION)
+    }
+
+    pub fn set_restore_session(&self, restore: bool) -> Result<(), SettingsError> {
+        self.set_boolean(keys::RESTORE_SESSION, restore)
     }
 
     pub fn csv_options(&self) -> CsvOptions {

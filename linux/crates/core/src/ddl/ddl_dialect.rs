@@ -21,6 +21,13 @@ pub trait DdlDialect: Send + Sync + std::fmt::Debug {
     /// The dialect that quotes, binds and parses for this engine.
     fn sql_dialect(&self) -> &dyn SqlDialect;
 
+    /// What the engine takes for this table, where that depends on more
+    /// than the engine: the structure tab offers a table-wide control,
+    /// such as adding a foreign key, only where this allows it.
+    fn table_capabilities(&self, _table: &TableDefinition) -> DdlCapabilities {
+        *self.capabilities()
+    }
+
     fn column_capabilities(&self, table: &TableDefinition, column: &ColumnDefinition) -> ColumnCapabilities {
         ColumnCapabilities::standard(self.capabilities(), table, column)
     }
@@ -37,6 +44,12 @@ pub trait DdlDialect: Send + Sync + std::fmt::Debug {
     /// them. The first is the SQL default.
     fn referential_actions(&self) -> &'static [ReferentialAction] {
         &ReferentialAction::ALL
+    }
+
+    /// Whether a foreign key can reference a table in another schema.
+    /// Where it cannot, a key is offered only the tables of its own.
+    fn references_other_schemas(&self) -> bool {
+        true
     }
 
     fn plan_create_table(&self, draft: &TableDraft) -> Result<DdlPlan, BuildDdlError>;

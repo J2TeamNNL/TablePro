@@ -12,7 +12,7 @@ linux/
 ├── build-aux/flatpak/             Devel Flatpak manifest and krb5.conf
 ├── po/                            translation catalogue
 └── crates/
-    ├── app/                       binary, GTK4 entry point, Relm4 components
+    ├── app/                       binary, the GTK application, its windows and views
     ├── core/                      domain types and the driver contract, no GUI deps
     ├── net/                       direct TCP transport and rustls client configs
     ├── ssh/                       system OpenSSH transport and the askpass helper
@@ -74,27 +74,57 @@ Adding a new driver = adding one workspace member + one `register` call. There i
 
 ## Async architecture
 
-Two runtimes coexist:
+The GTK main loop owns every widget and runs on the main thread. Everything else runs on one tokio runtime, `AppRuntime`, which `run()` builds before GTK starts: multi-threaded, two to four workers named `tablepro-rt`. Code reaches it only through `Tasks` (`tablepro_session::runtime`), which `AppServices` hands to every window:
 
-- **glib's main context** runs the UI. Single-threaded. Owns all GTK widgets.
-- **tokio runtime** owned by Relm4 runs all DB driver work and other async tasks.
+- `spawn_task` for async work, `spawn_blocking_task` for a blocking call such as a durable write, and `spawn_owned` for a loop that stops when its handle drops.
+- Once the main loop returns, `AppRuntime::shutdown` gives the work still in flight two seconds.
 
-Bridging uses Relm4's built-in primitives instead of hand-rolled channels:
+Work crosses between the two through `crate::runtime`:
 
-- `sender.command(move |out, shutdown| shutdown.register(async move { ... out.send(...) }).drop_on_shutdown())`: a component-scoped tokio task that cancels when the component drops. The `out` sender feeds `CmdOutput` back into the component's update loop on the GTK thread. Used for every per-tab fetch (browse rows, schema introspection, save transaction).
-- `relm4::spawn(async move { ... })`: a fire-and-forget tokio task with no component lifetime tie. Used for storage writes (`touch_last_opened`, `query_history::record`, column-width persistence) and other side-effect work.
-- `sender.input(AppMsg::...)` from inside an async block routes back into the component's `update` on the GTK thread. Combined with `sender.command`, this is how a "fetch-then-render" round trip lands its result on the right widget.
+- `spawn_and_deliver` runs work on `Tasks` and hands its result to a closure on the GTK thread. Aborting the returned handle drops the delivery, never the work.
+- `spawn_held` runs work the user expects to finish, such as a save or a write to the connection list, with the process held until it ends.
+- A window's and a workspace's input queue (`input_queue`) takes the messages their actions, signal handlers and background work send. `pump_inputs` hands them over one at a time on the GTK thread, never inside the signal or action that sent one. `DeliverInput::deliver` drops a message once the widget has shut down and logs that at debug, so a reply that lands after a disconnect is never shown.
+- A value the session publishes on a `tokio::sync::watch` (its health, its link generation, a schema's objects) reaches a view through a `WatchForwarder`, which delivers on the GTK thread and stops when the view drops it.
 
-`main.rs` builds a tiny `tokio::runtime::Builder::new_multi_thread().worker_threads(1)` runtime exclusively to `block_on` the history-DB init / prune at startup, then `shutdown_timeout`s it before `RelmApp::run` takes over. The query-history sqlx pool is stored in a `OnceLock` and reused from Relm4's runtime afterward.
+`crates/app/clippy.toml` bans the ways around this: `tokio::spawn`, `Handle::current`, `relm4::spawn` and its siblings, `MainContext::block_on`, `ComponentSender::input`, `RelmApp::run` and `gio::Application::quit`. The fast CI job also fails on `std::fs`, a `Path` method that reads the disk, or a `_blocking` call outside `spawn_blocking_task` under `crates/app/src/ui`.
 
-## UI architecture: Relm4
+One second runtime remains. Relm4 runs a component's commands (`sender.command`, `oneshot_command`) on a runtime of its own, built the first time one runs, with one worker since nothing sets `RELM_THREADS`. The history and saved-queries dialogs still load through commands, so that runtime starts when either opens.
 
-The `app` crate uses [Relm4](https://relm4.org) for component-based UI structure.
+## The application
 
-- **Component**: a unit of UI with explicit `Init`, `Input`, `Output`, `CmdOutput` types. State is private. All transitions go through `update`.
-- **AsyncComponent**: same shape, but `init` and `update` may be `async`. Used for components that load data on creation.
-- **Factory**: drives a list / grid of homogeneous child components from a model. Used for the table sidebar and similar lists.
-- **CmdOutput**: how a component receives async results. The tokio bridge sends `CmdOutput` messages back into the component's update loop.
+`TableProApplication` (`crates/app/src/application/`) is an `adw::Application` subclass. `run()` builds it with the `AppServices` every window shares: the driver registry, the connector and its deadlines, the `SessionRegistry`, the settings, the storage, `Tasks`, the process hold, the open-sessions record and the query history.
+
+- **One process per profile.** GApplication owns the application id on the session bus. A second launch parses its own options, sends the running process an activate, or an open with the files it was given, and exits. With `--new-window` (`-n`), `handle_local_options` sends `app.new-window` instead. The development profile has an id of its own and runs beside the stable app.
+- **Startup**, in the primary process only, adds the app actions (`new-window`, `quit`, `preferences`, `about`) and their accelerators, opens the query history, checks the askpass helper, ends SSH masters a crashed instance left running, and starts `SessionSignals`, which tells every session about network changes and a resume from suspend.
+- **Windows.** `open_window` builds a `SessionWindow` for a `WindowLaunch`: the picker, a saved connection, a file, or a session to restore. The application keeps each window in its `WindowRegistry` by window id, and a window reaches the others through its `WindowHost`, which holds the application weakly.
+- **Holds.** A `ProcessHold` keeps the process alive while work that must finish runs: a session closing, a save, a durable write, a file being resolved. The app's `GioProcessHold` is `gio::Application::hold`, so the process ends once the last window and the last hold are gone.
+- **Quit.** `request_quit` runs `QuitSequence`, which asks each window in turn through its close prompts and never calls `g_application_quit`. A second Quit while a window asks brings that window forward. At logout, `query-end` brings forward the first window that holds the session back.
+
+### Restoring sessions and opening files
+
+`OpenSessions` (`crates/app/src/workspace/open_sessions.rs`) records the session each window adopts, a file or a saved connection, and drops it on a disconnect or a closed window. With the `restore-session` key on (the default, under Preferences), the first activate of a launch reads the record under a hold, opens a window for each session in it with `WindowLaunch::Restore`, then opens the files handed over while it read, or the picker when that opens nothing. A restored saved connection is looked up in the list again, and one deleted since says so in a toast. With the key off, the first activate opens the picker.
+
+A quit freezes the record before it asks the first window, so each window it closes stays on it, and writes it before the process may end. An approved quit then empties the list in memory; a cancelled one keeps only the windows still showing or connecting their session. Shutdown freezes it too: windows that go with the process are not the user closing them. An approved quit can leave the process running while a session closes, and an activate that reaches it then restores the record as a new launch would.
+
+Files come from Open With in a file manager or from the command line (`HANDLES_OPEN`). They wait until the restore has read the record, since a file's window adds to it. Each file is resolved off the GTK thread, its path made canonical and matched against the saved connections, then it opens in the window that has it open, in the active window while that shows only the picker, or in a new window.
+
+## Windows and sessions
+
+Each window is a `SessionWindow` (`crates/app/src/ui/session_window/`) for one connection session ([ADR 0012](docs/decisions/0012-window-per-session.md)). Its `SessionPage` is the picker of saved connections, the connect while it runs, the failure when it fails, or the session's `Workspace`. Every page past the picker holds the `SessionClaim` on the session's key, so leaving the page releases it.
+
+- A connect claims the key in the `SessionRegistry` before it starts, so a second window asking for the same database brings the first forward. The connect runs on `Tasks` under a cancel token, and a result for an attempt the user cancelled or replaced is closed instead of adopted.
+- Adopting a connected session starts its `Session`, attaches it to the claim, which `SessionSignals` hears through the registry, records the key in `OpenSessions` and builds the `Workspace`.
+- A workspace never moves to another session. Disconnect asks the close prompts, then `tear_down` writes what the workspace shows, takes its editor sessions, shuts the workspace down, drops the claim and the record's key, and closes the session and those editor sessions under one hold before the window returns to the picker. An approved close runs the same teardown.
+- The close prompts (`CloseGuards`) belong to the window, so a tab's close, the close button and Ctrl+W ask on every page, one prompt at a time. While the workspace has something a logout would lose, a `WindowInhibitor` holds logout back, and suspend too while a save runs.
+- The window's actions (`disconnect`, `reconnect`, `close-current` and the rest) go on its own action map, which GTK exports as `win`.
+
+The `Workspace` (`crates/app/src/ui/workspace/`) shows one session: the sidebar of its objects, the tab view and the banners. It adds its own actions to the window and removes them when it shuts down, follows the session's health and object list through `WatchForwarder`s, and tells the window what it shows through its `title-changed`, `dirty-changed` and `saves-in-flight-changed` signals. Its `WorkspaceHandle` runs the saves and tells the close prompts what closing any part of it would lose. [Workspace tab system](#workspace-tab-system) covers its tabs, and [Sessions and health](#sessions-and-health) the `Session` itself.
+
+## UI architecture
+
+The application, its windows, the workspace and every view a rewrite has reached are gtk-rs subclasses. A widget with a layout has a CompositeTemplate `.ui` file under `data/resources/ui/`, compiled into the GResource: the session window and its pages, the workspace, the browse, structure and SQL editor tabs, the results pane, and the connect and preferences dialogs with their sections. A subclass keeps its state in its `imp` struct and reports through signals. The window and the workspace take input through their input queues; a browse or structure tab handles its input in `send` at once, and one that arrives while another is being handled waits for it.
+
+A few views are still [Relm4](https://relm4.org) components ([ADR 0003](docs/decisions/0003-relm4-architecture.md)): the picker's `WelcomeView` with its `ConnectionRow` factory, the sidebar's `SidebarRow` factory, and the history, saved-queries and CSV import dialogs. Their output reaches the subclass that hosts them through `connect_receiver` or `relm4_bridge`, which put it on that subclass's queue. The two patterns coexist until a rewrite turns each component into a subclass.
 
 See [docs/state-management.md](docs/state-management.md) for the patterns and naming we use.
 
@@ -193,11 +223,13 @@ On Linux the system store is the distribution's CA bundle. Under Flatpak it is t
 
 A window holds one `Session`. Every use of its connection goes through the `OperationRunner`, which adds no timer of its own: the deadline travels in `CallOptions` so the driver stops the statement on the server. The session's monitor probes every 30 s and calls the connection lost after three failed probes in a row, or as soon as `Connection::lost()` fires, which a driver resolves only when the link is gone, never for one dead backend in its pool. It then reconnects on a backoff from 5 s to 60 s. A failure that a retry cannot fix (authentication, TLS, configuration, a host key to review) parks the session until the user acts. A read that failed because its connection was lost runs once more on the replacement link; a save never does.
 
+The application tells each session what its connection cannot see. When `GNetworkMonitor` reports a change, and when a window adopts a session, it asks whether that session's server, or its first SSH hop, is reachable; a file, a socket and a loopback server are never asked about. A session that loses a server the network cannot reach waits offline, checking every 60 s, and reconnects as soon as the server is reachable again. While a session is open, a 5 s timer compares `CLOCK_BOOTTIME` with `CLOCK_MONOTONIC`, and after a suspend each server is checked again and a session that slept more than 30 s probes its connection. A session parked on an SSH host key keeps the error that parked it, and its banner's Review Key shows the fingerprint. Trusting it retries with ssh's question about that one key answered yes, so ssh still checks the key and writes known_hosts; a changed key is first removed with `ssh-keygen -R`, since ssh never accepts one. When the review cannot accept the key, because ssh's configuration takes keys only from known_hosts or the key is revoked, its dialog offers Retry for after the user fixes the key outside TablePro.
+
 The session's `SchemaCatalog` holds what the window knows about the database: the schemas, each scope's objects and each table's columns. Callers that ask for the same thing at once share one fetch, a fetch runs as its own task so a view that closes does not stop it, and a failed refresh keeps the list it had. A reconnect commits the catalog the new connection read and marks the rest stale; `invalidate_table` does the same for one table after a schema change. The sidebar follows the default schema's list through a watch the window drops before the session closes. The editor's completion reads the catalog when it opens: the default schema's objects, a named schema's objects after `schema.`, and the columns of the tables the statement names.
 
 ## Workspace tab system
 
-The active connection drives a single `AdwTabView` hosting heterogeneous tabs. The `App` component owns the strip; tabs are typed via the `WorkspaceTab` enum:
+The session drives a single `AdwTabView` hosting heterogeneous tabs. The `Workspace` owns the strip; tabs are typed via the `WorkspaceTab` enum:
 
 ```rust
 pub enum WorkspaceTab {
@@ -208,24 +240,24 @@ pub enum WorkspaceTab {
 }
 ```
 
-Each tab is a gtk-rs widget with a composite template, which the `AdwTabView` adopts. `App` keeps a `HashMap<Uuid, WorkspaceTab>` keyed by the tab's UUID; the canonical display order comes from `tab_view.pages()` (drag-reorderable). The UUID is stashed on the `AdwTabPage` via `glib::Quark` qdata so close / right-click actions can recover it.
+Each tab is a gtk-rs widget with a composite template, which the `AdwTabView` adopts. The workspace keeps a `HashMap<Uuid, WorkspaceTab>` keyed by the tab's UUID; the canonical display order comes from `tab_view.pages()` (drag-reorderable). The UUID is stashed on the `AdwTabPage` via `glib::Quark` qdata so close / right-click actions can recover it.
 
-App routing is hub-and-spoke: a tab emits signals, and the closures App connects tag them with the tab's UUID and re-emit them as `AppMsg` inputs. App's `update` looks up the slot and calls back into the tab. This keeps the tabs ignorant of each other and gives App one place to enforce cross-tab invariants (reload the tabs on a table whose schema changed, close all tabs for a dropped table, etc.).
+Routing is hub-and-spoke: a tab emits signals, and the closures the workspace connects tag them with the tab's UUID and queue them as `WorkspaceInput`. The workspace looks up the slot and calls back into the tab. This keeps the tabs ignorant of each other and gives the workspace one place to enforce cross-tab invariants (reload the tabs on a table whose schema changed, close all tabs for a dropped table, etc.). A reply a tab's request brings back after a disconnect reaches a closed queue and is dropped.
 
 A browse or structure tab reads its own data through the session. A `RequestSequencer` keeps one request of each kind current: a new page stops the one it replaces, and a reply to a replaced request is dropped. A page and a count wait for the table's columns from the catalog. A read that failed is asked again once the session reconnects, while a tab whose reads all landed keeps its rows. Closing a tab stops its reads, so the server drops the statement.
 
-Reopening a closed tab uses a 10-deep `VecDeque<ClosedTabDescriptor>` snapshot taken in `finish_close_workspace_tab` before the slot is dropped. The stack clears on disconnect because descriptors reference tables in the active connection.
+Reopening a closed tab uses a 10-deep `VecDeque<ClosedTabDescriptor>` snapshot taken in `finish_close_workspace_tab` before the slot is dropped. The stack goes with the workspace on disconnect because descriptors reference tables in its session.
 
 ## Per-tab pending-change registries
 
-Each window owns two registries holding the in-flight edit state for its tabs, keyed by the same UUID as the workspace slot. App creates them, registers a tracker when it opens a tab, passes the handle into the tab's init, and unregisters it when the tab closes or the connection goes away:
+Each workspace owns two registries holding the in-flight edit state for its tabs, keyed by the same UUID as the workspace slot. The workspace creates them, registers a tracker when it opens a tab, passes the handle into the tab's init, and unregisters it when the tab closes or the connection goes away:
 
 | Registry | Handle | What it tracks | Materialised by |
 |---|---|---|---|
 | `ChangeTrackerRegistry` | `TabTrackerHandle` | Row-level INSERT / UPDATE / DELETE for Table tabs | `TabTrackerHandle::change_set` → `TrackedChanges` |
 | `StructureTrackerRegistry` | `StructureTrackerHandle` | The table's definition, the user's `TableDraft` and the `TableChanges` between them, for Structure tabs | `PendingStructure::plan` through the connection's `DdlDialect` → `DdlPlan` |
 
-A handle is a newtype over `Rc<RefCell<_>>`. Every method borrows only for its own body, calls no GTK and no callbacks, and returns owned data (`CellOverlay`, `RowState`, `TrackerDelta`), so a grid bind that runs while a tab is applying a change never meets a held borrow. A row edit goes in as a `TrackerEdit` and comes back as a `TrackerDelta`: the rows to redraw, the draft rows the list store gains or loses, and the new pending count. The tab applies it to its `gio::ListStore` after the call returns. A grid row is a `RowObject` whose identity is fixed when it is made: a saved row's key and cells as fetched, or a draft's id, whose cells live only in the tracker. A tracked change bumps the row's `revision` property, and each cell bound to the row listens for it and draws again in place, so the store never swaps a row and its selection and focus stay put. The tab finds the row through a `GridRowIndex` of weak references keyed like the tracker. A grid cell resolves its row through its column view cell when an event fires, so an edit, a menu action or a toggle reaches the row it was made on even after rows above it came or went. Every pending change carries a `Touch` from the tracker's counter. An `UndoOp` holds the pending state on both sides of a step, touch included, so undo after A, B, C shows B, not the fetched value. `change_set` emits one change per row in touch order, and `plan_save` keeps that order: a row deleted and replaced by a draft with the same unique value saves, because its DELETE runs first. `App::dirty_tabs` reads both registries for the close prompts, the teardown guard and the `•` title prefix. CI fails on a `thread_local!` under `crates/app/src/services`, since a process-wide registry would share one window's unsaved edits with every other window.
+A handle is a newtype over `Rc<RefCell<_>>`. Every method borrows only for its own body, calls no GTK and no callbacks, and returns owned data (`CellOverlay`, `RowState`, `TrackerDelta`), so a grid bind that runs while a tab is applying a change never meets a held borrow. A row edit goes in as a `TrackerEdit` and comes back as a `TrackerDelta`: the rows to redraw, the draft rows the list store gains or loses, and the new pending count. The tab applies it to its `gio::ListStore` after the call returns. A grid row is a `RowObject` whose identity is fixed when it is made: a saved row's key and cells as fetched, or a draft's id, whose cells live only in the tracker. A tracked change bumps the row's `revision` property, and each cell bound to the row listens for it and draws again in place, so the store never swaps a row and its selection and focus stay put. The tab finds the row through a `GridRowIndex` of weak references keyed like the tracker. A grid cell resolves its row through its column view cell when an event fires, so an edit, a menu action or a toggle reaches the row it was made on even after rows above it came or went. Every pending change carries a `Touch` from the tracker's counter. An `UndoOp` holds the pending state on both sides of a step, touch included, so undo after A, B, C shows B, not the fetched value. `change_set` emits one change per row in touch order, and `plan_save` keeps that order: a row deleted and replaced by a draft with the same unique value saves, because its DELETE runs first. `WorkspaceModel::dirty_tabs` reads both registries for the close prompts, the teardown guard and the `•` title prefix. CI fails on a `thread_local!` under `crates/app/src/services`, since a process-wide registry would share one window's unsaved edits with every other window.
 
 The Structure tab is **definition + draft**, not a per-change log. The `TableDefinition` one read returned is what the tab plans against; `diff_table` turns the draft into `TableChanges`, and the engine's `DdlDialect` plans them into statements in its own order. Discard copies the definition back over the draft, and is the only restore point. The tracker holds the latest `PendingStructure`, so the close prompt and the save dispatcher read the same change without the tab, and the save plans it again with the dialect of the connection that runs it ([ADR 0010](docs/decisions/0010-ddl-plans-and-table-definitions.md)).
 
@@ -236,14 +268,16 @@ The Structure tab is **definition + draft**, not a per-change log. The `TableDef
 | Saved connections | JSON, `g_file_set_contents_full` CONSISTENT + DURABLE, 0600 | `$XDG_CONFIG_HOME/tablepro/connections.json` |
 | Connection passwords + SSH secrets | libsecret via `oo7` (Secret Service / KWallet) | keyring item per connection UUID |
 | Workspace tabs, one file per session | JSON, durable write, debounced 500 ms, off the GTK thread | `$XDG_STATE_HOME/tablepro/workspaces/<connection id>.json`, `file-<sha256 of the URI>.json` for an unsaved file |
+| Sessions open at quit, reopened at launch | JSON, durable write, off the GTK thread | `$XDG_STATE_HOME/tablepro/workspaces/open-sessions.json` |
 | Editor tab text | one file per tab, debounced 500 ms | `$XDG_DATA_HOME/tablepro/drafts/<workspace name>/` |
 | Query history | SQLite + FTS5 virtual table, 0600 | `$XDG_STATE_HOME/tablepro/history.db` |
 | Application preferences | GSettings | schema `app.tablepro.TablePro` |
 | Window size / maximized | GSettings | schema `app.tablepro.TablePro` |
 | Per-table column widths | JSON, durable write | `$XDG_CONFIG_HOME/tablepro/column_widths.json` |
-| Single-instance lock | `flock` on an empty file | `$XDG_RUNTIME_DIR/app/<app-id>/tablepro.lock` |
 
 `WorkspaceStore` reads a session's file once its session is adopted, and the window writes the tab list only after that read, so a write never lands on tabs not yet restored. A file that cannot be read, that another version wrote, or that is over 1 MiB is left as it is and nothing is written over it until the user picks Reset on the toast, which moves it aside as `<name>.json.corrupt-<seconds>`. Every open tab is saved and restored, with no cap on the count. Writes go through one task that keeps the newest record per file. Editor records carry a draft id, never the text, and the editor's `content-changed` signal carries no text either: the tab label reads at most 200 characters.
+
+`OpenSessions` writes the record of open sessions off the GTK thread, holding the process until each write lands; [Restoring sessions and opening files](#restoring-sessions-and-opening-files) says when it changes. A record that cannot be read is moved aside as `open-sessions.json.corrupt-<seconds>`.
 
 A restore deletes the drafts no saved or open tab names, except while a moved-aside copy of the session's file is there, since that copy may name them. A draft that cannot be read is moved aside as `<id>.sql.corrupt-<seconds>`, which the cleanup never deletes, and its tab opens empty with a toast. A disconnect writes the open tabs' text before their buffers go.
 

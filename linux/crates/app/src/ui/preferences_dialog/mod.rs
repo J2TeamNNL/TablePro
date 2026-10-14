@@ -41,10 +41,17 @@ impl PreferencesDialog {
         let gio_settings = settings.gio();
 
         gio_settings
+            .bind(keys::RESTORE_SESSION, &imp.restore_session_row.get(), "active")
+            .build();
+        gio_settings
             .bind(keys::DEFAULT_PAGE_SIZE, &imp.page_size_row.get(), "value")
             .build();
         gio_settings
             .bind(keys::CONFIRM_DESTRUCTIVE, &imp.confirm_row.get(), "active")
+            .build();
+        // Off stops new records only; Clear is what removes the old ones.
+        gio_settings
+            .bind(keys::SAVE_QUERY_HISTORY, &imp.save_history_row.get(), "active")
             .build();
         gio_settings
             .bind(keys::HISTORY_RETENTION_DAYS, &imp.retention_row.get(), "value")
@@ -233,6 +240,38 @@ mod tests {
     }
 
     #[gtk4::test]
+    fn the_restore_session_row_is_bound() {
+        let settings = MemorySettings::new();
+        let runtime = test_runtime();
+        let storage = test_storage(&runtime.tasks());
+        let dialog = new_dialog(&settings, &storage, None, &runtime.tasks());
+        let row = dialog.imp().restore_session_row.get();
+        assert!(row.is_active(), "the row does not show the default");
+
+        row.set_active(false);
+        assert!(!settings.get().restore_session());
+
+        settings.get().set_restore_session(true).expect("store the flag");
+        assert!(row.is_active());
+    }
+
+    #[gtk4::test]
+    fn preferences_history_switch_bound_to_setting() {
+        let settings = MemorySettings::new();
+        let runtime = test_runtime();
+        let storage = test_storage(&runtime.tasks());
+        let dialog = new_dialog(&settings, &storage, None, &runtime.tasks());
+        let row = dialog.imp().save_history_row.get();
+        assert!(row.is_active(), "the row does not show the default");
+
+        row.set_active(false);
+        assert!(!settings.get().save_query_history());
+
+        settings.get().set_save_query_history(true).expect("store the flag");
+        assert!(row.is_active());
+    }
+
+    #[gtk4::test]
     fn the_font_row_is_insensitive_while_the_system_font_is_on() {
         let settings = MemorySettings::new();
 
@@ -392,7 +431,7 @@ mod tests {
         crate::test_support::drain_main_context();
         let alert =
             crate::test_support::first_descendant_of_type::<adw::AlertDialog>(window).expect("the confirmation alert");
-        alert.emit_by_name::<()>("response", &[&"clear"]);
+        crate::test_support::respond(&alert, "clear");
         crate::test_support::drain_main_context();
     }
 }

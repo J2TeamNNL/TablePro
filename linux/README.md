@@ -12,8 +12,8 @@ Phases 2 and 3 in progress (see [ROADMAP.md](ROADMAP.md)). The stack (Rust + GTK
 |---|---|
 | Language | Rust 1.98+ |
 | GUI toolkit | GTK4 4.22+ + libadwaita 1.9+ + GtkSourceView 5.18+ (GNOME 50, [ADR 0015](docs/decisions/0015-gnome-50-platform-floor.md)) |
-| App architecture | [Relm4](https://relm4.org) — Elm-style components on gtk4-rs |
-| Async | tokio (DB drivers) bridged to glib main loop (UI) |
+| App architecture | gtk-rs subclasses with composite templates, one window per connection session ([ADR 0012](docs/decisions/0012-window-per-session.md)); a few views still on [Relm4](https://relm4.org) |
+| Async | the app's tokio runtime (`AppRuntime`) for background work, results delivered to the GLib main loop |
 | DB drivers | sqlx (PG / MySQL / SQLite), tiberius (MSSQL), official `clickhouse` crate; planned: fred (Redis), official mongodb / duckdb crates, etc. |
 | Persistence | libsecret (passwords), gio::Settings (prefs), JSON files (connection metadata) |
 | Distribution | Flathub primary, .deb / .rpm / AppImage secondary |
@@ -82,6 +82,20 @@ feature: SQL Server Windows integrated auth links MIT Kerberos and runs
 bindgen at build time. `cargo build -p tablepro --no-default-features`
 leaves it out, and the connect dialog then hides Windows (Kerberos).
 
+## Opening SQLite files
+
+Once installed, TablePro is in the file manager's **Open With** for
+SQLite databases (`application/vnd.sqlite3`). From a terminal:
+
+```bash
+tablepro app.sqlite3
+```
+
+A running TablePro opens the file in its own window and the new launch
+exits. A file already open brings its window forward. A database on a
+network or FUSE filesystem asks whether to open read-only first, because
+SQLite's locking cannot be trusted there.
+
 ## SQL Server with Windows integrated auth
 
 Pick **Method → Windows (Kerberos)** in the connect dialog. There is no
@@ -119,7 +133,7 @@ worth knowing:
 | Roadmap and current phase | [ROADMAP.md](ROADMAP.md) |
 | Contributing: dev workflow, lint, commits, PRs | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | **Adding a database driver** | [docs/adding-drivers.md](docs/adding-drivers.md) |
-| State management with Relm4 | [docs/state-management.md](docs/state-management.md) |
+| State management: windows, sessions, background work | [docs/state-management.md](docs/state-management.md) |
 | Persistence: secrets, settings, files | [docs/storage.md](docs/storage.md) |
 | Error handling conventions | [docs/error-handling.md](docs/error-handling.md) |
 | Testing conventions | [docs/testing.md](docs/testing.md) |

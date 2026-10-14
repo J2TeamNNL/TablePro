@@ -72,6 +72,54 @@ Notes:
 - With no Secret Service at all the store reports `ServiceUnavailable` and the UI prompts at connect time. The app never writes passwords to a plain file as a fallback.
 - Never log a password, ever. Wrap them in `secrecy::SecretString` from the `secrecy` crate before they leave the storage layer.
 
+### When the keyring cannot supply a secret
+
+`KeyringCredentials` reads each secret at every connect. What happens when
+it cannot depends on whether someone is there to answer:
+
+- A connect the user started, and the connect dialog's Test, run attended.
+  A secret that is not stored, or that a locked or missing keyring cannot
+  give, is asked for in a dialog over the window. A missing Secret Service
+  or portal offers no Remember switch, since nothing could keep it.
+- An SSH key with no stored passphrase is left to ssh, which asks through
+  the same prompts at the hop that needs it.
+- A secret typed with Remember on is stored only once the login it was
+  typed for works. A store the keyring refuses is reported in a toast, and
+  the connection stays open.
+- A login the server refused offers Enter Password on the failed page. That
+  retry passes `CredentialDemand::reenter`, which asks again without reading
+  the keyring's copy, the one just refused.
+- A secret typed for a session that the keyring does not hold, because
+  Remember was off or the keyring refused it, is the one that session's
+  reconnects use (`KeyringCredentials::keeping_session_secrets`). Otherwise a
+  reconnect would log in with the stored copy the server refused.
+- Background reconnects run unattended and never ask. A missing secret parks
+  the session until the user presses Retry, which runs attended.
+- A typed secret lives in a `SecretString`, and the prompt clears its rows
+  as it hands the answer over.
+
+## Deleting a connection
+
+`ConnectionDeletion::run` removes a saved connection in an order that
+leaves nothing unreachable behind when a step fails:
+
+1. The keyring secrets. If the keyring refuses, nothing else runs and the
+   entry stays: an entry with no secrets only asks for them again, while a
+   secret with no entry is orphaned in the keyring.
+2. The entry in `connections.json`.
+3. Everything kept for it: column widths, filters, the saved tabs with any
+   copy Reset moved aside, the editor drafts (`WorkspaceStore::purge`), the
+   saved queries, and the query history when the user turned that on. A
+   failure here is reported and does not bring the entry back.
+
+A connection open or connecting in a window is not deleted; the dialog
+offers that window instead. The delete claims the connection's key while it
+runs, so a connect started meanwhile from a picker that still lists it is
+refused, and opening it from such a picker afterwards says it was deleted.
+The purge waits for the drafts a just-closed workspace is still writing
+(`WorkspaceStore::writes_in_flight`). The window holds the process until the
+delete ends, as it does for every other write to the connection list.
+
 ## Where files go
 
 `tablepro_storage::StoragePaths` resolves every directory once at startup
@@ -86,7 +134,6 @@ base directories and their fallbacks.
 | `history_database()` | `$XDG_STATE_HOME/<dir>/history.db` |
 | `workspaces_dir()` | `$XDG_STATE_HOME/<dir>/workspaces` |
 | `drafts_dir()` | `$XDG_DATA_HOME/<dir>/drafts` |
-| `instance_lock()` | `$XDG_RUNTIME_DIR/app/<app-id>/tablepro.lock` |
 
 `<dir>` is `tablepro` for an installed build and `tablepro-devel` for a
 development one, so `cargo run` never writes over an installed build's
@@ -132,6 +179,28 @@ When it deleted anything it runs FTS5 `optimize`, because the delete
 triggers otherwise leave tombstones that grow the index as the table
 shrinks. It returns a `PruneReport { expired, over_cap }`.
 
+### What goes into the history
+
+`HistoryService::record` is the one way in, for editor runs, saves and
+imports. It records nothing while `save-query-history` is off, or when the
+connection has no dialect, such as while its link is down. Otherwise the
+dialect's `history_recording` decides, reading the SQL with the editor's own
+script lexer:
+
+- A statement that can carry a credential withholds the whole entry. Each
+  engine lists its own in a `CredentialRules`: logins, roles, keys and links
+  to other servers (`CREATE USER`, `CHANGE MASTER`), statements that do so
+  only with a given word (`GRANT ... IDENTIFIED`), and functions or engines
+  that take a password (`dblink`, `OPENROWSET`, `s3`). A routine body is
+  read for the statements inside it, whether dollar-quoted or, on
+  PostgreSQL, a plain string after `DO` or `AS`. So is a MySQL `/*!`
+  comment, which the server runs.
+- A string, quoted name or comment that never closes withholds it too, since
+  what is inside a literal is then a guess.
+
+An entry is kept whole or not at all, never rewritten to cut a secret out.
+Turning the setting off keeps what is already there; Clear removes it.
+
 ## App preferences with `gio::Settings`
 
 `data/app.tablepro.TablePro.gschema.xml` holds every app-wide preference and the window geometry. Meson installs it to `$datadir/glib-2.0/schemas` and compiles it; see [ADR 0007](decisions/0007-gsettings-preferences.md).
@@ -145,6 +214,8 @@ Schema id and path: `app.tablepro.TablePro`.
 | `is-maximized` | `b` | `false` | |
 | `default-page-size` | `u` | `1000` | 100 to 100000 |
 | `confirm-destructive` | `b` | `true` | |
+| `restore-session` | `b` | `true` | |
+| `save-query-history` | `b` | `true` | |
 | `history-retention-days` | `u` | `30` | 0 to 365 |
 | `query-timeout-secs` | `u` | `60` | 0 to 3600 |
 | `use-system-font` | `b` | `true` | |

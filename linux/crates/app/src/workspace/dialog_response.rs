@@ -42,26 +42,20 @@ pub(crate) async fn respond(dialog: &adw::AlertDialog, parent: &gtk::Widget) -> 
 /// Answer the alert `window` shows with `response` by clicking its
 /// button, so the signals come in the order a user's click sends them.
 #[cfg(test)]
-pub(crate) fn answer(window: &impl IsA<adw::Window>, response: &str) -> bool {
-    let Some(dialog) = visible_alert(window) else {
-        return false;
-    };
-    let label = dialog.response_label(response);
-    let Some(button) = crate::test_support::descendants(&dialog)
-        .into_iter()
-        .filter_map(|widget| widget.downcast::<gtk::Button>().ok())
-        .find(|button| button.label().as_deref() == Some(label.as_str()))
-    else {
-        return false;
-    };
-    button.emit_clicked();
-    true
+pub(crate) fn answer(window: &impl IsA<gtk::Widget>, response: &str) -> bool {
+    visible_alert(window).is_some_and(|dialog| crate::test_support::click_response(&dialog, response))
 }
 
-/// The alert `window` shows, if any.
+/// The alert `window` shows, if any. `window` is an `AdwWindow` or an
+/// `AdwApplicationWindow`, the two that host dialogs.
 #[cfg(test)]
-pub(crate) fn visible_alert(window: &impl IsA<adw::Window>) -> Option<adw::AlertDialog> {
-    window.as_ref().visible_dialog().and_downcast::<adw::AlertDialog>()
+pub(crate) fn visible_alert(window: &impl IsA<gtk::Widget>) -> Option<adw::AlertDialog> {
+    let widget = window.as_ref();
+    let dialog = match widget.downcast_ref::<adw::ApplicationWindow>() {
+        Some(window) => window.visible_dialog(),
+        None => widget.downcast_ref::<adw::Window>()?.visible_dialog(),
+    };
+    dialog.and_downcast::<adw::AlertDialog>()
 }
 
 #[cfg(test)]
