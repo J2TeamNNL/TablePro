@@ -11,8 +11,8 @@ use tablepro_core::{
 use tablepro_test_fixtures::{HbaMode, PostgresFixture};
 use tablepro_test_support::FaultTransport;
 use tablepro_test_support::conformance::{
-    BoundedDdlEngine, ConformanceEngine, ConformanceFailure, EditorTransactionEngine, NetworkConformanceEngine,
-    PooledConformanceEngine, TypedConformanceEngine, UnsupportedTypeCase,
+    BoundedDdlEngine, ConformanceDdlEngine, ConformanceEngine, ConformanceFailure, EditorTransactionEngine,
+    NetworkConformanceEngine, PooledConformanceEngine, TypedConformanceEngine, UnsupportedTypeCase,
 };
 
 use crate::support::{direct, options_over, password};
@@ -61,7 +61,7 @@ impl ConformanceEngine for PgEngine {
     }
 
     fn unbounded_statement_sql(&self, marker: &str) -> String {
-        format!("SELECT pg_sleep(3600) /* {marker} */")
+        format!("SELECT /* {marker} */ pg_sleep(3600)")
     }
 
     async fn blocking_statement_sql(&self, marker: &str, hold: Duration) -> Result<String, ConformanceFailure> {
@@ -94,10 +94,16 @@ impl NetworkConformanceEngine for PgEngine {
         Ok((options, fault))
     }
 
+    /// An editor run reads a row source through its cursor, so the server
+    /// shows the FETCH, not the statement and its marker. A FETCH asleep
+    /// in `pg_sleep` is the unbounded statement, since each case has the
+    /// server to itself.
     fn running_statement_count_sql(&self, marker: &str) -> String {
         format!(
             "SELECT count(*) FROM pg_stat_activity \
-             WHERE state = 'active' AND query LIKE '%{marker}%' AND pid <> pg_backend_pid()"
+             WHERE state = 'active' AND pid <> pg_backend_pid() \
+             AND (query LIKE '%{marker}%' \
+             OR (query LIKE 'FETCH % FROM tablepro_cursor' AND wait_event = 'PgSleep'))"
         )
     }
 }
@@ -150,6 +156,24 @@ impl BoundedDdlEngine for PgEngine {
     }
 }
 
+impl ConformanceDdlEngine for PgEngine {
+    fn integer_type(&self) -> &'static str {
+        "integer"
+    }
+
+    fn text_type(&self) -> &'static str {
+        "text"
+    }
+
+    fn timestamp_type(&self) -> &'static str {
+        "timestamp"
+    }
+
+    fn current_timestamp_expression(&self) -> &'static str {
+        "CURRENT_TIMESTAMP"
+    }
+}
+
 mod suite {
     use super::PgEngine;
 
@@ -161,5 +185,10 @@ mod suite {
         editor_transactions: true,
         unsupported_types: true,
         bounded_ddl: true,
+    }
+
+    tablepro_test_support::ddl_conformance_suite! {
+        engine: PgEngine,
+        docker: true,
     }
 }

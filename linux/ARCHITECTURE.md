@@ -154,7 +154,7 @@ Each engine's TLS stack takes trust in its own form, so the driver builds it:
 |---|---|---|---|
 | PostgreSQL | The system store (rustls-platform-verifier), plus the CA file | Yes | The rustls error |
 | ClickHouse | The system store (rustls-platform-verifier), plus the CA file | Yes, as the login, with no password sent | The rustls error |
-| MySQL, MariaDB | The Mozilla roots compiled into sqlx, plus the CA file. Not the system store | Yes | The rustls error |
+| MySQL, MariaDB | The system store and the CA file as one PEM bundle (`tablepro_net::tls::mysql_ca_bundle_pem`), plus the Mozilla roots compiled into sqlx | Yes | The rustls error |
 | SQL Server | The system store (loaded by tiberius), plus the CA file | No | rustls's message text, because tiberius keeps nothing else |
 | SQLite | No TLS | | |
 
@@ -193,6 +193,8 @@ On Linux the system store is the distribution's CA bundle. Under Flatpak it is t
 
 A window holds one `Session`. Every use of its connection goes through the `OperationRunner`, which adds no timer of its own: the deadline travels in `CallOptions` so the driver stops the statement on the server. The session's monitor probes every 30 s and calls the connection lost after three failed probes in a row, or as soon as `Connection::lost()` fires, which a driver resolves only when the link is gone, never for one dead backend in its pool. It then reconnects on a backoff from 5 s to 60 s. A failure that a retry cannot fix (authentication, TLS, configuration, a host key to review) parks the session until the user acts. A read that failed because its connection was lost runs once more on the replacement link; a save never does.
 
+The session's `SchemaCatalog` holds what the window knows about the database: the schemas, each scope's objects and each table's columns. Callers that ask for the same thing at once share one fetch, a fetch runs as its own task so a view that closes does not stop it, and a failed refresh keeps the list it had. A reconnect commits the catalog the new connection read and marks the rest stale; `invalidate_table` does the same for one table after a schema change. The sidebar follows the default schema's list through a watch the window drops before the session closes. The editor's completion reads the catalog when it opens: the default schema's objects, a named schema's objects after `schema.`, and the columns of the tables the statement names.
+
 ## Workspace tab system
 
 The active connection drives a single `AdwTabView` hosting heterogeneous tabs. The `App` component owns the strip; tabs are typed via the `WorkspaceTab` enum:
@@ -206,9 +208,11 @@ pub enum WorkspaceTab {
 }
 ```
 
-Each tab is a Relm4 `Controller<T>` whose widget the `AdwTabView` adopts. `App` keeps a `HashMap<Uuid, WorkspaceTab>` keyed by the tab's UUID; the canonical display order comes from `tab_view.pages()` (drag-reorderable). The UUID is stashed on the `AdwTabPage` via `glib::Quark` qdata so close / right-click actions can recover it.
+Each tab is a gtk-rs widget with a composite template, which the `AdwTabView` adopts. `App` keeps a `HashMap<Uuid, WorkspaceTab>` keyed by the tab's UUID; the canonical display order comes from `tab_view.pages()` (drag-reorderable). The UUID is stashed on the `AdwTabPage` via `glib::Quark` qdata so close / right-click actions can recover it.
 
-App routing is hub-and-spoke: every per-tab event becomes an output that App's `forward(...)` closure tags with the tab's UUID and re-emits as an `AppMsg::*ForTab(id, ...)`. App's `update` looks up the slot and dispatches back to the controller's input. This keeps the per-tab controllers ignorant of each other and gives App one place to enforce cross-tab invariants (refetch siblings after Save, close all tabs for a dropped table, etc.).
+App routing is hub-and-spoke: a tab emits signals, and the closures App connects tag them with the tab's UUID and re-emit them as `AppMsg` inputs. App's `update` looks up the slot and calls back into the tab. This keeps the tabs ignorant of each other and gives App one place to enforce cross-tab invariants (reload the tabs on a table whose schema changed, close all tabs for a dropped table, etc.).
+
+A browse or structure tab reads its own data through the session. A `RequestSequencer` keeps one request of each kind current: a new page stops the one it replaces, and a reply to a replaced request is dropped. A page and a count wait for the table's columns from the catalog. A read that failed is asked again once the session reconnects, while a tab whose reads all landed keeps its rows. Closing a tab stops its reads, so the server drops the statement.
 
 Reopening a closed tab uses a 10-deep `VecDeque<ClosedTabDescriptor>` snapshot taken in `finish_close_workspace_tab` before the slot is dropped. The stack clears on disconnect because descriptors reference tables in the active connection.
 
@@ -219,11 +223,11 @@ Each window owns two registries holding the in-flight edit state for its tabs, k
 | Registry | Handle | What it tracks | Materialised by |
 |---|---|---|---|
 | `ChangeTrackerRegistry` | `TabTrackerHandle` | Row-level INSERT / UPDATE / DELETE for Table tabs | `TabTrackerHandle::change_set` → `TrackedChanges` |
-| `StructureTrackerRegistry` | `StructureTrackerHandle` | Column / index / FK / table-rename DDL for Structure tabs | `sql_ddl::materialize_ops` → `Vec<String>` |
+| `StructureTrackerRegistry` | `StructureTrackerHandle` | The table's definition, the user's `TableDraft` and the `TableChanges` between them, for Structure tabs | `PendingStructure::plan` through the connection's `DdlDialect` → `DdlPlan` |
 
-A handle is a newtype over `Rc<RefCell<_>>`. Every method borrows only for its own body, calls no GTK and no callbacks, and returns owned data (`CellOverlay`, `RowState`, `TrackerDelta`), so a grid bind that runs while a tab is applying a change never meets a held borrow. A row edit goes in as a `TrackerEdit` and comes back as a `TrackerDelta`: the rows to rebind, the draft rows the list store gains, loses or updates, and the new pending count. The tab applies it to its `gio::ListStore` after the call returns. `App::dirty_tabs` reads both registries for the close prompts, the teardown guard and the `•` title prefix. CI fails on a `thread_local!` under `crates/app/src/services`, since a process-wide registry would share one window's unsaved edits with every other window.
+A handle is a newtype over `Rc<RefCell<_>>`. Every method borrows only for its own body, calls no GTK and no callbacks, and returns owned data (`CellOverlay`, `RowState`, `TrackerDelta`), so a grid bind that runs while a tab is applying a change never meets a held borrow. A row edit goes in as a `TrackerEdit` and comes back as a `TrackerDelta`: the rows to redraw, the draft rows the list store gains or loses, and the new pending count. The tab applies it to its `gio::ListStore` after the call returns. A grid row is a `RowObject` whose identity is fixed when it is made: a saved row's key and cells as fetched, or a draft's id, whose cells live only in the tracker. A tracked change bumps the row's `revision` property, and each cell bound to the row listens for it and draws again in place, so the store never swaps a row and its selection and focus stay put. The tab finds the row through a `GridRowIndex` of weak references keyed like the tracker. A grid cell resolves its row through its column view cell when an event fires, so an edit, a menu action or a toggle reaches the row it was made on even after rows above it came or went. Every pending change carries a `Touch` from the tracker's counter. An `UndoOp` holds the pending state on both sides of a step, touch included, so undo after A, B, C shows B, not the fetched value. `change_set` emits one change per row in touch order, and `plan_save` keeps that order: a row deleted and replaced by a draft with the same unique value saves, because its DELETE runs first. `App::dirty_tabs` reads both registries for the close prompts, the teardown guard and the `•` title prefix. CI fails on a `thread_local!` under `crates/app/src/services`, since a process-wide registry would share one window's unsaved edits with every other window.
 
-The Structure tab is **snapshot + diff**, not per-op log. `original_*` snapshots capture the load-time schema; the diff against the live model produces ops via `sql_ddl::diff_to_ops`. Discard restores the snapshot. There is no per-op undo: Discard is the only restore point. The tracker just caches the most recent diff so out-of-band callers (close prompt, save dispatcher) read the same op list without re-deriving.
+The Structure tab is **definition + draft**, not a per-change log. The `TableDefinition` one read returned is what the tab plans against; `diff_table` turns the draft into `TableChanges`, and the engine's `DdlDialect` plans them into statements in its own order. Discard copies the definition back over the draft, and is the only restore point. The tracker holds the latest `PendingStructure`, so the close prompt and the save dispatcher read the same change without the tab, and the save plans it again with the dialect of the connection that runs it ([ADR 0010](docs/decisions/0010-ddl-plans-and-table-definitions.md)).
 
 ## Persistence
 
@@ -231,14 +235,17 @@ The Structure tab is **snapshot + diff**, not per-op log. `original_*` snapshots
 |---|---|---|
 | Saved connections | JSON, `g_file_set_contents_full` CONSISTENT + DURABLE, 0600 | `$XDG_CONFIG_HOME/tablepro/connections.json` |
 | Connection passwords + SSH secrets | libsecret via `oo7` (Secret Service / KWallet) | keyring item per connection UUID |
-| Per-connection workspace tabs | JSON, durable write, debounced 500 ms | `$XDG_STATE_HOME/tablepro/workspace_state.json` |
+| Workspace tabs, one file per session | JSON, durable write, debounced 500 ms, off the GTK thread | `$XDG_STATE_HOME/tablepro/workspaces/<connection id>.json`, `file-<sha256 of the URI>.json` for an unsaved file |
+| Editor tab text | one file per tab, debounced 500 ms | `$XDG_DATA_HOME/tablepro/drafts/<workspace name>/` |
 | Query history | SQLite + FTS5 virtual table, 0600 | `$XDG_STATE_HOME/tablepro/history.db` |
 | Application preferences | GSettings | schema `app.tablepro.TablePro` |
 | Window size / maximized | GSettings | schema `app.tablepro.TablePro` |
 | Per-table column widths | JSON, durable write | `$XDG_CONFIG_HOME/tablepro/column_widths.json` |
 | Single-instance lock | `flock` on an empty file | `$XDG_RUNTIME_DIR/app/<app-id>/tablepro.lock` |
 
-Forward compat: `WorkspaceTabRecord` uses `#[serde(other)] Unknown` so an old binary reading a newer file silently skips unknown variants instead of failing the whole load. `clamp_connection` runs on load to migrate legacy variants (`Browse`, `Structure { schema, table }`) into the unified `Table` shape.
+`WorkspaceStore` reads a session's file once its session is adopted, and the window writes the tab list only after that read, so a write never lands on tabs not yet restored. A file that cannot be read, that another version wrote, or that is over 1 MiB is left as it is and nothing is written over it until the user picks Reset on the toast, which moves it aside as `<name>.json.corrupt-<seconds>`. Every open tab is saved and restored, with no cap on the count. Writes go through one task that keeps the newest record per file. Editor records carry a draft id, never the text, and the editor's `content-changed` signal carries no text either: the tab label reads at most 200 characters.
+
+A restore deletes the drafts no saved or open tab names, except while a moved-aside copy of the session's file is there, since that copy may name them. A draft that cannot be read is moved aside as `<id>.sql.corrupt-<seconds>`, which the cleanup never deletes, and its tab opens empty with a toast. A disconnect writes the open tabs' text before their buffers go.
 
 `SavedConnection::last_opened_at: Option<DateTime<Utc>>` is stamped on each successful connect via `touch_last_opened`. The welcome view sorts by recency-first with alphabetical tiebreaker; never-opened entries fall to the bottom.
 

@@ -3,6 +3,8 @@
 
 pub mod cancellation;
 pub mod close;
+pub mod commit_resolution;
+pub mod ddl;
 pub mod deadlines;
 pub mod liveness;
 pub mod metadata;

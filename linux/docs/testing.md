@@ -111,13 +111,14 @@ tablepro_test_support::connection_conformance_suite! {
 }
 ```
 
-The cases every engine runs: a created table is listed with its key, a query bound times out within its deadline, a cancelled editor run reports it and leaves the session ready, a read-only connection refuses writes, a write batch commits every step and a failed one ends as the driver's atomicity says, a row guard mismatch applies nothing, `close` is idempotent, and `stream_read` streams every row in bounded batches.
+The cases every engine runs: a created table is listed with its key, a query bound times out within its deadline, a cancelled editor run reports it and leaves the session ready, a read-only connection refuses writes, a write batch commits every step and a failed one ends as the driver's atomicity says, a row guard mismatch applies nothing, `close` is idempotent, a commit the engine keeps no record of resolves as `Unresolvable`, and `stream_read` streams every row in bounded batches.
 
 Each flag adds cases and needs its engine trait:
 
 | Flag | Adds | Needs |
 |---|---|---|
-| `endpoint: network` | a dropped `query_bound` caller stops the server's statement; a lost transport reports `ConnectionLost` | `NetworkConformanceEngine` |
+| `endpoint: network` | a dropped `query_bound` caller or editor run stops the server's statement, and the editor session then runs again or reports `Lost`; a lost transport reports `ConnectionLost` | `NetworkConformanceEngine` |
+| `endpoint: file` | a dropped editor run stops, and the session takes the next run within the cancel grace | `ConformanceEngine` |
 | `pool: pooled` | a probe succeeds while every pool slot is busy | `PooledConformanceEngine` |
 | `editor_transactions: true` | the row limit keeps the transaction and the statements after it | `EditorTransactionEngine` |
 | `unsupported_types: true` | an unsupported type never decodes as NULL | `TypedConformanceEngine` |
@@ -126,6 +127,25 @@ Each flag adds cases and needs its engine trait:
 A flag that is off emits no test. `suite_flags_match_driver_capabilities` is always emitted and never ignored: it fails when `endpoint` or `editor_transactions` disagrees with the driver's `DriverCapabilities`, so those cases cannot be skipped by declaring less. `pool`, `unsupported_types` and `bounded_ddl` have no capability behind them: they describe the server, and MySQL and MariaDB differ on `bounded_ddl` under one driver, so the adapter states them and review checks them. `docker: true` marks every other case `#[ignore = "requires docker"]`; SQLite passes `docker: false` and `endpoint: file`, so its suite runs in the unit suite.
 
 Each case starts its own engine, then has two minutes (`CASE_LIMIT`) to finish. A driver that ignores a deadline or a cancel fails the case with its name instead of holding the test run.
+
+### DDL conformance
+
+`ddl_conformance_suite!` runs the structure tab's own plans against the server. The adapter implements `ConformanceDdlEngine` on top of `ConformanceEngine`: the engine's integer, text and timestamp types, its current-timestamp expression, and, for an engine whose `DdlDialect` creates no tables (ClickHouse), a CREATE TABLE of its own.
+
+```rust
+tablepro_test_support::ddl_conformance_suite! {
+    engine: PgEngine,
+    docker: true,
+}
+```
+
+Every case plans through `connection.dialect().ddl()` and runs the plan with `write_batch`:
+
+- `ddl_plans_apply_and_read_back` creates a table with a quoted literal default and an expression default, then adds, renames and drops a column, changes its nullability and default, adds an index and a foreign key, renames the table, which has to stay listed in its own schema, and drops the tables. After each step `fetch_table_definition` has to match the draft. A step the dialect refuses has to be refused by its plan as well, with a reason, so no step is skipped without a check. Once the foreign key exists, the referenced primary key has to read as held by it.
+- `failed_ddl_batch_outcome_matches_ddl_atomicity` sends two plans whose second statement the server rejects, and checks the outcome against `ddl_writes`: `RolledBack` and nothing applied, or `PartiallyApplied` and the first plan applied.
+- `create_table_script_recreates_the_table` drops a table and runs its `create_table_script`, which has to bring back the same column definitions and index keys.
+
+The PostgreSQL, MySQL, SQL Server, ClickHouse and SQLite targets run it, and the MySQL target runs it on MariaDB as well. SQLite passes `docker: false`, so its cases run in the unit suite.
 
 ### TLS conformance
 
@@ -157,7 +177,7 @@ CI runs one job per package with docker tests:
 cargo nextest run --locked --profile ci -p tablepro-driver-mssql --run-ignored only
 ```
 
-`.config/nextest.toml` puts each driver's tests in a test group with one thread, so the tests of one suite never compete for a container. The `ci` profile writes a JUnit report to `target/nextest/ci/junit.xml` and kills a test that runs past five minutes, so a hang fails with the test's name.
+`.config/nextest.toml` puts each package's docker tests in a test group with one thread, so the tests of one suite never compete for a container. The `ci` profile writes a JUnit report to `target/nextest/ci/junit.xml` and kills a test that runs past five minutes, so a hang fails with the test's name.
 
 Locally, with [cargo-nextest](https://nexte.st/) installed:
 
@@ -224,7 +244,7 @@ There is no app-level end-to-end test yet. Driving the GTK app under `xvfb-run` 
 GitHub Actions (`.github/workflows/build-linux.yml`), Ubuntu runner:
 
 1. **Fast checks**: `meson setup`, `cargo fmt --all -- --check`, clippy with and without default features, `meson compile`, `xvfb-run -a dbus-run-session -- meson test --print-errorlogs`, a Secret Service step under `gnome-keyring-daemon`, then `meson dist`. Runs in an `ubuntu:26.04` container, which ships GLib 2.88 plus the meson, appstream and desktop-file-utils packages. [CONTRIBUTING.md](../CONTRIBUTING.md#fast-job-commands) lists the same commands.
-2. **Docker tests**: runs after fast checks pass. One matrix entry per package with docker tests (the PostgreSQL, MySQL, SQL Server and ClickHouse drivers, `tablepro-ssh` against an OpenSSH server container, and `tablepro-test-fixtures` for the fixtures themselves) runs that package's ignored docker tests through cargo-nextest on the host runner's Docker. `tablepro-session` builds storage, which needs GLib 2.88, so its job runs in the fast job's `ubuntu:26.04` image with the host's Docker socket mounted.
+2. **Docker tests**: runs after fast checks pass. One matrix entry per package with docker tests (the PostgreSQL, MySQL, SQL Server and ClickHouse drivers, `tablepro-ssh` against an OpenSSH server container, and `tablepro-test-fixtures` for the fixtures themselves) runs that package's ignored docker tests through cargo-nextest on the host runner's Docker. `tablepro-session` builds storage, which needs GLib 2.88, so its job runs in the fast job's `ubuntu:26.04` image with the host's Docker socket mounted. The app's docker tests (`crates/app/tests/tracker_save_postgres.rs`) run the same way, since the app links GTK; that job names its test targets, because the app's `startup` test needs Meson.
 
 A Translations job also checks `po/POTFILES.in` and extracts the POT template. PRs only merge when every job is green.
 

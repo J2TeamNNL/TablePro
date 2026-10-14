@@ -45,7 +45,6 @@ fn editor_with(runs: Replies<FakeRun>, text: &str) -> Harness {
     let active = ActiveSession::new();
     active.replace(session_with(fake.clone(), runtime.tasks()));
     let editor = SqlEditor::new(SqlEditorInit {
-        schema_buffer: build_schema_buffer(),
         initial_query: Some(text.to_owned()),
         settings: settings.get().clone(),
         history: None,
@@ -244,6 +243,19 @@ fn format_keeps_the_old_text_one_undo_away() {
 }
 
 #[gtk4::test]
+fn typing_emits_content_changed_without_text() {
+    let harness = editor_with(answering(), "SELECT 1");
+    let changes = SignalLog::connect(&harness.editor, "content-changed", |values| values.len());
+    let buffer = harness.editor.buffer();
+
+    buffer.insert(&mut buffer.end_iter(), " ");
+    buffer.insert(&mut buffer.end_iter(), "2");
+
+    // One emission per change, carrying the editor and nothing else.
+    assert_eq!(changes.take(), [1, 1]);
+}
+
+#[gtk4::test]
 fn dropped_non_utf8_file_is_rejected() {
     let harness = editor_with(answering(), "SELECT 1");
     let root = tempfile::tempdir().expect("tempdir");
@@ -301,6 +313,69 @@ fn the_icon_buttons_have_accessible_names() {
         harness.editor.imp().source_view.upcast_ref::<gtk4::Widget>(),
         gtk4::AccessibleProperty::Label
     ));
+}
+
+fn unconnected_editor(settings: &MemorySettings, tasks: Tasks) -> SqlEditor {
+    crate::register_test_resources();
+    SqlEditor::new(SqlEditorInit {
+        initial_query: None,
+        settings: settings.get().clone(),
+        history: None,
+        tasks,
+        session: ActiveSession::new(),
+        hold: Rc::new(tablepro_session::runtime::CountingHold::new()),
+        close_timeout: Duration::from_secs(5),
+    })
+}
+
+fn scheme_id(view: &sourceview5::View) -> Option<String> {
+    let buffer = view.buffer().downcast::<sourceview5::Buffer>().ok()?;
+    buffer.style_scheme().map(|scheme| scheme.id().to_string())
+}
+
+#[gtk4::test]
+fn closed_editor_frees_source_view() {
+    let runtime = crate::test_support::test_runtime();
+    let settings = MemorySettings::new();
+    let editor = unconnected_editor(&settings, runtime.tasks());
+    let view = editor.imp().source_view.get().downgrade();
+
+    drop(editor);
+    crate::test_support::drain_main_context();
+
+    assert!(
+        view.upgrade().is_none(),
+        "the closed editor's source view is still alive"
+    );
+}
+
+#[gtk4::test]
+fn closed_editor_drops_its_theme_and_font_handlers() {
+    let _ = adw::init();
+    let runtime = crate::test_support::test_runtime();
+    let settings = MemorySettings::new();
+    let counts = |settings: &MemorySettings| (Rc::strong_count(settings.get()), Rc::weak_count(settings.get()));
+    let before = counts(&settings);
+    let style = adw::StyleManager::default();
+    style.set_color_scheme(adw::ColorScheme::ForceLight);
+    let editor = unconnected_editor(&settings, runtime.tasks());
+    // Held past the editor, so a handler left behind has a view to repaint.
+    let view = editor.imp().source_view.get();
+    let scheme = scheme_id(&view);
+
+    drop(editor);
+    crate::test_support::drain_main_context();
+    settings.get().set_style_scheme("classic").expect("a style scheme");
+    style.set_color_scheme(adw::ColorScheme::ForceDark);
+    let after = scheme_id(&view);
+    style.set_color_scheme(adw::ColorScheme::Default);
+
+    assert_eq!(after, scheme, "a closed editor still follows the theme");
+    assert_eq!(
+        counts(&settings),
+        before,
+        "the settings still carry a closed editor's handlers"
+    );
 }
 
 #[test]

@@ -13,7 +13,8 @@ use super::EditorDeps;
 use super::editor_session_slot::EditorSessionSlot;
 use super::results_pane::ResultsPane;
 use super::run_log::RunLog;
-use crate::ui::grid::GridMsg;
+use crate::ui::grid::GridSink;
+use crate::ui::handler_guard::HandlerGuard;
 
 /// A run in flight: its cancel switch, and the loop that brings its
 /// results to the GTK thread.
@@ -44,10 +45,13 @@ pub struct SqlEditor {
     pub slot: Arc<EditorSessionSlot>,
     pub running: RefCell<Option<RunningScript>>,
     pub log: RefCell<Option<RunLog>>,
-    pub grid_sender: OnceCell<relm4::Sender<GridMsg>>,
+    pub grid_sink: OnceCell<GridSink>,
     /// Whether the last run left a transaction open, as last reported.
     pub transaction_dirty: Cell<bool>,
     pub shut_down: Cell<bool>,
+    /// Theme and font handlers on the app-wide style manager and
+    /// settings, which would otherwise outlive the tab.
+    pub(super) app_handlers: RefCell<Vec<HandlerGuard>>,
 }
 
 #[glib::object_subclass]
@@ -75,9 +79,9 @@ impl ObjectImpl for SqlEditor {
                 Signal::builder("run-state-changed")
                     .param_types([bool::static_type()])
                     .build(),
-                Signal::builder("query-changed")
-                    .param_types([String::static_type()])
-                    .build(),
+                // No text: the buffer can be megabytes, and a listener
+                // reads only what it needs from it.
+                Signal::builder("content-changed").build(),
                 Signal::builder("copy-to-clipboard")
                     .param_types([String::static_type()])
                     .build(),
@@ -97,6 +101,7 @@ impl ObjectImpl for SqlEditor {
 
     fn dispose(&self) {
         self.obj().shutdown();
+        self.app_handlers.take();
     }
 }
 

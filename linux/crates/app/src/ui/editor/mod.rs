@@ -3,6 +3,7 @@
 //! gets a line in the results list.
 
 mod buffer_edit;
+mod completion;
 mod editor_session_slot;
 mod format_plan;
 mod imp;
@@ -40,7 +41,8 @@ use self::imp::RunningScript;
 use self::run_log::{RunEvent, RunLog};
 use self::run_scope::ScopedText;
 use self::script_runner::{ScriptRun, plan_batches, run_in_tab};
-use super::grid::GridMsg;
+use super::grid::{GridMsg, GridSink};
+use super::handler_guard::HandlerGuard;
 use crate::services::active_session::ActiveSession;
 
 glib::wrapper! {
@@ -50,7 +52,6 @@ glib::wrapper! {
 }
 
 pub struct SqlEditorInit {
-    pub schema_buffer: gtk4::TextBuffer,
     pub initial_query: Option<String>,
     pub settings: Rc<tablepro_storage::AppSettings>,
     pub history: Option<tablepro_storage::QueryHistory>,
@@ -93,7 +94,7 @@ impl SqlEditor {
         buffer.set_text(&initial_text);
         imp.source_view.set_buffer(Some(&buffer));
         editor.connect_theme(&init.settings);
-        editor.connect_completion(&init.schema_buffer, &buffer);
+        editor.connect_completion(&buffer);
         editor.connect_buffer(&buffer);
         editor.install_actions();
         editor.install_shortcuts();
@@ -253,11 +254,11 @@ impl SqlEditor {
         )
     }
 
-    pub fn connect_query_changed<F: Fn(&Self, String) + 'static>(&self, f: F) -> glib::SignalHandlerId {
+    pub fn connect_content_changed<F: Fn(&Self) + 'static>(&self, f: F) -> glib::SignalHandlerId {
         self.connect_closure(
-            "query-changed",
+            "content-changed",
             false,
-            glib::closure_local!(move |editor: &Self, text: String| f(editor, text)),
+            glib::closure_local!(move |editor: &Self| f(editor)),
         )
     }
 
@@ -423,11 +424,11 @@ impl SqlEditor {
 
     fn result_page(&self, index: u32) -> Option<gtk4::Widget> {
         let imp = self.imp();
-        let grid_sender = imp.grid_sender.get()?;
+        let grid_sink = imp.grid_sink.get()?;
         let log = imp.log.borrow();
         let entry = log.as_ref()?.entries().get(usize::try_from(index).ok()?)?;
         let weak = self.downgrade();
-        Some(result_widgets::entry_widget(entry, grid_sender, move |position| {
+        Some(result_widgets::entry_widget(entry, grid_sink, move |position| {
             if let Some(editor) = weak.upgrade() {
                 editor.go_to_char(position);
             }
@@ -493,75 +494,79 @@ impl SqlEditor {
         let view = self.imp().source_view.get();
         view.set_monospace(true);
         crate::ui::style_scheme_resolver::apply(&view, &settings.style_scheme());
-        let view_for_theme = view.downgrade();
-        let settings_for_theme = settings.clone();
-        adw::StyleManager::default().connect_dark_notify(move |_| {
-            if let Some(view) = view_for_theme.upgrade() {
-                crate::ui::style_scheme_resolver::apply(&view, &settings_for_theme.style_scheme());
-            }
-        });
-        let view_for_scheme = view.downgrade();
-        settings.gio().connect_changed(
-            Some(tablepro_storage::settings::keys::STYLE_SCHEME),
-            move |settings, key| {
-                if let Some(view) = view_for_scheme.upgrade() {
-                    crate::ui::style_scheme_resolver::apply(&view, &settings.string(key));
+        let style_manager = adw::StyleManager::default();
+        let settings_for_theme = Rc::downgrade(settings);
+        let dark = style_manager.connect_dark_notify(glib::clone!(
+            #[weak]
+            view,
+            move |_| {
+                if let Some(settings) = settings_for_theme.upgrade() {
+                    crate::ui::style_scheme_resolver::apply(&view, &settings.style_scheme());
                 }
-            },
+            }
+        ));
+        let scheme = settings.gio().connect_changed(
+            Some(tablepro_storage::settings::keys::STYLE_SCHEME),
+            glib::clone!(
+                #[weak]
+                view,
+                move |settings, key| crate::ui::style_scheme_resolver::apply(&view, &settings.string(key))
+            ),
         );
+        let mut handlers = vec![
+            HandlerGuard::new(&style_manager, dark),
+            HandlerGuard::new(settings.gio(), scheme),
+        ];
         crate::ui::editor_font_provider::apply(settings);
         for key in [
             tablepro_storage::settings::keys::USE_SYSTEM_FONT,
             tablepro_storage::settings::keys::CUSTOM_FONT,
         ] {
-            let settings_for_key = settings.clone();
-            settings.gio().connect_changed(Some(key), move |_, _| {
-                crate::ui::editor_font_provider::apply(&settings_for_key);
+            let settings_for_key = Rc::downgrade(settings);
+            let font = settings.gio().connect_changed(Some(key), move |_, _| {
+                if let Some(settings) = settings_for_key.upgrade() {
+                    crate::ui::editor_font_provider::apply(&settings);
+                }
             });
+            handlers.push(HandlerGuard::new(settings.gio(), font));
         }
+        self.imp().app_handlers.replace(handlers);
     }
 
-    fn connect_completion(&self, schema_buffer: &gtk4::TextBuffer, buffer: &sourceview5::Buffer) {
-        let provider = sourceview5::CompletionWords::new(Some("SQL"));
-        provider.register(schema_buffer);
-        provider.register(buffer);
-        self.imp().source_view.completion().add_provider(&provider);
+    fn connect_completion(&self, buffer: &sourceview5::Buffer) {
+        let completion = self.imp().source_view.completion();
+        if let Some(deps) = self.deps() {
+            let catalog = completion::SqlCompletionProvider::new(deps.session.clone(), deps.tasks.clone());
+            completion.add_provider(&catalog);
+        }
+        let words = sourceview5::CompletionWords::new(Some(&crate::i18n::pgettext("completion group", "Document")));
+        words.register(buffer);
+        completion.add_provider(&words);
     }
 
     fn connect_buffer(&self, buffer: &sourceview5::Buffer) {
         let imp = self.imp();
         let cursor_info = imp.cursor_info.get();
-        let update_cursor = move |buffer: &sourceview5::Buffer| {
-            let iter = buffer.iter_at_mark(&buffer.get_insert());
-            cursor_info.set_label(&crate::i18n::gettext_f(
-                "Ln {line}, Col {column}",
-                &[
-                    ("line", &(iter.line() + 1).to_string()),
-                    ("column", &(iter.line_offset() + 1).to_string()),
-                ],
-            ));
-        };
-        update_cursor(buffer);
-        buffer.connect_cursor_position_notify(move |buffer| update_cursor(buffer));
+        show_cursor_position(&cursor_info, buffer);
+        buffer.connect_cursor_position_notify(glib::clone!(
+            #[weak]
+            cursor_info,
+            move |buffer| show_cursor_position(&cursor_info, buffer)
+        ));
 
         let weak = self.downgrade();
-        buffer.connect_changed(move |buffer| {
+        buffer.connect_changed(move |_| {
             if let Some(editor) = weak.upgrade() {
-                editor.emit_by_name::<()>("query-changed", &[&buffer_text(buffer)]);
+                editor.emit_by_name::<()>("content-changed", &[]);
             }
         });
 
         let run_button = imp.run_button.get();
-        let update_label = move |buffer: &sourceview5::Buffer| {
-            if buffer.has_selection() {
-                run_button.set_label(&crate::i18n::gettext("Run Selection"));
-                run_button.set_tooltip_text(Some(&crate::i18n::gettext("Run the selected text (Ctrl+Return)")));
-            } else {
-                run_button.set_label(&crate::i18n::gettext("Run"));
-                run_button.set_tooltip_text(Some(&crate::i18n::gettext("Run the script (Ctrl+Return)")));
-            }
-        };
-        buffer.connect_has_selection_notify(move |buffer| update_label(buffer));
+        buffer.connect_has_selection_notify(glib::clone!(
+            #[weak]
+            run_button,
+            move |buffer| label_run_button(&run_button, buffer.has_selection())
+        ));
     }
 
     fn connect_buttons(&self) {
@@ -587,26 +592,23 @@ impl SqlEditor {
         self.imp()
             .results
             .set_page_builder(move |index| weak.upgrade().and_then(|editor| editor.result_page(index)));
-        let (sender, receiver) = relm4::channel::<GridMsg>();
-        let _ = self.imp().grid_sender.set(sender);
         let weak = self.downgrade();
-        glib::spawn_future_local(async move {
-            while let Some(message) = receiver.recv().await {
-                let Some(editor) = weak.upgrade() else {
-                    return;
-                };
-                match message {
-                    GridMsg::CopyToClipboard(text) => editor.emit_by_name::<()>("copy-to-clipboard", &[&text]),
-                    GridMsg::ShowToast(text) => editor.emit_by_name::<()>("toast", &[&text]),
-                    GridMsg::ExportResults(result) => {
-                        let name = export_name_for_query(&editor.selected_preview());
-                        let payload = glib::BoxedAnyObject::new((result, name));
-                        editor.emit_by_name::<()>("export-results", &[&payload]);
-                    }
-                    _ => {}
+        let sink: GridSink = std::rc::Rc::new(move |message| {
+            let Some(editor) = weak.upgrade() else {
+                return;
+            };
+            match message {
+                GridMsg::CopyToClipboard(text) => editor.emit_by_name::<()>("copy-to-clipboard", &[&text]),
+                GridMsg::ShowToast(text) => editor.emit_by_name::<()>("toast", &[&text]),
+                GridMsg::ExportResults(result) => {
+                    let name = export_name_for_query(&editor.selected_preview());
+                    let payload = glib::BoxedAnyObject::new((result, name));
+                    editor.emit_by_name::<()>("export-results", &[&payload]);
                 }
+                _ => {}
             }
         });
+        let _ = self.imp().grid_sink.set(sink);
     }
 
     /// The statement behind the result on screen, to name its export.
@@ -746,6 +748,27 @@ impl SqlEditor {
     }
 }
 
+fn show_cursor_position(label: &gtk4::Label, buffer: &sourceview5::Buffer) {
+    let iter = buffer.iter_at_mark(&buffer.get_insert());
+    label.set_label(&crate::i18n::gettext_f(
+        "Ln {line}, Col {column}",
+        &[
+            ("line", &(iter.line() + 1).to_string()),
+            ("column", &(iter.line_offset() + 1).to_string()),
+        ],
+    ));
+}
+
+fn label_run_button(button: &gtk4::Button, has_selection: bool) {
+    if has_selection {
+        button.set_label(&crate::i18n::gettext("Run Selection"));
+        button.set_tooltip_text(Some(&crate::i18n::gettext("Run the selected text (Ctrl+Return)")));
+    } else {
+        button.set_label(&crate::i18n::gettext("Run"));
+        button.set_tooltip_text(Some(&crate::i18n::gettext("Run the script (Ctrl+Return)")));
+    }
+}
+
 fn buffer_text(buffer: &impl IsA<gtk4::TextBuffer>) -> String {
     let buffer = buffer.as_ref();
     let (start, end) = buffer.bounds();
@@ -818,31 +841,6 @@ fn toggle_line_comment(buffer: &gtk4::TextBuffer) {
         }
     }
     buffer.end_user_action();
-}
-
-pub const SQL_KEYWORDS: &str = "\
-SELECT FROM WHERE INSERT INTO VALUES UPDATE SET DELETE \
-JOIN INNER LEFT RIGHT FULL OUTER ON USING UNION INTERSECT EXCEPT \
-GROUP BY ORDER HAVING LIMIT OFFSET DISTINCT ALL AS WITH \
-CREATE TABLE INDEX VIEW DROP ALTER TRUNCATE \
-PRIMARY KEY FOREIGN REFERENCES UNIQUE NOT NULL DEFAULT CHECK \
-AND OR IS LIKE IN BETWEEN EXISTS ANY \
-COUNT SUM AVG MIN MAX CASE WHEN THEN ELSE END \
-TRUE FALSE ASC DESC RETURNING";
-
-pub fn build_schema_buffer() -> gtk4::TextBuffer {
-    let buf = gtk4::TextBuffer::new(None);
-    buf.set_text(SQL_KEYWORDS);
-    buf
-}
-
-pub fn update_schema_buffer(buffer: &gtk4::TextBuffer, schema_words: &[String]) {
-    let mut text = String::from(SQL_KEYWORDS);
-    for w in schema_words {
-        text.push(' ');
-        text.push_str(w);
-    }
-    buffer.set_text(&text);
 }
 
 /// File-name stem for an editor export, taken from the statement that

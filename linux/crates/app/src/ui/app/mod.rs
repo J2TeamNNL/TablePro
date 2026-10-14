@@ -1,15 +1,15 @@
-mod browse;
+mod close_flow;
 mod connect_flow;
 mod connection;
 mod import;
-mod ran_statements;
 mod row_ops;
+mod saves;
+mod sidebar_section_header;
 mod status_pages;
 mod structure;
-mod teardown_guard;
+mod window_tabs;
+mod workspace_persistence;
 mod workspace_tabs;
-
-use std::sync::Arc;
 
 use relm4::adw::prelude::*;
 use relm4::factory::FactoryVecDeque;
@@ -17,43 +17,24 @@ use relm4::gtk::{gio, glib};
 use relm4::prelude::*;
 use relm4::{Controller, adw, gtk};
 
-use tablepro_core::meta::ObjectInfo;
-use tablepro_core::{ColumnInfo, QueryResult};
-use tablepro_session::SessionHealth;
+use tablepro_core::QueryResult;
+use tablepro_session::{ObjectListSnapshot, SessionHealth};
 use tablepro_storage::SavedConnection;
 use uuid::Uuid;
 
 use super::browse_tab::{BrowseTab, BrowseTabInput};
 use super::connect_dialog::ConnectDialog;
 use super::connection_row::{ConnectionRow, ConnectionRowOutput};
-use super::editor::{SqlEditor, build_schema_buffer};
+use super::editor::SqlEditor;
 use super::history_dialog::HistoryDialog;
 use super::sidebar_row::{SidebarRow, SidebarRowOutput};
 use super::welcome_view::{WelcomeView, WelcomeViewInit, WelcomeViewOutput};
 use crate::services::change_tracker_registry::ChangeTrackerRegistry;
+use crate::services::from_session::FromSession;
 use crate::services::session_context::SessionContext;
 use crate::services::structure_tracker_registry::StructureTrackerRegistry;
 
 pub(crate) use connection::{ConnectRetry, ReadySession};
-
-/// Decrement a tab's pending-save counter in the close-after-save map.
-/// Returns `true` if the entry just dropped to zero (the caller should
-/// fire `WorkspaceTabClosed`); returns `false` if there's still another
-/// in-flight save for that tab, or if the entry was never present.
-///
-/// Used by both browse `SaveCompletedForTab` and structure
-/// `on_structure_save_completed` so a Table tab with both kinds of
-/// pending changes only closes after BOTH saves succeed.
-pub(super) fn dec_close_after_save(map: &mut std::collections::HashMap<Uuid, u32>, tab_id: &Uuid) -> bool {
-    if let Some(count) = map.get_mut(tab_id) {
-        *count = count.saturating_sub(1);
-        if *count == 0 {
-            map.remove(tab_id);
-            return true;
-        }
-    }
-    false
-}
 
 /// What `run()` hands the root component: the session services and the
 /// settings it opened before GTK started.
@@ -109,9 +90,7 @@ pub struct App {
     row_op_spinner: adw::Spinner,
     read_only_badge: gtk::Label,
     table_search: gtk::SearchEntry,
-    /// Outer Stack inside `content_holder` — swaps between `"empty"`
-    /// (AdwStatusPage "Select a table") and `"tabs"` (the unified
-    /// AdwTabOverview hosting both Browse and Editor sub-components).
+    /// `"empty"` while no tab is open, `"tabs"` otherwise.
     workspace_outer_stack: gtk::Stack,
     /// AdwTabOverview wrapping the unified AdwTabBar + AdwTabView.
     /// Built lazily on connect; torn down on disconnect.
@@ -127,17 +106,25 @@ pub struct App {
     change_trackers: std::rc::Rc<ChangeTrackerRegistry>,
     /// This window's pending DDL, one tracker per Structure tab.
     structure_trackers: std::rc::Rc<StructureTrackerRegistry>,
+    /// Starts, stops and settles this window's saves, and says what
+    /// closing any part of it would lose.
+    workspace_handle: crate::workspace::WorkspaceHandle,
+    /// The tabs as the close prompts read them.
+    window_tabs: std::rc::Rc<window_tabs::WindowTabs>,
+    /// One close prompt at a time, for a tab, the window, a disconnect
+    /// or a switch.
+    close_guards: std::rc::Rc<crate::workspace::CloseGuards>,
+    /// What closing the window still owes its files and connections.
+    window_shutdown: std::rc::Rc<close_flow::WindowShutdown>,
+    /// Holds logout back while something here would be lost.
+    inhibitor: crate::workspace::WindowInhibitor,
     dialog: Option<ConnectDialog>,
-    schema_buffer: gtk::TextBuffer,
     history_dialog: Option<Controller<HistoryDialog>>,
     saved_queries_dialog: Option<Controller<super::saved_queries_dialog::SavedQueriesDialog>>,
     import_dialog: Option<Controller<super::import_dialog::ImportCsvDialog>>,
     welcome_view: Controller<WelcomeView>,
     /// Driver id is connection-wide, not per-tab.
     current_driver_id: Option<String>,
-    /// All tables in the current connection — fed into `schema_buffer`
-    /// for the editor's autocomplete; not the per-tab columns.
-    table_names: Vec<String>,
     /// Read-only flag is connection-wide; fanned out to every BrowseTab
     /// when toggled.
     read_only: bool,
@@ -145,55 +132,20 @@ pub struct App {
     /// Per-tab page size lives on each BrowseTab.
     saved_connections: Vec<SavedConnection>,
     connected: bool,
-    /// Tabs the user picked "Save" on in a close-confirmation dialog,
-    /// counted by remaining saves before the close fires. A Table tab
-    /// with both browse-dirty AND structure-dirty dispatches two saves
-    /// (one of each kind) so its entry starts at 2 — the first
-    /// completion decrements to 1 (no close yet), the second decrements
-    /// to 0 and finally fires `WorkspaceTabClosed`. A `SaveFailed`
-    /// removes the entry entirely (abort all close intents for that
-    /// tab so the user can fix the error and retry). See
-    /// `dec_close_after_save` for the decrement helper.
-    close_after_save: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<Uuid, u32>>>,
-    /// Set when the user picked "Save" on the *window*-close dialog.
-    /// While true, the last `SaveCompletedForTab` that empties
-    /// `close_after_save` triggers `window.close()`. A `SaveFailed`
-    /// while in this state aborts the window-close intent. `Rc<Cell>`
-    /// so the close-request handler closure can mutate it from outside
-    /// `App::update`.
-    close_window_after_save: std::rc::Rc<std::cell::Cell<bool>>,
-    /// Count of in-flight transaction commits (a tab clicked Save
-    /// and is awaiting `execute_in_transaction`). Incremented by
-    /// `on_execute_browse_transaction` at dispatch, decremented by
-    /// `SaveCompletedForTab` and `SaveFailedForTab`. Window-close
-    /// blocks while this is > 0 so an async transaction never commits
-    /// after the tab / window has been torn down.
-    in_flight_saves: std::rc::Rc<std::cell::Cell<usize>>,
-    /// Structure tabs currently mid-DDL-transaction. A second Ctrl+S
-    /// while a Save is still in flight would dispatch a parallel
-    /// transaction and potentially commit twice; this set lets the
-    /// dispatch path short-circuit. Cleared on
-    /// `StructureSaveCompleted` / `StructureSaveFailed`.
-    structure_saves_in_flight: std::rc::Rc<std::cell::RefCell<std::collections::HashSet<Uuid>>>,
-    /// Coalesces `persist_workspace_state`. Tabs fire
+    /// Writes the tab list for the session this window shows. Tabs fire
     /// `WorkspaceTabsChanged` on every selection, drag-reorder,
-    /// page-size change and state-changed event, and each one would
-    /// otherwise rewrite the whole workspace file.
-    persist_debouncer: crate::workspace::PersistDebouncer,
-    /// LIFO stack of recently-closed tab descriptors for Ctrl+Shift+T
-    /// reopen. Capped at `CLOSED_TABS_CAPACITY`; the oldest entry is
-    /// dropped when a new one is pushed against a full stack. Cleared
-    /// on disconnect — descriptors reference the active connection's
-    /// tables, so reopening across connections would target the wrong
-    /// schema. Editor descriptors round-trip the buffer text;
-    /// dirty tabs lose their pending row/DDL edits because the
-    /// trackers have already been cleared by the close path.
+    /// page-size change and state-changed event, and it writes once
+    /// after a burst.
+    workspace: std::rc::Rc<workspace_persistence::WorkspacePersistence>,
+    /// Recently closed tabs for Ctrl+Shift+T. Cleared on disconnect,
+    /// since the tables they name belong to that connection. Pending
+    /// edits are not kept: the close has already cleared them.
     closed_tabs_stack: std::rc::Rc<std::cell::RefCell<std::collections::VecDeque<ClosedTabDescriptor>>>,
 }
 
 /// Snapshot of a tab the user just closed, retained for Ctrl+Shift+T
-/// reopen. Mirrors the persistence variants in `workspace_state` so
-/// reopen routes back through the same `append_*` constructors.
+/// reopen, so reopen routes back through the same `append_*`
+/// constructors as a restore.
 #[derive(Debug, Clone)]
 pub enum ClosedTabDescriptor {
     Editor {
@@ -214,22 +166,17 @@ pub enum ClosedTabDescriptor {
 
 pub(super) const CLOSED_TABS_CAPACITY: usize = 10;
 
-/// How long after the last tab change the workspace file is rewritten.
-const WORKSPACE_PERSIST_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
-
 pub struct EditorTabSlot {
     pub editor: SqlEditor,
     pub page: adw::TabPage,
     /// The file this tab's text is written to. The text itself lives in
     /// the buffer, not here.
     pub draft: tablepro_storage::DraftId,
-    /// The first line or so, for the tab label and the reopen stack.
-    pub query: String,
 }
 
 pub struct StructureTabSlot {
     pub id: Uuid,
-    pub controller: Controller<crate::ui::structure_tab::StructureTab>,
+    pub structure: crate::ui::structure_tab::StructureTab,
     pub page: adw::TabPage,
     pub schema: Option<String>,
     /// Empty in `New` mode until SaveCompleted carries the canonical
@@ -239,18 +186,15 @@ pub struct StructureTabSlot {
     pub mode: crate::ui::structure_tab::StructureMode,
 }
 
-/// One workspace tab pinned to a single `(schema, table)` entity in
-/// Data (Browse) mode. The Structure (DDL) view is no longer fused
-/// into the same tab — `WorkspaceTab::Structure` is its own
-/// dedicated tab opened via the sidebar right-click "Edit Structure"
-/// action. This split mirrors GNOME's "one TabPage per surface"
-/// idiom (Files, Builder) instead of a per-tab AdwViewSwitcher.
+/// A tab showing one table's rows. The table's structure opens in a
+/// tab of its own: one TabPage per surface, as GNOME Files and Builder
+/// do.
 pub struct TableTabSlot {
     pub id: Uuid,
     pub page: adw::TabPage,
     pub schema: Option<String>,
     pub table: String,
-    pub browse: Controller<BrowseTab>,
+    pub browse: BrowseTab,
 }
 
 /// A tab in the unified workspace.
@@ -259,10 +203,8 @@ pub struct TableTabSlot {
 ///   view. Default for every sidebar single-click.
 /// - **Editor**: a free-form SQL workspace, orthogonal to any one
 ///   table.
-/// - **Structure**: the DDL editor — opens for "New Table" drafts
-///   AND for "Edit Structure" against an existing table (via the
-///   sidebar right-click action). Replaces the previous inline
-///   AdwViewSwitcher on the Table tab.
+/// - **Structure**: the DDL editor, for a new table's draft or an
+///   existing table.
 pub enum WorkspaceTab {
     Editor(EditorTabSlot),
     Structure(StructureTabSlot),
@@ -270,8 +212,8 @@ pub enum WorkspaceTab {
 }
 
 impl WorkspaceTab {
-    /// The Browse-side controller. Only `Table` slots carry one.
-    pub fn browse_controller(&self) -> Option<&Controller<BrowseTab>> {
+    /// The Browse tab. Only `Table` slots carry one.
+    pub fn browse_tab(&self) -> Option<&BrowseTab> {
         match self {
             WorkspaceTab::Table(s) => Some(&s.browse),
             _ => None,
@@ -280,9 +222,9 @@ impl WorkspaceTab {
 
     /// The Structure-side controller. Only `Structure` slots carry
     /// one (Table slots no longer fuse the DDL editor in).
-    pub fn structure_controller(&self) -> Option<&Controller<crate::ui::structure_tab::StructureTab>> {
+    pub fn structure_tab(&self) -> Option<&crate::ui::structure_tab::StructureTab> {
         match self {
-            WorkspaceTab::Structure(s) => Some(&s.controller),
+            WorkspaceTab::Structure(s) => Some(&s.structure),
             _ => None,
         }
     }
@@ -300,18 +242,14 @@ impl WorkspaceTab {
 
 #[derive(Debug, Clone, Copy)]
 pub enum OpenMode {
-    /// Plain sidebar click: if a Browse tab for the table already
-    /// exists, activate it; otherwise append a new Browse tab.
-    /// Never closes existing tabs — accumulates until the user dismisses.
+    /// Plain sidebar click: activate the table's tab, or append one.
     SwitchOrAppend,
     /// Ctrl+click / right-click "Open in new tab": always append a
     /// new tab even when the same table is already open.
     NewTab,
 }
 
-// One Quark keyed `tp-workspace-tab-id` covers all tabs in the unified
-// workspace. We look up the WorkspaceTab from the HashMap to discover
-// kind — qdata only carries identity.
+// The page carries only the tab's id; its kind is in `workspace_tabs`.
 fn workspace_tab_id_quark() -> glib::Quark {
     static QUARK: std::sync::OnceLock<glib::Quark> = std::sync::OnceLock::new();
     *QUARK.get_or_init(|| glib::Quark::from_str("tp-workspace-tab-id"))
@@ -332,6 +270,8 @@ pub enum AppMsg {
     OpenConnect,
     /// A connect worked; adopt its session in this window.
     SessionReady(Box<ReadySession>),
+    /// The user kept the tabs the connect would have replaced.
+    SessionDeclined(Box<ReadySession>),
     /// The connect dialog's Connect: connect, then save the entry.
     ConnectSubmitted(Box<super::connect_dialog::ConnectSubmission>),
     /// The same, once the user agreed to close the open workspace.
@@ -351,20 +291,16 @@ pub enum AppMsg {
     /// The banner's Retry: ask the monitor to reconnect now.
     RetryConnection,
     /// The adopted session's health moved.
-    HealthChanged(SessionHealth),
-    /// A reconnect read the catalog again.
-    CatalogChanged(Vec<ObjectInfo>),
+    HealthChanged(FromSession<SessionHealth>),
+    /// The session's object list for the sidebar changed: a reconnect
+    /// read it again, or a schema change refreshed it.
+    CatalogChanged(FromSession<ObjectListSnapshot>),
     DialogClosed,
     SelectTable {
         schema: Option<String>,
         name: String,
         open_mode: OpenMode,
     },
-    ColumnsLoaded(Uuid, Vec<ColumnInfo>),
-    RowsLoaded(Uuid, u64, QueryResult),
-    /// `Some(tab_id)` for tab-scoped failures; `None` for app-level
-    /// failures (e.g. connect failure during open_saved).
-    LoadFailed(Option<Uuid>, String),
     ReloadConnections,
     ConnectionsLoaded(Vec<SavedConnection>),
     ConnectionListUnavailable,
@@ -381,12 +317,13 @@ pub enum AppMsg {
     /// Ctrl+W → close active workspace tab (browse or editor).
     CloseActiveWorkspaceTab,
     EditorTabRunStateChanged(Uuid, bool),
-    EditorTabQueryChanged(Uuid, String),
-    /// The saved tabs and their editor text, read off the GTK thread.
-    WorkspaceTabsRead {
-        saved: crate::services::workspace_state::ConnectionWorkspaceState,
-        drafts: std::collections::HashMap<tablepro_storage::DraftId, String>,
-    },
+    EditorTabContentChanged(Uuid),
+    /// The session's saved tabs and their editor text, read off the GTK
+    /// thread.
+    WorkspaceLoaded(FromSession<workspace_tabs::LoadedWorkspace>),
+    /// The toast's Reset: move the unreadable saved tabs aside.
+    ResetWorkspaceLayout,
+    WorkspaceLayoutReset(FromSession<Result<Option<std::path::PathBuf>, crate::workspace::WorkspaceSaveError>>),
     ShowHistory,
     ShowSavedQueries,
     /// Keep the active editor tab's SQL under a name the user picks.
@@ -430,31 +367,22 @@ pub enum AppMsg {
     /// Tear the connection down, once nothing would be lost or the user
     /// agreed to lose it.
     ForceDisconnect,
+    /// The close prompts decided about one tab's close.
+    TabCloseDecided {
+        id: Uuid,
+        approved: bool,
+    },
     RefreshPage,
     ShowAbout,
     ShowPreferences,
-    /// Sort flipped on tab_id's grid for column idx.
-    RowCountLoaded(Uuid, u64),
     ExportResults {
         result: QueryResult,
         name: String,
         target: Option<super::export_dialog::SqlTarget>,
     },
     CopyToClipboard(String),
-    CopyRowAsInsert {
-        tab_id: Uuid,
-        row_position: u32,
-    },
 
     // ── Workspace tab routing ────────────────────────────────────────
-    /// BrowseTab sub-component asked for its current page to be fetched.
-    FetchBrowsePage(Uuid),
-    /// BrowseTab needs schema columns.
-    FetchBrowseColumns(Uuid),
-    /// BrowseTab needs the row count.
-    FetchBrowseRowCount(Uuid),
-    /// Any browse tab's columns changed; rebuild editor schema buffer.
-    WorkspaceSchemaWordsChanged,
     /// User clicked the close-X on any workspace tab.
     WorkspaceTabClosed(Uuid),
     /// Tab right-click "Close Other Tabs" → close every tab except
@@ -464,42 +392,24 @@ pub enum AppMsg {
     /// Tab right-click "Close Tabs to the Right" → close every tab
     /// after the targeted one in TabView display order.
     CloseWorkspaceTabsToRight(Uuid),
-    /// Drag-reorder / selection change / browse-tab-state-changed —
-    /// triggers persistence (writes the current display order + each
-    /// slot's state to workspace_state.json).
+    /// The tab order, the selection or a tab's state changed, so the
+    /// workspace is saved.
     WorkspaceTabsChanged,
-    /// Save a BrowseTab's pending changes as one batch, planned on the
-    /// connection that runs it. App dispatches
-    /// `BrowseTabInput::SaveCompleted` / `SaveFailed` back via the
-    /// per-tab controller.
-    ExecuteBrowseTransaction {
-        tab_id: Uuid,
-        table: tablepro_core::meta::TableRef,
-        columns: Vec<ColumnInfo>,
-        changes: crate::services::change_tracker::TrackedChanges,
-    },
-    /// Inline-Save resolved successfully for a specific browse tab.
-    /// Routes through App.update so we can reset the row-op spinner
-    /// before forwarding `BrowseTabInput::SaveCompleted` to the tab.
-    /// A row another session changed fails the save's row guard, so a
-    /// completed save touched exactly the rows it named.
-    SaveCompletedForTab(Uuid),
-    /// Inline-Save failed; transaction was already rolled back.
-    SaveFailedForTab(Uuid, String),
-    /// Driver reported `DriverError::Transaction { statement_index }`.
-    /// Routed before SaveFailedForTab so the tab can scroll-and-select
-    /// the offending row before the error alert appears.
-    FlashErrorRowForTab(Uuid, crate::services::change_tracker::StatementSource),
-    /// Ctrl+S — fire CommitSave on the active browse tab. No-op if
-    /// the active tab is an Editor or there's no active connection.
-    SaveActiveBrowseTab,
-    /// Targeted variant: close-confirmation dialogs use this to commit
-    /// a specific tab (which may not be the currently-active one when
-    /// the user is closing a background tab via its X button).
-    SaveActiveBrowseTabById(Uuid),
-    /// Ctrl+Z — undo the last pending change in the active tab.
+    /// A tab's own Save: write what its tracker holds.
+    SaveTab(Uuid),
+    /// A tab's Stop Saving.
+    StopSaving(Uuid),
+    /// A save started or settled, or tabs' changes were dropped.
+    Workspace(crate::workspace::WorkspaceEvent),
+    /// The number of saves running in this window changed.
+    SavesInFlightChanged(usize),
+    /// An editor tab's transaction opened or ended.
+    EditorTransactionChanged,
+    /// Ctrl+S, for the active tab.
+    SaveActiveTab,
+    /// Ctrl+Z, for the active Table tab.
     UndoActiveBrowseTab,
-    /// Ctrl+Y — redo a previously undone change in the active tab.
+    /// Ctrl+Y, for the active Table tab.
     RedoActiveBrowseTab,
     /// Show a small alert dialog; used by BrowseTab for "select exactly
     /// one row" type messages.
@@ -507,8 +417,6 @@ pub enum AppMsg {
         title: String,
         body: String,
     },
-    /// Show a transient toast — used for inline-validation feedback like
-    /// "Invalid date format" where a modal alert would be over-heavy.
     ShowToast(String),
     /// Tracker for a specific browse tab moved between empty / non-empty.
     /// Handler updates that tab's page title to add or remove the
@@ -528,19 +436,16 @@ pub enum AppMsg {
         schema: Option<String>,
         table: String,
     },
-    /// Sidebar right-click → "Show CREATE TABLE". App fetches
-    /// columns, indexes, and FKs, synthesises a CreateTable op,
-    /// materialises through `sql_ddl::materialize_ops`, and opens
-    /// the resulting SQL in a fresh editor tab.
+    /// Sidebar right-click → "Show CREATE TABLE". The table's
+    /// definition goes through the dialect's `create_table_script`, and
+    /// the SQL opens in a fresh editor tab.
     ShowCreateTableForExisting {
         schema: Option<String>,
         table: String,
     },
-    /// Async result of `ShowCreateTableForExisting` — the synthesised
-    /// CREATE statement is ready, open it in a new editor tab.
-    ShowCreateTableLoaded {
-        sql: String,
-    },
+    /// The CREATE statement `ShowCreateTableForExisting` built, for a
+    /// new editor tab.
+    ShowCreateTableLoaded(FromSession<String>),
     /// Sidebar right-click → "Drop Table…", or in-tab Drop button.
     /// App shows the AdwAlertDialog confirmation; on confirm dispatches
     /// `DropTableConfirmed`.
@@ -548,69 +453,24 @@ pub enum AppMsg {
         schema: Option<String>,
         table: String,
     },
-    /// Confirmed drop — App runs DROP TABLE then closes any open
-    /// Browse / Structure tabs for that table and refreshes sidebar.
+    /// The user confirmed the drop.
     DropTableConfirmed {
         schema: Option<String>,
         table: String,
     },
-    /// DROP TABLE returned Ok from the driver. Now-safe to close
-    /// matching tabs + refresh sidebar.
-    DropTableSucceeded {
-        schema: Option<String>,
-        table: String,
-    },
-    /// Structure tab Save: run the materialised DDL statements
-    /// sequentially. Postgres wraps in BEGIN / COMMIT for atomicity;
-    /// MySQL / SQLite execute per-statement (DDL implicitly commits).
-    ExecuteStructureTransaction {
-        tab_id: Uuid,
-        statements: Vec<String>,
-    },
-    /// Targeted save for a specific structure tab (close-with-pending
-    /// dialog uses this — mirrors `SaveActiveBrowseTabById`). Looks up
-    /// the slot, materialises the tracker, dispatches
-    /// `ExecuteStructureTransaction`.
-    SaveActiveStructureTabById(Uuid),
-    /// Structure tab Save resolved successfully. `new_table_name` is
-    /// `Some(name)` for `New` mode CreateTable transitions; the tab
-    /// promotes to Edit mode and the slot's `table` field updates.
-    StructureSaveCompleted {
-        tab_id: Uuid,
-        new_table_name: Option<String>,
-    },
-    /// Structure tab Save failed; tracker is intact for retry.
-    StructureSaveFailed(Uuid, String),
-    /// Structure tab Edit-mode init triggers introspection.
-    FetchStructureData {
-        tab_id: Uuid,
-    },
-    /// The table as one definition, read in one call, with the dialect
-    /// of the connection that read it, which the tab spells its DDL in.
-    StructureDataLoaded {
-        tab_id: Uuid,
-        definition: Box<tablepro_core::ddl::TableDefinition>,
-        dialect: Arc<dyn tablepro_core::dialect::SqlDialect>,
-    },
-    StructureLoadFailed {
-        tab_id: Uuid,
-        message: String,
-    },
+    /// The table is gone, so its tabs close without asking.
+    DropTableSucceeded(FromSession<tablepro_core::TableRef>),
     /// Tracker for a Structure tab crossed empty / non-empty boundary.
     /// Mirrors `BrowseTabDirtyChanged` for the title prefix and the
     /// AdwTabPage::set_needs_attention background-tab indicator.
     StructureTabDirtyChanged(Uuid, bool),
-    /// Schema state changed (table created / dropped / altered) — App
-    /// refreshes the sidebar and any open Browse tabs for the affected
-    /// table.
+    /// Schema state changed (table created / dropped / altered): the
+    /// catalog reads the sidebar's list again and drops the table's
+    /// columns, and the tabs open on the table read it again.
     SchemaChanged {
         schema: Option<String>,
         table: Option<String>,
     },
-    /// Result of `list_tables` after a SchemaChanged event. Rebuilds
-    /// the sidebar factory without going through the full Connected
-    /// path.
-    TablesReloaded(Vec<ObjectInfo>),
     /// Ctrl+Shift+T → pop the most recent closed-tab descriptor and
     /// reopen it. No-op when the stack is empty (e.g. no tabs closed
     /// yet, or just reconnected). Editor tabs come back with their
@@ -620,26 +480,6 @@ pub enum AppMsg {
     /// Ctrl+F → open the filter strip for the active Browse tab.
     /// No-op when the active tab isn't a Browse / Table tab.
     ShowFilterDialog,
-}
-
-/// Determines which icon and styling adw::StatusPage uses.
-///
-/// Replaces the previous title-string sniffing in `set_status_page`,
-/// which broke the moment a translation used different vocabulary
-/// for "Failed" / "Error" / "No connection".
-#[derive(Debug, Clone, Copy)]
-pub(super) enum StatusKind {
-    Info,
-    Error,
-}
-
-impl StatusKind {
-    fn icon(self) -> &'static str {
-        match self {
-            StatusKind::Info => crate::ui::icons::VIEW_GRID,
-            StatusKind::Error => crate::ui::icons::DIALOG_ERROR,
-        }
-    }
 }
 
 /// Tabs in either registry with unsaved changes.
@@ -654,22 +494,6 @@ fn dirty_tabs(changes: &ChangeTrackerRegistry, structures: &StructureTrackerRegi
 impl App {
     pub(super) fn dirty_tabs(&self) -> Vec<Uuid> {
         dirty_tabs(&self.change_trackers, &self.structure_trackers)
-    }
-
-    /// The active driver id, or "postgres" if no connection is active.
-    ///
-    /// Single fallback site (was duplicated at 7 call sites). The
-    /// tracing::warn! makes the latent bug visible if anything ever
-    /// asks for the driver id without an active connection — today
-    /// that would silently corrupt SQL quoting on non-Postgres drivers.
-    pub(super) fn driver_id(&self) -> &str {
-        match self.current_driver_id.as_deref() {
-            Some(id) => id,
-            None => {
-                tracing::warn!("driver_id called without active connection; falling back to postgres");
-                "postgres"
-            }
-        }
     }
 }
 
@@ -748,12 +572,9 @@ impl SimpleComponent for App {
                     set_max_sidebar_width: 280.0,
                     set_show_sidebar: false,
 
-                    // Sidebar wrapped in its own AdwToolbarView so it can
-                    // carry a sidebar-local AdwHeaderBar with a search
-                    // toggle — same structure GNOME Files uses for its
-                    // Places sidebar. Window-decoration buttons live on
-                    // the outer (main) header bar already, so we hide
-                    // them here.
+                    // The sidebar has its own header bar for the search
+                    // toggle, as GNOME Files does; the window buttons are
+                    // on the main one.
                     #[wrap(Some)]
                     #[name = "sidebar_root"]
                     set_sidebar = &adw::ToolbarView {
@@ -818,14 +639,8 @@ impl SimpleComponent for App {
                                 set_revealed: false,
                                 set_use_markup: false,
                             },
-                            // Content is set imperatively at the end of
-                            // init() — show_welcome_page swaps in the
-                            // WelcomeView for the disconnected state,
-                            // and on_connected swaps in the workspace
-                            // tab strip on connect. The previously-
-                            // inlined "Connect to a database" StatusPage
-                            // here was dead UI: built once, replaced
-                            // immediately, never seen.
+                            // The welcome view or the workspace goes in
+                            // here once init() has run.
                         },
                     },
                 },
@@ -846,6 +661,7 @@ impl SimpleComponent for App {
             tablepro_storage::DraftStore::new(storage.paths().drafts_dir()),
             tasks.clone(),
         );
+        let workspace = workspace_persistence::WorkspacePersistence::new(storage.workspaces().clone());
         let widgets = view_output!();
 
         if crate::config::profile() == crate::config::Profile::Development {
@@ -853,177 +669,43 @@ impl SimpleComponent for App {
         }
 
         crate::ui::window_geometry::restore(&widgets.window, &settings);
-        // Window-close handler. Three responsibilities: persist window
-        // size + maximize state, intercept close when any tab has
-        // unsaved edits with a Cancel | Discard | Save dialog, and
-        // route Save through the same SaveCompletedForTab plumbing as
-        // a per-tab close so failures abort cleanly.
-        let settings_for_close = settings.clone();
-        let storage_for_close = storage.clone();
-        let drafts_for_close = drafts.clone();
-        let force_close: std::rc::Rc<std::cell::Cell<bool>> = std::rc::Rc::new(std::cell::Cell::new(false));
-        let force_close_for_close = force_close.clone();
-        let close_after_save_for_close: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<Uuid, u32>>> =
-            std::rc::Rc::new(std::cell::RefCell::new(std::collections::HashMap::new()));
-        let close_window_after_save_for_close: std::rc::Rc<std::cell::Cell<bool>> =
-            std::rc::Rc::new(std::cell::Cell::new(false));
-        let in_flight_saves: std::rc::Rc<std::cell::Cell<usize>> = std::rc::Rc::new(std::cell::Cell::new(0));
-        let close_after_save_handle = close_after_save_for_close.clone();
-        let close_window_after_save_handle = close_window_after_save_for_close.clone();
-        let in_flight_saves_handle = in_flight_saves.clone();
-        let in_flight_saves_for_close = in_flight_saves.clone();
         let change_trackers = std::rc::Rc::new(ChangeTrackerRegistry::default());
         let structure_trackers = std::rc::Rc::new(StructureTrackerRegistry::default());
-        let change_trackers_for_close = change_trackers.clone();
-        let structure_trackers_for_close = structure_trackers.clone();
-        let close_request_input_sender = sender.input_sender().clone();
         let connect_attempts = std::rc::Rc::new(tablepro_session::ConnectAttempts::new());
-        let context_for_close = context.clone();
-        let connect_attempts_for_close = connect_attempts.clone();
-        widgets.window.connect_close_request(move |w| {
-            // If a Save is mid-flight (async transaction running), block
-            // the close until it resolves. Without this, the completion
-            // handler would dispatch SaveCompleted to a tab that's
-            // already gone — the transaction commits in the background
-            // with no UI feedback.
-            if !force_close_for_close.get() && in_flight_saves_for_close.get() > 0 {
-                let dialog = adw::AlertDialog::new(
-                    Some(&crate::i18n::gettext("Saving in progress")),
-                    Some(&crate::i18n::gettext(
-                        "Waiting for pending saves to finish before closing the window.",
-                    )),
-                );
-                dialog.set_can_close(false);
-                dialog.present(Some(w));
-                let dialog_for_poll = dialog.clone();
-                let window_for_poll = w.clone();
-                let force_close_for_poll = force_close_for_close.clone();
-                let in_flight_for_poll = in_flight_saves_for_close.clone();
-                glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
-                    if in_flight_for_poll.get() == 0 {
-                        dialog_for_poll.close();
-                        force_close_for_poll.set(true);
-                        window_for_poll.close();
-                        glib::ControlFlow::Break
-                    } else {
-                        glib::ControlFlow::Continue
-                    }
-                });
-                return glib::Propagation::Stop;
-            }
-            // Already-confirmed close path (set by the dialog handler
-            // below) — skip the guard, save state, allow close.
-            // Browse + Structure tabs share the dirty-state guard:
-            // either source of pending changes triggers the dialog.
-            let has_pending = !dirty_tabs(&change_trackers_for_close, &structure_trackers_for_close).is_empty();
-            if !force_close_for_close.get() && has_pending {
-                // Plural-form heading matches the per-tab dialog's
-                // tone — factual GNOME HIG language rather than the
-                // colloquial "throws them away" the body used to
-                // carry. Per-tab dialog stays specific ("Save changes
-                // to {name}"); window close groups across N tabs so
-                // it stays generic.
-                let dialog = adw::AlertDialog::new(None, None);
-                dialog.set_heading(Some(&crate::i18n::gettext("Save changes before closing?")));
-                dialog.set_body(&crate::i18n::gettext(
-                    "One or more tabs have unsaved changes. They will be permanently lost if you discard them.",
-                ));
-                dialog.add_response("cancel", &crate::i18n::gettext("Cancel"));
-                dialog.add_response("discard", &crate::i18n::gettext("Discard"));
-                dialog.add_response("save", &crate::i18n::gettext("Save"));
-                dialog.set_response_appearance("discard", adw::ResponseAppearance::Destructive);
-                dialog.set_response_appearance("save", adw::ResponseAppearance::Suggested);
-                dialog.set_default_response(Some("save"));
-                dialog.set_close_response("cancel");
-                let force_close_for_resp = force_close_for_close.clone();
-                let window_for_resp = w.clone();
-                let close_after_save_for_resp = close_after_save_for_close.clone();
-                let close_window_after_save_for_resp = close_window_after_save_for_close.clone();
-                let input_sender_for_resp = close_request_input_sender.clone();
-                let change_trackers_for_resp = change_trackers_for_close.clone();
-                let structure_trackers_for_resp = structure_trackers_for_close.clone();
-                dialog.connect_response(None, move |dlg, response| {
-                    dlg.close();
-                    match response {
-                        "discard" => {
-                            // The window closes next, so no grid is left
-                            // to show the discarded rows.
-                            for tab_id in change_trackers_for_resp.dirty() {
-                                if let Some(tracker) = change_trackers_for_resp.get(tab_id) {
-                                    let _ = tracker.discard();
-                                }
-                            }
-                            for tab_id in structure_trackers_for_resp.dirty() {
-                                if let Some(tracker) = structure_trackers_for_resp.get(tab_id) {
-                                    tracker.clear();
-                                }
-                            }
-                            force_close_for_resp.set(true);
-                            // Re-fire close_request — guard sees the flag,
-                            // saves window state, returns Proceed.
-                            window_for_resp.close();
-                        }
-                        "save" => {
-                            // Commit each dirty tab. Browse tabs go through
-                            // SaveActiveBrowseTabById; Structure tabs need
-                            // ExecuteStructureTransaction with materialized
-                            // statements. close_after_save tracks both kinds;
-                            // the SaveCompletedForTab / StructureSaveCompleted
-                            // handlers in App::update close the window once
-                            // the set drains. Any SaveFailed aborts.
-                            let browse_tabs = change_trackers_for_resp.dirty();
-                            let structure_tabs = structure_trackers_for_resp.dirty();
-                            // Counter increments — a Table tab listed in both
-                            // sets bumps to 2 so the window close waits for
-                            // BOTH the browse save and the structure save.
-                            {
-                                let mut map = close_after_save_for_resp.borrow_mut();
-                                for id in browse_tabs.iter().copied() {
-                                    *map.entry(id).or_insert(0) += 1;
-                                }
-                                for id in structure_tabs.iter().copied() {
-                                    *map.entry(id).or_insert(0) += 1;
-                                }
-                            }
-                            close_window_after_save_for_resp.set(true);
-                            for id in browse_tabs {
-                                let _ = input_sender_for_resp.send(AppMsg::SaveActiveBrowseTabById(id));
-                            }
-                            for id in structure_tabs {
-                                let _ = input_sender_for_resp.send(AppMsg::SaveActiveStructureTabById(id));
-                            }
-                        }
-                        _ => {} // Cancel: do nothing, stay open.
-                    }
-                });
-                dialog.present(Some(w));
-                return glib::Propagation::Stop;
-            }
-            crate::ui::window_geometry::persist(w, &settings_for_close);
-            connection::close_window_session(
-                &context_for_close.active,
-                &*context_for_close.hold,
-                &connect_attempts_for_close,
-            );
-            // The last column drag or filter change may still be on its
-            // way to disk. The hold keeps the process alive until it
-            // lands, so quitting does not lose it.
-            let hold = w
-                .application()
-                .map(|app| gio::prelude::ApplicationExtManual::hold(&app));
-            let column_widths = storage_for_close.column_widths().flush();
-            let filter_settings = storage_for_close.filter_settings().flush();
-            let editor_drafts = drafts_for_close.flush_all();
-            glib::spawn_future_local(async move {
-                column_widths.await;
-                filter_settings.await;
-                for failure in editor_drafts.await {
-                    tracing::warn!(failure, "an editor draft was not saved");
-                }
-                drop(hold);
-            });
-            glib::Propagation::Proceed
+        let workspace_tabs: workspace_persistence::WorkspaceTabs =
+            std::rc::Rc::new(std::cell::RefCell::new(std::collections::HashMap::new()));
+        let window_tabs = std::rc::Rc::new(window_tabs::WindowTabs::new(workspace_tabs.clone()));
+        let events_sender = sender.input_sender().clone();
+        let workspace_handle = crate::workspace::WorkspaceHandle::new(crate::workspace::WorkspaceDeps {
+            session: context.active.clone(),
+            tasks: context.tasks.clone(),
+            hold: context.hold.clone(),
+            history: Some(history.clone()),
+            rows: change_trackers.clone(),
+            structures: structure_trackers.clone(),
+            directory: window_tabs.clone(),
+            events: std::rc::Rc::new(move |event| events_sender.emit(AppMsg::Workspace(event))),
         });
+        let saves_sender = sender.input_sender().clone();
+        workspace_handle
+            .ledger()
+            .on_change(move |count| saves_sender.emit(AppMsg::SavesInFlightChanged(count)));
+        let close_guards = crate::workspace::CloseGuards::new();
+        let window_shutdown = close_flow::WindowShutdown::new(close_flow::WindowShutdownParts {
+            settings: settings.clone(),
+            storage: storage.clone(),
+            drafts: drafts.clone(),
+            workspace: workspace.clone(),
+            tabs: workspace_tabs.clone(),
+            context: context.clone(),
+            connect_attempts: connect_attempts.clone(),
+        });
+        let shutdown = window_shutdown.clone();
+        close_guards.connect_window(&widgets.window, workspace_handle.clone(), move |window| {
+            shutdown.run(Some(window));
+        });
+        let inhibitor =
+            crate::workspace::WindowInhibitor::new(crate::workspace::ApplicationInhibit::new(&widgets.window));
 
         let breakpoint = adw::Breakpoint::new(adw::BreakpointCondition::new_length(
             adw::BreakpointConditionLengthType::MaxWidth,
@@ -1118,13 +800,7 @@ impl SimpleComponent for App {
             .table_search_bar
             .set_key_capture_widget(Some(&widgets.sidebar_root));
 
-        // Empty-state placeholder. Shown by GtkListBox when no row is
-        // visible — covers both "the database has zero tables" and
-        // "the search filtered everything out". Without this, the
-        // sidebar renders as a blank surface and reads as broken.
-        // AdwStatusPage `.compact` is the documented empty-state
-        // widget for narrow containers (matches GNOME Files's
-        // sidebar-empty look).
+        // An empty list with no placeholder reads as broken.
         let sidebar_placeholder = adw::StatusPage::builder()
             .icon_name(crate::ui::icons::VIEW_LIST)
             .title(crate::i18n::gettext("No tables"))
@@ -1147,16 +823,13 @@ impl SimpleComponent for App {
 
         let schemas_for_header = sidebar_schemas.clone();
         let sender_for_header = sender.clone();
+        let context_for_header = context.clone();
         sidebar_listbox.set_header_func(move |row, before| {
             let schemas = schemas_for_header.borrow();
             let total_distinct: std::collections::BTreeSet<&str> =
                 schemas.iter().filter_map(|s| s.as_deref()).collect();
-            // Postgres-style multi-schema connections render a header
-            // per schema with a "+" button for "New Table…". Single-
-            // schema connections (MySQL / SQLite) get one header
-            // anchored to "main" / database-name with the same "+"
-            // affordance — the visual cue matters even when there's
-            // only one schema in the list.
+            // A connection with one schema still gets a header, for its
+            // "New Table" button.
             let multi_schema = total_distinct.len() >= 2;
             let idx = row.index();
             let current = schemas.get(idx as usize).cloned().flatten();
@@ -1172,57 +845,20 @@ impl SimpleComponent for App {
                 row.set_header(gtk::Widget::NONE);
                 return;
             }
-            let header_box = gtk::Box::builder()
-                .orientation(gtk::Orientation::Horizontal)
-                .spacing(6)
-                .margin_top(12)
-                .margin_bottom(6)
-                .margin_start(12)
-                // Match the row body's `margin_end: 12` so the "+"
-                // button sits flush with where row content ends — the
-                // previous 6px pulled it inward of the row label edge
-                // and read as a misaligned column.
-                .margin_end(12)
-                .build();
-            let label_text = current
-                .as_deref()
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| crate::i18n::gettext("Tables"));
-            let label = gtk::Label::builder()
-                .label(&label_text)
-                .xalign(0.0)
-                .hexpand(true)
-                .build();
-            // GtkPlacesSidebar section-header typography: small + bold
-            // + ~55% alpha. `.heading` (libadwaita's "emphasized body")
-            // combined with `.dim-label` rendered as bold-dim at body
-            // size — too loud for a section divider. `.caption-heading`
-            // is the small-bold variant the toolkit ships for exactly
-            // this purpose.
-            label.add_css_class("caption-heading");
-            label.add_css_class("dim-label");
-            header_box.append(&label);
-            // "+" button: emit NewTableTab carrying this schema. Flat
-            // styling matches GNOME Files' inline-add buttons; the
-            // tooltip clarifies the destination ("New Table in …")
-            // so the user understands what the schema scoping means.
-            let new_table_button = gtk::Button::builder()
-                .icon_name(crate::ui::icons::LIST_ADD)
-                .tooltip_text(match current.as_deref() {
-                    Some(s) => crate::i18n::gettext_f("New Table in {schema}…", &[("schema", s)]),
-                    None => crate::i18n::gettext("New Table…"),
-                })
-                .valign(gtk::Align::Center)
-                .build();
-            new_table_button.add_css_class("flat");
+            let can_create_table = context_for_header
+                .active
+                .get()
+                .and_then(|session| session.current_dialect())
+                .and_then(|dialect| dialect.ddl().map(|ddl| ddl.capabilities().create_table))
+                .unwrap_or(false);
             let sender_for_button = sender_for_header.clone();
             let schema_for_button = current.clone();
-            new_table_button.connect_clicked(move |_| {
-                sender_for_button.input(AppMsg::NewTableTab {
-                    schema: schema_for_button.clone(),
+            let header_box =
+                sidebar_section_header::sidebar_section_header(current.as_deref(), can_create_table, move || {
+                    sender_for_button.input(AppMsg::NewTableTab {
+                        schema: schema_for_button.clone(),
+                    });
                 });
-            });
-            header_box.append(&new_table_button);
             row.set_header(Some(&header_box));
         });
 
@@ -1275,7 +911,7 @@ impl SimpleComponent for App {
             .transition_type(gtk::StackTransitionType::Crossfade)
             .build();
         // CTA button parented inside the empty-state status page so
-        // the "open editor" affordance is reachable with the mouse —
+        // the "open editor" affordance is reachable with the mouse:
         // without it the only path was the keyboard shortcut and the
         // tab-bar "+", and the tab bar is hidden in this empty state.
         let workspace_empty_cta = gtk::Button::builder()
@@ -1286,7 +922,7 @@ impl SimpleComponent for App {
         workspace_empty_cta.add_css_class("suggested-action");
         workspace_empty_cta.add_css_class("pill");
         let workspace_empty_page = adw::StatusPage::builder()
-            .icon_name(StatusKind::Info.icon())
+            .icon_name(crate::ui::icons::VIEW_GRID)
             .title(crate::i18n::gettext("Select a table"))
             .description(crate::i18n::gettext(
                 "Pick a table from the sidebar, or use the button below (Ctrl+T).",
@@ -1350,25 +986,24 @@ impl SimpleComponent for App {
             workspace_root: None,
             workspace_tab_view: None,
             workspace_root_added: std::cell::Cell::new(false),
-            workspace_tabs: std::rc::Rc::new(std::cell::RefCell::new(std::collections::HashMap::new())),
+            workspace_tabs,
             change_trackers,
             structure_trackers,
+            workspace_handle,
+            window_tabs,
+            close_guards,
+            window_shutdown,
+            inhibitor,
             dialog: None,
-            schema_buffer: build_schema_buffer(),
             history_dialog: None,
             saved_queries_dialog: None,
             import_dialog: None,
             welcome_view,
             current_driver_id: None,
-            table_names: Vec::new(),
             read_only: false,
             saved_connections: Vec::new(),
             connected: false,
-            close_after_save: close_after_save_handle,
-            close_window_after_save: close_window_after_save_handle,
-            in_flight_saves: in_flight_saves_handle,
-            structure_saves_in_flight: std::rc::Rc::new(std::cell::RefCell::new(std::collections::HashSet::new())),
-            persist_debouncer: crate::workspace::PersistDebouncer::new(WORKSPACE_PERSIST_DELAY),
+            workspace,
             closed_tabs_stack: std::rc::Rc::new(std::cell::RefCell::new(std::collections::VecDeque::with_capacity(
                 CLOSED_TABS_CAPACITY,
             ))),
@@ -1404,16 +1039,19 @@ impl SimpleComponent for App {
         // the window does.
         self.history_gate.abort();
         self.prompt_presenter.abort();
-        self.session_links = None;
         // The close request already did this; a window destroyed
-        // without one still stops its session's work here.
-        connection::close_window_session(&self.context.active, &*self.context.hold, &self.connect_attempts);
+        // without one still closes its tabs' connections, then its own,
+        // here. The claim on the session's key goes last, so no other
+        // window adopts a connection still closing.
+        self.window_shutdown.run(None);
+        self.session_links = None;
     }
 
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
             AppMsg::OpenConnect => self.on_open_connect(sender),
             AppMsg::SessionReady(ready) => self.on_session_ready(*ready, sender),
+            AppMsg::SessionDeclined(ready) => self.on_session_declined(*ready),
             AppMsg::ConnectSubmitted(submission) => self.on_connect_submission(*submission, sender),
             AppMsg::ConnectSubmissionConfirmed(submission) => self.connect_submission(*submission, sender),
             AppMsg::ConnectFailed {
@@ -1423,85 +1061,40 @@ impl SimpleComponent for App {
             } => self.on_connect_failed(generation, message, edit, sender),
             AppMsg::CancelConnect => self.on_cancel_connect(),
             AppMsg::EditConnection(retry) => self.on_edit_connection(*retry, sender),
-            AppMsg::HealthChanged(health) => self.refresh_health_banner(&health),
+            AppMsg::HealthChanged(update) => {
+                if let Some(health) = update.if_current(&self.context.active) {
+                    self.refresh_health_banner(&health);
+                }
+            }
             AppMsg::RetryConnection => self.on_retry_connection(),
-            AppMsg::CatalogChanged(objects) => self.on_tables_reloaded(objects),
+            AppMsg::CatalogChanged(update) => {
+                if let Some(snapshot) = update.if_current(&self.context.active) {
+                    self.on_catalog_changed(&snapshot);
+                }
+            }
             AppMsg::Disconnect => self.on_disconnect(sender),
             AppMsg::ForceDisconnect => self.do_disconnect(sender),
+            AppMsg::TabCloseDecided { id, approved } => self.on_tab_close_decided(id, approved),
             AppMsg::DialogClosed => self.dialog = None,
             AppMsg::SelectTable {
                 schema,
                 name,
                 open_mode,
-            } => self.on_select_table(schema, name, open_mode, sender),
-            AppMsg::ColumnsLoaded(tab_id, columns) => self.on_browse_columns_loaded(tab_id, columns),
-            AppMsg::RowsLoaded(tab_id, offset, result) => self.on_browse_rows_loaded(tab_id, offset, result),
-            AppMsg::LoadFailed(tab_id, msg) => self.on_browse_load_failed(tab_id, msg),
-            AppMsg::RowCountLoaded(tab_id, count) => self.on_browse_row_count_loaded(tab_id, count),
-            AppMsg::FetchBrowsePage(tab_id) => self.fetch_browse_page(tab_id, sender),
-            AppMsg::FetchBrowseColumns(tab_id) => self.fetch_browse_columns(tab_id, sender),
-            AppMsg::FetchBrowseRowCount(tab_id) => self.fetch_browse_row_count(tab_id, sender),
+            } => self.dispatch_select_table(schema, name, open_mode, sender),
             AppMsg::WorkspaceTabsChanged => self.on_workspace_tabs_changed(),
-            AppMsg::WorkspaceSchemaWordsChanged => self.rebuild_schema_buffer(),
-            AppMsg::ExecuteBrowseTransaction {
-                tab_id,
-                table,
-                columns,
-                changes,
-            } => {
-                self.on_execute_browse_transaction(tab_id, table, columns, changes, sender);
-            }
-            AppMsg::SaveCompletedForTab(tab_id) => {
-                self.set_row_op_in_flight(false);
-                self.in_flight_saves.set(self.in_flight_saves.get().saturating_sub(1));
-                // No Undo button: the save has already committed, and
-                // Ctrl+Z is for edits before Save. A shorter timeout
-                // keeps the confirmation from outstaying the moment.
-                let toast = adw::Toast::builder()
-                    .title(crate::i18n::gettext("Saved"))
-                    .timeout(4)
-                    .build();
-                self.toast_overlay.add_toast(toast);
-                self.dispatch_to_tab(tab_id, BrowseTabInput::SaveCompleted);
-                // If the user picked Save in a close-confirmation
-                // dialog, fire the close now that the commit succeeded.
-                // The counter ensures a tab with BOTH browse-dirty and
-                // structure-dirty waits for both saves before closing.
-                let drained = dec_close_after_save(&mut self.close_after_save.borrow_mut(), &tab_id);
-                if drained {
-                    sender.input(AppMsg::WorkspaceTabClosed(tab_id));
+            AppMsg::SaveTab(id) => self.request_save(id),
+            AppMsg::StopSaving(id) => self.stop_saving(id),
+            AppMsg::Workspace(event) => self.on_workspace_event(event, sender),
+            AppMsg::SavesInFlightChanged(count) => self.on_saves_in_flight_changed(count),
+            AppMsg::EditorTransactionChanged => self.refresh_inhibitor(),
+            AppMsg::SaveActiveTab => {
+                if let Some(id) = self.selected_workspace_tab_id() {
+                    self.request_save(id);
                 }
-                // If we're in a window-close-Save-all flow and the map
-                // just drained, the window can finally close.
-                if self.close_window_after_save.get() && self.close_after_save.borrow().is_empty() {
-                    self.close_window_after_save.set(false);
-                    self.window.close();
-                }
-            }
-            AppMsg::SaveFailedForTab(tab_id, message) => {
-                self.set_row_op_in_flight(false);
-                self.in_flight_saves.set(self.in_flight_saves.get().saturating_sub(1));
-                // Abort any close-after-save intent: the commit failed,
-                // so we keep the tab open and let the user see the
-                // error and retry. Window-close intent is also cleared.
-                self.close_after_save.borrow_mut().remove(&tab_id);
-                self.close_window_after_save.set(false);
-                self.dispatch_to_tab(tab_id, BrowseTabInput::SaveFailed(message));
-            }
-            AppMsg::FlashErrorRowForTab(tab_id, source) => {
-                self.dispatch_to_tab(tab_id, BrowseTabInput::FlashErrorRow(source));
-            }
-            AppMsg::SaveActiveBrowseTab => {
-                if let Some(id) = self.selected_browse_tab_id() {
-                    self.dispatch_to_tab(id, BrowseTabInput::CommitSave);
-                }
-            }
-            AppMsg::SaveActiveBrowseTabById(id) => {
-                self.dispatch_to_tab(id, BrowseTabInput::CommitSave);
             }
             AppMsg::UndoActiveBrowseTab => {
                 // Ctrl+Z routes to BrowseTab undo only. Structure
-                // editing follows the snapshot+diff model — DDL undo
+                // editing follows the snapshot+diff model: DDL undo
                 // is a session-level Discard, not a per-keystroke
                 // history. Inside a Structure-mode Entry, the native
                 // `gtk::Text` undo handles per-field text revert.
@@ -1520,32 +1113,30 @@ impl SimpleComponent for App {
             AppMsg::CloseActiveWorkspaceTab => self.close_active_workspace_tab(sender),
             AppMsg::ShowAlert { title, body } => self.show_error_alert(&title, &body),
             AppMsg::ShowToast(msg) => self.show_toast(&msg),
-            AppMsg::BrowseTabDirtyChanged(tab_id, dirty) => self.refresh_browse_tab_dirty(tab_id, dirty),
+            AppMsg::BrowseTabDirtyChanged(tab_id, dirty) => {
+                self.refresh_browse_tab_dirty(tab_id, dirty);
+                self.refresh_inhibitor();
+            }
             AppMsg::NewTableTab { schema } => self.on_new_table_tab(schema, sender),
             AppMsg::EditStructureTab { schema, table } => self.on_edit_structure_tab(schema, table, sender),
             AppMsg::ShowCreateTableForExisting { schema, table } => self.on_show_create_table(schema, table, sender),
-            AppMsg::ShowCreateTableLoaded { sql } => self.append_editor_tab(Some(sql), sender),
+            AppMsg::ShowCreateTableLoaded(update) => {
+                if let Some(sql) = update.if_current(&self.context.active) {
+                    self.append_editor_tab(Some(sql), sender);
+                }
+            }
             AppMsg::DropTablePrompt { schema, table } => self.on_drop_table_prompt(schema, table, sender),
             AppMsg::DropTableConfirmed { schema, table } => self.on_drop_table_confirmed(schema, table, sender),
-            AppMsg::DropTableSucceeded { schema, table } => self.on_drop_table_succeeded(schema, table, sender),
-            AppMsg::ExecuteStructureTransaction { tab_id, statements } => {
-                self.on_execute_structure_transaction(tab_id, statements, sender)
+            AppMsg::DropTableSucceeded(update) => {
+                if let Some(table) = update.if_current(&self.context.active) {
+                    self.on_drop_table_succeeded(table, sender);
+                }
             }
-            AppMsg::SaveActiveStructureTabById(id) => self.save_structure_tab_by_id(id, sender),
-            AppMsg::StructureSaveCompleted { tab_id, new_table_name } => {
-                self.on_structure_save_completed(tab_id, new_table_name, sender)
+            AppMsg::StructureTabDirtyChanged(tab_id, dirty) => {
+                self.refresh_structure_tab_dirty(tab_id, dirty);
+                self.refresh_inhibitor();
             }
-            AppMsg::StructureSaveFailed(tab_id, message) => self.on_structure_save_failed(tab_id, message),
-            AppMsg::FetchStructureData { tab_id } => self.on_fetch_structure_data(tab_id, sender),
-            AppMsg::StructureDataLoaded {
-                tab_id,
-                definition,
-                dialect,
-            } => self.on_structure_data_loaded(tab_id, *definition, dialect),
-            AppMsg::StructureLoadFailed { tab_id, message } => self.on_structure_load_failed(tab_id, message),
-            AppMsg::StructureTabDirtyChanged(tab_id, dirty) => self.refresh_structure_tab_dirty(tab_id, dirty),
-            AppMsg::SchemaChanged { schema, table } => self.on_schema_changed(schema, table, sender),
-            AppMsg::TablesReloaded(tables) => self.on_tables_reloaded(tables),
+            AppMsg::SchemaChanged { schema, table } => self.on_schema_changed(schema, table),
             AppMsg::ReloadConnections => self.on_reload_connections(sender),
             AppMsg::ConnectionListUnavailable => self.show_connection_list_banner(),
             AppMsg::SecretDeleteFailed(id) => self.on_secret_delete_failed(id, sender),
@@ -1556,8 +1147,18 @@ impl SimpleComponent for App {
             }
             AppMsg::NewEditorTab => self.append_editor_tab(None, sender),
             AppMsg::EditorTabRunStateChanged(id, running) => self.on_editor_tab_run_state_changed(id, running),
-            AppMsg::EditorTabQueryChanged(id, text) => self.on_editor_tab_query_changed(id, text),
-            AppMsg::WorkspaceTabsRead { saved, drafts } => self.on_workspace_tabs_read(saved, drafts, sender),
+            AppMsg::EditorTabContentChanged(id) => self.on_editor_tab_content_changed(id),
+            AppMsg::WorkspaceLoaded(update) => {
+                if let Some(loaded) = update.if_current(&self.context.active) {
+                    self.on_workspace_loaded(loaded, sender);
+                }
+            }
+            AppMsg::ResetWorkspaceLayout => self.on_reset_workspace_layout(sender),
+            AppMsg::WorkspaceLayoutReset(update) => {
+                if let Some(outcome) = update.if_current(&self.context.active) {
+                    self.on_workspace_layout_reset(outcome);
+                }
+            }
             AppMsg::ShowHistory => self.on_show_history(sender),
             AppMsg::ShowSavedQueries => self.on_show_saved_queries(sender),
             AppMsg::SetConnectionColor(id, color) => self.on_set_connection_color(id, color, sender),
@@ -1611,7 +1212,6 @@ impl SimpleComponent for App {
                 )
             }
             AppMsg::CopyToClipboard(text) => self.on_copy_to_clipboard(text),
-            AppMsg::CopyRowAsInsert { tab_id, row_position } => self.on_copy_row_as_insert(tab_id, row_position),
             AppMsg::DeleteConnection(id) => self.on_delete_connection(id, sender),
             AppMsg::DuplicateConnection(saved) => self.on_duplicate_connection(saved, sender),
             AppMsg::OpenSaved(saved) => self.on_open_saved(saved, sender),
@@ -1723,7 +1323,7 @@ fn install_window_actions(window: &adw::ApplicationWindow, sender: ComponentSend
         input_action!("close-current", AppMsg::CloseActiveWorkspaceTab),
         input_action!("preferences", AppMsg::ShowPreferences),
         input_action!("refresh-page", AppMsg::RefreshPage),
-        input_action!("save-changes", AppMsg::SaveActiveBrowseTab),
+        input_action!("save-changes", AppMsg::SaveActiveTab),
         input_action!("undo-change", AppMsg::UndoActiveBrowseTab),
         input_action!("redo-change", AppMsg::RedoActiveBrowseTab),
         input_action!("reopen-closed-tab", AppMsg::ReopenClosedTab),
@@ -1731,6 +1331,7 @@ fn install_window_actions(window: &adw::ApplicationWindow, sender: ComponentSend
         input_action!("save-query", AppMsg::SaveActiveQuery),
         input_action!("export-connections", AppMsg::ExportConnections),
         input_action!("import-connections", AppMsg::ImportConnections),
+        input_action!("reset-workspace-layout", AppMsg::ResetWorkspaceLayout),
     ]);
     let disconnect = gio::SimpleAction::new("disconnect", None);
     let sender_for_disconnect = sender.clone();
