@@ -41,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Smaller updates: about 6 MB from any of the last five releases and 21 MB from older ones, down from 34 MB.
 - Several statements run together on PostgreSQL from iPhone and iPad commit one at a time, and a failure keeps the ones before it. (#3399)
 - MySQL dumps write TIMESTAMP values in UTC and turn off foreign key checks while they load, as mysqldump does.
+- AI chat code blocks show all their code in the editor font and colors, without line numbers.
+- AI chat shows its scroll bar as set in System Settings.
 - Set Value > Empty and Set EMPTY offered only on columns that can hold an empty value, not on dates, numbers or booleans.
 - Clearing a date, number or boolean cell in a NOT NULL column keeps the stored value instead of saving an empty string.
 - Clearing a Redis key's TTL in the grid removes its expiry.
@@ -118,6 +120,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Oracle view DDL losing the view's column names, and cut off after 4000 bytes without saying so.
 - Trino materialized views left out of SQL exports.
 - Return in Switch Connection reopening the current connection after typing another connection's name.
+- AI chat stuttering while scrolling, and code blocks cutting off their last lines and catching the scroll.
+- AI chat showing code and notes indented under a list item outside the list, with extra indentation.
+- AI chat tables after a line of text, or without outer pipes, shown as plain text.
+- AI chat not following a reply as it streams, and jumping to the end after scrolling up.
+- Scroll to latest message button in AI chat never appearing.
+- AI reasoning text not updating while it streams.
 - Clearing a date, number or boolean field on iPhone and iPad saving an empty string, stored as `0000-00-00 00:00:00` on MySQL, instead of NULL.
 
 ### Security
