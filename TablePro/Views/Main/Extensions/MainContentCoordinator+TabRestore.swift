@@ -69,8 +69,23 @@ extension MainContentCoordinator {
             heldElsewhere: heldElsewhere
         )
         guard !merge.restoredTabIds.isEmpty else { return }
+        let entry = restoredEntry(
+            selecting: merge.selectedTabId,
+            among: merge.tabs,
+            restoredTabIds: merge.restoredTabIds,
+            activeDatabase: activeDatabase,
+            activeSchema: activeSchema
+        )
         tabManager.tabs = merge.tabs
-        tabManager.selectedTabId = merge.selectedTabId
+        /// The entry goes in front before the selection is written, so restoring a tab is never read
+        /// as the user picking one in another entry, which would switch the database on its own.
+        tabManager.show(container: entry.container ?? tabManager.visibleContainer)
+        tabManager.bindUnboundTabs()
+        if let selection = merge.selectedTabId,
+           let tab = tabManager.tabs.first(where: { $0.id == selection }),
+           tabManager.isVisible(tab) {
+            tabManager.selectedTabId = selection
+        }
         for renamedId in merge.renamedTabIds {
             tabManager.markTabRenamed(renamedId)
         }
@@ -97,9 +112,26 @@ extension MainContentCoordinator {
         await restoreConnectionContext(
             for: selected,
             loadsSelectedTab: selectedIsRestored,
-            activeDatabase: activeDatabase,
-            activeSchema: activeSchema,
+            activeDatabase: entry.database,
+            activeSchema: entry.schema,
             loadTiming: loadTiming
+        )
+    }
+
+    private func restoredEntry(
+        selecting selection: UUID?,
+        among tabs: [QueryTab],
+        restoredTabIds: Set<UUID>,
+        activeDatabase: String?,
+        activeSchema: String?
+    ) -> RestoredEntry {
+        let selected = tabs.first { $0.id == selection }
+        return RestoredEntry.resolve(
+            selected: selected,
+            isPresent: selected.map { !restoredTabIds.contains($0.id) } ?? false,
+            target: tabManager.containerTarget,
+            activeDatabase: activeDatabase,
+            activeSchema: activeSchema
         )
     }
 

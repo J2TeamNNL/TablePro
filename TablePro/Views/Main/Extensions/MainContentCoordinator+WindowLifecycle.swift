@@ -36,7 +36,7 @@ extension MainContentCoordinator {
         consumeDeferredRestoreLoadIfNeeded()
         refreshSourceFileDiskChanges()
 
-        recordSelectedTabContainer()
+        followVisibleContainerOnActivation()
         syncSidebarObjectSelection()
         announceActiveTabToVoiceOver()
 
