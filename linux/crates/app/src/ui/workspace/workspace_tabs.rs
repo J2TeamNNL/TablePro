@@ -12,7 +12,7 @@ use tablepro_session::SessionKey;
 use tablepro_storage::{DraftId, DraftScope};
 use uuid::Uuid;
 
-use crate::ui::browse_tab::BrowseTabInput;
+use crate::ui::browse_tab::{BrowseTabInput, PagingInput, SaveInput};
 use crate::ui::structure_tab::StructureMode;
 use crate::workspace::{
     RestoredDrafts, TabRecord, WorkspaceFileName, WorkspaceLoad, WorkspaceRecord, WorkspaceSaveError,
@@ -218,6 +218,7 @@ impl WorkspaceModel {
         self.persist_workspace_state();
         self.refresh_window_title();
         self.refresh_unsaved();
+        self.report_tabs_changed();
     }
 
     /// With no tab open, Ctrl+W closes the window, as in GNOME Text
@@ -341,19 +342,19 @@ impl WorkspaceModel {
             .get(id)
             .is_some_and(|tracker| tracker.pending_count() > 0);
         if !dirty {
-            self.dispatch_to_tab(id, BrowseTabInput::Refresh);
+            self.dispatch_to_tab(id, PagingInput::Refresh);
             return;
         }
         // A refetch replaces the rows and with them every pending edit,
         // so F5 mid-edit asks first, as closing a dirty tab does.
         let dialog = adw::AlertDialog::new(
-            Some(&crate::i18n::gettext("Discard pending changes?")),
+            Some(&crate::i18n::gettext("Discard Pending Changes?")),
             Some(&crate::i18n::gettext(
                 "Refreshing reloads the table from the database and drops every unsaved edit on this tab.",
             )),
         );
         dialog.add_response("cancel", &crate::i18n::gettext("Cancel"));
-        dialog.add_response("discard", &crate::i18n::gettext("Discard and refresh"));
+        dialog.add_response("discard", &crate::i18n::gettext("Discard and Refresh"));
         dialog.set_response_appearance("discard", adw::ResponseAppearance::Destructive);
         dialog.set_default_response(Some("cancel"));
         dialog.set_close_response("cancel");
@@ -368,7 +369,7 @@ impl WorkspaceModel {
                 .and_then(|tab| tab.browse_tab())
                 .cloned();
             if let Some(browse) = browse {
-                browse.send(BrowseTabInput::DiscardAndRefresh);
+                browse.send(SaveInput::DiscardAndRefresh);
             }
         });
         dialog.present(self.window().as_ref());
@@ -388,6 +389,7 @@ impl WorkspaceModel {
         self.persist_workspace_state();
         self.refresh_window_title();
         self.sync_sidebar_selection();
+        self.report_tabs_changed();
     }
 
     pub(super) fn selected_workspace_tab_id(&self) -> Option<Uuid> {
@@ -432,7 +434,7 @@ impl WorkspaceModel {
     /// Forward a per-tab Browse input to the right slot. Routes to the
     /// Browse-side controller in both legacy `Browse` slots and the
     /// unified `Table` slot.
-    pub(super) fn dispatch_to_tab(&self, tab_id: Uuid, msg: BrowseTabInput) {
+    pub(super) fn dispatch_to_tab(&self, tab_id: Uuid, msg: impl Into<BrowseTabInput>) {
         let browse = self
             .workspace_tabs
             .borrow()

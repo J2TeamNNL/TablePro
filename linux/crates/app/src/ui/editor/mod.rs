@@ -275,6 +275,19 @@ impl SqlEditor {
         )
     }
 
+    /// A run ended on its own or was stopped. A tab closed while it runs
+    /// says nothing.
+    pub(crate) fn connect_run_finished<F: Fn(&Self, crate::workspace::WorkOutcome) + 'static>(
+        &self,
+        f: F,
+    ) -> glib::SignalHandlerId {
+        self.connect_closure(
+            "run-finished",
+            false,
+            glib::closure_local!(move |editor: &Self, outcome: crate::workspace::WorkOutcome| f(editor, outcome)),
+        )
+    }
+
     pub fn connect_content_changed<F: Fn(&Self) + 'static>(&self, f: F) -> glib::SignalHandlerId {
         self.connect_closure(
             "content-changed",
@@ -474,7 +487,7 @@ impl SqlEditor {
         imp.run_button.set_sensitive(true);
         imp.stop_button.set_visible(false);
         imp.results.set_running(false);
-        let (summary, label, dirty, first, entry) = {
+        let (summary, label, dirty, first, entry, outcome) = {
             let log = imp.log.borrow();
             let Some(log) = log.as_ref() else {
                 return;
@@ -485,6 +498,7 @@ impl SqlEditor {
                 transaction_dirty::transaction_dirty(log.lost(), log.transaction(), log.has_run()),
                 log.first_to_show(),
                 run_history::history_entry(query, metadata, started_at, log),
+                log.outcome(),
             )
         };
         imp.results.set_summary(&summary);
@@ -496,6 +510,7 @@ impl SqlEditor {
             self.emit_by_name::<()>("transaction-changed", &[&dirty]);
         }
         self.record_history(entry, dialect);
+        self.emit_by_name::<()>("run-finished", &[&outcome]);
         self.emit_by_name::<()>("run-state-changed", &[&false]);
     }
 
@@ -787,10 +802,10 @@ fn show_cursor_position(label: &gtk4::Label, buffer: &sourceview5::Buffer) {
 fn label_run_button(button: &gtk4::Button, has_selection: bool) {
     if has_selection {
         button.set_label(&crate::i18n::gettext("Run Selection"));
-        button.set_tooltip_text(Some(&crate::i18n::gettext("Run the selected text")));
+        button.set_tooltip_text(Some(&crate::i18n::gettext("Run the Selected Text")));
     } else {
         button.set_label(&crate::i18n::gettext("Run"));
-        button.set_tooltip_text(Some(&crate::i18n::gettext("Run the script")));
+        button.set_tooltip_text(Some(&crate::i18n::gettext("Run the Script")));
     }
 }
 
@@ -901,5 +916,5 @@ pub fn derive_tab_label(query: &str) -> String {
         }
         return cleaned;
     }
-    crate::i18n::gettext("Empty query")
+    crate::i18n::gettext("Empty Query")
 }

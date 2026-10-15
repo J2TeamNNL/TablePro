@@ -2,6 +2,8 @@ substitutions = configuration_data()
 substitutions.set('app-id', application_id)
 substitutions.set('bindir', bindir)
 substitutions.set('gettext-package', meson.project_name())
+substitutions.set('version', meson.project_version())
+substitutions.set('screenshots-base-url', screenshots_base_url)
 
 desktop_file_in = configure_file(
   input: 'app.tablepro.TablePro.desktop.in.in',
@@ -73,6 +75,8 @@ install_data(
   install_dir: get_option('datadir') / 'licenses' / application_id,
 )
 
+install_man('tablepro.1')
+
 if get_option('flatpak') and get_option('kerberos')
   install_data(
     meson.project_source_root() / 'build-aux' / 'flatpak' / 'krb5.conf',
@@ -106,6 +110,27 @@ if appstreamcli.found()
     'validate-appstream',
     appstreamcli,
     args: ['validate', '--no-net', '--explain', metainfo_file],
+    suite: 'data',
+  )
+
+  # Meson pins the links and screenshot URLs to the project version's
+  # tag, and a plain cargo build to the newest release, which is listed
+  # first, so the two must agree.
+  newest_release = 'none'
+  release_tags = fs.read('app.tablepro.TablePro.metainfo.xml.in.in').replace('\n', ' ').replace('\t', ' ').split('<release ')
+  if release_tags.length() > 1
+    release_attributes = ' ' + release_tags[1].split('>')[0]
+    foreach quote : ['"', '\'']
+      release_version = release_attributes.split(' version=' + quote)
+      if newest_release == 'none' and release_version.length() > 1
+        newest_release = release_version[1].split(quote)[0]
+      endif
+    endforeach
+  endif
+  test(
+    'metainfo-release-version',
+    appstreamcli,
+    args: ['vercmp', newest_release, 'eq', meson.project_version()],
     suite: 'data',
   )
 endif

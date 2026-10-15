@@ -47,6 +47,7 @@ mod tests {
     use gtk4 as gtk;
 
     use super::*;
+    use crate::application::metainfo_release::newest_release;
 
     fn embedded_metainfo() -> String {
         crate::register_test_resources();
@@ -102,6 +103,70 @@ mod tests {
             format!("{}.desktop", config::APP_ID)
         );
         assert!(!xml.contains("@app-id@") && !xml.contains("@gettext-package@"), "{xml}");
+        assert!(
+            !xml.contains("@version@") && !xml.contains("@screenshots-base-url@"),
+            "{xml}"
+        );
+    }
+
+    #[test]
+    fn embedded_metainfo_pins_project_links_to_the_release_tag() {
+        let xml = embedded_metainfo();
+        let tree = format!(
+            "https://github.com/TableProApp/TablePro/blob/linux-v{}/linux",
+            newest_release(&xml).expect("the metainfo lists a release")
+        );
+
+        assert_eq!(
+            metainfo_text(&xml, "<url type=\"translate\"", "</url>"),
+            format!("{tree}/po/README.md")
+        );
+        assert_eq!(
+            metainfo_text(&xml, "<url type=\"contribute\"", "</url>"),
+            format!("{tree}/CONTRIBUTING.md")
+        );
+    }
+
+    #[test]
+    fn every_metainfo_screenshot_is_a_committed_png() {
+        let xml = embedded_metainfo();
+        let screenshots = metainfo_text(&xml, "<screenshots", "</screenshots>");
+        let mut listed: Vec<String> = screenshots
+            .split("</screenshot>")
+            .filter(|entry| !entry.trim().is_empty())
+            .map(|entry| {
+                assert!(entry.contains("<caption"), "a screenshot without a caption: {entry}");
+                let url = metainfo_text(entry, "<image", "</image>");
+                assert!(url.starts_with("https://"), "{url}");
+                let name = url.rsplit('/').next().unwrap_or_default();
+                assert!(
+                    url.ends_with(&format!("/linux/data/screenshots/{name}")),
+                    "{url} is not under the repository's data/screenshots"
+                );
+                name.to_owned()
+            })
+            .collect();
+        listed.sort();
+
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/screenshots");
+        let mut committed: Vec<String> = std::fs::read_dir(&dir)
+            .expect("data/screenshots is readable")
+            .map(|entry| {
+                entry
+                    .expect("a readable entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        committed.sort();
+
+        assert_eq!(listed, committed);
+        assert!(!listed.is_empty());
+        for name in &listed {
+            let bytes = std::fs::read(dir.join(name)).expect("the screenshot is readable");
+            assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"), "{name} is not a PNG");
+        }
     }
 
     #[test]

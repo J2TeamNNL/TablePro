@@ -54,6 +54,7 @@ impl SessionWindow {
         self.set_title(Some(&crate::i18n::gettext("TablePro")));
         workspace.shutdown();
         drop(workspace);
+        self.withdraw_notifications();
         let key = claim.key().clone();
         drop(claim);
         // A quit freezes the record first, so only a disconnect or a
@@ -167,7 +168,11 @@ mod tests {
             1,
             "the connection closed more than once"
         );
-        assert!(workspace.upgrade().is_none(), "the workspace outlived its teardown");
+        // GTK holds a widget that had the focus until the window paints
+        // again, and a delivery still in flight holds the workspace until
+        // its aborted task's result reaches the main context.
+        crate::test_support::after_next_frame(&test.window);
+        wait_until(WAIT, || workspace.upgrade().is_none()).expect("the workspace outlived its teardown");
         let claim = test
             .services
             .sessions

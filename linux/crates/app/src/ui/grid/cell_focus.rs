@@ -122,8 +122,6 @@ pub(crate) fn edit_row(view: &gtk::ColumnView, position: u32) {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
-    use std::rc::Rc;
     use std::time::Duration;
 
     use gtk4::prelude::*;
@@ -133,7 +131,7 @@ mod tests {
     use tablepro_core::value::Temporal;
 
     use super::edit_row;
-    use crate::test_support::{drain_main_context, first_descendant_of_type, wait_until};
+    use crate::test_support::{FocusThief, after_next_frame, drain_main_context, first_descendant_of_type, wait_until};
     use crate::ui::grid::test_grid::{Grid, WAIT, edited_rows, key, named, text};
     use crate::ui::grid::{GridCell, begin_edit};
 
@@ -249,6 +247,32 @@ mod tests {
         assert!(grid.take_messages().is_empty(), "Escape sent the typed text");
     }
 
+    /// Another window taking the focus is no focus change in this one,
+    /// so the edit stays open, and typing goes on there once it is back.
+    #[gtk4::test]
+    fn an_edit_stays_open_while_another_window_has_the_focus() {
+        let grid = mixed_rows();
+        let name = grid.focus(1, 1);
+        crate::ui::grid::begin_edit(&name);
+        let editor = name.inline_text().expect("an editor");
+        editor.set_text("typed");
+
+        let thief = FocusThief::take_from(&grid.window).expect("another window takes the focus");
+        after_next_frame(&grid.window);
+        assert!(name.is_editing(), "another window taking the focus ended the edit");
+        thief.give_back(&grid.window);
+        drain_main_context();
+        after_next_frame(&grid.window);
+
+        assert!(name.is_editing(), "the edit ended when the window came back");
+        assert!(grid.take_messages().is_empty(), "the half-typed value was sent");
+        assert_eq!(
+            gtk::prelude::GtkWindowExt::focus(&grid.window).as_ref(),
+            Some(editor.upcast_ref::<gtk::Widget>()),
+            "the focus left the field"
+        );
+    }
+
     #[gtk4::test]
     fn ctrl_tab_in_an_editor_is_left_to_the_window() {
         let grid = mixed_rows();
@@ -302,18 +326,6 @@ mod tests {
         panic!("the editor popover never showed");
     }
 
-    /// GTK moves a focus it finds in a hidden popover once the frame is
-    /// painted, so the focus is checked after that.
-    fn after_next_frame(grid: &Grid) {
-        let clock = grid.window.frame_clock().expect("the window's frame clock");
-        let painted = Rc::new(Cell::new(false));
-        let flag = painted.clone();
-        let handler = clock.connect_after_paint(move |_| flag.set(true));
-        clock.request_phase(gdk::FrameClockPhase::AFTER_PAINT);
-        wait_until(WAIT, || painted.get()).expect("the window paints a frame");
-        clock.disconnect(handler);
-    }
-
     fn button(popover: &gtk::Popover, label: &str) -> gtk::Button {
         crate::test_support::descendants(popover)
             .into_iter()
@@ -343,7 +355,7 @@ mod tests {
         let calendar = first_descendant_of_type::<gtk::Calendar>(&popover).expect("the calendar");
 
         calendar.set_date(&glib::DateTime::from_utc(2024, 3, 16, 0, 0, 0.0).expect("a day"));
-        after_next_frame(&grid);
+        after_next_frame(&grid.window);
 
         assert!(!cell.is_editing());
         assert_eq!(grid.focused_cell().as_ref(), Some(&cell), "the focus left the grid");
@@ -361,7 +373,7 @@ mod tests {
 
         // As Escape does.
         popover.popdown();
-        after_next_frame(&grid);
+        after_next_frame(&grid.window);
 
         assert!(!cell.is_editing());
         assert_eq!(grid.focused_cell().as_ref(), Some(&cell), "the focus left the grid");
@@ -378,7 +390,7 @@ mod tests {
         let popover = open_popover(&grid, &cell);
 
         grid.store.remove(0);
-        after_next_frame(&grid);
+        after_next_frame(&grid.window);
 
         assert!(popover.parent().is_none(), "the popover outlived its row");
         assert!(!cell.is_editing());
@@ -400,7 +412,7 @@ mod tests {
 
         let popover = open_popover(&grid, &cell);
         button(&popover, "Cancel").emit_clicked();
-        after_next_frame(&grid);
+        after_next_frame(&grid.window);
         assert!(!cell.is_editing());
         assert_eq!(grid.focused_cell().as_ref(), Some(&cell), "Cancel left the grid");
 
@@ -408,7 +420,7 @@ mod tests {
         let view = first_descendant_of_type::<sourceview5::View>(&popover).expect("the multi-line editor");
         view.buffer().set_text("one\nthree");
         button(&popover, "Save").emit_clicked();
-        after_next_frame(&grid);
+        after_next_frame(&grid.window);
         assert!(!cell.is_editing());
         assert_eq!(grid.focused_cell().as_ref(), Some(&cell), "Save left the grid");
         assert_eq!(

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- .deb package for Ubuntu 26.04 and .rpm package for Fedora 44.
 - Password prompt on connect when the keyring holds no password or the server refused it, with a choice to remember it.
 - SSH tunnels through the system OpenSSH client, with your agent, host aliases and jump hosts, confirming new host keys.
 - Security group in the connect dialog: encryption mode, CA certificate, client certificate and TLS server name.
@@ -31,8 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Review before a structure save that drops data, rebuilds the table or can stop halfway, with the SQL it runs.
 - Arrow keys move between grid cells; F2 or Return edits one, Tab carries an edit to the next cell, and Shift+F10 opens the cell menu.
 - Screen readers name check box cells and say when a grid cell is modified or NULL and a row new or marked for deletion.
-- Connections open when TablePro quits open again at the next launch; Restore session in Preferences turns it off.
-- Save query history in Preferences turns the query history off and keeps the entries already saved.
+- Connections open when TablePro quits open again at the next launch; Restore Session in Preferences turns it off.
+- Save Query History in Preferences turns the query history off and keeps the entries already saved.
 - Try Again on a table tab's error page, and Retry on a banner over rows or a structure that could not be read again.
 - Table and structure tabs show a spinner in the tab bar while they read.
 - Count Rows in a table tab's paginator, with the reason on Try Again when a count fails.
@@ -40,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Export a table's current page or every row under its filter and sort, and an editor result's shown rows or all of them.
 - Banner over an editor result the row limit cut short, saying how many rows it shows, with Export All for every row.
 - Sort an editor result by clicking a column header, with text in your language's alphabetical order.
-- Copy as puts CSV, JSON, Markdown, SQL and tab-separated rows on the clipboard as their own type beside plain text.
+- Copy As puts CSV, JSON, Markdown, SQL and tab-separated rows on the clipboard as their own type beside plain text.
 - Shift+F10 opens the menu of a sidebar table or a query history entry, as the Menu key does.
 - Screen readers name icon-only buttons, and announce the shortcut of the table, SQL editor and filter buttons that have one.
 - An icon beside each table row with a pending change, and bold text in edited cells.
@@ -50,6 +51,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sidebar lists the tables of every schema, a section per schema with the default one first, and a middle click opens one in a new tab.
 - Connect leads a saved connection's menu, which a right click, the Menu key or Shift+F10 opens.
 - Find and replace in the SQL editor with Ctrl+F and Ctrl+H, matching case, whole words or regular expressions.
+- Edit…, Duplicate and Move to Group in a saved connection's menu; an edit keeps the saved passwords unless you type new ones.
+- Desktop notification when a query, save or export finishes in a tab you are not looking at; clicking it opens the tab.
+- SSH agent sign-in, Kerberos tickets in KCM and SQLite files on removable drives in the Flatpak build.
+- Screenshots of the table grid, SQL editor, Structure tab and connect dialog in the software centre listing.
 
 ### Changed
 
@@ -57,16 +62,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New rows in the table grid take a value for a primary key that is not auto-increment.
 - Show CREATE TABLE gives the server's own statement on MySQL, ClickHouse and SQLite.
 - Structure tab sets a column NOT NULL when it joins the primary key, and gives its nullability back when it leaves.
-- Auto increment in the Structure tab no longer needs the primary key on PostgreSQL and SQL Server.
+- Auto Increment in the Structure tab no longer needs the primary key on PostgreSQL and SQL Server.
 - SQLite foreign keys show the name their CREATE TABLE gives them.
-- Delete, Duplicate and Copy as in a grid cell's menu act on every selected row when the clicked row is selected.
+- Delete, Duplicate and Copy As in a grid cell's menu act on every selected row when the clicked row is selected.
 - Grid cells edit in place with the keyboard each type needs; dates open a calendar, and JSON, XML and long text a larger editor.
 - Set Value in a grid cell's menu is Set to Empty, Set to NULL and Set to DEFAULT, each shown only where the column takes it.
 - Set a grid cell to NULL with Ctrl+Backspace instead of Ctrl+Shift+N.
 - Quit asks each window about its unsaved changes in turn, and waits for open connections to close.
 - JSON exports and copies put one row per line, and a value TablePro couldn't read stops the export instead of becoming NULL.
 - Each window holds one connection: opening one already open brings its window forward, and Disconnect returns to the list.
-- Connecting shows in the window with Cancel, and a failed connect says why, with Retry, Edit Connection and Choose Connection.
+- Connecting shows in the window with Cancel, and a failed connect says why with Retry and Edit Connection; screen readers hear both.
 - Deleting a connection asks once, offers its window when it is open, and can delete its query history too.
 - SQLite files shared through the document portal show their own path instead of the portal's.
 - Add Index and Add Foreign Key check the form as you type, and pick the referenced table and columns from the database.
@@ -99,6 +104,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Connection buttons in a connected window's header bar; New Window opens another connection.
 - Ctrl+E for a new SQL editor tab; Ctrl+T opens one.
+- Close button in the sidebar and Query History search bars; the search button or Escape closes them.
 
 ### Fixed
 
@@ -109,7 +115,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A failed query history export said nothing.
 - Copying many rows, or showing a row with a long value as JSON, froze the window.
 - A query saved just before quitting could be lost.
-- The sidebar's table search button had no name for screen readers.
+- The sidebar's table search, the find and replace fields and the Query History search had no name for screen readers.
 - The sidebar was slow to fill and to search on databases with thousands of tables, and said nothing when the list could not be read again.
 - A connection added, changed or deleted in one window did not show in the other windows' connection lists.
 - A connection name with & or < in it showed wrong in the connection list.
@@ -119,6 +125,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQL Server money and smallmoney in the SQL editor and query results showed as approximate floats.
 - Saving a SQL Server row with a char or varchar key locked the whole table until the save ended.
 - Stop could not end a SQLite statement waiting for another connection's lock.
+- With SQLite 3.51, a file that is not a SQLite database failed to open with SQLite's raw error instead of saying so.
+- With SQLite 3.51, a SQLite connection waiting for another program's lock could be taken for lost after a suspend.
 - Launching TablePro while it was running did nothing instead of showing the open window.
 - Deleting a connection left its saved tabs and editor drafts on disk.
 - A change to the connection list made just before quitting could be lost.
@@ -142,7 +150,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Text with a NUL character showed cut short in the grid, copied cut short, and editing it saved the cut value.
 - An edit, Set Value or row action in the table grid could land on another row once a row above it came or went.
 - Editing, undoing or deleting a row in the table grid dropped it from a selection of several rows.
-- Copy as INSERT could copy the wrong row, drop the schema or unsaved edits, or write a value where the server fills one.
+- Copy As INSERT could copy the wrong row, drop the schema or unsaved edits, or write a value where the server fills one.
 - Duplicate left out the row's unsaved edits.
 - Cells of a table without a primary key opened for editing, then dropped what was typed.
 - A row whose primary key the driver could not read opened for editing, then failed to save.
@@ -195,6 +203,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A bulk delete confirmed after the table's primary key changed marked rows by their old key.
 - Ctrl+Home and Ctrl+End jumped to the first or last tab instead of the start or end of the SQL editor or table.
 - Ctrl+N added a row to a read-only table or a table without a primary key.
+- Two SQL editor tabs could both be named Query 3 after an earlier editor tab closed.
+- After Clear All, the filter strip could show Match any while the next filter combined its rules with all.
+- Drop-downs in the connect and export dialogs cut their value short beside a long description.
+- PostgreSQL numbers in SQL editor results lined up on the left, unlike the table grid's.
+- Grid columns cut long numbers short at their default width.
+- TablePro could crash when its window took the focus just as a new page replaced the focused cell's row.
 
 ### Security
 

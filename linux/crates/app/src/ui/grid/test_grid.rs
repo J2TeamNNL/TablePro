@@ -218,6 +218,20 @@ impl Drop for Grid {
     }
 }
 
+/// Saved rows keyed `ids`, as a page read from the table is.
+pub(super) fn page(ids: std::ops::Range<i64>) -> Vec<RowObject> {
+    let rows: Vec<Vec<Value>> = ids
+        .map(|id| vec![Value::Int(id), Value::Text(format!("row {id}"))])
+        .collect();
+    persisted(&rows)
+}
+
+/// Whether the window's focus is the grid or inside it.
+pub(super) fn focus_in_grid(grid: &Grid) -> bool {
+    gtk::prelude::GtkWindowExt::focus(&grid.window)
+        .is_some_and(|focus| focus == *grid.view.upcast_ref::<gtk::Widget>() || focus.is_ancestor(&grid.view))
+}
+
 pub(super) fn two_text_rows() -> Grid {
     Grid::open(
         vec![named("id", "integer", true), named("name", "text", false)],

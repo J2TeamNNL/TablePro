@@ -80,11 +80,7 @@ impl TestWindow {
     }
 
     pub(crate) fn with_script(name: &str, script: Script) -> Self {
-        adw::init().expect("libadwaita initialises under the test backend");
-        crate::register_test_resources();
-        if let Some(settings) = gtk4::Settings::default() {
-            settings.set_gtk_enable_animations(false);
-        }
+        init_gtk();
         let runtime = crate::test_support::test_runtime();
         let settings = MemorySettings::new();
         let dir = tempfile::tempdir().expect("a temporary directory");
@@ -102,31 +98,13 @@ impl TestWindow {
             unreadable_list,
             window_size,
         } = script;
-        if let Some((width, height)) = window_size {
-            settings
-                .get()
-                .set_window_geometry(tablepro_storage::WindowGeometry {
-                    width,
-                    height,
-                    maximized: false,
-                })
-                .expect("store the window size");
+        if let Some(size) = window_size {
+            remember_window_size(&settings, size);
         }
         let network = network || tunnel.is_some();
-        let saved = match tunnel {
-            Some(tunnel) => SavedConnection {
-                ssh: Some(tunnel),
-                auth_mode: AuthMode::Kerberos,
-                ..network_connection()
-            },
-            None if network => network_connection(),
-            None => saved_connection(&dir.path().join("fake.db")),
-        };
+        let saved = scripted_connection(network, tunnel, dir.path());
         if unreadable_list {
-            if let Some(parent) = list_file.parent() {
-                std::fs::create_dir_all(parent).expect("the config directory");
-            }
-            std::fs::write(&list_file, b"{ not json").expect("the unreadable list");
+            write_unreadable_list(&list_file);
         } else {
             storage
                 .connections()
@@ -146,7 +124,7 @@ impl TestWindow {
         let connector = FakeConnector::new(establish).always(FakeEstablish::Connect(connection));
         let liveness = LivenessPolicy::DESKTOP;
         let hold = Rc::new(CountingHold::new());
-        let mut services = AppServices::new(AppServicesParts {
+        let parts = AppServicesParts {
             drivers,
             connector: Arc::new(connector.clone()),
             deadlines: Arc::new(DefaultDeadlines::new(liveness)),
@@ -154,21 +132,9 @@ impl TestWindow {
             settings: settings.get().clone(),
             storage,
             tasks: runtime.tasks(),
-        })
-        .with_hold(hold.clone());
-        if let Some(credentials) = credentials {
-            services = services.with_credentials(Rc::new(FakeSources(credentials)));
-        }
-        if let Some(ssh) = ssh {
-            services = services.with_ssh(ssh);
-        }
-        let app = TableProApplication::new(services);
-        app.set_application_id(Some(&format!("{}.Test.Window{name}", crate::config::SCHEMA_ID)));
-        app.register(gio::Cancellable::NONE).expect("register the application");
-        let window = app
-            .open_window(WindowLaunch::Picker)
-            .and_then(|window| window.downcast::<SessionWindow>().ok())
-            .expect("a session window");
+        };
+        let services = scripted_services(parts, hold.clone(), credentials, ssh);
+        let (app, window) = open_picker_window(name, services);
         let services = app.services().expect("the application's services");
         let test = Self {
             app,
@@ -244,6 +210,77 @@ impl TestWindow {
         editor.run();
         wait_until(WAIT, || !editor.is_running()).expect("the run to end");
     }
+}
+
+fn init_gtk() {
+    adw::init().expect("libadwaita initialises under the test backend");
+    crate::register_test_resources();
+    if let Some(settings) = gtk4::Settings::default() {
+        settings.set_gtk_enable_animations(false);
+    }
+}
+
+fn remember_window_size(settings: &MemorySettings, (width, height): (i32, i32)) {
+    settings
+        .get()
+        .set_window_geometry(tablepro_storage::WindowGeometry {
+            width,
+            height,
+            maximized: false,
+        })
+        .expect("store the window size");
+}
+
+/// The connection the script's world has saved: through `tunnel` when
+/// it has one, to a server when `network`, else to a file under `dir`.
+fn scripted_connection(
+    network: bool,
+    tunnel: Option<tablepro_storage::SavedSshConfig>,
+    dir: &std::path::Path,
+) -> SavedConnection {
+    match tunnel {
+        Some(tunnel) => SavedConnection {
+            ssh: Some(tunnel),
+            auth_mode: AuthMode::Kerberos,
+            ..network_connection()
+        },
+        None if network => network_connection(),
+        None => saved_connection(&dir.join("fake.db")),
+    }
+}
+
+fn write_unreadable_list(list_file: &std::path::Path) {
+    if let Some(parent) = list_file.parent() {
+        std::fs::create_dir_all(parent).expect("the config directory");
+    }
+    std::fs::write(list_file, b"{ not json").expect("the unreadable list");
+}
+
+fn scripted_services(
+    parts: AppServicesParts,
+    hold: Rc<CountingHold>,
+    credentials: Option<FakeCredentialSource>,
+    ssh: Option<tablepro_ssh::SshServices>,
+) -> AppServices {
+    let mut services = AppServices::new(parts).with_hold(hold);
+    if let Some(credentials) = credentials {
+        services = services.with_credentials(Rc::new(FakeSources(credentials)));
+    }
+    if let Some(ssh) = ssh {
+        services = services.with_ssh(ssh);
+    }
+    services
+}
+
+fn open_picker_window(name: &str, services: AppServices) -> (TableProApplication, SessionWindow) {
+    let app = TableProApplication::new(services);
+    app.set_application_id(Some(&format!("{}.Test.Window{name}", crate::config::SCHEMA_ID)));
+    app.register(gio::Cancellable::NONE).expect("register the application");
+    let window = app
+        .open_window(WindowLaunch::Picker)
+        .and_then(|window| window.downcast::<SessionWindow>().ok())
+        .expect("a session window");
+    (app, window)
 }
 
 impl Drop for TestWindow {
@@ -443,7 +480,7 @@ fn claiming_open_key_presents_owner_window() {
 }
 
 #[gtk4::test]
-fn cancel_connect_discards_late_attempt() {
+fn f002_cancel_connect_discards_late_attempt() {
     let test = TestWindow::with_script(
         "CancelLate",
         Script {
@@ -552,6 +589,179 @@ fn a_failed_connect_shows_why_and_choose_connection_returns_to_the_picker() {
     test.wait_for_page("picker");
 
     assert_eq!(test.services.sessions.window_for(&test.key()), None);
+}
+
+#[gtk4::test]
+fn connecting_page_uses_spinner_paintable_and_cancel_action() {
+    let test = TestWindow::with_script(
+        "ConnectingPage",
+        Script {
+            establish: vec![FakeEstablish::UntilCancelled],
+            ..Script::default()
+        },
+    );
+
+    test.window
+        .send(SessionWindowInput::OpenSaved(Box::new(test.saved.clone())));
+    test.wait_for_page("connecting");
+
+    let page = test
+        .window
+        .content()
+        .and_downcast::<ConnectingPage>()
+        .expect("the connecting page");
+    assert!(
+        page.status_page()
+            .paintable()
+            .and_downcast::<adw::SpinnerPaintable>()
+            .is_some(),
+        "the status page draws no spinner"
+    );
+    assert_eq!(page.status_page().title(), "Connecting to Fake");
+    let cancel = page.cancel_button();
+    assert_eq!(cancel.action_name().as_deref(), Some("win.cancel-connect"));
+    assert_eq!(test.window.default_widget(), Some(cancel.upcast()));
+    assert_eq!(test.window.title().as_deref(), Some("Connecting"));
+    assert_eq!(
+        page.announced(),
+        [(
+            "Connecting to Fake".to_owned(),
+            gtk4::AccessibleAnnouncementPriority::Medium
+        )]
+    );
+
+    WidgetExt::activate_action(&test.window, "win.cancel-connect", None).expect("win.cancel-connect");
+    test.wait_for_page("picker");
+    assert_eq!(
+        test.window.default_widget(),
+        None,
+        "Enter still reached the gone Cancel"
+    );
+}
+
+#[gtk4::test]
+fn failed_page_offers_retry_edit_and_choose() {
+    let test = TestWindow::with_script(
+        "FailedPage",
+        Script {
+            establish: vec![refused()],
+            ..Script::default()
+        },
+    );
+
+    test.window
+        .send(SessionWindowInput::OpenSaved(Box::new(test.saved.clone())));
+    test.wait_for_page("connect-failed");
+
+    let page = test
+        .window
+        .content()
+        .and_downcast::<ConnectFailedPage>()
+        .expect("the failed page");
+    let status = page.status_page();
+    assert_eq!(status.icon_name().as_deref(), Some("network-error-symbolic"));
+    assert_eq!(status.title(), "Could Not Connect");
+    let [retry, edit, choose] = page.buttons();
+    assert_eq!(retry.action_name().as_deref(), Some("win.retry-connect"));
+    assert_eq!(edit.action_name().as_deref(), Some("win.edit-connection"));
+    assert_eq!(choose.action_name().as_deref(), Some("win.cancel-connect"));
+    assert!(edit.is_visible(), "a saved connection offered no Edit Connection");
+    assert!(choose.has_css_class("flat"));
+    assert!(
+        test.window
+            .lookup_action("edit-connection")
+            .is_some_and(|action| action.is_enabled())
+    );
+    let default = test.window.default_widget().expect("a default button");
+    assert!(
+        default.is_visible() && default.has_css_class("suggested-action"),
+        "Enter does not take the suggested way on"
+    );
+    assert_eq!(test.window.title().as_deref(), Some("Could Not Connect"));
+    let message = page.message().expect("the reason");
+    assert_eq!(
+        page.announced(),
+        [(
+            format!("Could Not Connect. {message}"),
+            gtk4::AccessibleAnnouncementPriority::High
+        )]
+    );
+}
+
+#[gtk4::test]
+fn a_file_that_failed_offers_no_edit() {
+    let test = TestWindow::picker("FailedFile");
+
+    test.window.send(SessionWindowInput::OpenFile(gio::File::for_path(
+        test.dir().join("gone.db"),
+    )));
+    test.wait_for_page("connect-failed");
+
+    let page = test
+        .window
+        .content()
+        .and_downcast::<ConnectFailedPage>()
+        .expect("the failed page");
+    assert!(!page.buttons()[1].is_visible());
+    assert!(
+        test.window
+            .lookup_action("edit-connection")
+            .is_some_and(|action| !action.is_enabled())
+    );
+}
+
+#[gtk4::test]
+fn edit_connection_opens_edit_dialog_and_retries_on_save() {
+    let test = TestWindow::with_script(
+        "EditRetries",
+        Script {
+            establish: vec![refused()],
+            network: true,
+            ..Script::default()
+        },
+    );
+    let (vault, id) = (test.vault.clone(), test.saved.id);
+    crate::test_support::finish_on_main(WAIT, async move {
+        tablepro_core::credentials::SecretVault::store(
+            &*vault,
+            id,
+            tablepro_core::credentials::SecretKind::DatabasePassword,
+            &secrecy::SecretString::from("s3cret"),
+            "label",
+        )
+        .await
+    })
+    .expect("the store to end")
+    .expect("the password stored");
+    test.window
+        .send(SessionWindowInput::OpenSaved(Box::new(test.saved.clone())));
+    test.wait_for_page("connect-failed");
+
+    WidgetExt::activate_action(&test.window, "win.edit-connection", None).expect("win.edit-connection");
+    let mut shown = None;
+    wait_until(WAIT, || {
+        shown = test
+            .window
+            .visible_dialog()
+            .and_downcast::<crate::ui::connect_dialog::ConnectDialog>();
+        shown.is_some()
+    })
+    .expect("the connect dialog");
+    let dialog = shown.expect("the dialog");
+    assert_eq!(dialog.editing().map(|saved| saved.id), Some(test.saved.id));
+    assert_eq!(test.connector.calls().len(), 1);
+    dialog.imp().port_row.set_value(6543.0);
+
+    dialog.imp().connect_button.emit_clicked();
+
+    test.wait_for_page("workspace");
+    let calls = test.connector.calls();
+    assert_eq!(calls.len(), 2, "Save did not connect again");
+    let tablepro_session::RequestTarget::Network { endpoint, .. } = &calls[1].request.target else {
+        panic!("expected a network target");
+    };
+    assert_eq!(endpoint.port(), 6543, "the retry connected to the entry as it was");
+    assert_eq!(test.window.visible_dialog(), None, "the dialog stayed open");
 }
 
 #[gtk4::test]
@@ -757,7 +967,7 @@ fn a_file_window_that_could_not_show_the_owner_stays_open_from_then_on() {
 }
 
 #[gtk4::test]
-fn late_show_create_reply_after_disconnect_is_dropped() {
+fn f002_late_show_create_reply_after_disconnect_is_dropped() {
     let test = TestWindow::connected_with("LateShowCreate", |script| {
         script.dialect = Arc::new(drivers_postgres::PgDialect::new(&tablepro_core::ServerInfo::new(
             "PostgreSQL",

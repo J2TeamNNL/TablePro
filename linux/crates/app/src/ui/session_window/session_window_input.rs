@@ -1,6 +1,6 @@
 use tablepro_core::credentials::SecretKind;
 use tablepro_session::SessionKey;
-use tablepro_storage::{ConnectionColor, SavedConnection};
+use tablepro_storage::{ConnectionColor, ConnectionGroupName, SavedConnection};
 use uuid::Uuid;
 
 use super::resolve_file_identity::ResolvedFile;
@@ -8,7 +8,7 @@ use super::session_window_command::SessionWindowCommand;
 use super::sqlite_location_dialog::LocationChoice;
 use crate::services::connection_deletion::DeletionOptions;
 use crate::ui::connect_dialog::ConnectSubmission;
-use crate::workspace::CloseReason;
+use crate::workspace::{CloseReason, CompletedWork};
 
 #[derive(Debug)]
 pub(crate) enum SessionWindowInput {
@@ -44,6 +44,10 @@ pub(crate) enum SessionWindowInput {
     /// Open the connect dialog on a connection that failed to connect,
     /// with the focus on the setting that fixes it.
     EditConnection,
+    /// Open the connect dialog on a saved connection to change it.
+    EditSavedConnection(Uuid),
+    /// The connect dialog saved its changes to a saved connection.
+    ConnectionSaved(Uuid),
     /// Close the workspace through its prompts and return to the
     /// picker.
     Disconnect,
@@ -64,6 +68,12 @@ pub(crate) enum SessionWindowInput {
     /// The number of saves running in the workspace changed.
     SavesInFlightChanged(usize),
     TitleChanged(String),
+    /// A run, save or export ended in one of the workspace's tabs.
+    WorkCompleted(CompletedWork),
+    /// The tab in front, the open tabs or the window's focus changed.
+    TabsChanged,
+    /// A notification about the tab was clicked.
+    FocusTab(Uuid),
     Command(Box<SessionWindowCommand>),
     /// The answer for a file on a filesystem whose locking SQLite cannot
     /// trust, or ReadWrite when there was nothing to ask.
@@ -88,13 +98,13 @@ pub(crate) enum SessionWindowInput {
     DeleteConnection(Uuid),
     /// The user confirmed the delete.
     ConfirmDelete(Uuid, DeletionOptions),
-    DuplicateConnection(Box<SavedConnection>),
+    DuplicateConnection(Uuid),
     /// A colour picked from a connection row's menu, or `None` when the
     /// user cleared it.
     SetConnectionColor(Uuid, Option<ConnectionColor>),
     /// A group picked from a connection row's menu, or `None` when the
     /// user took it out of one.
-    SetConnectionGroup(Uuid, Option<String>),
+    SetConnectionGroup(Uuid, Option<ConnectionGroupName>),
     ExportConnections,
     ImportConnections,
     /// The file the user picked to import, read off the GTK thread.

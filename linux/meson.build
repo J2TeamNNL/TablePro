@@ -7,6 +7,7 @@ project(
   license_files: 'LICENSE',
 )
 
+fs = import('fs')
 i18n = import('i18n')
 gnome = import('gnome')
 
@@ -32,6 +33,20 @@ else
 endif
 
 version = meson.project_version() + version_suffix
+
+# Flathub mirrors the screenshots from these URLs at build time, so the
+# default names the release tag, which never moves. A build of a commit
+# that is not tagged yet passes that commit's URL instead.
+screenshots_base_url = get_option('screenshots_base_url')
+if screenshots_base_url == ''
+  screenshots_base_url = 'https://raw.githubusercontent.com/TableProApp/TablePro/linux-v@0@/linux/data/screenshots'.format(
+    meson.project_version(),
+  )
+endif
+if not screenshots_base_url.startswith('https://')
+  error('screenshots_base_url must be an https URL: ' + screenshots_base_url)
+endif
+screenshots_base_url = screenshots_base_url.strip('/')
 
 # GNOME 50 floor; see docs/decisions/0015-gnome-50-platform-floor.md.
 dependency('glib-2.0', version: '>= 2.88')
@@ -68,6 +83,7 @@ cargo_env.set('TABLEPRO_LIBEXECDIR', libexecdir)
 subdir('data')
 subdir('po')
 subdir('crates/app')
+subdir('build-aux')
 
 # `meson devenv` runs cargo against the build tree, where the askpass
 # helper sits next to the binary rather than under libexecdir.

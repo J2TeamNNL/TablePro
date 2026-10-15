@@ -28,6 +28,7 @@ impl CloseGuard {
         scope: CloseScope,
         acknowledged: &mut HashSet<Uuid>,
     ) -> CloseDecision {
+        let _asking = handle.claim_for_prompt(scope);
         loop {
             match handle.close_step(scope, acknowledged) {
                 CloseStep::Approve => return CloseDecision::Approved,
@@ -124,10 +125,10 @@ fn show_refused(parent: &gtk::Widget, tabs: &[DirtyTab], refused: &[(Uuid, SaveR
 mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
-    use std::time::Duration;
 
     use tablepro_core::{DriverError, LossPhase, WriteReport};
     use tablepro_test_support::{CallCounters, ConnectionScript, FakeReply};
+    use tokio_util::sync::CancellationToken;
 
     use super::*;
     use crate::test_support::wait_until;
@@ -226,6 +227,33 @@ mod tests {
         assert_eq!(decided(&decision), CloseDecision::Approved);
         assert_eq!(workspace.tracker.pending_state(), PendingState::Clean);
         assert_eq!(CallCounters::get(&workspace.counters().write_batch), 1);
+        assert_eq!(
+            workspace.settled_in_prompt(),
+            [true],
+            "the prompt's save settled outside it"
+        );
+    }
+
+    #[gtk4::test]
+    fn a_save_left_running_by_keep_open_settles_outside_the_prompt() {
+        let mut script = ConnectionScript::default();
+        script
+            .write_batch
+            .always(FakeReply::StoppedWith(Err(DriverError::RolledBack {
+                statement_index: 0,
+                source: Box::new(DriverError::Cancelled),
+            })));
+        let workspace = Workspace::open(script);
+        let window = window();
+
+        let decision = guard(&window, &workspace.handle, CloseScope::Window);
+        answer_next(&window, "Save Changes?", "save", None);
+        answer_next(&window, "Saving Changes", "keep", None);
+        assert_eq!(decided(&decision), CloseDecision::Cancelled);
+        workspace.handle.stop_saves(CloseScope::Window);
+        workspace.settle();
+
+        assert_eq!(workspace.settled_in_prompt(), [false]);
     }
 
     #[gtk4::test]
@@ -244,11 +272,14 @@ mod tests {
         assert_eq!(workspace.tracker.pending_state(), PendingState::Unsaved);
     }
 
+    /// The save lands only once the dialog is up, so a slow machine
+    /// cannot settle it inside the quiet period the dialog waits out.
     #[gtk4::test]
     fn in_flight_save_waiting_dialog_force_closes_on_settle() {
+        let release = CancellationToken::new();
         let mut script = ConnectionScript::default();
-        script.write_batch.always(FakeReply::Bounded {
-            after: Duration::from_millis(500),
+        script.write_batch.always(FakeReply::UntilReleased {
+            release: release.clone(),
             outcome: Ok(WriteReport::new(vec![Some(1)])),
         });
         let workspace = Workspace::open(script);
@@ -260,6 +291,11 @@ mod tests {
             visible_alert(&window).is_some_and(|alert| alert.heading().as_deref() == Some("Saving Changes"))
         })
         .expect("the waiting dialog");
+        assert!(
+            decision.borrow().is_none(),
+            "the guard decided with the save still running"
+        );
+        release.cancel();
 
         assert_eq!(decided(&decision), CloseDecision::Approved);
         crate::test_support::drain_main_context();

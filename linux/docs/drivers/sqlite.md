@@ -16,7 +16,7 @@ Every connection to the file opens with the same options:
 - The statement cache is off, because sqlx keeps a statement's columns from its first prepare and SQLite prepares it again with more columns after an `ALTER TABLE`.
 - sqlx's statement logging is off.
 
-The connect reads `sqlite_version()` from the file once, so a file that is not a database fails the connect (`NotADatabase`) rather than the first page. SQLite only says it could not open a file; the driver tells a moved file (`FileNotFound`) from one the user may not read (`FileAccessDenied`) by looking at the path.
+The connect reads `sqlite_version()` and counts `sqlite_schema` once, so a file that is not a database fails the connect (`NotADatabase`) rather than the first page. Either statement can be the one that finds out: SQLite 3.51 reads the schema before it compiles a connection's first SELECT, while 3.46 waits for a statement that names a table. SQLite only says it could not open a file; the driver tells a moved file (`FileNotFound`) from one the user may not read (`FileAccessDenied`) by looking at the path.
 
 ### New databases
 
@@ -28,7 +28,7 @@ A reconnect uses `FileEndpoint::for_reopen`, which is always `OpenExisting`, so 
 
 SQLite relies on POSIX file locks and, for a database in WAL mode, on shared memory in the `-shm` file beside it. Both work on a local file system. On NFS or SMB, locks can fail without an error, and two writers can then corrupt the file. A FUSE mount may not implement the locks at all. A file chosen through the Flatpak document portal sits on the portal's own FUSE file system, which exposes the chosen file rather than its folder, so the journal and WAL files SQLite keeps beside it may not work there.
 
-The driver does not detect any of these. Open such a file read-only, or copy it to a local folder first. Under the development Flatpak, which grants `--filesystem=home`, a file under the home folder is opened at its real path, not through the portal.
+The driver does not detect any of these. Open such a file read-only, or copy it to a local folder first. Under the development Flatpak, which grants the home folder, `/media`, `/run/media` and `/mnt`, a file under any of them is opened at its real path, not through the portal.
 
 ## Connections
 
@@ -39,6 +39,8 @@ The driver does not detect any of these. Open such a file read-only, or copy it 
 | One connection per editor tab | `EditorSession` |
 
 One workspace connection is enough because SQLite takes one writer at a time anyway, and it keeps a temporary table or an attached database where the next call can see it. Calls wait for it for up to the pool wait (5 s).
+
+The health probe runs `SELECT 1` on the workspace connection when it is free. When it is busy, the probe opens a read-only connection of its own and closes it again without running a statement: opening runs only pragmas that set connection flags, which need no lock, whereas its first SELECT would read the schema on SQLite 3.51 and so wait for any lock another connection holds, often the one the busy call is waiting for too.
 
 ## Stops and timeouts
 

@@ -36,9 +36,14 @@ meson setup _build -Dprofile=development
 dbus-run-session -- meson test -C _build --print-errorlogs
 ```
 
-Three suites: `unit` is `cargo test --workspace --exclude tablepro`, `gtk`
+Four suites: `unit` is `cargo test --workspace --exclude tablepro`, `gtk`
 is `cargo test -p tablepro` with `GSK_RENDERER=cairo` and `GTK_A11Y=test`,
-and `data` runs `desktop-file-validate`, `glib-compile-schemas --strict` and `appstreamcli validate`.
+`data` runs `desktop-file-validate`, `glib-compile-schemas --strict` and `appstreamcli validate`,
+and `packaging` runs the unit tests in `build-aux/tests` and checks that
+`debian/copyright`, the RPM spec and the metainfo agree with `data/licenses`
+and the version Meson builds. In a `-Dprofile=default` build, which the
+packages run, the unit and gtk suites build with `--release` but without
+its fat LTO, which would cost gigabytes and minutes per test binary.
 Tests that need Docker or a Secret Service are ignored. Without a display
 (SSH, containers), prefix with xvfb the way the CI fast job does:
 
@@ -211,7 +216,8 @@ A test that panics hard can still leave a container behind. `podman container pr
 
 ### Regression names
 
-A test that guards a critical audit finding starts with the finding id, `f001_` to `f006_`. `cargo test --workspace -- f001_` runs the guards for that finding.
+A test that guards a critical audit finding starts with the finding id, `f001_` to `f006_`. `cargo test --workspace --exclude tablepro -- f001_` runs the guards for that finding that need no server, and `cargo test -p tablepro --lib -- f001_` the app's, under a display.
+[regression-tests.md](regression-tests.md) lists every guard with its file, and `build-aux/tests/test_regression_names.py`, in the `packaging` suite, fails when the list and the code disagree.
 
 ## App / UI tests
 
@@ -225,6 +231,7 @@ Helpers live in `crates/app/src/test_support`, compiled only for tests:
 - `MemorySettings` compiles the schema into a `TempDir` behind the memory backend, so a test never touches the developer's dconf database.
 - `FakeSession` is a session over a fake connection; `FakeClocks` and `FakeProbe` stand in for the suspend clocks and the reachability check.
 - `KeyInjector` presses real keys through XTEST, so a test meets every capture, class and bubble handler in the order GTK runs them. It needs an X11 display, which is why the gtk suite sets `GDK_BACKEND=x11`; `focus_only` first closes any window an earlier test left open. Such a test goes in a `real_keys` module, which nextest runs with no other test beside it, since a window another test presents takes the keyboard focus.
+- `FocusThief` takes the focus from a test's window with a window of its own, as another application does, then hands it back without running the main loop, so the focus-in reaches the window before its next frame. It needs the same X11 display.
 - `shortcut_keys` reads the keys a controller or a widget class binds, for the accelerator table's collision tests.
 - `assert_labelled(widget)` checks that a screen reader can name a control:
   - an `adw::PreferencesRow` needs a non-empty title;
@@ -280,6 +287,7 @@ The tests in `crates/app/tests` that start TablePro run without the test harness
 | `application_lifecycle` | Quit waits for a session's close within the close timeout and gives up on a close that hangs, a cancelled close keeps the app running, and an editor session's close holds the process |
 | `application_session_restore` | the windows open at quit open again at the next launch, and a window closed first does not |
 | `open_files` | a file handed over D-Bus opens a window on it, the same file brings that window forward, and another file opens a second window |
+| `accessibility` | every control a screen reader reaches has a name, on the picker, connecting, connect failed and workspace pages and in the connect and preferences dialogs |
 | `startup`, `i18n_catalog`, `logging` | the command-line options, a missing schema, the translation catalogue and the log setup |
 
 They need a display and a session bus, so run them the way CI does:
@@ -289,6 +297,8 @@ xvfb-run -a dbus-run-session -- meson test -C _build --suite gtk --print-errorlo
 ```
 
 or one at a time, `xvfb-run -a dbus-run-session -- meson devenv -C _build cargo test -p tablepro --test application_lifecycle`. `startup` needs the build Meson configures, so it fails under plain Cargo. cargo-nextest asks each test binary to list its tests, which a harness-free binary does not do, so run these with `cargo test`.
+
+`accessibility` starts one TablePro per scenario in its own process instead, on the main context, and needs `GTK_A11Y=test`; pass scenario names after `--` to run only those. It leaves to libadwaita the parts libadwaita builds and names with a tooltip alone: a tab's close button, a password row's peek button and the preferences dialog's search button.
 
 Policy:
 
@@ -328,12 +338,19 @@ The tests in `crates/app/src/ui/editor/script_runner.rs` drive `run_batches` und
 
 ## CI
 
-GitHub Actions (`.github/workflows/build-linux.yml`), Ubuntu runner:
+GitHub Actions (`.github/workflows/build-linux.yml`), Ubuntu runners. Every action is pinned by commit SHA and every tool by version.
 
-1. **Fast checks**: `meson setup`, `cargo fmt --all -- --check`, clippy with and without default features, `meson compile`, `xvfb-run -a dbus-run-session -- meson test --print-errorlogs`, a Secret Service step under `gnome-keyring-daemon`, then `meson dist`. Runs in an `ubuntu:26.04` container, which ships GLib 2.88 plus the meson, appstream and desktop-file-utils packages. [CONTRIBUTING.md](../CONTRIBUTING.md#fast-job-commands) lists the same commands.
-2. **Docker tests**: runs after fast checks pass. One matrix entry per package with docker tests (the PostgreSQL, MySQL, SQL Server and ClickHouse drivers, `tablepro-ssh` against an OpenSSH server container, and `tablepro-test-fixtures` for the fixtures themselves) runs that package's ignored docker tests through cargo-nextest on the host runner's Docker. `tablepro-session` builds storage, which needs GLib 2.88, so its job runs in the fast job's `ubuntu:26.04` image with the host's Docker socket mounted. The app's docker tests (`crates/app/tests/tracker_save_postgres.rs`) run the same way, since the app links GTK; that job names its test targets, because the app's `startup` test needs Meson.
+1. **Fast checks**: `meson setup`, `cargo fmt --all -- --check`, the source greps (no `thread_local!` in services, no blocking file I/O under `ui`, no em dash in user-facing text), clippy with and without default features, `meson compile`, `xvfb-run -a dbus-run-session -- meson test --print-errorlogs`, a Secret Service step under `gnome-keyring-daemon`, then `meson dist`. Runs in an `ubuntu:26.04` container, which ships GLib 2.88 plus the meson, appstream and desktop-file-utils packages. A failed run keeps `_build/meson-logs/testlog.txt` as the `meson-testlog` artifact. The job ends by rendering the release-shaped Flatpak manifest from the dist tarball (below). [CONTRIBUTING.md](../CONTRIBUTING.md#fast-job-commands) lists the same commands.
+2. **Docker tests**: runs after fast checks pass. One matrix entry per package with docker tests (the PostgreSQL driver with PgBouncer, the MySQL driver with MariaDB, the SQL Server and ClickHouse drivers, all four with their TLS suites, `tablepro-ssh` against an OpenSSH server container, and `tablepro-test-fixtures` for the fixtures themselves) runs that package's ignored docker tests through cargo-nextest on the host runner's Docker, one test at a time per package. `tablepro-session` builds storage, which needs GLib 2.88, so its job runs in the fast job's `ubuntu:26.04` image with the host's Docker socket mounted. The app's docker tests (`crates/app/tests/tracker_save_postgres.rs`) run the same way, since the app links GTK; that job names its test targets, because the app's `startup` test needs Meson. The SQLite driver needs no container: its suites run in the fast job.
+3. **Supply chain**: `cargo deny check` against `deny.toml` (advisories, bans, licenses and sources, with every feature and the dev-dependencies), `cargo shear` for unused or misplaced dependencies, `build-aux/update-third-party-licenses.sh` with a diff of the files it writes, and `zizmor` over the Linux workflows.
+4. **Translations**: in `fedora:44`, whose gettext reads Rust. `po/POTFILES.in` must match `git ls-files`, `meson setup --fatal-meson-warnings` must pass, and `po/tablepro.pot` must match a fresh `meson compile -C _build tablepro-pot` in everything but its creation date. A failed run keeps the template it wrote as the `tablepro-pot` artifact.
+5. **Documentation links**: lychee, offline, over every Markdown file under `linux/`, with heading anchors checked.
+6. **Flatpak Devel**: the Devel manifest built in the `gnome-50` Flatpak image for x86_64 and aarch64, with every Meson suite run inside the build sandbox from a tree with no `.git`.
+7. **Flatpak release shape**: the manifest the fast job rendered, which is the Devel manifest with the Flathub app ID, `-Dprofile=default`, the dist tarball as its source and a `cargo-sources.json` that `flatpak-cargo-generator` wrote from `Cargo.lock`, built offline with the screenshots mirrored, then `flatpak-builder-lint` over the manifest and the repository with `build-aux/flatpak/lint-exceptions.json`.
 
-A Translations job also checks `po/POTFILES.in` and extracts the POT template. PRs only merge when every job is green.
+Every job first checks that `linux/meson.build` exists, so the same file can sit on `main` before `linux/` does. GitHub runs a schedule only from the default branch: while `main` has no `linux/`, the Monday run there starts this workflow on the branch the `LINUX_BRANCH` repository variable names, `linux` when it is unset. PRs only merge when every job is green.
+
+`.github/workflows/linux-packages.yml` builds the .deb in `ubuntu:26.04` and the .rpm in `fedora:44` from the release source and vendor tarballs, running every Meson suite inside the package build, then installs each package in a fresh container and starts it. It runs on a pull request that touches the packaging or the Meson files; `build-aux/packaging/build-packages.sh` runs the same steps locally.
 
 ## Coverage
 

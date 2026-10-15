@@ -3,6 +3,9 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+#[path = "src/application/metainfo_release.rs"]
+mod metainfo_release;
+
 const METAINFO_TEMPLATE: &str = "../../data/app.tablepro.TablePro.metainfo.xml.in.in";
 /// The fallback `config::APP_ID` takes when Meson sets nothing.
 const DEFAULT_APP_ID: &str = "app.tablepro.TablePro.Devel";
@@ -56,9 +59,15 @@ fn render_template() -> Result<String, String> {
     let package = env::var("CARGO_PKG_NAME").map_err(|error| format!("CARGO_PKG_NAME: {error}"))?;
     let template = fs::read_to_string(METAINFO_TEMPLATE)
         .map_err(|error| format!("could not read {METAINFO_TEMPLATE}: {error}"))?;
+    let version = metainfo_release::newest_release(&template)
+        .ok_or_else(|| format!("{METAINFO_TEMPLATE} lists no release with a version"))?;
+    let screenshots =
+        format!("https://raw.githubusercontent.com/TableProApp/TablePro/linux-v{version}/linux/data/screenshots");
     let rendered = template
         .replace("@app-id@", &app_id)
-        .replace("@gettext-package@", &package);
+        .replace("@gettext-package@", &package)
+        .replace("@version@", version)
+        .replace("@screenshots-base-url@", &screenshots);
     if let Some(name) = unfilled_placeholder(&rendered) {
         return Err(format!(
             "{METAINFO_TEMPLATE} uses @{name}@, which build.rs does not fill"

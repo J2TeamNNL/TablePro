@@ -9,6 +9,7 @@ use tablepro_core::column::{ColumnKind, ResultColumn};
 use super::cell_edit::install_edit_triggers;
 use super::cell_editability::column_takes_edits;
 use super::column_drawing::ColumnDrawing;
+use super::column_figures::ColumnFigures;
 use super::context_menu::attach_cell_gesture;
 use super::grid_attributes::GridAttributes;
 use super::grid_columns::GridColumns;
@@ -47,6 +48,13 @@ pub(crate) fn build_column_view(
     } = content;
     let store = gio::ListStore::new::<RowObject>();
     store.splice(0, 0, &rows);
+    let grid_columns = Rc::new(GridColumns::default());
+    // A browse page splices its rows into this store, so the columns
+    // measure them again before the view binds any of them.
+    store.connect_items_changed({
+        let grid_columns = grid_columns.clone();
+        move |store, _, _, _| grid_columns.measure(store)
+    });
     // Tab leaves the grid, and the arrow keys move between cells.
     let column_view = gtk::ColumnView::builder()
         .show_row_separators(true)
@@ -71,15 +79,14 @@ pub(crate) fn build_column_view(
     GridKeyboard::install(&column_view, grid_menus.clone(), sink.clone());
 
     // Sharing the viewport by `expand` alone leaves a wide table with 20
-    // to 30 px columns that show nothing, so a column with no saved width
-    // starts at a readable minimum there.
+    // to 30 px columns that show nothing, so a text column with no saved
+    // width starts at a readable minimum there.
     let default_min_width = if result_columns.len() > WIDE_TABLE_THRESHOLD {
         Some(MIN_COLUMN_WIDTH_PX)
     } else {
         None
     };
     let mut columns: Vec<gtk::ColumnViewColumn> = Vec::with_capacity(result_columns.len());
-    let grid_columns = Rc::new(GridColumns::default());
     let attributes = Rc::new(GridAttributes::new());
     for (i, column) in result_columns.iter().enumerate() {
         let sorter = match sorting {
@@ -91,6 +98,7 @@ pub(crate) fn build_column_view(
         let col = build_column(ColumnInit {
             info: column,
             idx: i,
+            rows: &rows,
             catalog: schema_columns.get(i).cloned(),
             sink: sink.clone(),
             sorter,
@@ -179,6 +187,7 @@ enum CellKind {
 struct ColumnInit<'a> {
     info: &'a ResultColumn,
     idx: usize,
+    rows: &'a [RowObject],
     /// `None` for a column the grid knows only from the result set.
     catalog: Option<ColumnInfo>,
     sink: GridSink,
@@ -195,6 +204,7 @@ fn build_column(init: ColumnInit<'_>) -> gtk::ColumnViewColumn {
     let ColumnInit {
         info,
         idx,
+        rows,
         catalog,
         sink,
         sorter,
@@ -207,26 +217,20 @@ fn build_column(init: ColumnInit<'_>) -> gtk::ColumnViewColumn {
     } = init;
     let factory = gtk::SignalListItemFactory::new();
 
-    let kind = match catalog.as_ref() {
-        Some(column) if tab_ctx.editable && column_takes_edits(column, &tab_ctx.identity, false) => {
-            match column.column_type.kind {
-                ColumnKind::Bool(_) => CellKind::Toggle,
-                _ => CellKind::Text,
-            }
-        }
-        _ => CellKind::ReadOnly,
-    };
+    let kind = CellKind::for_column(catalog.as_ref(), &tab_ctx);
     let auto_filled = catalog
         .as_ref()
         .is_some_and(|column| column.is_auto_increment || column.is_generated);
+    let figures = ColumnFigures::default();
+    figures.measure(&info.column_type, idx, rows);
     let drawing = Rc::new(ColumnDrawing {
         catalog,
         column_type: info.column_type.clone(),
         tab_ctx: tab_ctx.clone(),
         auto_filled,
         attributes,
+        figures,
     });
-    let numeric = info.column_type.kind.is_numeric();
 
     let setup_drawing = drawing.clone();
     let setup_columns = grid_columns.clone();
@@ -246,17 +250,47 @@ fn build_column(init: ColumnInit<'_>) -> gtk::ColumnViewColumn {
         grid_cell.set_sink(sink.clone());
         grid_cell.set_columns(setup_columns.clone());
         match kind {
-            CellKind::ReadOnly => grid_cell.set_content(&text_display(numeric)),
+            CellKind::ReadOnly => grid_cell.set_content(&text_display(&setup_drawing.figures)),
             CellKind::Toggle => ToggleCell::setup(&grid_cell, &setup_name),
             CellKind::Text => {
-                grid_cell.set_content(&text_display(numeric));
+                grid_cell.set_content(&text_display(&setup_drawing.figures));
                 install_edit_triggers(&grid_cell);
             }
         }
         attach_cell_gesture(&grid_cell, &column_view, &grid_menus);
         cell.set_child(Some(&grid_cell));
     });
+    bind_rows_to_cells(&factory);
 
+    let column = gtk::ColumnViewColumn::builder()
+        .title(&info.name)
+        .factory(&factory)
+        .resizable(true)
+        .expand(true)
+        .build();
+    column.set_sorter(Some(&sorter));
+    // A number column is as wide as its widest number already.
+    let default_min_width = default_min_width.filter(|_| !drawing.figures.numbers());
+    size_column(&column, &info.name, &tab_ctx, default_min_width);
+    grid_columns.push(idx, &column, drawing);
+    column
+}
+
+impl CellKind {
+    fn for_column(catalog: Option<&ColumnInfo>, tab_ctx: &TabGridContext) -> CellKind {
+        match catalog {
+            Some(column) if tab_ctx.editable && column_takes_edits(column, &tab_ctx.identity, false) => {
+                match column.column_type.kind {
+                    ColumnKind::Bool(_) => CellKind::Toggle,
+                    _ => CellKind::Text,
+                }
+            }
+            _ => CellKind::ReadOnly,
+        }
+    }
+}
+
+fn bind_rows_to_cells(factory: &gtk::SignalListItemFactory) {
     factory.connect_bind(|_, item| {
         let Some(cell) = item.downcast_ref::<gtk::ColumnViewCell>() else {
             return;
@@ -278,21 +312,18 @@ fn build_column(init: ColumnInit<'_>) -> gtk::ColumnViewColumn {
             grid_cell.unbind();
         }
     });
+}
 
-    let column = gtk::ColumnViewColumn::builder()
-        .title(&info.name)
-        .factory(&factory)
-        .resizable(true)
-        .expand(true)
-        .build();
-    column.set_sorter(Some(&sorter));
+/// The width the tab saved for the column, or `default_min_width`, and
+/// every later drag saved back.
+fn size_column(column: &gtk::ColumnViewColumn, name: &str, tab_ctx: &TabGridContext, default_min_width: Option<i32>) {
     if let Some(widths) = tab_ctx.column_widths.clone() {
-        if let Some(saved) = widths.width(&info.name) {
+        if let Some(saved) = widths.width(name) {
             column.set_fixed_width(saved);
         } else if let Some(min) = default_min_width {
             column.set_fixed_width(min);
         }
-        let column_name = info.name.clone();
+        let column_name = name.to_owned();
         column.connect_fixed_width_notify(move |column| {
             widths.record(&column_name, column.fixed_width());
         });
@@ -300,26 +331,18 @@ fn build_column(init: ColumnInit<'_>) -> gtk::ColumnViewColumn {
         // Editor results remember no widths, but can be just as wide.
         column.set_fixed_width(min);
     }
-    grid_columns.push(idx, &column, drawing);
-    column
 }
 
 /// Every cell but a check box draws its value in an Inscription, which
-/// lays out only what fits and offers no text selection of its own. A
-/// number lines up on its last digit in tabular figures.
-fn text_display(numeric: bool) -> gtk::Inscription {
+/// lays out only what fits and offers no text selection of its own.
+fn text_display(figures: &ColumnFigures) -> gtk::Inscription {
     let display = gtk::Inscription::new(None);
-    display.set_xalign(if numeric { 1.0 } else { 0.0 });
     display.set_hexpand(true);
     display.set_text_overflow(gtk::InscriptionOverflow::EllipsizeEnd);
-    display.set_min_chars(3);
-    display.set_nat_chars(14);
     display.set_margin_start(8);
     display.set_margin_end(8);
     display.add_css_class("tp-cell-text");
-    if numeric {
-        display.add_css_class("numeric");
-    }
+    figures.apply(&display, "", true);
     display
 }
 
@@ -345,7 +368,7 @@ mod tests {
     use crate::ui::grid::{CellPreset, ColumnWidthBinding, GridCell, GridMsg, RowObject, TabGridContext, begin_edit};
 
     #[gtk4::test]
-    fn edit_after_draft_insert_targets_edited_row() {
+    fn f004_edit_after_draft_insert_targets_edited_row() {
         let grid = two_text_rows();
         grid.insert_draft();
 
@@ -362,7 +385,7 @@ mod tests {
     }
 
     #[gtk4::test]
-    fn menu_set_null_after_draft_removal_targets_clicked_row() {
+    fn f004_menu_set_null_after_draft_removal_targets_clicked_row() {
         let grid = two_text_rows();
         grid.insert_draft();
         let cell = grid.cell_of(2, 1);

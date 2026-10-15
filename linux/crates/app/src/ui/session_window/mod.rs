@@ -3,12 +3,19 @@
 //! session's workspace. A disconnect tears the workspace down in order
 //! and returns to the picker; it never moves to another session.
 
+mod application_notification_sink;
 mod connect_failed_page;
+mod connect_failure_view;
 mod connect_flow;
 mod connecting_page;
 mod connections;
 mod imp;
 mod locate_file;
+mod notification_request;
+mod notification_sink;
+#[cfg(test)]
+mod notification_tests;
+mod notifications;
 #[cfg(test)]
 mod open_file_tests;
 mod picker_page;
@@ -23,6 +30,7 @@ mod sqlite_location_dialog;
 #[cfg(test)]
 pub(crate) mod tests;
 mod window_actions;
+mod work_notifier;
 
 use std::rc::Rc;
 
@@ -46,6 +54,7 @@ use tablepro_session::{
 use tablepro_storage::{CredentialDemand, SavedConnection};
 
 pub(super) use self::connect_failed_page::ConnectFailedPage;
+use self::connect_failure_view::ConnectFailureView;
 pub(super) use self::connecting_page::ConnectingPage;
 pub(super) use self::picker_page::PickerPage;
 use self::resolve_file_identity::{FileResolveError, FileTarget, ResolvedFile, resolve_file_blocking};
@@ -56,7 +65,7 @@ use self::sqlite_location_dialog::FileCheck;
 use crate::application::{AppServices, WindowHost, WindowLaunch};
 use crate::runtime::{DeliverInput, InputSender};
 use crate::services::session_context::SessionContext;
-use crate::ui::connect_dialog::ConnectSubmission;
+use crate::ui::connect_dialog::{ConnectDialogMode, ConnectSubmission};
 use crate::ui::welcome_view::WelcomeView;
 use crate::ui::workspace::{Workspace, WorkspaceInit, WorkspaceInput};
 use crate::workspace::{
@@ -121,6 +130,7 @@ impl SessionWindow {
         }
         crate::ui::window_geometry::restore(self.upcast_ref(), &services.settings);
         window_actions::install(self.upcast_ref(), &input);
+        self.install_notifier(&input);
         imp.prompt_presenter
             .replace(Some(crate::ui::credential_prompt::CredentialPromptPresenter::start(
                 prompts, self,
@@ -243,6 +253,9 @@ impl SessionWindow {
         if let Some(pump) = imp.pump.take() {
             pump.abort();
         }
+        if let Some(notifier) = imp.notifier.take() {
+            notifier.withdraw_all();
+        }
         if let Some(presenter) = imp.prompt_presenter.take() {
             presenter.abort();
         }
@@ -288,13 +301,17 @@ impl SessionWindow {
             SessionWindowInput::FileResolved(resolved) => self.on_file_resolved(*resolved),
             SessionWindowInput::Restore(key) => self.on_restore(key),
             SessionWindowInput::RestoreSaved { id, saved } => self.on_restore_saved(id, saved.map(|saved| *saved)),
-            SessionWindowInput::OpenConnectDialog => self.present_connect_dialog(None, None),
+            SessionWindowInput::OpenConnectDialog => {
+                self.present_connect_dialog(ConnectDialogMode::Create, None, None);
+            }
             SessionWindowInput::ConnectFromDialog(submission) => self.on_connect_from_dialog(*submission),
             SessionWindowInput::DialogClosed => drop(self.imp().dialog.take()),
             SessionWindowInput::CancelConnect => self.on_cancel_connect(),
             SessionWindowInput::RetryConnect => self.on_retry_connect(),
             SessionWindowInput::RetryWithNewSecret(kind) => self.on_retry_with_new_secret(kind),
             SessionWindowInput::EditConnection => self.on_edit_connection(),
+            SessionWindowInput::EditSavedConnection(id) => self.on_edit_saved_connection(id),
+            SessionWindowInput::ConnectionSaved(id) => self.on_connection_saved(id),
             SessionWindowInput::Disconnect => self.on_disconnect(),
             SessionWindowInput::TeardownApproved => {
                 if self.tear_down() {
@@ -340,6 +357,9 @@ impl SessionWindow {
                     self.set_title(Some(&title));
                 }
             }
+            SessionWindowInput::WorkCompleted(work) => self.on_work_completed(work),
+            SessionWindowInput::TabsChanged => self.on_tabs_changed(),
+            SessionWindowInput::FocusTab(tab) => self.on_focus_tab(tab),
             SessionWindowInput::Command(command) => match *command {
                 SessionWindowCommand::Attempt { generation, result } => self.on_attempt(generation, result),
             },
@@ -351,7 +371,7 @@ impl SessionWindow {
             SessionWindowInput::SecretDeleteFailed(id, options) => self.on_secret_delete_failed(id, options),
             SessionWindowInput::DeleteConnection(id) => self.on_delete_connection(id),
             SessionWindowInput::ConfirmDelete(id, options) => self.on_confirm_delete(id, options),
-            SessionWindowInput::DuplicateConnection(saved) => self.on_duplicate_connection(*saved),
+            SessionWindowInput::DuplicateConnection(id) => self.on_duplicate_connection(id),
             SessionWindowInput::SetConnectionColor(id, color) => self.on_set_connection_color(id, color),
             SessionWindowInput::SetConnectionGroup(id, group) => self.on_set_connection_group(id, group),
             SessionWindowInput::ExportConnections => self.on_export_connections(),
@@ -383,45 +403,54 @@ impl SessionWindow {
         self.tear_down();
         let imp = self.imp();
         let app = self.application();
-        let (child, toasts): (Option<gtk::Widget>, Option<adw::ToastOverlay>) = match &page {
+        let mut can_edit = false;
+        let (child, toasts, shown): (Option<gtk::Widget>, Option<adw::ToastOverlay>, ShownPage) = match &page {
             SessionPage::Picker => {
                 self.set_title(Some(&crate::i18n::gettext("TablePro")));
                 let picker = imp.picker.get();
                 (
                     picker.map(|picker| picker.clone().upcast()),
                     picker.map(PickerPage::toast_overlay),
+                    ShownPage::Other,
                 )
             }
             SessionPage::Connecting { source, .. } => {
-                let connecting = ConnectingPage::new(&source_name(source), app.as_ref());
+                let connecting = ConnectingPage::new(app.as_ref());
                 let toasts = connecting.toast_overlay();
-                (Some(connecting.upcast()), Some(toasts))
+                (
+                    Some(connecting.clone().upcast()),
+                    Some(toasts),
+                    ShownPage::Connecting(connecting, source_name(source)),
+                )
             }
             SessionPage::ConnectFailed { source, failure, .. } => {
-                let failed = ConnectFailedPage::new(
-                    &failure.message,
-                    edit_label(source, failure).as_deref(),
-                    failure.reenter,
-                    app.as_ref(),
-                );
+                let view = ConnectFailureView::new(failure, source);
+                can_edit = view.can_edit;
+                let failed = ConnectFailedPage::new(&view, &edit_label(failure), failure.reenter, app.as_ref());
                 let toasts = failed.toast_overlay();
-                (Some(failed.upcast()), Some(toasts))
+                (Some(failed.clone().upcast()), Some(toasts), ShownPage::Failed(failed))
             }
-            SessionPage::Workspace { workspace, .. } => {
-                (Some(workspace.clone().upcast()), Some(workspace.toast_overlay()))
-            }
+            SessionPage::Workspace { workspace, .. } => (
+                Some(workspace.clone().upcast()),
+                Some(workspace.toast_overlay()),
+                ShownPage::Other,
+            ),
         };
-        let editable = match &page {
-            SessionPage::ConnectFailed { source, .. } => is_editable(source),
-            _ => false,
-        };
-        window_actions::sync(self.upcast_ref(), &page, editable);
+        window_actions::sync(self.upcast_ref(), &page, can_edit);
         if !matches!(page, SessionPage::Picker) {
             imp.opened_for_file.set(false);
         }
         let left = imp.page.replace(page);
         imp.page_toasts.replace(toasts);
+        // A Cancel or Retry left as the default would take Enter on a
+        // page that no longer shows it.
+        self.set_default_widget(None::<&gtk::Widget>);
         self.set_content(child.as_ref());
+        match shown {
+            ShownPage::Connecting(page, name) => page.show(&name),
+            ShownPage::Failed(page) => page.show(),
+            ShownPage::Other => {}
+        }
         drop(left);
     }
 
@@ -533,6 +562,7 @@ impl SessionWindow {
         workspace.connect_saves_in_flight_changed(move |_, count| {
             saves.deliver(SessionWindowInput::SavesInFlightChanged(count));
         });
+        self.follow_workspace_tabs(workspace, &input);
         workspace.connect_title_changed(move |_, title| input.deliver(SessionWindowInput::TitleChanged(title)));
     }
 
@@ -799,14 +829,28 @@ impl SessionWindow {
         }
     }
 
+    /// The failed page's Edit Connection. A saved connection opens as an
+    /// Edit of the entry as saved now, whose Save connects again; a new
+    /// one reopens the connect dialog on what was typed.
     fn on_edit_connection(&self) {
-        let prefill = match &*self.imp().page.borrow() {
-            SessionPage::ConnectFailed { source, failure, .. } => connections::prefill_for(source)
-                .map(|prefill| (prefill, failure.remedy.map(crate::ui::connect_dialog::remedy_field))),
-            _ => None,
+        let (saved, prefill, focus) = match &*self.imp().page.borrow() {
+            SessionPage::ConnectFailed { source, failure, .. } => (
+                match source {
+                    ConnectSource::Saved(saved) => Some((**saved).clone()),
+                    _ => None,
+                },
+                connections::prefill_for(source),
+                failure.remedy.map(crate::ui::connect_dialog::remedy_field),
+            ),
+            _ => return,
         };
-        if let Some((prefill, focus)) = prefill {
-            self.present_connect_dialog(Some(prefill), focus);
+        match (saved, prefill) {
+            (Some(saved), _) => match self.saved_as_stored(&saved) {
+                Some(current) => self.present_connect_dialog(ConnectDialogMode::Edit(Box::new(current)), None, focus),
+                None => self.show_toast(&crate::i18n::gettext("The connection was deleted.")),
+            },
+            (None, Some(prefill)) => self.present_connect_dialog(ConnectDialogMode::Create, Some(prefill), focus),
+            (None, None) => {}
         }
     }
 
@@ -934,123 +978,150 @@ fn connect_source(
     demand: CredentialDemand,
     cancel: tokio_util::sync::CancellationToken,
 ) -> BoxFuture<'static, Result<Connected, AttemptError>> {
+    match source {
+        ConnectSource::Saved(saved) => connect_saved(&state.context, saved, read_only, demand, cancel),
+        ConnectSource::Intent(intent) => connect_intent(state, intent, read_only, cancel),
+        ConnectSource::File(identity) => connect_file(&state.context, identity, read_only, cancel),
+    }
+}
+
+fn connect_saved(
+    context: &SessionContext,
+    saved: &SavedConnection,
+    read_only: bool,
+    demand: CredentialDemand,
+    cancel: tokio_util::sync::CancellationToken,
+) -> BoxFuture<'static, Result<Connected, AttemptError>> {
+    let connector = context.connector.clone();
+    let interaction = context.attended();
+    let saved = saved.clone();
+    let mut opened = saved.clone();
+    opened.read_only |= read_only;
+    let drivers = context.drivers.clone();
+    let credentials = context.credentials_for(Some(&saved));
+    async move {
+        let connected = connect_flow::connect_saved(
+            &opened,
+            &drivers,
+            &*credentials,
+            &*connector,
+            interaction,
+            demand,
+            cancel,
+        )
+        .await;
+        match connected {
+            Ok(login) => Ok(Connected {
+                pending: login.pending,
+                saved: Some(saved),
+                warnings: login
+                    .refused
+                    .iter()
+                    .map(|(_, error)| crate::services::secret_save_report::not_saved_message(error))
+                    .collect(),
+                session_only: login.session_only,
+            }),
+            Err(error) => Err(match attempt_error(&error) {
+                AttemptError::Failed(failure) => AttemptError::Failed(ConnectFailure {
+                    reenter: secret_retry::refused_secret(&error, &saved),
+                    ..failure
+                }),
+                cancelled => cancelled,
+            }),
+        }
+    }
+    .boxed()
+}
+
+/// A connection typed into the connect dialog, saved first when the
+/// dialog asked for that.
+fn connect_intent(
+    state: &WindowState,
+    intent: &ConnectIntent,
+    read_only: bool,
+    cancel: tokio_util::sync::CancellationToken,
+) -> BoxFuture<'static, Result<Connected, AttemptError>> {
     let context = &state.context;
     let connector = context.connector.clone();
     let interaction = context.attended();
-    match source {
-        ConnectSource::Saved(saved) => {
-            let saved = (**saved).clone();
-            let mut opened = saved.clone();
-            opened.read_only |= read_only;
-            let drivers = context.drivers.clone();
-            let credentials = context.credentials_for(Some(&saved));
-            async move {
-                let connected = connect_flow::connect_saved(
-                    &opened,
-                    &drivers,
-                    &*credentials,
-                    &*connector,
-                    interaction,
-                    demand,
-                    cancel,
-                )
-                .await;
-                match connected {
-                    Ok(login) => Ok(Connected {
-                        pending: login.pending,
-                        saved: Some(saved),
-                        warnings: login
-                            .refused
-                            .iter()
-                            .map(|(_, error)| crate::services::secret_save_report::not_saved_message(error))
-                            .collect(),
-                        session_only: login.session_only,
-                    }),
-                    Err(error) => Err(match attempt_error(&error) {
-                        AttemptError::Failed(failure) => AttemptError::Failed(ConnectFailure {
-                            reenter: secret_retry::refused_secret(&error, &saved),
-                            ..failure
-                        }),
-                        cancelled => cancelled,
-                    }),
-                }
-            }
-            .boxed()
+    let mut request = intent.request.clone();
+    request.workspace_settings.read_only |= read_only;
+    let Some(pending_save) = intent.pending_save.clone() else {
+        return async move {
+            connect_flow::connect_request(&*connector, request, interaction, cancel)
+                .await
+                .map(unsaved)
+                .map_err(|error| attempt_error(&error))
         }
-        ConnectSource::Intent(intent) => {
-            let mut request = intent.request.clone();
-            request.workspace_settings.read_only |= read_only;
-            let Some(pending_save) = intent.pending_save.clone() else {
-                return async move {
-                    connect_flow::connect_request(&*connector, request, interaction, cancel)
-                        .await
-                        .map(|pending| Connected {
-                            pending,
-                            saved: None,
-                            warnings: Vec::new(),
-                            session_only: Vec::new(),
-                        })
-                        .map_err(|error| attempt_error(&error))
-                }
-                .boxed();
-            };
-            let secrets = context.secrets.clone();
-            let writes = StoreConnectionWrites::new(
-                state.services.storage.connections().clone(),
-                state.services.tasks.clone(),
-            );
-            async move {
-                let saving = connect_flow::connect_then_save(
-                    &*connector,
-                    request,
-                    interaction,
-                    cancel,
-                    &*secrets,
-                    &writes,
-                    pending_save,
-                )
-                .await;
-                match saving {
-                    Ok((pending, report)) => Ok(Connected {
-                        pending,
-                        // A keyring refusal must not be silent: the
-                        // connection opened, but the password will be
-                        // asked for next time.
-                        warnings: report
-                            .secret_failures
-                            .iter()
-                            .map(|(_, error)| crate::services::secret_save_report::not_saved_message(error))
-                            .collect(),
-                        session_only: report.secret_failures.iter().map(|(kind, _)| *kind).collect(),
-                        saved: Some(report.saved),
-                    }),
-                    Err(connect_flow::SubmitError::Connect(error)) => Err(attempt_error(&error)),
-                    Err(connect_flow::SubmitError::Save(error)) => {
-                        Err(AttemptError::Failed(ConnectFailure::new(crate::i18n::gettext_f(
-                            "The connection could not be saved: {error}",
-                            &[("error", &error.to_string())],
-                        ))))
-                    }
-                }
+        .boxed();
+    };
+    let secrets = context.secrets.clone();
+    let writes = StoreConnectionWrites::new(
+        state.services.storage.connections().clone(),
+        state.services.tasks.clone(),
+    );
+    async move {
+        let saving = connect_flow::connect_then_save(
+            &*connector,
+            request,
+            interaction,
+            cancel,
+            &*secrets,
+            &writes,
+            pending_save,
+        )
+        .await;
+        match saving {
+            Ok((pending, report)) => Ok(Connected {
+                pending,
+                // A keyring refusal must not be silent: the
+                // connection opened, but the password will be
+                // asked for next time.
+                warnings: report
+                    .secret_failures
+                    .iter()
+                    .map(|(_, error)| crate::services::secret_save_report::not_saved_message(error))
+                    .collect(),
+                session_only: report.secret_failures.iter().map(|(kind, _)| *kind).collect(),
+                saved: Some(report.saved),
+            }),
+            Err(connect_flow::SubmitError::Connect(error)) => Err(attempt_error(&error)),
+            Err(connect_flow::SubmitError::Save(error)) => {
+                Err(AttemptError::Failed(ConnectFailure::new(crate::i18n::gettext_f(
+                    "The connection could not be saved: {error}",
+                    &[("error", &error.to_string())],
+                ))))
             }
-            .boxed()
         }
-        ConnectSource::File(identity) => {
-            let request = resolve_file_identity::file_request(identity, &context.drivers, read_only);
-            async move {
-                let request = request.map_err(|error| attempt_error(&error))?;
-                connect_flow::connect_request(&*connector, request, interaction, cancel)
-                    .await
-                    .map(|pending| Connected {
-                        pending,
-                        saved: None,
-                        warnings: Vec::new(),
-                        session_only: Vec::new(),
-                    })
-                    .map_err(|error| attempt_error(&error))
-            }
-            .boxed()
-        }
+    }
+    .boxed()
+}
+
+fn connect_file(
+    context: &SessionContext,
+    identity: &FileIdentity,
+    read_only: bool,
+    cancel: tokio_util::sync::CancellationToken,
+) -> BoxFuture<'static, Result<Connected, AttemptError>> {
+    let connector = context.connector.clone();
+    let interaction = context.attended();
+    let request = resolve_file_identity::file_request(identity, &context.drivers, read_only);
+    async move {
+        let request = request.map_err(|error| attempt_error(&error))?;
+        connect_flow::connect_request(&*connector, request, interaction, cancel)
+            .await
+            .map(unsaved)
+            .map_err(|error| attempt_error(&error))
+    }
+    .boxed()
+}
+
+fn unsaved(pending: PendingSession) -> Connected {
+    Connected {
+        pending,
+        saved: None,
+        warnings: Vec::new(),
+        session_only: Vec::new(),
     }
 }
 
@@ -1084,20 +1155,19 @@ fn file_display_name(uri: &str) -> String {
         .map_or_else(|| uri.to_owned(), |name| name.to_string_lossy().into_owned())
 }
 
-/// Only a connection the connect dialog shows can be edited from a
-/// failed connect.
-fn is_editable(source: &ConnectSource) -> bool {
-    matches!(source, ConnectSource::Saved(_) | ConnectSource::Intent(_))
-}
-
 /// The failed page's Edit button: named after the setting that fixes a
 /// TLS failure when there is one.
-fn edit_label(source: &ConnectSource, failure: &ConnectFailure) -> Option<String> {
-    is_editable(source).then(|| {
-        failure
-            .remedy
-            .map_or_else(|| crate::i18n::gettext("Edit Connection…"), |remedy| remedy.label())
-    })
+fn edit_label(failure: &ConnectFailure) -> String {
+    failure
+        .remedy
+        .map_or_else(|| crate::i18n::gettext("Edit Connection…"), |remedy| remedy.label())
+}
+
+/// A page that says what it shows once it is in the window.
+enum ShownPage {
+    Connecting(ConnectingPage, String),
+    Failed(ConnectFailedPage),
+    Other,
 }
 
 fn file_failure_message(uri: &str, error: &FileResolveError) -> String {

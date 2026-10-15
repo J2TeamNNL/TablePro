@@ -55,7 +55,7 @@ Windows share nothing but `AppServices`. CI fails on a `thread_local!` under `cr
 - Actions, signal handlers and background work send it a message, and `pump_inputs` hands the messages to the widget one at a time on the GTK thread, never inside the signal or action that sent one.
 - Shutdown aborts the pump, which closes the queue. A queued message that owns something, such as a connection that finished connecting, goes to the pump's leftover handler (`pump_inputs_with_leftovers`) and is closed rather than dropped.
 - Window actions go on the window's own action map with `add_action_entries`, which GTK exports as `win`; CI fails on a group inserted as `win`. The workspace removes the actions it added when it shuts down.
-- The workspace reports to the window through signals (`title-changed`, `dirty-changed`, `saves-in-flight-changed`), and the window turns each into one of its own inputs.
+- The workspace reports to the window through signals (`title-changed`, `dirty-changed`, `saves-in-flight-changed`, `work-completed`, `tabs-changed`), and the window turns each into one of its own inputs.
 
 A background read follows this shape, trimmed from `SessionWindow::on_restore`, which looks up the saved connection `id` names:
 
@@ -146,6 +146,7 @@ The components that remain follow these conventions until a rewrite turns them i
 ## Naming
 
 - `<Thing>Input`: every message a view handles, as an enum (`SessionWindowInput`, `WorkspaceInput`, `BrowseTabInput`).
+- A view with many inputs groups them by the state each one changes, one enum per group (`BrowseTabInput::Paging(PagingInput)`, `StructureTabInput::Save(SaveInput)`), and handles each group in its own `*_handlers` module. Senders pass the group's enum; `send` takes anything that converts into the view's input.
 - `<Thing>Output`: only the messages a parent should react to.
 - `<Thing>Cmd`: a Relm4 command's result.
 - `<Thing>Init`: what the parent hands a view when it builds it (`SessionWindowInit`, `WorkspaceInit`).
