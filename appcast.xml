@@ -3,6 +3,65 @@
     <channel>
         <title>TablePro</title>
         <item>
+            <title>0.81.0</title>
+            <pubDate>Fri, 16 Oct 2026 06:12:08 +0000</pubDate>
+            <sparkle:fullReleaseNotesLink>https://docs.tablepro.app/changelog</sparkle:fullReleaseNotesLink>
+            <sparkle:criticalUpdate/>
+            <sparkle:version>140</sparkle:version>
+            <sparkle:shortVersionString>0.81.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[# What's New in TablePro 0.81.0
+
+Cloud Firestore, Firebase Realtime Database and Google Cloud Bigtable connect through new registry plugins.
+
+Each database in the connections strip keeps its own tabs, and Oracle query tabs get a schema picker.
+
+Themes color every content view and the window background. Themes made for earlier versions need to be recreated.
+
+Plugins signed by other developers stop loading, and HTML and XML export are removed.
+
+[View full changelog](https://docs.tablepro.app/changelog)
+]]></description>
+            <enclosure url="https://github.com/TableProApp/TablePro/releases/download/v0.81.0/TablePro-0.81.0-arm64.tar.xz" length="21031520" type="application/octet-stream" sparkle:edSignature="oX/vZ7mefH5HbArzgCwsLfRFYAfkzYsOVo2zSUlEOWry5dxYY0CTkp1+U+AKE82PHXii/SfRLDgxVu/MmwixBA=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/TableProApp/TablePro/releases/download/v0.81.0/TablePro-0.81.0-from-139-arm64.delta" sparkle:deltaFrom="139" length="15076138" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="eWfZAaiGAXxbKzLDFgu2g1U2BQcI976mv9ycEVWZCnEwZmnQgZJBldC7DJNLxxkVoDAvelUr0maBU2z2as29Aw=="/>
+                <enclosure url="https://github.com/TableProApp/TablePro/releases/download/v0.81.0/TablePro-0.81.0-from-138-arm64.delta" sparkle:deltaFrom="138" length="15723602" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="lZFeE11V/MIrMx1vniOvwjYgFU2zhlsGqUykiYZ1NQvJWQveLebcM7fFnwaTcEASWNPSWMQ5sBP8vvSSAj2PDQ=="/>
+                <enclosure url="https://github.com/TableProApp/TablePro/releases/download/v0.81.0/TablePro-0.81.0-from-137-arm64.delta" sparkle:deltaFrom="137" length="15785870" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="+ODaOsw70dDFQ/Y9jhpVfy073GewU6uZrtTKZ2uw1PoooILsE3UEMJ8Kl/HiQC9N58TT0GRdDLFzlLF9qEAUCg=="/>
+                <enclosure url="https://github.com/TableProApp/TablePro/releases/download/v0.81.0/TablePro-0.81.0-from-136-arm64.delta" sparkle:deltaFrom="136" length="16054146" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="MIB14omVWwe2WmHIsC8+brXHbsm0wsDvBB56kOyOMYFwrpnMPuFmv5a2WCuILpoR88TWFyv8tSOgNPqi/jx5CQ=="/>
+                <enclosure url="https://github.com/TableProApp/TablePro/releases/download/v0.81.0/TablePro-0.81.0-from-135-arm64.delta" sparkle:deltaFrom="135" length="16134514" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="H0TJn8fyhIOHW8IxHow8BV8D5vCFwuqHI6BQoK4NYxUnZCFi761BfMBjkrZgR2yxQyeua4aaMW100TM9qvWxBQ=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
+            <title>0.81.0</title>
+            <pubDate>Fri, 16 Oct 2026 06:12:08 +0000</pubDate>
+            <sparkle:fullReleaseNotesLink>https://docs.tablepro.app/changelog</sparkle:fullReleaseNotesLink>
+            <sparkle:criticalUpdate/>
+            <sparkle:version>140</sparkle:version>
+            <sparkle:shortVersionString>0.81.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[# What's New in TablePro 0.81.0
+
+Cloud Firestore, Firebase Realtime Database and Google Cloud Bigtable connect through new registry plugins.
+
+Each database in the connections strip keeps its own tabs, and Oracle query tabs get a schema picker.
+
+Themes color every content view and the window background. Themes made for earlier versions need to be recreated.
+
+Plugins signed by other developers stop loading, and HTML and XML export are removed.
+
+[View full changelog](https://docs.tablepro.app/changelog)
+]]></description>
+            <enclosure url="https://github.com/TableProApp/TablePro/releases/download/v0.81.0/TablePro-0.81.0-x86_64.tar.xz" length="24299872" type="application/octet-stream" sparkle:edSignature="+AtQqogGVMWwCKR9DDLpKmUC4JMcp8Un6FiBuIefOMUtfNgNOlkNAzmyorLgQOhW6VXAF7QP/FL3FHNncfhRDg=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/TableProApp/TablePro/releases/download/v0.81.0/TablePro-0.81.0-from-139-x86_64.delta" sparkle:deltaFrom="139" length="17555770" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="FaGWHyNDDe2aGHkem30Fhs0XFYxqeuY+hTjXUGsfDmzIZM6zYAU023SVp8LzNDZ+YLpJlzi7t8f+oE7erhJ8Bg=="/>
+                <enclosure url="https://github.com/TableProApp/TablePro/releases/download/v0.81.0/TablePro-0.81.0-from-138-x86_64.delta" sparkle:deltaFrom="138" length="18273326" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="SnajrARCQIEAsOcFKrKWv/c7l8gyPzOuEc/DzR1cepQRMtijjUklr3PPPADJEa8eRdtL3tiiyyOCD76tiI3aAg=="/>
+                <enclosure url="https://github.com/TableProApp/TablePro/releases/download/v0.81.0/TablePro-0.81.0-from-137-x86_64.delta" sparkle:deltaFrom="137" length="18346618" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="hj8lOu9n4voEzW3bLcBAsuY1r086pTwrDAEPZy59ajJBEL5qZ+fK+NlHbhyaj3tMy2ak+Iv4Ox6zKFptz87qBA=="/>
+                <enclosure url="https://github.com/TableProApp/TablePro/releases/download/v0.81.0/TablePro-0.81.0-from-136-x86_64.delta" sparkle:deltaFrom="136" length="18627454" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="VbqTIq8pkDQ4PLsbK+F0DfLblcLeS9uMvmDmLzzoaSTfnYOJjGdogvy+7STmF23z/JyKR5fOLORGZp83AAPVDA=="/>
+                <enclosure url="https://github.com/TableProApp/TablePro/releases/download/v0.81.0/TablePro-0.81.0-from-135-x86_64.delta" sparkle:deltaFrom="135" length="18725834" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="yp+s9Je7B0CPC6f2AV49MT2ePuUO+s37jS3+JGzhfHV5ADytleQqt1X4muW3Mgl1GO5mFixltOLCzc/+m6NyAA=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>0.80.0</title>
             <pubDate>Sun, 11 Oct 2026 11:49:40 +0000</pubDate>
             <sparkle:fullReleaseNotesLink>https://docs.tablepro.app/changelog</sparkle:fullReleaseNotesLink>
@@ -273,93 +332,6 @@ Oracle fixes for column types, dates, LOBs and saving edits.
 [View full changelog](https://docs.tablepro.app/changelog)
 ]]></description>
             <enclosure url="https://github.com/TableProApp/TablePro/releases/download/v0.77.2/TablePro-0.77.2-x86_64.zip" length="34985487" type="application/octet-stream" sparkle:edSignature="vj3BirFlNhH1ger2f5E+7vquackzmuACRIzmquGeh1oE0VGkcL6clg0PP+L0xjBz1kW4cYQp8f6fps9iUftyDA=="/>
-        </item>
-        <item>
-            <title>0.77.1</title>
-            <pubDate>Sat, 03 Oct 2026 05:49:53 +0000</pubDate>
-            <sparkle:fullReleaseNotesLink>https://docs.tablepro.app/changelog</sparkle:fullReleaseNotesLink>
-            <sparkle:phasedRolloutInterval>21600</sparkle:phasedRolloutInterval>
-            <sparkle:version>135</sparkle:version>
-            <sparkle:shortVersionString>0.77.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# What's New in TablePro 0.77.1
-
-### Added
-
-- New… beside Browse… for SQLite, DuckDB and libSQL database files, to name a database that does not exist yet. (#3248)
-
-### Changed
-
-- `$1` in a regular-expression Replace in the SQL editor inserts the capture group, as in data files. (#3245)
-
-### Fixed
-
-- Find panel Replace editing the wrong text after the first replacement, and crashing when a match ran past the end. (#3245)
-- Replace All crashing on a space in an indent or after Clear Query, and wrapping quotes and brackets in pairs. (#3245)
-- Replace All taking minutes on a few thousand matches, and two Replace clicks undoing as one step. (#3245)
-- Replace and All offered in read-only editors, clearing the matches without changing the text. (#3245)
-- A collapsed fold hiding the wrong text after Replace All. (#3245)
-- Regular-expression Replace in data files inserting the wrong capture text when a replacement changes length. (#3245)
-- Import into Table from a data file naming the sheet, table, error reports and history after a temporary copy. (#3238)
-- Query editor staying put when Cmd+Up, Cmd+Down or a long paste moves the caret out of view. (#3239, #3242)
-- Clear Query, a favorite, history entry or AI fix sometimes not reaching the editor, or typing restoring the old query. (#3242)
-- Run, Explain and AI actions using the caret from before a find or a jump to a result's statement. (#3242)
-- Use Selection for Find reverting to the previous search term once the caret moves. (#3242)
-- Connections strip entries cutting off the database or schema line and crowding the icon against the highlight. (#3244, #3247)
-- Connections strip resting partway through an entry after the sidebar size changed. (#3247)
-- Oracle closing TablePro, or failing with "unexpected message", while loading rows with SDO_GEOMETRY or BLOB columns. (#3241, #3246)
-- Oracle closing TablePro when a query is stopped or the connection closed while rows are still loading. (#3241, #3246)
-- Oracle object columns such as SDO_GEOMETRY labelled "unknown" and showing a placeholder instead of NULL. (#3241, #3246)
-- DuckDB Browse… offering any file, and SQLite Browse… dimming SQLite databases saved without a known extension. (#3248)
-- File > Open File… dimming folders reached through a symlink or a Finder alias. (#3248)
-
-[View full changelog](https://docs.tablepro.app/changelog)
-]]></description>
-            <enclosure url="https://github.com/TableProApp/TablePro/releases/download/v0.77.1/TablePro-0.77.1-arm64.zip" length="32509184" type="application/octet-stream" sparkle:edSignature="U9vjYzI4g+mOQX/xWoh/YYxLEpVD0AoSrblHLjQUyIefMXWNqjwI6daU8nB3ax45UHnzWKiJFrX/zp+2TG4tCQ=="/>
-        </item>
-        <item>
-            <title>0.77.1</title>
-            <pubDate>Sat, 03 Oct 2026 05:49:53 +0000</pubDate>
-            <sparkle:fullReleaseNotesLink>https://docs.tablepro.app/changelog</sparkle:fullReleaseNotesLink>
-            <sparkle:phasedRolloutInterval>21600</sparkle:phasedRolloutInterval>
-            <sparkle:version>135</sparkle:version>
-            <sparkle:shortVersionString>0.77.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[# What's New in TablePro 0.77.1
-
-### Added
-
-- New… beside Browse… for SQLite, DuckDB and libSQL database files, to name a database that does not exist yet. (#3248)
-
-### Changed
-
-- `$1` in a regular-expression Replace in the SQL editor inserts the capture group, as in data files. (#3245)
-
-### Fixed
-
-- Find panel Replace editing the wrong text after the first replacement, and crashing when a match ran past the end. (#3245)
-- Replace All crashing on a space in an indent or after Clear Query, and wrapping quotes and brackets in pairs. (#3245)
-- Replace All taking minutes on a few thousand matches, and two Replace clicks undoing as one step. (#3245)
-- Replace and All offered in read-only editors, clearing the matches without changing the text. (#3245)
-- A collapsed fold hiding the wrong text after Replace All. (#3245)
-- Regular-expression Replace in data files inserting the wrong capture text when a replacement changes length. (#3245)
-- Import into Table from a data file naming the sheet, table, error reports and history after a temporary copy. (#3238)
-- Query editor staying put when Cmd+Up, Cmd+Down or a long paste moves the caret out of view. (#3239, #3242)
-- Clear Query, a favorite, history entry or AI fix sometimes not reaching the editor, or typing restoring the old query. (#3242)
-- Run, Explain and AI actions using the caret from before a find or a jump to a result's statement. (#3242)
-- Use Selection for Find reverting to the previous search term once the caret moves. (#3242)
-- Connections strip entries cutting off the database or schema line and crowding the icon against the highlight. (#3244, #3247)
-- Connections strip resting partway through an entry after the sidebar size changed. (#3247)
-- Oracle closing TablePro, or failing with "unexpected message", while loading rows with SDO_GEOMETRY or BLOB columns. (#3241, #3246)
-- Oracle closing TablePro when a query is stopped or the connection closed while rows are still loading. (#3241, #3246)
-- Oracle object columns such as SDO_GEOMETRY labelled "unknown" and showing a placeholder instead of NULL. (#3241, #3246)
-- DuckDB Browse… offering any file, and SQLite Browse… dimming SQLite databases saved without a known extension. (#3248)
-- File > Open File… dimming folders reached through a symlink or a Finder alias. (#3248)
-
-[View full changelog](https://docs.tablepro.app/changelog)
-]]></description>
-            <enclosure url="https://github.com/TableProApp/TablePro/releases/download/v0.77.1/TablePro-0.77.1-x86_64.zip" length="34924816" type="application/octet-stream" sparkle:edSignature="/rQ/MKK7+zmSwkOzGgNBt5u+dPNjDjlt6yd6owfS8rTyEY0KZY2RIC6Zeam9rASmrqRE7DWiZpC6wNPzbnYIDA=="/>
         </item>
     </channel>
 </rss>
