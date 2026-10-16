@@ -4,14 +4,14 @@ Native Linux database client, the Linux sibling of the macOS TablePro app. The t
 
 ## Status
 
-It connects to five engines: PostgreSQL, MySQL and MariaDB, SQL Server, ClickHouse and SQLite. Each connection session gets a window of its own. Nothing is released yet: the app is not on Flathub and no `linux-v*` tag exists. [ROADMAP.md](ROADMAP.md) lists what is built, what is not, and the release criteria.
+It connects to five engines: PostgreSQL, MySQL and MariaDB, SQL Server, ClickHouse and SQLite. Each connection session gets a window of its own. Nothing is released yet: no `linux-v*` tag exists. [ROADMAP.md](ROADMAP.md) lists what is built, what is not, and the release criteria.
 
 ## Stack
 
 | Layer | Pick |
 |---|---|
-| Language | Rust 1.98 (`rust-toolchain.toml` and `rust-version`) |
-| GUI toolkit | GTK 4.22, libadwaita 1.9, GtkSourceView 5.18 and GLib 2.88: GNOME 50 ([ADR 0015](docs/decisions/0015-gnome-50-platform-floor.md)) |
+| Language | Rust: 1.98 in `rust-toolchain.toml`, 1.97 the `rust-version` floor |
+| GUI toolkit | GTK 4, libadwaita, GtkSourceView and GLib at the GNOME 50 floor ([ADR 0015](docs/decisions/0015-gnome-50-platform-floor.md)) |
 | App architecture | gtk-rs subclasses with composite templates, one window per connection session ([ADR 0012](docs/decisions/0012-window-per-session.md)); the saved-queries and CSV import dialogs are still [Relm4](https://relm4.org) 0.11 components |
 | Async | the app's tokio runtime (`AppRuntime`) for background work, results delivered to the GLib main loop |
 | Database drivers | tokio-postgres with deadpool-postgres (PostgreSQL), sqlx 0.9 (MySQL and MariaDB, SQLite), tiberius 0.13 (SQL Server) and the official `clickhouse` crate, all from crates.io ([ADR 0016](docs/decisions/0016-driver-contract-v2.md)) |
@@ -20,13 +20,13 @@ It connects to five engines: PostgreSQL, MySQL and MariaDB, SQL Server, ClickHou
 | Secrets | oo7: the Secret portal inside Flatpak, the Secret Service over D-Bus on the host ([ADR 0004](docs/decisions/0004-libsecret-secret-storage.md)) |
 | Storage | GSettings for preferences and window state ([ADR 0007](docs/decisions/0007-gsettings-preferences.md)), JSON files for connections and workspace state, SQLite for query history ([docs/storage.md](docs/storage.md)) |
 | Build | Meson driving Cargo ([ADR 0006](docs/decisions/0006-meson-cargo-build.md)) |
-| Distribution | Flathub primary; .deb for Ubuntu 26.04 on GitHub Releases and .rpm for Fedora 44 on COPR ([ADR 0017](docs/decisions/0017-distribution-channels.md)) |
+| Distribution | A Launchpad PPA for Ubuntu 26.04 and later and a COPR project for Fedora 44 and later, Flathub later ([ADR 0018](docs/decisions/0018-ppa-copr-and-flathub-later.md)) |
 
 ## What this is not
 
 | Not | Why |
 |---|---|
-| A port of the macOS app | Swift code does not run on Linux, and Swift / GTK bindings are immature. The Linux app shares zero source with macOS. |
+| A port of the macOS app | The macOS app is AppKit and SwiftUI, which Linux does not have, and Swift's GTK bindings are immature. The Linux app shares no source with macOS. |
 | A plugin host | Drivers are statically linked at compile time. Adding a database engine = adding one crate + one register call. See [decisions/0001-no-plugin-system.md](docs/decisions/0001-no-plugin-system.md). |
 | Cross-platform | Linux only. macOS and iOS have separate apps in this monorepo. |
 | Electron / WebView | Native GTK4 widgets throughout. No HTML rendering of any kind. |
@@ -48,15 +48,31 @@ sudo pacman -S --needed base-devel pkgconf meson ninja gettext desktop-file-util
 
 The Ubuntu list is the .deb's build dependencies in `build-aux/debian/control` and the Fedora list the RPM's in `build-aux/rpm/tablepro.spec`, less the ones only their tests need. CI builds both.
 
-Verify the right versions are present:
+The test suites need a few more: an X server for the GTK tests, a session
+bus, the icon theme, a generated `en_US.UTF-8` locale for the catalogue
+test, and gnome-keyring for the Secret Service tests.
 
 ```bash
-pkg-config --modversion gtk4 libadwaita-1 gtksourceview-5 glib-2.0 sqlite3   # need 4.22+ / 1.9+ / 5.18+ / 2.88+ / 3.46+
+# Ubuntu 26.04
+sudo apt install -y xvfb xauth dbus-daemon adwaita-icon-theme locales gnome-keyring
+sudo localedef -i en_US -f UTF-8 en_US.UTF-8
+
+# Fedora 44
+sudo dnf install -y xorg-x11-server-Xvfb xorg-x11-xauth dbus-daemon adwaita-icon-theme glibc-langpack-en gnome-keyring
+```
+
+Check the installed versions against the floors in
+[ADR 0015](docs/decisions/0015-gnome-50-platform-floor.md). SQLite needs
+3.46 or later.
+
+```bash
+pkg-config --modversion gtk4 libadwaita-1 gtksourceview-5 glib-2.0 sqlite3
 ```
 
 Install Rust with [rustup](https://rustup.rs). `rust-toolchain.toml` pins
 1.98, and rustup fetches it on the first `cargo` call in this directory.
-Distribution `rustc` packages are usually older than that.
+The workspace also builds on 1.97, the `rustc` the PPA packages build
+with.
 
 Build and run:
 
@@ -73,7 +89,7 @@ with `GSettings schema app.tablepro.TablePro is not installed`.
 
 Install with `meson install -C _build`, which places the binary, the
 askpass helper, the desktop entry, the D-Bus service, the AppStream
-metainfo, the icons and the third-party license notices. See
+metainfo, the GSettings schema, the icons and the man page. See
 [ADR 0006](docs/decisions/0006-meson-cargo-build.md).
 
 Before pushing, run the [fast-job commands](CONTRIBUTING.md#fast-job-commands). [docs/testing.md](docs/testing.md) describes the test suites, including the ones that need Docker.
@@ -116,24 +132,16 @@ The sandbox gets the network, the display, the home folder and the mount
 points of removable drives, the SSH agent and the Kerberos KCM socket. The
 Secret Service, file choosers, notifications and links go through portals.
 [ADR 0008](docs/decisions/0008-flatpak-sandbox-permissions.md) gives the
-reason for each grant, and it is what maintainers send Flathub when they ask
-for the two exceptions.
+reason for each grant.
 
-The Flathub manifest is kept in Flathub's repository for the app, the way
-Fractal and Loupe keep theirs. It builds `-Dprofile=default` from the
-release tarball, with a `cargo-sources.json` that `flatpak-cargo-generator`
-writes from that release's `Cargo.lock`, since Flathub builds offline.
-Meson sets its own `CARGO_HOME`, so the manifest also passes
-`-Dcargo_config=cargo/config` for Cargo to find the crates
-`cargo-sources.json` unpacks. CI builds and lints the same shape on every
-pull request, from the tarball `meson dist` writes.
+The repository keeps no Flathub manifest. Flathub's policy refuses
+manifests and submissions written with AI tools, so maintainers write and
+submit that one by hand ([ADR 0018](docs/decisions/0018-ppa-copr-and-flathub-later.md)).
 
 ### Screenshots
 
-The metainfo lists the PNGs in `data/screenshots`, at the release tag's
-URL: Flathub copies them from there when it builds. A build of a commit
-that has no tag yet sets `-Dscreenshots_base_url` to an https URL where
-that commit's `data/screenshots` can be fetched.
+The metainfo lists the PNGs in `data/screenshots` at the release tag's
+URL, so a catalogue fetches the ones of the version it lists.
 
 Take new ones from the app at default settings (light style, blue accent,
 Adwaita Sans and Adwaita Mono at 11 pt, scale 1) with a 1000×700 window,
@@ -142,11 +150,14 @@ captions in step with the metainfo.
 
 ## Packages
 
-A `linux-vX.Y.Z` tag publishes a .deb for Ubuntu 26.04 on GitHub Releases
-and an .rpm for Fedora 44 through COPR, both built from `meson install`
-with the crates from the release's vendor tarball
-([ADR 0017](docs/decisions/0017-distribution-channels.md)). The packaging
-is `build-aux/debian` and `build-aux/rpm/tablepro.spec`.
+A `linux-vX.Y.Z` tag publishes the source and vendor tarballs on GitHub
+Releases, uploads a source package for Ubuntu 26.04 and 26.10 to the
+Launchpad PPA, and starts a COPR build of the spec for Fedora 44 and
+later. Both build offline from those tarballs, Launchpad with the Ubuntu
+Rust team's `rustc-1.97` and COPR with Fedora's Rust, and apt, dnf and
+the software centres update the installed packages
+([ADR 0018](docs/decisions/0018-ppa-copr-and-flathub-later.md)).
+The packaging is `build-aux/debian` and `build-aux/rpm/tablepro.spec`.
 
 To build both from the committed tree the way CI does, each step in a
 fresh container, with Docker or Podman:
@@ -155,10 +166,13 @@ fresh container, with Docker or Podman:
 build-aux/packaging/build-packages.sh all _packages
 ```
 
-It writes the source and vendor tarballs, the .deb (checked by lintian)
-and the RPMs (checked by rpmlint) under `_packages`, then installs each
+It writes the source and vendor tarballs, the Debian source package and
+its .deb built offline as Launchpad builds it (checked by lintian), and
+the RPMs (checked by rpmlint) under `_packages`, then installs each
 package in a fresh container and starts it. `deb` or `rpm` in place of
-`all` builds one. `meson dist` archives `HEAD`, so commit first.
+`all` builds one, and Ubuntu series names after the output directory
+replace the default `resolute`. `meson dist` archives `HEAD`, so commit
+first.
 
 After a change to `Cargo.lock`, `build-aux/update-third-party-licenses.sh`
 rewrites `debian/copyright` and the spec's `License` tag along with
@@ -189,28 +203,22 @@ kinit you@EXAMPLE.COM
 ```
 
 The driver asks for `MSSQLSvc/<host>:<port>`, built from the host and
-port you typed, not from an SSH tunnel's local forward. Four things are
+port you typed, not from an SSH tunnel's local forward. Two things are
 worth knowing:
 
 - tiberius imports that SPN as a raw Kerberos principal, so it takes the
   default realm and nothing else: `default_realm` from `/etc/krb5.conf`,
-  or under Flatpak a DNS record, as below. `[domain_realm]` does not
-  apply: that lookup only runs for host-based service names, and
-  tiberius exposes no SPN override. A server in another realm works only
-  when your KDC answers with a referral, which Active Directory does
-  inside a forest. Otherwise the login fails with
-  `KRB5KDC_ERR_S_PRINCIPAL_UNKNOWN`.
+  or under Flatpak a DNS record. `[domain_realm]` does not apply: that
+  lookup only runs for host-based service names, and tiberius exposes no
+  SPN override. A server in another realm works only when your KDC
+  answers with a referral, which Active Directory does inside a forest.
+  Otherwise the login fails with `KRB5KDC_ERR_S_PRINCIPAL_UNKNOWN`.
 - The host has to match the SPN registered on the server. An IP address
   or a CNAME usually does not.
-- Under Flatpak the host's `/etc/krb5.conf` is out of reach. The app
-  brings its own through `KRB5_CONFIG`. It sets no `default_realm`, so
-  the realm comes from the `_kerberos` TXT record of this computer's DNS
-  domain or a parent of it, and the KDC from DNS SRV records.
-- Under Flatpak tickets are read from the KCM cache, so a ticket the
-  host's `kinit` keeps in KCM (Fedora's default, through sssd-kcm) is
-  used. The sandbox's `/tmp` is private, so a FILE ticket cache there is
-  invisible. A KEYRING cache fails too, because Flatpak blocks the
-  kernel keyring calls.
+
+Under Flatpak the app brings its own Kerberos configuration and reads
+tickets from the KCM cache. [Kerberos inside Flatpak](docs/drivers/sql-server.md#kerberos-inside-flatpak)
+says where the realm, the KDC and the tickets come from there.
 
 ## Documentation index
 

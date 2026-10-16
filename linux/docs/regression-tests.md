@@ -3,12 +3,14 @@
 The 2026-09-13 audit rated seven findings critical. Each one has tests that fail if it comes back, and every such test carries the finding in its name: a guard for F-001 starts with `f001_`. The audit itself is not in the tree; the [remediation plan](plan-2026-09-14-audit-remediation.md#finding-to-task-index) lists the tasks that fixed each finding.
 
 ```bash
-cargo test --workspace --exclude tablepro -- f001_
-xvfb-run -a dbus-run-session -- cargo test -p tablepro --lib -- f001_
-cargo nextest run --workspace --exclude tablepro --run-ignored only -E 'test(/f001_/)'
+finding=f002_
+meson devenv -C _build cargo test --workspace --exclude tablepro -- "$finding"
+GTK_A11Y=test GSK_RENDERER=cairo GDK_BACKEND=x11 xvfb-run -a dbus-run-session -- \
+  meson devenv -C _build cargo test -p tablepro --lib -- "$finding"
+meson devenv -C _build cargo nextest run --workspace --exclude tablepro --run-ignored only -E "test(/$finding/)"
 ```
 
-The first two run the guards for F-001 that need no server: the app's are GTK tests, so they need a display and a session bus. The third runs the ones that need Docker, as the integration jobs do. The app runs with `--lib` because its [application tests](testing.md#application-tests) have no test harness to filter, and `startup` needs Meson.
+The first two run a finding's guards that need no server. The app's are GTK tests, so they need a display, a session bus and the variables the gtk Meson suite sets. The third runs the ones that need Docker, as the integration jobs do. The app runs with `--lib` because its [application tests](testing.md#application-tests) have no test harness to filter, and `startup` needs Meson. Only F-002, F-004 and F-005 have guards in the app.
 
 ## Findings
 
@@ -51,7 +53,6 @@ Kinds: `unit` runs in the Meson unit suite, `gtk` in the gtk suite, `docker` in 
 | F-006 | unit | `f006_count_sum_and_expression_columns_are_typed` | [crates/drivers/sqlite/tests/integration/decode.rs](../crates/drivers/sqlite/tests/integration/decode.rs) |
 | F-006 | docker | `f006_bigint_unsigned_max_id_edit_affects_one_row` | [crates/drivers/mysql/tests/integration/decode.rs](../crates/drivers/mysql/tests/integration/decode.rs) |
 | F-007 | ci-job | `flatpak-devel` | [.github/workflows/build-linux.yml](../../.github/workflows/build-linux.yml) |
-| F-007 | ci-job | `flatpak-flathub` | [.github/workflows/build-linux.yml](../../.github/workflows/build-linux.yml) |
 
 The read-only case runs on every engine. SQL Server leaves read-only to the login's privileges, so there it checks only the app's own refusal of a save. The type case runs on every network engine: every SQLite value is one of five storage classes, and the driver decodes all five.
 

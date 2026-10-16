@@ -1,6 +1,6 @@
 # Roadmap
 
-**Status, 2026-10-15**: every capability in the tables below is in the tree. Nothing has shipped yet: the app is not on Flathub, and no `linux-v*` tag has been cut. The [release criteria](#release-criteria) say what has to hold first, and the [backlog](#backlog) lists what is not built.
+**Status, 2026-10-15**: every capability in the tables below is in the tree. Nothing has shipped yet: no `linux-v*` tag has been cut. The [release criteria](#release-criteria) say what has to hold first, and the [backlog](#backlog) lists what is not built.
 
 The app runs on GNOME 50 ([ADR 0015](docs/decisions/0015-gnome-50-platform-floor.md)) and connects to five engines, each a crate linked in at compile time ([ADR 0001](docs/decisions/0001-no-plugin-system.md)): [PostgreSQL](docs/drivers/postgresql.md), [MySQL and MariaDB](docs/drivers/mysql.md), [SQL Server](docs/drivers/sql-server.md), [ClickHouse](docs/drivers/clickhouse.md) and [SQLite](docs/drivers/sqlite.md).
 
@@ -35,8 +35,8 @@ The app runs on GNOME 50 ([ADR 0015](docs/decisions/0015-gnome-50-platform-floor
 | Capability | Detail |
 |---|---|
 | Modes | Disable, Require and Verify full; Verify full is the default for a new connection |
-| Certificates | CA file, client certificate and key (every network engine but SQL Server), and a server name override |
-| Remedies | A TLS failure says what went wrong and jumps to the field that fixes it |
+| Certificates | CA file, client certificate and key (every network engine but SQL Server), and a server name override (MySQL only through an SSH tunnel) |
+| Remedies | A TLS failure says what went wrong. An unknown issuer jumps to the CA file, and a name mismatch to the server name |
 
 ### Browse and edit
 
@@ -46,7 +46,7 @@ The app runs on GNOME 50 ([ADR 0015](docs/decisions/0015-gnome-50-platform-floor
 | Filters | Per-column operators, a raw WHERE fragment checked as one expression, match any or all, kept per table |
 | Sorting | A header click sorts tables on the server and query results in the grid |
 | Cell editing | Editors by column kind: inline text, a multi-line editor, a calendar for dates, a toggle for booleans, JSON checked before saving; values are edited from their exact text, never from what the cell displays |
-| Rows | Insert, duplicate and delete; Set NULL, Empty and DEFAULT; undo and redo; save or discard pending changes, and stop a save |
+| Rows | Insert, duplicate and delete; Set NULL and Empty, and DEFAULT on a new row; undo and redo; save or discard pending changes, and stop a save |
 | Bulk delete | Deleting 10 rows or more asks first |
 | Copy | Copy, and Copy As rows, with headers, JSON, CSV, Markdown, IN clause or INSERT; Show Row as JSON |
 | Column widths | Kept per table |
@@ -58,7 +58,7 @@ The app runs on GNOME 50 ([ADR 0015](docs/decisions/0015-gnome-50-platform-floor
 | Capability | Detail |
 |---|---|
 | Table definition | Columns, indexes, foreign keys and column comments |
-| Changes | Create, rename and drop tables; add, drop and rename columns, and change their type, nullability, default and comment; add and drop indexes and foreign keys |
+| Changes | Create, rename and drop tables; add, drop and rename columns, and change their type, nullability, default, comment, primary key and auto-increment; add and drop indexes and foreign keys |
 | Review | The SQL is previewed, and a save that loses data or can stop halfway is reviewed before it runs |
 | SQLite rebuilds | Changes SQLite cannot ALTER rebuild the table and keep its rows and indexes |
 
@@ -82,14 +82,14 @@ The app runs on GNOME 50 ([ADR 0015](docs/decisions/0015-gnome-50-platform-floor
 | Query history | A SQLite database with full-text search, filters by connection, time and status, pins, export as SQL or CSV, and a retention period |
 | What is recorded | Editor runs, and the SQL the app runs for grid saves, structure saves and imports; a run that sets a password is not recorded, and recording can be turned off |
 | Show in Files | For the history database, from the history dialog and Preferences |
-| Saved queries | Kept per connection, saved from the editor, opened in a new tab or the current one |
+| Saved queries | Saved from the editor against a connection, listed by connection with the active one first, and opened in a new tab or the current one |
 
 ### Export
 
 | Capability | Detail |
 |---|---|
 | Formats | CSV with its options, JSON, Markdown, HTML, XML, Excel, and SQL INSERT from a table tab |
-| Scope | The current page, every row of a query, or the entire table |
+| Scope | From a table tab, the current page or every row under its filter and sort. From the editor, the rows shown or every row, with the statement run again |
 | Running | Off the GTK thread with progress and Stop; closing or quitting asks about a running export |
 
 ### Windows and sessions
@@ -100,17 +100,17 @@ The app runs on GNOME 50 ([ADR 0015](docs/decisions/0015-gnome-50-platform-floor
 | One instance | A second launch presents the running app; New Window (Ctrl+Shift+N) opens a picker |
 | Tabs | `AdwTabView` with the tab overview and split header bars, adapting down to 360×294 |
 | Session restore | The windows open at quit open again at launch, behind a preference |
-| Closing safely | Unsaved edits, a save in flight or a running export ask before a window closes or the app quits; logout waits for saves |
+| Closing safely | Unsaved edits, a save in flight or a running export ask before a window closes or the app quits; logout waits while edits are unsaved, a save runs or an export writes |
 | Notifications | Work that finishes in a tab you are not looking at sends a notification |
-| Preferences | Restore session, page size, query history, editor font and scheme, query timeout |
+| Preferences | Restore session, page size, query history, editor font and scheme, query timeout. A Confirm Before Deleting Rows switch is shown but nothing reads it yet (see the backlog) |
 | Shortcuts and About | A shortcuts dialog, and About from the metainfo with third-party licenses and debug info |
 
 ### Packaging and platform
 
 | Capability | Detail |
 |---|---|
-| Flatpak | The Devel manifest builds with every Meson suite in the sandbox, and the shape Flathub builds is built offline and linted on every pull request |
-| .deb and .rpm | Ubuntu 26.04 and Fedora 44, linted, then installed and started in fresh containers in CI; a `linux-v*` tag publishes them ([ADR 0017](docs/decisions/0017-distribution-channels.md)) |
+| Flatpak | The Devel manifest builds on GNOME 51 with every Meson suite in the sandbox, and is linted on every pull request |
+| .deb and .rpm | Ubuntu 26.04 and 26.10 and Fedora 44, built offline in CI the way Launchpad and COPR build them, linted, then installed and started in fresh containers; a `linux-v*` tag uploads to the PPA and starts the COPR build ([ADR 0018](docs/decisions/0018-ppa-copr-and-flathub-later.md)) |
 | Desktop integration | Desktop file with Open With for SQLite files, D-Bus activation, a man page, metainfo with screenshots, and SVG icons |
 | Translations | Every user-facing string goes through gettext; CI checks `POTFILES.in` and the template |
 | Logs | stderr, which the session journals, with JSON lines on request |
@@ -122,7 +122,7 @@ Not built yet, in no order.
 
 ### Connections
 
-- A statement timeout per connection. Today one preference covers editor runs, and every other call has a fixed 60 seconds.
+- A statement timeout per connection. Today one preference covers editor runs. Other calls have fixed limits: 15 seconds for metadata, 60 for a page or a count, 120 for a row save, and none for a schema change or an export.
 - Kerberos against a service outside the client's realm, which needs an SPN override in tiberius.
 
 ### Browse, edit and structure
@@ -134,7 +134,7 @@ Not built yet, in no order.
 - Save the column order per table.
 - Make the Confirm Before Deleting Rows preference take effect. The switch is stored, but deleting rows does not read it.
 - Functions, procedures, sequences and triggers in the sidebar.
-- The CREATE INDEX statement for an index.
+- The CREATE INDEX statement for one index. Show CREATE TABLE lists them after the table on PostgreSQL, SQL Server and SQLite.
 - Jump from a foreign key to the table it references.
 - Reorder columns in the structure tab by dragging, with the ALTER previewed.
 - An ER diagram.
@@ -147,8 +147,9 @@ Not built yet, in no order.
 
 ### Release and project
 
-- Submit to Flathub.
-- Create the COPR project, the `linux-release` environment limited to `linux-v*` tags with the `COPR_CONFIG` secret, and the `LINUX_COPR_PROJECT` variable before the first tag.
+- Before the first tag, the release setup [ADR 0018](docs/decisions/0018-ppa-copr-and-flathub-later.md#consequences) lists: the PPA, the COPR project, and the `linux-release` environment with what `release-linux.yml` names in its header.
+- Write the Flathub manifest and the exception request by hand, and submit them.
+- Put the PPA and COPR install commands in the README once both exist.
 - An AUR PKGBUILD, kept by the community.
 - The first translations in `po/LINGUAS`.
 - A manual pass with Orca, the keyboard alone, High Contrast, 1.5x text scaling and a right-to-left locale.
@@ -178,7 +179,7 @@ Not committed: server monitoring (sessions, locks, slow queries), maintenance co
 
 From the [production-readiness audit](docs/production-audit.md#what-production-ready-means-here), for GNOME 50. A user on Ubuntu 26.04 or Fedora 44:
 
-1. Installs `app.tablepro.TablePro` from Flathub, or the .deb or the .rpm.
+1. Installs `tablepro` from the PPA or the COPR project, and gets updates from the system's updater.
 2. Connects to their everyday PostgreSQL, MySQL, MariaDB, SQL Server, ClickHouse or SQLite database.
 3. Browses tables of real-world data (dates, decimals, JSON, UUIDs, NULLs) and sees correct values.
 4. Runs typical queries against tables of a million rows or more without running out of memory or freezing.
@@ -200,4 +201,4 @@ From the [production-readiness audit](docs/production-audit.md#what-production-r
 | Cloud sync of connections through a TablePro service | Not without a business model that needs it |
 | KDE-native styling | The app runs with the Adwaita style everywhere |
 
-The distribution channels, and why there is no AppImage or Snap, are in [ADR 0017](docs/decisions/0017-distribution-channels.md).
+The distribution channels, and why there is no AppImage or Snap, are in [ADR 0018](docs/decisions/0018-ppa-copr-and-flathub-later.md).

@@ -87,7 +87,7 @@ impl TestApp {
     fn new(name: &str) -> Self {
         let (services, backing) = fake_services();
         let app = TableProApplication::new(services);
-        app.set_application_id(Some(&format!("{}.Test.{name}", crate::config::SCHEMA_ID)));
+        app.set_application_id(Some(&format!("{}.Test.{name}", crate::config::APP_ID)));
         Self { app, _backing: backing }
     }
 
@@ -179,6 +179,9 @@ impl Drop for TestApp {
             window.destroy();
         }
         crate::test_support::drain_main_context();
+        if self.app.is_registered() {
+            crate::test_support::end_application(&self.app);
+        }
     }
 }
 

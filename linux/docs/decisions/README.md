@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-These are short documents recording the **reasoning** behind major technical choices. They are not living documentation: once an ADR is accepted, it stays. If a later ADR supersedes it, link forward; do not edit history.
+These are short documents recording the **reasoning** behind major technical choices. Once an ADR is accepted, its decision stays as recorded. When a later ADR or change replaces part of it, the Status line says which part, and names the ADR or the date that replaced it. Any part that describes the current system is kept true.
 
 Every load-bearing decision in the Linux subproject has an ADR. If a contributor asks "why did we pick X", the answer should already be in this folder. If it is not, we missed an ADR.
 
@@ -9,7 +9,7 @@ Every load-bearing decision in the Linux subproject has an ADR. If a contributor
 ```markdown
 # 000N: Title
 
-- **Status**: Accepted | Superseded by 000M | Deprecated
+- **Status**: Accepted
 - **Date**: YYYY-MM-DD
 
 ## Context
@@ -33,34 +33,39 @@ What we accept by making this choice. Positive, negative, neutral.
 Brief note on each alternative and why it lost.
 ```
 
+Context, Decision and Consequences are always there. Rationale and Alternatives considered are there when other options were weighed. A section an ADR needs beyond these, such as a matrix or a dated note, comes after them.
+
+The Status is `Accepted`, `Superseded by 000M` or `Deprecated`. An accepted ADR that a later one changed in part reads `Accepted; <part> superseded by 000M` (replaced) or `amended by 000M` (extended), or `amended <date>` when the change came without an ADR.
+
 ADRs are short on purpose. If yours is more than a page, you are probably arguing instead of recording.
 
 ## Index
 
 | # | Title | Status | Summary |
 |---|---|---|---|
-| [0001](0001-no-plugin-system.md) | No plugin system; drivers are static | Accepted | Drivers are crates, registered at compile time. No `.tableplugin`-equivalent on Linux. |
-| [0002](0002-rust-gtk4-libadwaita.md) | Rust + GTK4 + libadwaita | Accepted; version floor superseded by 0015 | Validated by spike. Only stack with a production virtualized data grid (GtkColumnView). |
-| [0003](0003-relm4-architecture.md) | Relm4 for app architecture | Accepted; superseded in part by 0012 | Elm-style components scale to TablePro's view count. |
-| [0004](0004-libsecret-secret-storage.md) | libsecret via oo7 for password storage | Accepted | Secret Service API is the universal Linux secret backend. |
+| [0001](0001-no-plugin-system.md) | No plugin system; drivers are statically linked | Accepted | Drivers are crates, registered at compile time. No `.tableplugin`-equivalent on Linux. |
+| [0002](0002-rust-gtk4-libadwaita.md) | Rust + GTK4 + libadwaita | Accepted; version floor superseded by 0015, the Relm4 consequence by 0012 | Validated by spike. Only stack with a production virtualized data grid (GtkColumnView). |
+| [0003](0003-relm4-architecture.md) | Relm4 for app architecture | Accepted; superseded by 0012 except for the saved-queries and CSV import dialogs | Elm-style components scale to TablePro's view count. |
+| [0004](0004-libsecret-secret-storage.md) | Secret storage through oo7 | Accepted; store API and Flatpak path amended 2026-09-15, the rules for edits 2026-10-15 | The Secret Service on the host, and oo7's own keyring file with a key from the Secret portal inside Flatpak; never a plain-text file. |
 | [0005](0005-supply-chain-policy.md) | Supply-chain policy | Accepted | Maintained crates first; custom code needs recorded evidence and a removal trigger. |
-| [0006](0006-meson-cargo-build.md) | Meson drives Cargo | Accepted | Meson owns install, data files and the build-time config; Cargo stays the Rust compiler. |
-| [0007](0007-gsettings-preferences.md) | Preferences and window geometry in GSettings | Accepted | A schema with ranges and enums replaces preferences.json and window.json; keyed data stays in files. |
-| [0008](0008-flatpak-sandbox-permissions.md) | Flatpak sandbox permissions | Accepted | Network, display, home and removable drives for SQLite, the SSH agent and the Kerberos KCM socket; portals for the rest; two Flathub lint exceptions. |
-| [0009](0009-crypto-provider-and-sources.md) | One crypto provider, upstream sources and dependency bans | Accepted | aws-lc-rs only; deny.toml enforces sources, licenses, bans and advisory ignores. |
+| [0006](0006-meson-cargo-build.md) | Meson drives Cargo | Accepted; where the version lives amended by 0017 | Meson owns install, data files and the build-time config; Cargo stays the Rust compiler. |
+| [0007](0007-gsettings-preferences.md) | Preferences and window geometry in GSettings | Accepted; the schema id and path per profile amended 2026-10-15 | A schema with ranges and enums replaces preferences.json and window.json; keyed data stays in files. |
+| [0008](0008-flatpak-sandbox-permissions.md) | Flatpak sandbox permissions | Accepted; the Flathub submission deferred by 0018 | Network, display, home and removable drives for SQLite, the SSH agent and the Kerberos KCM socket; portals for the rest; two Flathub lint exceptions. |
+| [0009](0009-crypto-provider-and-sources.md) | One crypto provider, upstream sources and dependency bans | Accepted; sources and the PostgreSQL and ClickHouse TLS setup superseded by 0016 | aws-lc-rs only; deny.toml enforces sources, licenses, bans and advisory ignores. |
 | [0010](0010-ddl-plans-and-table-definitions.md) | DDL plans against table definitions | Accepted | Each engine plans structure changes through its `DdlDialect` against the table's definition; the UI offers only what the plan accepts. |
 | [0012](0012-window-per-session.md) | One window per connection session, built from gtk-rs subclasses | Accepted | One `TableProApplication` per profile through D-Bus uniqueness; a window holds at most one session and returns to the picker on disconnect; the application, the window and its workspace are subclasses, not Relm4 components. |
 | [0013](0013-openssh-client-transport.md) | SSH through the system OpenSSH client | Accepted | ControlMaster per connection, Unix-socket forwards, prompts through an askpass helper. |
 | [0014](0014-lossless-values-and-dialects.md) | Lossless values and engine dialects | Accepted | A value reaches the user and goes back without loss; every statement is spelled by the dialect of the connection that runs it. |
-| [0015](0015-gnome-50-platform-floor.md) | GNOME 50 platform floor | Accepted | GTK 4.22, libadwaita 1.9, GtkSourceView 5.18, GLib 2.88; AdwShortcutsDialog replaces the shortcuts window. |
+| [0015](0015-gnome-50-platform-floor.md) | GNOME 50 platform floor | Accepted; the runtime row amended by 0018 | GTK 4.22, libadwaita 1.9, GtkSourceView 5.18, GLib 2.88; AdwShortcutsDialog replaces the shortcuts window. |
 | [0016](0016-driver-contract-v2.md) | Driver contract v2 | Accepted | Owned calls with engine stops, phase-aware write outcomes, server-side row limits; PostgreSQL on tokio-postgres; no forks. |
-| [0017](0017-distribution-channels.md) | Distribution channels | Accepted | Flathub, a .deb for Ubuntu 26.04 on GitHub Releases built with rustup, and an .rpm for Fedora 44 on COPR, all from `meson install` and one vendor tarball; no AppImage. |
+| [0017](0017-distribution-channels.md) | Distribution channels | Superseded by 0018 | Flathub, a .deb for Ubuntu 26.04 on GitHub Releases built with rustup, and an .rpm for Fedora 44 on COPR, all from `meson install` and one vendor tarball; no AppImage. |
+| [0018](0018-ppa-copr-and-flathub-later.md) | A PPA and COPR first, Flathub later | Accepted | A Launchpad PPA built with `rustc-1.97` and a COPR project built on each release are the primary channels; Flathub follows as a submission a maintainer writes; Rust 1.97 is the MSRV. |
 
 0011 is not used. The 2026-09-14 remediation plan reserved it for the DDL decision, which was recorded as 0010, and docs cite ADRs by number, so the later ones keep theirs.
 
 ## Adding an ADR
 
-1. Pick the next number. Increments only, no gaps even if an earlier ADR is deprecated.
+1. Take the number after the highest one. Never reuse a number, even a deprecated ADR's.
 2. Copy the format above into a new file. Use a dash-separated lowercase title slug.
 3. Open a PR. ADRs go through the same review as code.
 4. After merge, link from the index above.

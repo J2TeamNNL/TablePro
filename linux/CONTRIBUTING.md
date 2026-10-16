@@ -12,9 +12,16 @@ meson setup _build -Dprofile=development
 meson compile -C _build        # builds tablepro and tablepro-askpass
 meson test -C _build           # unit, gtk, data and packaging suites
 meson devenv -C _build ./crates/app/tablepro   # run the app
-meson devenv -C _build cargo test   # cargo against the configured app ID
+meson devenv -C _build cargo test --workspace --exclude tablepro   # the unit suite through cargo
+GTK_A11Y=test GSK_RENDERER=cairo GDK_BACKEND=x11 meson devenv -C _build cargo test -p tablepro   # the app's tests
 cargo fmt --all                # format
 ```
+
+The app's tests need the variables the gtk Meson suite sets
+(`crates/app/meson.build`), and `meson devenv` does not export them:
+`GTK_A11Y=test` for the accessibility checks, `GSK_RENDERER=cairo` for a
+machine with no GPU, and `GDK_BACKEND=x11` for the tests that press keys
+through XTEST.
 
 Run every other `cargo` command through `meson devenv -C _build` too. It
 points Cargo at the `CARGO_HOME` and target directory inside `_build`, so
@@ -23,7 +30,7 @@ GSettings schema on the search path. A bare `cargo` builds a second copy
 of the whole tree into `target/`, and a bare `cargo run -p tablepro` aborts
 with `GSettings schema app.tablepro.TablePro is not installed`.
 
-Run `meson compile -C _build` after editing `data/*.gschema.xml`, so the
+Run `meson compile -C _build` after editing `data/*.gschema.xml.in`, so the
 compiled schema stays in step with it. A development build uses the
 `app.tablepro.TablePro.Devel` application ID, so it never writes over an
 installed one.
@@ -33,12 +40,15 @@ installed one.
 The fast job in `.github/workflows/build-linux.yml` runs these steps in this order:
 
 ```bash
+localedef -i en_US -f UTF-8 en_US.UTF-8   # as root, once: the catalogue test needs a real locale
 meson setup _build -Dprofile=development
 cargo fmt --all -- --check
 meson devenv -C _build cargo clippy --locked --workspace --all-targets -- -D warnings
 meson devenv -C _build cargo clippy --locked --workspace --all-targets --no-default-features -- -D warnings
 meson compile -C _build
 xvfb-run -a dbus-run-session -- meson test -C _build --print-errorlogs
+dbus-run-session -- bash -c "gnome-keyring-daemon --components=secrets --daemonize --unlock <<< ci \
+  && meson devenv -C _build cargo test --locked -p tablepro-storage --test secret_service -- --ignored"
 meson dist -C _build --no-tests --formats xztar
 ```
 
@@ -55,17 +65,18 @@ cargo nextest run --locked --profile ci -p tablepro-driver-postgres --run-ignore
 ```
 
 Logs go to stderr and the filter comes from `RUST_LOG`; a development
-build defaults to `debug`.
+build defaults to `debug`. `TABLEPRO_LOG_FORMAT=json` writes one JSON
+object per line.
 
 ```bash
-RUST_LOG=debug ./_build/crates/app/tablepro
+RUST_LOG=debug meson devenv -C _build ./crates/app/tablepro
 ```
 
-CI sets `GTK_A11Y=test` for GTK tests. With `GTK_A11Y=none` GTK records no accessible properties, and the accessibility helpers report that the test backend is missing.
+The gtk Meson suite sets `GTK_A11Y=test`, and `meson devenv` does not. With `GTK_A11Y=none` GTK records no accessible properties, and the accessibility helpers report that the test backend is missing.
 
 ### Dependencies
 
-`data/licenses` holds the license notices of every crate the app ships, written from `Cargo.lock` by cargo-about. The About dialog embeds `third-party.json`, and both files install next to `LICENSE`. After a change to `Cargo.lock`, regenerate them and commit the result; the Supply chain CI job fails until they match:
+`data/licenses` holds the license notices of every crate the app ships, written from `Cargo.lock` by cargo-about. The About dialog embeds `third-party.json`. The packages ship the notices as their license files: `%license` in the RPM, `debian/copyright` in the .deb, and `share/licenses` in the Flatpak. After a change to `Cargo.lock`, regenerate them and commit the result; the Supply chain CI job fails until they match:
 
 ```bash
 cargo install --locked cargo-about@0.9.2 --features cli
@@ -81,16 +92,16 @@ The script stops and names each crate it read no license file for, since the not
 | Tool | Config | Notes |
 |---|---|---|
 | `rustfmt` | `rustfmt.toml` at the workspace root | CI fails on any diff from `cargo fmt --all -- --check`. There is no pre-commit hook. |
-| `clippy` | `[workspace.lints]` in `Cargo.toml`, `clippy.toml`, `crates/app/clippy.toml` | Every crate passes with `-D warnings`, with and without default features. |
+| `clippy` | `[workspace.lints]` in `Cargo.toml`, `clippy.toml`, `crates/app/clippy.toml`, `crates/session/clippy.toml` | Every crate passes with `-D warnings`, with and without default features. |
 | Edition | 2024 | Set per workspace. Do not override per crate. |
-| MSRV | 1.98 | `rust-version` in `Cargo.toml` and `rust-toolchain.toml`; matches the Flatpak rust-stable extension. |
+| MSRV | 1.97 | `rust-version` in `Cargo.toml`: the `rustc-1.97` the PPA builds with, checked by CI. `rust-toolchain.toml` pins 1.98, the Flatpak rust-stable extension's. |
 
-The workspace denies `unwrap_used`, `expect_used`, `panic`, `todo`, `unimplemented`, `dbg_macro`, `print_stdout`, `print_stderr`, `allow_attributes`, `allow_attributes_without_reason`, `ignore_without_reason` and `too_many_lines`, plus `unsafe_op_in_unsafe_fn`. `clippy.toml` lets tests unwrap, expect, panic, print and use `dbg!`, and bans `serde_json::Map`, which reorders a server's JSON. `crates/app/clippy.toml` also bans reaching for the ambient tokio runtime: background work goes through `Tasks`.
+The workspace denies `unwrap_used`, `expect_used`, `panic`, `todo`, `unimplemented`, `dbg_macro`, `print_stdout`, `print_stderr`, `allow_attributes`, `allow_attributes_without_reason`, `ignore_without_reason` and `too_many_lines`, plus `unsafe_op_in_unsafe_fn`. `clippy.toml` lets tests unwrap, expect, panic, print and use `dbg!`, and bans `serde_json::Map` and `Value::as_object`, whose maps reorder a server's JSON. Clippy reads only the `clippy.toml` nearest a crate, so `crates/app/clippy.toml` and `crates/session/clippy.toml` replace the root file for their crate. Both keep its test allowances and its JSON bans, and ban reaching for the ambient tokio runtime: background work goes through `Tasks`. The app's also bans the Relm4 spawns, `MainContext::block_on` and `ApplicationExt::quit`.
 
 Conventions, beyond what `rustfmt` decides:
 
 - **Comments say why, never what.** A short comment belongs where the code would surprise a careful reader: a hidden constraint, an invariant, a platform quirk. Code is otherwise self-documenting through naming.
-- **No `unwrap()` or `expect()` in production paths.** Tests and `OnceLock::get_or_init` initialisers are the only acceptable callers.
+- **No `unwrap()` or `expect()` in production paths.** Tests are the only callers; the workspace lints deny the rest.
 - **No `panic!`, `todo!`, `unimplemented!` in merged code.** Stub a real `Err` variant instead.
 - **One public type per module file** when the type's surface is non-trivial. Internal helpers stay private.
 - **A function holds at most 100 lines of code**, tests included. The workspace denies `clippy::too_many_lines` at its default threshold, so split a long function by what each part does instead of allowing the lint.
@@ -124,7 +135,7 @@ A user-visible change gets one fragment under `[Unreleased]` in [CHANGELOG.md](C
 2. PR title is the conventional commit message you intend to land.
 3. The PR description follows the repository's `.github/pull_request_template.md`.
 4. Run the [fast-job commands](#fast-job-commands) locally before pushing.
-5. A change to `Cargo.lock` commits what `build-aux/update-third-party-licenses.sh` rewrites: `data/licenses`, `build-aux/debian/copyright` and the spec's `License` tag ([Dependencies](#dependencies)). `cargo-sources.json` is not committed: CI writes it from `Cargo.lock`.
+5. A change to `Cargo.lock` commits what `build-aux/update-third-party-licenses.sh` rewrites: `data/licenses`, `build-aux/debian/copyright` and the spec's `License` tag ([Dependencies](#dependencies)).
 6. A new or removed file under `crates/app/src` regenerates `po/POTFILES.in`, and a changed user-facing string regenerates `po/tablepro.pot` ([po/README.md](po/README.md)).
 7. A user-visible change has its [changelog](#changelog) fragment.
 8. UI changes include before and after screenshots in the PR description, light and dark when color is involved. A change to a window shown in the metainfo retakes its screenshot in `data/screenshots` ([README.md](README.md#screenshots)).
