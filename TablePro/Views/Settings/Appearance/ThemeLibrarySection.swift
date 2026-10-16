@@ -29,11 +29,20 @@ internal struct ThemeLibrarySection: View {
         let fileName: String
     }
 
-    // Fits the Settings pane's default 500 pt height under the two sections above it.
-    private static let listHeight: CGFloat = 176
+    private static let minimumListHeight: CGFloat = 160
+    /// A grouped Form centers its sections at most this wide (measured on macOS 27), so the list keeps
+    /// the edges of the sections above it.
+    private static let formContentWidth: CGFloat = 704
+    private static let formMargin: CGFloat = 20
+    /// How far a grouped Form indents its section headers from the section's edge.
+    private static let headerInset: CGFloat = 10
 
     internal var body: some View {
-        Section {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Themes")
+                .font(.headline)
+                .padding(.horizontal, Self.headerInset)
+                .accessibilityAddTraits(.isHeader)
             list
                 .alert(
                     model.alert?.title ?? "",
@@ -66,9 +75,11 @@ internal struct ThemeLibrarySection: View {
                     contentType: .json,
                     defaultFilename: exporting?.fileName
                 ) { _ in }
-        } header: {
-            Text("Themes")
         }
+        .frame(maxWidth: Self.formContentWidth)
+        .padding(.horizontal, Self.formMargin)
+        .padding(.bottom, Self.formMargin)
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - List
@@ -110,7 +121,8 @@ internal struct ThemeLibrarySection: View {
                 }
             }
             .listStyle(.bordered(alternatesRowBackgrounds: false))
-            .frame(height: Self.listHeight)
+            .frame(minHeight: Self.minimumListHeight, maxHeight: .infinity)
+            .accessibilityIdentifier("appearance-themes-list")
             .contextMenu(forSelectionType: ThemeLibraryItem.self) { items in
                 rowMenu(for: items.first)
             } primaryAction: { items in

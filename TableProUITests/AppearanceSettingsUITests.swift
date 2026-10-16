@@ -52,12 +52,40 @@ final class AppearanceSettingsUITests: UITestCase {
         )
     }
 
+    func testThemesListScrollsAndTakesArrowKeys() throws {
+        let app = try launchOpeningURL("tablepro://settings/appearance")
+        let settings = try appearancePane(in: app)
+        let list = settings.outlines.containing(NSPredicate(format: "value == %@", "Default Light")).firstMatch
+        XCTAssertTrue(list.waitToExist(timeout: 10), "The Themes list should be on the Appearance pane")
+        // The bar under the list marks where its visible rows end; an outline's own frame spans every row.
+        let footer = element("appearance-theme-add", in: settings)
+        XCTAssertTrue(footer.waitToExist(timeout: 10))
+
+        let last = row("Tokyo Night Light", in: list)
+        XCTAssertTrue(last.waitToExist(timeout: 10))
+        let deadline = Date(timeIntervalSinceNow: 10)
+        while last.frame.maxY > footer.frame.minY, Date() < deadline {
+            list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1)).scroll(byDeltaX: 0, deltaY: -60)
+        }
+        XCTAssertLessThanOrEqual(last.frame.maxY, footer.frame.minY, "A scroll over the list should bring its last theme into view")
+
+        let previous = outlineRow("Tokyo Night", in: list)
+        let next = outlineRow("Tokyo Night Light", in: list)
+        XCTAssertTrue(waitUntilHittable(previous, timeout: 5), "Tokyo Night should be visible above the last row")
+        previous.click()
+        XCTAssertTrue(waitForPredicate(timeout: 5) { previous.isSelected }, "A click should select the theme")
+        settings.typeKey(.downArrow, modifierFlags: [])
+        XCTAssertTrue(
+            waitForPredicate(timeout: 5) { next.isSelected && !previous.isSelected },
+            "Down Arrow should move the selection, so the click must have given the list keyboard focus"
+        )
+    }
+
     // MARK: - Steps
 
     private func createTheme(basedOn source: String, in window: XCUIElement) {
         let add = element("appearance-theme-add", in: window)
         XCTAssertTrue(add.waitToExist(timeout: 10), "The Themes list should offer its add menu")
-        revealInForm(add, in: window)
         XCTAssertTrue(waitUntilHittable(add, timeout: 10), "The Themes list should offer its add menu")
         XCTAssertTrue(
             add.label == "Add Theme" || add.title == "Add Theme",
@@ -108,7 +136,6 @@ final class AppearanceSettingsUITests: UITestCase {
 
         let actions = element("appearance-theme-actions", in: window)
         XCTAssertTrue(actions.waitToExist(timeout: 10))
-        revealInForm(actions, in: window)
         XCTAssertTrue(waitUntilHittable(actions, timeout: 10))
         XCTAssertTrue(
             actions.label == "Theme Actions" || actions.title == "Theme Actions",
@@ -134,7 +161,6 @@ final class AppearanceSettingsUITests: UITestCase {
         themeRow.click()
         let remove = window.buttons["appearance-theme-remove"]
         XCTAssertTrue(remove.waitToExist(timeout: 5))
-        revealInForm(remove, in: window)
         XCTAssertEqual(remove.label, "Move to Trash")
         XCTAssertTrue(waitForPredicate(timeout: 5) { remove.isEnabled }, "A selected custom theme can be trashed")
         remove.click()
@@ -155,14 +181,6 @@ final class AppearanceSettingsUITests: UITestCase {
             "The link should open the Appearance pane, the window is titled \(settings.title)"
         )
         return settings
-    }
-
-    /// The Settings pane scrolls over its top sections, because a scroll over the theme list
-    /// scrolls the list instead.
-    private func revealInForm(_ control: XCUIElement, in window: XCUIElement) {
-        let form = window.scrollViews.firstMatch
-        XCTAssertTrue(form.waitToExist(timeout: 5))
-        reveal(control, in: form, scrollingAt: CGVector(dx: 0.5, dy: 0.05))
     }
 
     /// A control clipped by its scroll view still reads as hittable, and a click on it lands on
@@ -196,6 +214,10 @@ final class AppearanceSettingsUITests: UITestCase {
     // SwiftUI text carries its string in `value` with no label, so a subscript by title finds nothing.
     private func row(_ name: String, in window: XCUIElement) -> XCUIElement {
         window.staticTexts.matching(NSPredicate(format: "value == %@", name)).firstMatch
+    }
+
+    private func outlineRow(_ name: String, in list: XCUIElement) -> XCUIElement {
+        list.outlineRows.containing(NSPredicate(format: "value == %@", name)).firstMatch
     }
 
     private func themeDocument(named name: String) -> [String: Any]? {
