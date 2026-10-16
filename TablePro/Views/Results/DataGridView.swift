@@ -9,6 +9,7 @@
 import AppKit
 import SwiftUI
 import TableProPluginKit
+import TableProTheme
 
 struct CellPosition: Hashable {
     let row: Int
@@ -78,9 +79,9 @@ struct RowVisualState: Equatable {
 extension RowVisualState {
     /// The wash a row in this state carries, read by the row and by the pinned row gutter over it so
     /// the two cannot disagree.
-    @MainActor var tint: NSColor? {
-        if isDeleted { return ThemeEngine.shared.resolved[.gridDeleted] }
-        if isInserted { return ThemeEngine.shared.resolved[.gridInserted] }
+    @MainActor func tint(in scope: ThemeScope) -> NSColor? {
+        if isDeleted { return scope.resolved[.gridDeleted] }
+        if isInserted { return scope.resolved[.gridInserted] }
         return highlight.rowColor?.washColor
     }
 
@@ -141,6 +142,8 @@ struct DataGridView: NSViewRepresentable {
     var viewportPlacementProvider: (@MainActor () -> GridViewportPlacement?)?
     var contentRevision: Int = 0
     var selectionSummary: SelectionSummaryState?
+    /// Where every color the grid draws comes from. Only the theme editor's preview passes another.
+    var themeScope: ThemeScope = .live
 
     // MARK: - NSViewRepresentable
 
@@ -171,7 +174,7 @@ struct DataGridView: NSViewRepresentable {
         tableView.intercellSpacing = NSSize(width: 1, height: 0)
         tableView.rowHeight = CGFloat(settings.rowHeight.rawValue)
         tableView.usesAutomaticRowHeights = false
-        DataGridBodyChrome.applyThemeColors(to: tableView)
+        DataGridBodyChrome.applyThemeColors(to: tableView, scope: context.coordinator.themeScope)
 
         tableView.delegate = context.coordinator
         tableView.dataSource = context.coordinator
@@ -255,6 +258,7 @@ struct DataGridView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let tableView = scrollView.documentView as? NSTableView else { return }
         let coordinator = context.coordinator
+        coordinator.adoptThemeScope(themeScope)
 
         if tableView.editedRow >= 0 { return }
         if let editor = coordinator.overlayEditor, editor.isActive { return }
@@ -708,7 +712,8 @@ struct DataGridView: NSViewRepresentable {
             isEditable: isEditable,
             selectedRowIndices: $selectedRowIndices,
             delegate: delegate,
-            layoutPersister: layoutPersister ?? FileColumnLayoutPersister.shared
+            layoutPersister: layoutPersister ?? FileColumnLayoutPersister.shared,
+            themeScope: themeScope
         )
         /// The cell selection's half of the row selection. Every mutator funnels through
         /// `GridSelectionController.update(_:)`, so this is the one hook that sees a drag widen.

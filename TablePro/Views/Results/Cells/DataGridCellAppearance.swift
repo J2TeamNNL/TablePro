@@ -24,6 +24,7 @@ struct DataGridCellAppearance: Equatable {
     /// Which symbol the accessory draws, resolved here because it follows the row's state rather
     /// than anything the renderer can see.
     let accessoryRole: DataGridCellAccessoryGlyph.Role?
+    let accessoryColor: NSColor?
     /// The cell cursor on a selected row, which the selection fill would swallow a focus ring behind.
     let drawsFocusBorder: Bool
     /// The cell cursor on an unselected row.
@@ -39,7 +40,8 @@ struct DataGridCellAppearance: Equatable {
         nullDisplayString: String,
         onEmphasizedSelection: Bool,
         hasOverlay: Bool,
-        checkboxMark: DataGridCheckboxMark? = nil
+        checkboxMark: DataGridCheckboxMark? = nil,
+        textTone: NSColor? = nil
     ) -> DataGridCellAppearance {
         let deletedTextColor = state.visualState.isDeleted ? palette.deletedRowText : nil
         let font: NSFont
@@ -52,7 +54,7 @@ struct DataGridCellAppearance: Equatable {
             baseColor = deletedTextColor ?? .systemBlue
         case .none:
             font = palette.regularFont
-            baseColor = deletedTextColor ?? valueTextColor(kind: kind, rawValue: content.rawValue, palette: palette)
+            baseColor = deletedTextColor ?? textTone ?? valueTextColor(kind: kind, rawValue: content.rawValue, palette: palette)
         case .null, .empty, .absent:
             font = palette.italicFont
             baseColor = deletedTextColor ?? palette.placeholderText
@@ -91,6 +93,11 @@ struct DataGridCellAppearance: Equatable {
             rawValue: content.rawValue
         )
         let isCursorVisible = state.isFocused && !hasOverlay
+        let accessoryRole = DataGridCellAccessoryGlyph.Role(
+            accessory: accessory,
+            isEmphasized: onEmphasizedSelection,
+            isDisabled: state.visualState.isDeleted
+        )
         return DataGridCellAppearance(
             text: kind == .checkbox ? "" : DataGridCellContent.resolvedDisplayText(
                 content.displayText,
@@ -103,11 +110,8 @@ struct DataGridCellAppearance: Equatable {
             backgroundTint: backgroundTint,
             textMark: DataGridCellTextMark.resolve(state: state.visualState, columnIndex: state.columnIndex),
             accessory: accessory,
-            accessoryRole: DataGridCellAccessoryGlyph.Role(
-                accessory: accessory,
-                isEmphasized: onEmphasizedSelection,
-                isDisabled: state.visualState.isDeleted
-            ),
+            accessoryRole: accessoryRole,
+            accessoryColor: accessoryRole?.color(selectionText: palette.selectionText),
             drawsFocusBorder: isCursorVisible && onEmphasizedSelection,
             drawsFocusRing: isCursorVisible && !onEmphasizedSelection,
             focusColor: onEmphasizedSelection ? palette.selectionText : palette.focusRing,
