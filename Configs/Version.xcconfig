@@ -2,5 +2,5 @@
 // The release skill and .github/workflows/build-plugin.yml read this file.
 // Do not restate these values anywhere else.
 
-MARKETING_VERSION = 0.80.0
-CURRENT_PROJECT_VERSION = 139
+MARKETING_VERSION = 0.81.0
+CURRENT_PROJECT_VERSION = 140

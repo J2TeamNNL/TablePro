@@ -1,9 +1,9 @@
-# TablePro 0.80.0
+# TablePro 0.81.0
 
-Google Cloud IAM sign-in for MySQL and PostgreSQL on Cloud SQL, with no Cloud SQL Auth Proxy.
+Cloud Firestore, Firebase Realtime Database and Google Cloud Bigtable connect through new registry plugins.
 
-MySQL and MariaDB connect through a local Unix socket.
+Each database in the connections strip keeps its own tabs, and Oracle query tabs get a schema picker.
 
-A geometry value opens on a map in the row inspector, and the status bar shows Sum, Average and Count of the selected cells.
+Themes color every content view and the window background. Themes made for earlier versions need to be recreated.
 
-Connections and groups take custom icons. Connection exports carry saved queries and open only in 0.80.0 or later.
+Plugins signed by other developers stop loading, and HTML and XML export are removed.
