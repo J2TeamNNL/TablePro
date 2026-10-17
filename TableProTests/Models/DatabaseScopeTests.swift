@@ -61,7 +61,6 @@ struct DatabaseScopeTests {
     }
 }
 
-@Suite("DatabaseManager scope resolution", .serialized)
 @MainActor
 struct DatabaseManagerScopeResolutionTests {
     private static func makeSession(
@@ -187,6 +186,34 @@ struct DatabaseManagerScopeResolutionTests {
 
         #expect(manager.resolvedSchemaName(nil, inDatabase: "analytics", for: connection.id) == nil)
         #expect(manager.resolvedSchemaName("", inDatabase: "analytics", for: connection.id) == nil)
+    }
+
+    @Test("A table asked for by name alone is the one in the browsed database")
+    func requestedTableResolvesAgainstTheBrowseCursor() {
+        let connection = Self.makeSession(browseDatabase: "tenant_b", browseSchema: "public")
+        defer { DatabaseManager.shared.removeSession(for: connection.id) }
+        let manager = DatabaseManager.shared
+
+        #expect(
+            manager.requestedTableIdentity(table: "orders", database: nil, schema: nil, for: connection.id)
+                == TableTabIdentity(table: "orders", database: "tenant_b", schema: "public")
+        )
+        #expect(
+            manager.requestedTableIdentity(table: "orders", database: "tenant_a", schema: nil, for: connection.id)
+                == TableTabIdentity(table: "orders", database: "tenant_a", schema: nil)
+        )
+    }
+
+    @Test("A table tab bound to no database is in the browsed one")
+    func unboundTableTabResolvesAgainstTheBrowseCursor() {
+        let connection = Self.makeSession(browseDatabase: "tenant_b")
+        defer { DatabaseManager.shared.removeSession(for: connection.id) }
+        let tab = QueryTab(title: "orders", query: "", tabType: .table, tableName: "orders")
+
+        #expect(
+            DatabaseManager.shared.tableIdentity(of: tab, for: connection.id)
+                == TableTabIdentity(table: "orders", database: "tenant_b", schema: nil)
+        )
     }
 
     @Test("A resolved scope takes the schema the schema resolver gives")

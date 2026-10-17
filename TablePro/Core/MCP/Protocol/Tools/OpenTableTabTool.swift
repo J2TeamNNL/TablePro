@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import os
+import TableProMCP
 
 public struct OpenTableTabTool: MCPToolImplementation {
     public static let name = "open_table_tab"
@@ -77,7 +78,9 @@ public struct OpenTableTabTool: MCPToolImplementation {
 
         guard let snapshot = await MCPTabSnapshotProvider.awaitTab(
             connectionId: connectionId,
-            tableName: tableName
+            tableName: tableName,
+            databaseName: databaseName,
+            schemaName: schemaName
         ) else {
             throw MCPToolExecutionError.timedOut(
                 String(localized: "TablePro did not open that table in time.")

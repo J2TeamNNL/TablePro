@@ -10,6 +10,7 @@
 import AppKit
 import SwiftUI
 import TableProPluginKit
+import TableProTheme
 import Testing
 
 @testable import TablePro
@@ -97,7 +98,6 @@ private func matches(_ lhs: NSColor, _ rhs: NSColor, tolerance: CGFloat = 0.02) 
         && abs(lhs.alphaComponent - rhs.alphaComponent) <= tolerance
 }
 
-@Suite("Pinned row-number column rendering", .serialized)
 @MainActor
 struct DataGridRowNumberRenderingTests {
     @MainActor

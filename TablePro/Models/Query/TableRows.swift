@@ -17,6 +17,8 @@ struct TableRows: Sendable {
     var columnNullable: [String: Bool]
     var columnComments: [String: String]
     var columnIdentity: [String: IdentityKind]
+    // A result set can drop the length (MySQL types `CHAR(32)` as `CHAR`), so the schema's spelling is kept beside it.
+    var columnDeclaredTypes: [String: String]
     /// Columns the app must never write. Held here as well as on `DataChangeManager` because the
     /// change manager is rebuilt by `configureForTable` on every execution and only the schema
     /// fetch refills it, so a rerun that answered from cache left a generated or `GENERATED ALWAYS
@@ -43,6 +45,7 @@ struct TableRows: Sendable {
         columnNullable: [String: Bool] = [:],
         columnComments: [String: String] = [:],
         columnIdentity: [String: IdentityKind] = [:],
+        columnDeclaredTypes: [String: String] = [:],
         generatedColumns: Set<String> = [],
         rowMatchPolicy: RowMatchPolicy = .none,
         hasAuthoritativeSchema: Bool = false,
@@ -58,6 +61,7 @@ struct TableRows: Sendable {
         self.columnNullable = columnNullable
         self.columnComments = columnComments
         self.columnIdentity = columnIdentity
+        self.columnDeclaredTypes = columnDeclaredTypes
         self.generatedColumns = generatedColumns
         self.rowMatchPolicy = rowMatchPolicy
         self.hasAuthoritativeSchema = hasAuthoritativeSchema
@@ -92,6 +96,34 @@ struct TableRows: Sendable {
         if columnIdentity[name] != nil { return true }
         guard let defaultValue = columnDefaults[name] ?? nil else { return false }
         return !ColumnDefaultLiteral.isNull(defaultValue)
+    }
+
+    /// The column's type with the labels its catalog declared, which a result set alone never carries.
+    func editingColumnType(at index: Int) -> ColumnType? {
+        guard columnTypes.indices.contains(index) else { return nil }
+        let columnType = columnTypes[index]
+        guard columns.indices.contains(index),
+              let labels = columnEnumValues[columns[index]], !labels.isEmpty else { return columnType }
+        return columnType.withAllowedValues(labels)
+    }
+
+    func declaredType(at index: Int) -> String? {
+        columns.indices.contains(index) ? columnDeclaredTypes[columns[index]] : nil
+    }
+
+    /// What text entered for a column stages, or nil when the column holds neither it nor NULL.
+    ///
+    /// An emptied date in a NOT NULL column has no value to write. MySQL turns NULL there into the
+    /// current time when `explicit_defaults_for_timestamp` is off, and `''` into the zero date, so
+    /// the edit is refused rather than staged.
+    func enteredValue(_ text: String?, forColumn index: Int) -> PluginCellValue? {
+        let value = PluginCellValue.entered(text, columnType: editingColumnType(at: index))
+        guard value.isNull, refusesNull(columnAt: index) else { return value }
+        return nil
+    }
+
+    func refusesNull(columnAt index: Int) -> Bool {
+        columns.indices.contains(index) && columnNullable[columns[index]] == false
     }
 
     func value(at row: Int, column: Int) -> PluginCellValue {
@@ -286,6 +318,7 @@ struct TableRows: Sendable {
         columnNullable: [String: Bool]? = nil,
         columnComments: [String: String]? = nil,
         columnIdentity: [String: IdentityKind]? = nil,
+        columnDeclaredTypes: [String: String]? = nil,
         generatedColumns: Set<String>? = nil,
         rowMatchPolicy: RowMatchPolicy? = nil,
         hasAuthoritativeSchema: Bool? = nil
@@ -322,6 +355,10 @@ struct TableRows: Sendable {
             self.columnIdentity = columnIdentity
             didChange = true
         }
+        if let columnDeclaredTypes, columnDeclaredTypes != self.columnDeclaredTypes {
+            self.columnDeclaredTypes = columnDeclaredTypes
+            didChange = true
+        }
         if let generatedColumns, generatedColumns != self.generatedColumns {
             self.generatedColumns = generatedColumns
             didChange = true
@@ -347,6 +384,7 @@ struct TableRows: Sendable {
         columnNullable: [String: Bool] = [:],
         columnComments: [String: String] = [:],
         columnIdentity: [String: IdentityKind] = [:],
+        columnDeclaredTypes: [String: String] = [:],
         generatedColumns: Set<String> = [],
         rowMatchPolicy: RowMatchPolicy = .none,
         hasAuthoritativeSchema: Bool = false,
@@ -374,6 +412,7 @@ struct TableRows: Sendable {
             columnNullable: columnNullable,
             columnComments: columnComments,
             columnIdentity: columnIdentity,
+            columnDeclaredTypes: columnDeclaredTypes,
             generatedColumns: generatedColumns,
             rowMatchPolicy: rowMatchPolicy,
             hasAuthoritativeSchema: hasAuthoritativeSchema,

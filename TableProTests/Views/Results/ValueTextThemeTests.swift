@@ -9,9 +9,9 @@
 import AppKit
 import SwiftUI
 @testable import TablePro
+import TableProTheme
 import Testing
 
-@Suite("Value text views follow the editor theme", .serialized)
 @MainActor
 struct ValueTextThemeTests {
     private static let size = NSSize(width: 480, height: 320)

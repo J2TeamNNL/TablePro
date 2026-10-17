@@ -7,6 +7,7 @@
 
 import AppKit
 import SwiftUI
+import TableProUtilities
 
 /// The one place the app draws an object's source. The Structure tab's trigger inspector and the
 /// object viewer tab both use it, so the font stepper, Copy, Export and Open in Editor behave the
@@ -70,7 +71,7 @@ struct ObjectSourceView: View {
             .disabled(!hasSource)
         }
         .padding()
-        .background(.bar)
+        .paneBarBackground()
     }
 
     private var fontStepper: some View {
@@ -135,6 +136,6 @@ struct ObjectAttributeStrip: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
-        .background(.bar)
+        .paneBarBackground()
     }
 }

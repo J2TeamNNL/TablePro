@@ -737,8 +737,12 @@
         }
       }
     },
-    "\"%@\" is a reserved theme identifier." : {
+    "“%@” Changed on Disk" : {
 
+    },
+    "\"%@\" is a reserved theme identifier." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "“%@” is compressed." : {
       "localizations" : {
@@ -784,7 +788,19 @@
         }
       }
     },
+    "\"%@\" is not a Bigtable instance ID." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "\"%@\" is not a Bigtable table ID." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "\"%@\" is not a collection path." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "\"%@\" is not a column. Name it as family:qualifier." : {
       "extractionState" : "manual",
       "generatesSymbol" : false
     },
@@ -861,6 +877,14 @@
       "extractionState" : "manual",
       "generatesSymbol" : false
     },
+    "\"%@\" is not a row limit. Use a whole number above 0." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "\"%@\" is not a TextMate theme." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "\"%@\" is not a URL. Enter an endpoint such as http://localhost:8000." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -888,7 +912,8 @@
       }
     },
     "\"%@\" is not a valid color. Use #RRGGBB or #RRGGBBAA." : {
-
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "\"%@\" is not a valid entry point name." : {
       "extractionState" : "manual",
@@ -923,7 +948,12 @@
       }
     },
     "\"%@\" is not a valid theme identifier." : {
-
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "\"%@\" is not an app profile ID." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "\"%@\" is not an AWS region" : {
       "extractionState" : "manual",
@@ -950,6 +980,10 @@
       }
     },
     "\"%@\" is not true or false." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "\"%@\" is not valid base64." : {
       "extractionState" : "manual",
       "generatesSymbol" : false
     },
@@ -1052,6 +1086,9 @@
           }
         }
       }
+    },
+    "“%@” Was Deleted" : {
+
     },
     "\"%@\" was deleted or moved." : {
       "localizations" : {
@@ -1506,6 +1543,14 @@
       }
     },
     "“%1$@” refers to “%2$@”, which is not in the file" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "\"colors\" in the theme is not a list of colors." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "\"tokenColors\" must be a list of rules or the path to a .tmTheme file." : {
       "extractionState" : "manual",
       "generatesSymbol" : false
     },
@@ -2359,6 +2404,7 @@
       }
     },
     "%@ %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2945,7 +2991,8 @@
       }
     },
     "%@ changed on disk since it was opened. The newer file was kept and reloaded." : {
-
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "%@ changed while its documents were being checked, so nothing was changed. Save again." : {
       "extractionState" : "manual",
@@ -4236,6 +4283,10 @@
       "extractionState" : "manual",
       "generatesSymbol" : false
     },
+    "%@ needs a row key." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "%@ needs a table. Pass 'table'." : {
       "localizations" : {
         "fr" : {
@@ -5246,6 +5297,10 @@
           }
         }
       }
+    },
+    "%@ was deleted outside TablePro." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "%@ was given arguments it cannot use." : {
       "extractionState" : "manual",
@@ -6591,6 +6646,9 @@
           }
         }
       }
+    },
+    "%1$@ could not be read: %2$@" : {
+
     },
     "%1$@ could not represent %2$@ and other characters. Each was written as \"?\"." : {
       "extractionState" : "manual",
@@ -10555,6 +10613,7 @@
       }
     },
     "%lld of %lld selected" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -11233,6 +11292,12 @@
         }
       }
     },
+    "%lld statement had already run and was kept, because a statement in the file, such as COMMIT, CREATE, ALTER or DROP, committed the import's transaction as it ran." : {
+
+    },
+    "%lld statement had already run and was rolled back." : {
+
+    },
     "%lld statements" : {
       "localizations" : {
         "fr" : {
@@ -11369,6 +11434,12 @@
           }
         }
       }
+    },
+    "%lld statements had already run and were rolled back." : {
+
+    },
+    "%lld statements had already run. Some were kept, because a statement in the file, such as COMMIT, CREATE, ALTER or DROP, committed the import's transaction as it ran." : {
+
     },
     "%lld suggestions available, press Down Arrow to browse" : {
       "comment" : "Announced when the completion list opens under a filter field. The argument is the number of suggestions.",
@@ -12113,6 +12184,8 @@
     },
     "<1 ms" : {
       "comment" : "Query duration under one millisecond",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -13364,6 +13437,8 @@
       }
     },
     "1Password's own socket. 1Password has to be running and unlocked." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -14942,6 +15017,7 @@
       }
     },
     "A Data Pump job for %1$@ was started, writing to %2$@. Watch DBA_DATAPUMP_JOBS for its progress." : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -15016,6 +15092,7 @@
       }
     },
     "A different file already exists at %@." : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -15324,6 +15401,7 @@
       }
     },
     "A gs:// prefix. BigQuery shards its output, so several files are written under it." : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -15392,6 +15470,10 @@
           }
         }
       }
+    },
+    "A key range cannot be ORed with a column filter. Use =, STARTS WITH or REGEX on _key, or AND." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "A Kubernetes resource is required, such as service/postgres" : {
       "localizations" : {
@@ -15562,6 +15644,10 @@
       }
     },
     "A new row in a collection group needs __name__ set to the full document path, such as users/alice/orders/1." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "A new row needs at least one cell. Bigtable does not store empty rows." : {
       "extractionState" : "manual",
       "generatesSymbol" : false
     },
@@ -15837,6 +15923,14 @@
         }
       }
     },
+    "A quoted value is missing its closing quote." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "A quoted value is not a valid JSON string." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "A quoted value was never closed." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -15848,6 +15942,10 @@
           }
         }
       }
+    },
+    "A raw Bigtable filter is a JSON RowFilter, such as {\"rowKeyRegexFilter\": \"<base64>\"}." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "A raw Firestore filter is a JSON Filter object, such as %@." : {
       "extractionState" : "manual",
@@ -15900,6 +15998,14 @@
           }
         }
       }
+    },
+    "A row key cannot change. Duplicate the row, give the copy a new _key, then delete this one." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "A row needs a key. Bigtable has no empty row key." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "A row the filter hides holds %@ in column “%@”, which %@ cannot store. Clear the filter to find it, or choose Save As and pick UTF-8." : {
       "localizations" : {
@@ -16592,6 +16698,26 @@
         }
       }
     },
+    "A theme author must be one line of at most %d characters." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "A theme name must be one line of at most %d characters." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "A theme named “%@” already exists." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "A token color scope in the theme has more than %d dot-separated parts." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "A token color scope in the theme is longer than %@ characters." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "A transaction cannot be combined with skip and continue: together they would leave the target half applied." : {
       "localizations" : {
         "fr" : {
@@ -16767,6 +16893,10 @@
           }
         }
       }
+    },
+    "A write needs at least one cell. Bigtable does not store empty rows." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "about %@ row" : {
       "localizations" : {
@@ -18536,6 +18666,7 @@
       }
     },
     "Add a label at the end" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -18970,6 +19101,7 @@
       }
     },
     "Add Enum Label" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -19374,6 +19506,7 @@
       }
     },
     "Add Label" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -19384,6 +19517,7 @@
       }
     },
     "Add Label After…" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -19394,6 +19528,7 @@
       }
     },
     "Add Label Before…" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -20747,6 +20882,7 @@
       }
     },
     "AI and MCP queries" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -20787,6 +20923,8 @@
       }
     },
     "AI Chat" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -22649,6 +22787,7 @@
       }
     },
     "Allowing is remembered until TablePro quits." : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -22755,6 +22894,8 @@
 
     },
     "Alternate Row" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -23595,6 +23736,7 @@
       }
     },
     "An external link wants to apply a filter:\n\n%@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -23771,6 +23913,7 @@
       }
     },
     "An internal or external stage. The role you are connected as needs write access to it." : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -24107,6 +24250,7 @@
       }
     },
     "Anonymous (loopback)" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -24239,6 +24383,9 @@
           }
         }
       }
+    },
+    "Another file is there" : {
+
     },
     "Another foreign key is already named %@." : {
       "localizations" : {
@@ -24922,6 +25069,10 @@
         }
       }
     },
+    "App Profile ID" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "app_reader" : {
       "localizations" : {
         "fr" : {
@@ -24971,6 +25122,9 @@
           }
         }
       }
+    },
+    "Appearance Change" : {
+
     },
     "Appearance:" : {
       "extractionState" : "stale",
@@ -25024,6 +25178,7 @@
       }
     },
     "AppleScript queries" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -25234,6 +25389,9 @@
 
     },
     "Applies to the SQL editor, the JSON viewer's Text mode, and the previews." : {
+
+    },
+    "Applies to this Mac." : {
 
     },
     "Apply" : {
@@ -25574,6 +25732,7 @@
       }
     },
     "Apply Filter" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -25614,6 +25773,7 @@
       }
     },
     "Apply Filter from Link" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -26094,6 +26254,8 @@
       }
     },
     "Approve" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -26174,6 +26336,8 @@
       }
     },
     "Approximate row count reported by the engine" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -26184,6 +26348,8 @@
       }
     },
     "Approximate row count, when requested" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -26228,6 +26394,7 @@
       "generatesSymbol" : false
     },
     "Are you sure you want to cancel the running query for this session?" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -26549,6 +26716,7 @@
       }
     },
     "Are you sure you want to terminate this session? Any running queries will be aborted." : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -28179,7 +28347,14 @@
         }
       }
     },
+    "Author" : {
+
+    },
+    "Author Change" : {
+
+    },
     "Auto" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -28301,6 +28476,8 @@
       }
     },
     "Auto Generate" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -29408,6 +29585,8 @@
       }
     },
     "Background" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -29828,6 +30007,7 @@
       }
     },
     "Backups" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -30054,6 +30234,9 @@
     "base64 text" : {
       "extractionState" : "manual",
       "generatesSymbol" : false
+    },
+    "Based on %@" : {
+
     },
     "Baseline" : {
       "localizations" : {
@@ -30409,6 +30592,42 @@
         }
       }
     },
+    "Bigtable cannot filter with %@." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Bigtable committed a row it never started." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Bigtable ended the response in the middle of a row." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Bigtable has no default values. Delete the cell, or enter a value." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Bigtable has no views." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Bigtable returned HTTP %d." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Bigtable sent a response that is not JSON." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Bigtable sent bytes that are not base64." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Bigtable started a new row before committing the last one." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Billing" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -30503,6 +30722,7 @@
       }
     },
     "Block Size" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -30676,6 +30896,8 @@
       "generatesSymbol" : false
     },
     "Bool False" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -30716,6 +30938,8 @@
       }
     },
     "Bool True" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -31442,6 +31666,9 @@
         }
       }
     },
+    "Built-in themes can't be changed." : {
+
+    },
     "Bulk actions" : {
       "localizations" : {
         "fr" : {
@@ -31940,6 +32167,7 @@
       }
     },
     "Cache Size" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -32528,6 +32756,12 @@
           }
         }
       }
+    },
+    "Cancel the running query for session %@?" : {
+
+    },
+    "Cancel the running query for session %1$@ (user %2$@)?" : {
+
     },
     "Cancel the running query on a server session, or kill the session outright. Takes a process id from get_server_dashboard. Needs tools:write and the user's approval." : {
       "localizations" : {
@@ -33870,6 +34104,8 @@
       }
     },
     "Cell value: string, number, boolean, or null" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -34743,6 +34979,8 @@
       }
     },
     "Changes" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -35597,6 +35835,8 @@
       }
     },
     "CHECK expression as the engine reports it" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -39042,6 +39282,10 @@
         }
       }
     },
+    "ClickHouse ended the result partway through a row, so the rows that arrived are incomplete." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "ClickHouse returned HTTP %lld." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -40384,6 +40628,9 @@
         }
       }
     },
+    "Close Without Saving" : {
+
+    },
     "Closes the INSERT at this size or the row count, whichever comes first. MySQL and MariaDB reject a statement larger than max_allowed_packet, and a table of wide rows reaches that long before it reaches the row count." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -40685,6 +40932,7 @@
       }
     },
     "Cloud Storage URI" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -42011,6 +42259,9 @@
         }
       }
     },
+    "Color Change" : {
+
+    },
     "Color preview" : {
 
     },
@@ -42208,6 +42459,8 @@
       }
     },
     "Column comment" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -42341,6 +42594,8 @@
       }
     },
     "Column default expression" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -42401,6 +42656,8 @@
       }
     },
     "Column name" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -42482,6 +42739,8 @@
       }
     },
     "Column names in result order" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -43072,6 +43331,8 @@
       }
     },
     "Columns the constraint reads, when the engine reports them" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -43122,6 +43383,8 @@
       }
     },
     "Columns, indexes, foreign keys and an approximate row count for one table." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -44711,6 +44974,8 @@
       }
     },
     "Compression failed with exit status %d" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -45838,6 +46103,9 @@
           }
         }
       }
+    },
+    "Connect Using" : {
+
     },
     "Connect via" : {
       "localizations" : {
@@ -47879,7 +48147,12 @@
         }
       }
     },
+    "Connects through the socket file on the General tab." : {
+
+    },
     "Constraint name" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -49683,6 +49956,7 @@
       }
     },
     "Copy Label" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -51130,6 +51404,8 @@
       }
     },
     "Could not create destination file" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -51168,9 +51444,6 @@
           }
         }
       }
-    },
-    "Could not create the theme" : {
-
     },
     "Could not decode image" : {
       "localizations" : {
@@ -51243,9 +51516,6 @@
           }
         }
       }
-    },
-    "Could not delete the theme" : {
-
     },
     "could not derive the SCRAM key" : {
       "extractionState" : "manual",
@@ -51437,6 +51707,7 @@
     },
     "Could not export the theme" : {
       "comment" : "Title of an error sheet when exporting a theme fails.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "fr" : {
@@ -51678,9 +51949,6 @@
           }
         }
       }
-    },
-    "Could not import the theme" : {
-
     },
     "Could not initialize SQL projection" : {
       "extractionState" : "manual",
@@ -52380,6 +52648,10 @@
         }
       }
     },
+    "Could not read the settings %@ was created with, so it restores under the dump's SQL mode." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Could not read the SurrealDB response: %@" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -52413,6 +52685,7 @@
       }
     },
     "Could not remove %@." : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -52451,9 +52724,6 @@
           }
         }
       }
-    },
-    "Could not rename the theme" : {
-
     },
     "Could Not Render This Image" : {
       "localizations" : {
@@ -52597,9 +52867,6 @@
         }
       }
     },
-    "Could not save the theme" : {
-
-    },
     "Could not search the referenced table" : {
       "localizations" : {
         "fr" : {
@@ -52663,6 +52930,7 @@
       }
     },
     "Could not write %@." : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -52890,6 +53158,15 @@
         }
       }
     },
+    "Couldn't Duplicate the Theme" : {
+
+    },
+    "Couldn't Export the Theme" : {
+
+    },
+    "Couldn't Import “%@”" : {
+
+    },
     "Couldn't Move File to Trash" : {
       "localizations" : {
         "fr" : {
@@ -52929,6 +53206,12 @@
           }
         }
       }
+    },
+    "Couldn't Move the File to the Trash" : {
+
+    },
+    "Couldn't Move the Theme to the Trash" : {
+
     },
     "Couldn't publish to the team catalog" : {
       "localizations" : {
@@ -53010,6 +53293,9 @@
         }
       }
     },
+    "Couldn't Put the Theme Back" : {
+
+    },
     "Couldn't reach the plugin registry. Check your connection and try again." : {
       "localizations" : {
         "fr" : {
@@ -53070,6 +53356,9 @@
         }
       }
     },
+    "Couldn't Rename the Theme" : {
+
+    },
     "Couldn't Restore Version" : {
       "localizations" : {
         "fr" : {
@@ -53079,6 +53368,9 @@
           }
         }
       }
+    },
+    "Couldn't Save “%@”" : {
+
     },
     "Couldn't Save File" : {
       "localizations" : {
@@ -53780,6 +54072,7 @@
       }
     },
     "Create New Group" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -54958,6 +55251,8 @@
       }
     },
     "Current Line" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -55119,7 +55414,8 @@
       }
     },
     "Current Statement" : {
-
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Current value" : {
       "localizations" : {
@@ -55213,6 +55509,8 @@
       }
     },
     "Cursor" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -55485,6 +55783,8 @@
       }
     },
     "Custom Path" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -55563,9 +55863,6 @@
           }
         }
       }
-    },
-    "Custom Themes" : {
-
     },
     "Custom…" : {
       "localizations" : {
@@ -55906,6 +56203,7 @@
 
     },
     "Dashboard" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -56120,6 +56418,8 @@
       }
     },
     "Data Grid" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -56158,6 +56458,34 @@
           }
         }
       }
+    },
+    "Data Grid Alternate Row" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Data Grid Background" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Data Grid Bool False" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Data Grid Bool True" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Data Grid Deleted" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Data Grid Deleted Text" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Data Grid Focus Border" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Data Grid Font" : {
       "extractionState" : "stale",
@@ -56199,6 +56527,50 @@
           }
         }
       }
+    },
+    "Data Grid Header Background" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Data Grid Header Text" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Data Grid Inactive Selection" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Data Grid Inserted" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Data Grid Line" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Data Grid Modified" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Data Grid NULL Value" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Data Grid Row Number" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Data Grid Selected Text" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Data Grid Selection" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Data Grid Text" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Data loss" : {
       "localizations" : {
@@ -56967,6 +57339,8 @@
       }
     },
     "Database List" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -57180,6 +57554,8 @@
       }
     },
     "Database name. Uses the connection's current database when omitted." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -57220,6 +57596,8 @@
       }
     },
     "Database names a connection can reach." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -57380,6 +57758,8 @@
       }
     },
     "Database Schema" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -57751,6 +58131,8 @@
       }
     },
     "Database the statement ran against" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -58681,6 +59063,8 @@
       }
     },
     "Declared column type" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -58721,6 +59105,8 @@
       }
     },
     "Decompression failed with exit status %d" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -59058,6 +59444,10 @@
       }
     },
     "Default Dark" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Default Dark color" : {
 
     },
     "Default entry point" : {
@@ -59111,6 +59501,10 @@
       }
     },
     "Default Light" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Default Light color" : {
 
     },
     "Default Operator" : {
@@ -59376,6 +59770,7 @@
       }
     },
     "Default token" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -60913,6 +61308,7 @@
       }
     },
     "Delete Theme" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -61233,6 +61629,8 @@
       }
     },
     "Deleted" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -61323,6 +61721,8 @@
       }
     },
     "Deleted Text" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -62719,6 +63119,7 @@
       }
     },
     "Directory object" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -64797,6 +65198,8 @@
       }
     },
     "Driver status message, when the engine sent one" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -66479,6 +66882,9 @@
         }
       }
     },
+    "Duplicate a theme or import one to customize colors." : {
+
+    },
     "Duplicate column name: %@" : {
       "localizations" : {
         "fr" : {
@@ -66874,6 +67280,10 @@
           }
         }
       }
+    },
+    "DynamoDB has no default values, so %@ cannot be set to DEFAULT." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "DynamoDB has no views" : {
       "extractionState" : "manual",
@@ -68219,6 +68629,8 @@
       }
     },
     "Editor" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -68298,6 +68710,22 @@
         }
       }
     },
+    "Editor Background" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Editor Current Line" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Editor Current Statement" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Editor Cursor" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Editor Font" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -68338,6 +68766,18 @@
           }
         }
       }
+    },
+    "Editor Invisibles" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Editor Line Number" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Editor Selection" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Editor Tabs" : {
       "comment" : "A label displayed above the tabs in the editor.",
@@ -68380,6 +68820,10 @@
           }
         }
       }
+    },
+    "Editor Text" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Effective" : {
       "localizations" : {
@@ -69705,6 +70149,8 @@
       }
     },
     "Engine-specific column attributes" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -69783,6 +70229,10 @@
           }
         }
       }
+    },
+    "Enter a _key for the new row. Bigtable has no generated keys." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Enter a collection name." : {
       "extractionState" : "manual",
@@ -69933,6 +70383,10 @@
       }
     },
     "Enter a request such as %@, %@, %@ or %@." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Enter a request such as GET events/user#42, SCAN events/user#?limit=20, PUT events/user#42 {\"profile:name\": \"Ann\"} or DELETE events/user#42." : {
       "extractionState" : "manual",
       "generatesSymbol" : false
     },
@@ -70715,6 +71169,8 @@
       }
     },
     "Enumerated values the column accepts" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -72153,6 +72609,8 @@
       }
     },
     "Every result set a script returned, in order, when it returned more than one" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -74849,6 +75307,7 @@
       }
     },
     "Export as SQL" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -75954,6 +76413,7 @@
       }
     },
     "Exports" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -78288,6 +78748,8 @@
       }
     },
     "False for a constraint the engine has not checked against existing rows" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -78298,6 +78760,8 @@
       }
     },
     "False for an index the engine reports as invalid, which queries skip and exports leave out" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -78687,6 +79151,7 @@
       }
     },
     "Fetch all rows" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -81120,10 +81585,6 @@
         }
       }
     },
-    "Firebase answered with something other than HTTP." : {
-      "extractionState" : "manual",
-      "generatesSymbol" : false
-    },
     "Firebase has no views." : {
       "extractionState" : "manual",
       "generatesSymbol" : false
@@ -81566,7 +82027,8 @@
       }
     },
     "Focus Border" : {
-
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Focus Editor" : {
       "localizations" : {
@@ -81877,7 +82339,6 @@
       }
     },
     "Font" : {
-      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -83612,6 +84073,12 @@
         }
       }
     },
+    "Generate UUID" : {
+
+    },
+    "Generate UUIDv7" : {
+
+    },
     "Generated" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -84572,6 +85039,9 @@
         }
       }
     },
+    "Google Cloud wide-column store for large data" : {
+
+    },
     "Google did not return a refresh token. Remove TablePro's access in your Google Account settings, then sign in again." : {
       "localizations" : {
         "fr" : {
@@ -84593,6 +85063,10 @@
           }
         }
       }
+    },
+    "Google refused the credential." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Google rejected the OAuth client ID or secret." : {
       "extractionState" : "manual",
@@ -85272,7 +85746,8 @@
       "generatesSymbol" : false
     },
     "Grid Line" : {
-
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Group" : {
       "localizations" : {
@@ -85648,6 +86123,8 @@
 
     },
     "gzip executable not found" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -85792,10 +86269,12 @@
       }
     },
     "Header Background" : {
-
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Header Text" : {
-
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Heart" : {
       "extractionState" : "manual",
@@ -87078,6 +87557,9 @@
         }
       }
     },
+    "Host and Port" : {
+
+    },
     "Host and Port are unused. The SSH tunnel forwards to the socket path set on the Network tab." : {
       "localizations" : {
         "fr" : {
@@ -87856,6 +88338,7 @@
 
     },
     "iCloud Connected" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -88861,6 +89344,7 @@
       }
     },
     "Import Connections" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -89807,6 +90291,12 @@
         }
       }
     },
+    "Imported %d themes." : {
+
+    },
+    "Imported 1 theme." : {
+
+    },
     "Imported connections ask for a password on first connect." : {
       "localizations" : {
         "fr" : {
@@ -90162,7 +90652,8 @@
       }
     },
     "Inactive Selection" : {
-
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Include" : {
       "localizations" : {
@@ -91341,6 +91832,8 @@
       }
     },
     "Index type reported by the engine" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -91381,6 +91874,8 @@
       }
     },
     "Indexed columns in order" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -92077,6 +92572,14 @@
         }
       }
     },
+    "INSERT needs a JSON object of cells, such as INSERT events/user#42 {\"profile:name\": \"Ann\"}." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "INSERT only sets cells. Leave %@ out, or delete it with PUT." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Insert Row" : {
       "localizations" : {
         "fr" : {
@@ -92456,6 +92959,8 @@
       }
     },
     "Inserted" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -94169,6 +94674,8 @@
       }
     },
     "Invisibles" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -94608,6 +95115,12 @@
         }
       }
     },
+    "It was changed outside TablePro and no longer loads. Settings > Appearance lists it under Not Loaded with the reason." : {
+
+    },
+    "It was changed outside TablePro. The editor now shows the newer version." : {
+
+    },
     "Item count is approximate, updated about every six hours" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -94784,6 +95297,7 @@
       }
     },
     "Journal Mode" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -94914,6 +95428,9 @@
           }
         }
       }
+    },
+    "JSON tree database that syncs in real time" : {
+
     },
     "JSON Viewer" : {
       "localizations" : {
@@ -95673,6 +96190,9 @@
         }
       }
     },
+    "Keep Theme" : {
+
+    },
     "Keep this plan when history is cleaned up" : {
       "localizations" : {
         "fr" : {
@@ -96388,6 +96908,8 @@
       }
     },
     "Keyboard Interactive" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -96492,6 +97014,8 @@
       }
     },
     "Keyword" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -96942,6 +97466,7 @@
       }
     },
     "Labels" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -99763,6 +100288,8 @@
       }
     },
     "Line Number" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -99847,7 +100374,6 @@
       }
     },
     "Linked" : {
-      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -100534,6 +101060,10 @@
           }
         }
       }
+    },
+    "list instances" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "List Maintenance Operations" : {
       "localizations" : {
@@ -101338,6 +101868,10 @@
           }
         }
       }
+    },
+    "list the tables of %@" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "List the tables the user opened most recently on a connection, newest first." : {
       "localizations" : {
@@ -103176,6 +103710,8 @@
       }
     },
     "lowercase" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -104415,6 +104951,8 @@
       }
     },
     "Match what I type, otherwise lowercase" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -104425,6 +104963,8 @@
       }
     },
     "Match what I type, otherwise UPPERCASE" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -106065,6 +106605,7 @@
       }
     },
     "Memory Limit" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -107476,6 +108017,8 @@
       }
     },
     "Modified" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -109840,6 +110383,10 @@
         }
       }
     },
+    "Name the table before the key, as in GET events/user#42." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Name this selection" : {
       "localizations" : {
         "fr" : {
@@ -111603,7 +112150,6 @@
       }
     },
     "New Theme" : {
-      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -111687,6 +112233,7 @@
       }
     },
     "New Type…" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -111735,6 +112282,12 @@
           }
         }
       }
+    },
+    "New UUID" : {
+
+    },
+    "New UUIDv7" : {
+
     },
     "New View" : {
       "extractionState" : "stale",
@@ -113266,9 +113819,6 @@
           }
         }
       }
-    },
-    "No Custom Themes" : {
-
     },
     "No Data" : {
       "localizations" : {
@@ -117531,6 +118081,9 @@
         }
       }
     },
+    "No Themes Imported" : {
+
+    },
     "No token in response" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -118416,6 +118969,7 @@
       }
     },
     "Not Available" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -118792,6 +119346,10 @@
         }
       }
     },
+    "Not connected to Bigtable." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Not connected to database" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -119013,6 +119571,7 @@
       }
     },
     "Not connected." : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -119355,6 +119914,9 @@
           }
         }
       }
+    },
+    "Not linked" : {
+
     },
     "Not Loaded" : {
 
@@ -120147,6 +120709,9 @@
         }
       }
     },
+    "Nothing is at this path. Start the server, or check the path." : {
+
+    },
     "Nothing is left to copy once the target is taken into account." : {
       "localizations" : {
         "fr" : {
@@ -120498,6 +121063,7 @@
       }
     },
     "Notify about" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -120659,6 +121225,8 @@
       }
     },
     "NULL" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -120982,6 +121550,8 @@
       }
     },
     "NULL Value" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -121207,6 +121777,8 @@
       }
     },
     "Number of partitions, for a partitioned table" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -121257,6 +121829,8 @@
       }
     },
     "Number of rows returned" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -121605,6 +122179,7 @@
       }
     },
     "Object copies" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -121665,6 +122240,8 @@
       }
     },
     "Object type reported by the engine" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -121705,6 +122282,8 @@
       }
     },
     "Object type, or PARTITION when the partition is not a relation" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -122163,6 +122742,8 @@
       }
     },
     "ON DELETE action" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -122425,6 +123006,8 @@
       }
     },
     "ON UPDATE action" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -124370,6 +124953,9 @@
     "Open Link" : {
 
     },
+    "Open MCP Settings" : {
+
+    },
     "Open or focus a TablePro window for a saved connection. Returns once the window has a tab, with the window id that list_recent_tabs reports." : {
       "localizations" : {
         "fr" : {
@@ -125657,6 +126243,8 @@
       }
     },
     "Operator" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -127193,6 +127781,7 @@
       }
     },
     "Page Count" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -127273,6 +127862,7 @@
       }
     },
     "Page Size" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -127826,6 +128416,8 @@
       }
     },
     "Partial index predicate" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -127940,6 +128532,8 @@
       }
     },
     "Partition bound as the engine spells it" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -127962,6 +128556,8 @@
       }
     },
     "Partition name" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -127984,6 +128580,8 @@
       }
     },
     "Partition this one subdivides" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -131766,6 +132364,8 @@
       }
     },
     "Position in the parent's declared order" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -132266,6 +132866,9 @@
           }
         }
       }
+    },
+    "Preferred leaves a socket connection unencrypted. Required encrypts it." : {
+
     },
     "Preferred performs a 2-pass connect: tries TLS first, falls back to plain only on SSL handshake errors. Required by Cloud SQL and Azure MySQL." : {
       "localizations" : {
@@ -132930,9 +133533,6 @@
           }
         }
       }
-    },
-    "Preview of %@" : {
-
     },
     "Preview Query" : {
       "localizations" : {
@@ -133825,6 +134425,8 @@
       }
     },
     "Private Key" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -134944,6 +135546,10 @@
         }
       }
     },
+    "Project %@ has no Bigtable instance." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Project ID" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -134987,6 +135593,8 @@
       }
     },
     "Prompt at Connect" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -135946,6 +136554,10 @@
         }
       }
     },
+    "PUT needs a JSON object of cells, such as PUT events/user#42 {\"profile:name\": \"Ann\"}." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Put the credential in the Token field, not in the address." : {
       "localizations" : {
         "fr" : {
@@ -136079,6 +136691,8 @@
       }
     },
     "Queries recently run against a connection, newest first. limit is 1 to 500 and defaults to 50, search matches the query text, and date_filter is today, thisWeek or thisMonth." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -136528,6 +137142,8 @@
       }
     },
     "Query History" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -137800,6 +138416,9 @@
           }
         }
       }
+    },
+    "Quit Without Saving" : {
+
     },
     "Quitting stops the run against %@. Statements that already ran stay applied." : {
       "localizations" : {
@@ -139087,6 +139706,10 @@
         }
       }
     },
+    "READ needs a ReadRows JSON body, such as READ events {\"rowsLimit\": \"10\"}." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Read Only" : {
       "localizations" : {
         "fr" : {
@@ -139340,7 +139963,11 @@
         }
       }
     },
+    "Read the live server panels TablePro shows: active sessions, server metrics, and slow queries. Available on PostgreSQL, MySQL, SQL Server, ClickHouse, and Typesense." : {
+
+    },
     "Read the live server panels TablePro shows: active sessions, server metrics, and slow queries. Available on PostgreSQL, MySQL, SQL Server, ClickHouse, DuckDB, and SQLite." : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -139379,6 +140006,10 @@
           }
         }
       }
+    },
+    "read the schema of %@" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Read-only" : {
       "extractionState" : "stale",
@@ -140994,6 +141625,8 @@
       }
     },
     "Referenced column" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -141074,6 +141707,8 @@
       }
     },
     "Referenced schema" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -141114,6 +141749,8 @@
       }
     },
     "Referenced table" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -141174,6 +141811,8 @@
       }
     },
     "Referencing column" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -143911,6 +144550,7 @@
       }
     },
     "Rename Enum Label" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -143970,10 +144610,8 @@
         }
       }
     },
-    "Rename Theme" : {
-
-    },
     "Rename…" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -144789,6 +145427,7 @@
       }
     },
     "Require authentication" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -147672,6 +148311,9 @@
         }
       }
     },
+    "Revert Changes" : {
+
+    },
     "review" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -148637,6 +149279,10 @@
         }
       }
     },
+    "Row %@ already exists. Edit that row, or give the new one another key." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Row %@ is not an object." : {
       "localizations" : {
         "fr" : {
@@ -149097,6 +149743,7 @@
       }
     },
     "Row edits" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -149317,6 +149964,8 @@
       }
     },
     "Row Number" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -149946,6 +150595,8 @@
       }
     },
     "Rows the statement changed" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -150116,6 +150767,8 @@
       }
     },
     "Rows, each an array aligned with columns" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -151211,6 +151864,10 @@
           }
         }
       }
+    },
+    "Runs every statement in one transaction, so a failure rolls back what the import changed. A database that commits CREATE, ALTER and DROP as they run, such as MySQL, keeps those statements and everything before them." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Runs on '%@'." : {
       "localizations" : {
@@ -153331,6 +153988,10 @@
         }
       }
     },
+    "SCAN takes only ?limit=, as in SCAN events/user#?limit=20." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Scan with filters" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -153641,6 +154302,8 @@
       }
     },
     "Schema List" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -153772,6 +154435,8 @@
       }
     },
     "Schema name. Uses the connection's current schema when omitted." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -153812,6 +154477,8 @@
       }
     },
     "Schema names inside a database, on engines that have schemas." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -153984,6 +154651,7 @@
       }
     },
     "Schema SQL" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -154154,6 +154822,8 @@
       }
     },
     "Schema the object belongs to" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -154194,6 +154864,8 @@
       }
     },
     "Schema the partition belongs to, when it is a relation of its own" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -154334,6 +155006,8 @@
       }
     },
     "Schema the statement ran against" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -157428,9 +158102,12 @@
       }
     },
     "Selected Text" : {
-
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Selection" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -158490,6 +159167,8 @@
       }
     },
     "Server round trip in milliseconds" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -158582,6 +159261,7 @@
       }
     },
     "Server-Side Export" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -158592,6 +159272,7 @@
       }
     },
     "Server-Side Export…" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -158600,6 +159281,9 @@
           }
         }
       }
+    },
+    "Serverless document database from Google" : {
+
     },
     "Serverless SQLite at the edge" : {
       "localizations" : {
@@ -159661,6 +160345,15 @@
           }
         }
       }
+    },
+    "Set Value to Default" : {
+
+    },
+    "Set Value to Empty" : {
+
+    },
+    "Set Value to NULL" : {
+
     },
     "Sets the value to %@" : {
       "localizations" : {
@@ -162148,6 +162841,7 @@
     },
     "Showing %lld of %lld" : {
       "comment" : "A description of the number of visible databases in the sidebar. The first argument is the number of visible databases. The second argument is the number of all databases.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "en" : {
@@ -162893,6 +163587,7 @@
       }
     },
     "Sign in to iCloud in System Settings to enable sync." : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -162933,6 +163628,7 @@
       }
     },
     "Sign in to iCloud to enable sync" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -166894,6 +167590,7 @@
       "generatesSymbol" : false
     },
     "SRID %d is a projected coordinate system. Maps places longitude and latitude only, so these shapes cannot be drawn. Query ST_Transform(geom, 4326) to see them." : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -166944,6 +167641,8 @@
       }
     },
     "SSH Agent" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -168206,6 +168905,7 @@
       "generatesSymbol" : false
     },
     "Stage" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -168882,6 +169582,7 @@
       }
     },
     "Statement batches" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -170517,6 +171218,7 @@
       }
     },
     "Stopping…" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -170757,6 +171459,8 @@
       }
     },
     "String" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -170887,6 +171591,7 @@
       }
     },
     "Structure changes" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -173231,7 +173936,8 @@
       }
     },
     "Syntax" : {
-
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Syntax Colors" : {
       "extractionState" : "stale",
@@ -173274,6 +173980,38 @@
         }
       }
     },
+    "Syntax Comment" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Syntax Function" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Syntax Keyword" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Syntax NULL" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Syntax Number" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Syntax Operator" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Syntax String" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Syntax Type" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "System" : {
       "localizations" : {
         "fr" : {
@@ -173313,6 +174051,9 @@
           }
         }
       }
+    },
+    "System color" : {
+
     },
     "System Databases and Schemas" : {
       "localizations" : {
@@ -173787,6 +174528,8 @@
       }
     },
     "Table and view names in a database. Pass database and schema to look outside the browsed one, and row_counts=true for approximate row counts." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -173977,6 +174720,8 @@
       }
     },
     "Table comment" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -174020,6 +174765,8 @@
 
     },
     "Table DDL" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -174060,6 +174807,8 @@
       }
     },
     "Table Description" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -174191,6 +174940,8 @@
       }
     },
     "Table List" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -174271,6 +175022,8 @@
       }
     },
     "Table name" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -174551,6 +175304,8 @@
       }
     },
     "Table or view name" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -175407,6 +176162,7 @@
       }
     },
     "TablePro could not do this for you. Run this in Terminal instead:" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -175689,7 +176445,8 @@
 
     },
     "TablePro does not use these theme keys: %@." : {
-
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "TablePro doesn't recognize the database type “%@”." : {
       "localizations" : {
@@ -176023,6 +176780,10 @@
           }
         }
       }
+    },
+    "TablePro is reading or writing rows on this connection with settings of its own." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "TablePro is still trying to reconnect." : {
       "localizations" : {
@@ -176367,6 +177128,8 @@
       }
     },
     "TablePro's MCP server has too many open connections." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -176617,6 +177380,8 @@
       }
     },
     "Tables and their columns for the database a connection is browsing. Capped at 100 tables." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -177894,6 +178659,12 @@
         }
       }
     },
+    "Terminate session %@? Any running queries will be aborted." : {
+
+    },
+    "Terminate session %1$@ (user %2$@)? Any running queries will be aborted." : {
+
+    },
     "Tertiary Text" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -178150,6 +178921,8 @@
       }
     },
     "Text" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -178188,6 +178961,9 @@
           }
         }
       }
+    },
+    "Text contrast is %@:1. Aim for at least 4.5:1." : {
+
     },
     "Text Encoding" : {
       "localizations" : {
@@ -178394,6 +179170,7 @@
       }
     },
     "That destination is not valid for this engine." : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -178929,6 +179706,8 @@
       }
     },
     "The %@ line in ~/.ssh/config does not accept the token %@." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -178945,6 +179724,8 @@
       }
     },
     "The %@ line in ~/.ssh/config ends in a lone %%. Write %%%% for a literal percent sign." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -178955,6 +179736,8 @@
       }
     },
     "The %@ line in ~/.ssh/config has a ${ with no closing brace." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -178965,6 +179748,8 @@
       }
     },
     "The %@ line in ~/.ssh/config uses ${%@}, which is not set in the environment." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -179530,6 +180315,10 @@
         }
       }
     },
+    "The Bigtable REST API returns rows in ascending key order only." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "The binary subtype of %@ is not known, so saving could store a different kind of binary. Change this field with a query." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -179807,6 +180596,10 @@
       }
     },
     "The browse request is damaged. Reopen the collection." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "The browse request is damaged. Reopen the table." : {
       "extractionState" : "manual",
       "generatesSymbol" : false
     },
@@ -180558,6 +181351,7 @@
       }
     },
     "The color marks this connection in the connection list and its window." : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -181184,6 +181978,8 @@
       }
     },
     "The CREATE statement for one table, as the engine reports it." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -182201,7 +182997,8 @@
       }
     },
     "The file does not declare a theme format version." : {
-
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "The file goes back to its last committed version. You can't undo this action." : {
       "localizations" : {
@@ -182325,6 +183122,10 @@
         }
       }
     },
+    "The file is not valid JSON." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "The file is too large to read from Git." : {
       "localizations" : {
         "fr" : {
@@ -182335,6 +183136,23 @@
         }
       }
     },
+    "The file is too large. A theme file can be at most %@." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "The file moves to the Trash. Dark windows switch to %@." : {
+
+    },
+    "The file moves to the Trash. Light and dark windows switch to their default themes." : {
+
+    },
+    "The file moves to the Trash. Light windows switch to %@." : {
+
+    },
+    "The file nests arrays and objects more than %d levels deep." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "The file or its staged version changed before it could be written. Nothing was replaced." : {
       "localizations" : {
         "fr" : {
@@ -182344,6 +183162,9 @@
           }
         }
       }
+    },
+    "The file was removed outside TablePro, possibly on another Mac." : {
+
     },
     "The filter field is not in the toolbar." : {
       "localizations" : {
@@ -183344,6 +184165,8 @@
 
     },
     "The MCP server could not bind a port (%@)" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -183422,6 +184245,9 @@
           }
         }
       }
+    },
+    "The MCP server is turned off. Turn it on in Settings > MCP." : {
+
     },
     "The MCP server started without a port" : {
       "localizations" : {
@@ -183566,6 +184392,7 @@
       }
     },
     "The name of a DIRECTORY object, not a path. The DBA who created it chose where it points." : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -184887,6 +185714,10 @@
         }
       }
     },
+    "The query names its own output format, %@. Remove its FORMAT clause to read it as rows." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "The query returned no rows." : {
       "localizations" : {
         "fr" : {
@@ -185191,6 +186022,9 @@
         }
       }
     },
+    "The rollback did not undo everything. A statement in the file, such as COMMIT, CREATE, ALTER or DROP, committed the import's transaction as it ran, so some of the statements before the failure were kept." : {
+
+    },
     "The root of the database" : {
       "extractionState" : "manual",
       "generatesSymbol" : false
@@ -185208,6 +186042,10 @@
       }
     },
     "The row has no __name__, so the document it came from is unknown. Reload the collection." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "The row has no _key, so the row it came from is unknown. Reload the table." : {
       "extractionState" : "manual",
       "generatesSymbol" : false
     },
@@ -185888,6 +186726,10 @@
         }
       }
     },
+    "The server answered with something other than HTTP." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "The server chose this row's key." : {
       "localizations" : {
         "fr" : {
@@ -186025,6 +186867,7 @@
       }
     },
     "The server is writing the file…" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -186209,6 +187052,7 @@
       }
     },
     "The server writes the file, so it lands where the server can reach, not on this Mac." : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -186219,6 +187063,7 @@
       }
     },
     "The server wrote %1$@ to %2$@." : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -186237,6 +187082,9 @@
           }
         }
       }
+    },
+    "The server's socket file on this Mac. SELECT @@socket in the mysql client shows it." : {
+
     },
     "The server's TLS certificate could not be verified against any trusted root." : {
       "extractionState" : "manual",
@@ -186346,6 +187194,9 @@
         }
       }
     },
+    "The settings it was created with could not be read, so it gets the target's own." : {
+
+    },
     "The shell drops a field named __proto__ from a new document. Remove the field, then set it on the saved document." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -186423,6 +187274,8 @@
       }
     },
     "The socket of another agent, such as Secretive or an ssh-agent you started." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -186765,6 +187618,9 @@
           }
         }
       }
+    },
+    "The SQL staged for %@ is not one this database runs as a value." : {
+
     },
     "The SQLite extensions for this connection could not be loaded." : {
       "extractionState" : "manual",
@@ -187123,6 +187979,8 @@
       }
     },
     "The ssh-agent macOS runs, from SSH_AUTH_SOCK. 1Password and Secretive listen elsewhere." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -188165,14 +189023,41 @@
         }
       }
     },
+    "The theme has more than %@ token color rules." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "The theme has no colors TablePro can use." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "The theme identifier \"%1$@\" is already used by %2$@." : {
-
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "The theme includes \"%@\", which is not next to it." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "The theme includes \"%@\", which is outside its folder. Put that file next to the theme and import again." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "The theme includes itself through \"%@\"." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "The theme is missing the required field \"%@\"." : {
-
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "The theme nests includes more than %d levels deep." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "The theme sets \"%@\" more than once." : {
-
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "the TLS handshake failed" : {
       "extractionState" : "manual",
@@ -188678,6 +189563,10 @@
         }
       }
     },
+    "The value of %@ must be text or null. Bigtable stores bytes, so a number is written as its digits." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "The value of a %@ key cannot be edited in the grid. Change it with a command in the query editor." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -188908,9 +189797,14 @@
       }
     },
     "Theme format %1$d is no longer supported. This version of TablePro reads format %2$d." : {
-
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Theme format %1$d was made for a newer TablePro. This version reads format %2$d." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Theme Preview" : {
 
     },
     "Theme:" : {
@@ -188953,6 +189847,9 @@
           }
         }
       }
+    },
+    "Themes" : {
+
     },
     "Themes color the editor, the data grid, other content views and the window background. Controls, sidebars and Settings follow the system appearance." : {
 
@@ -189200,6 +190097,7 @@
       }
     },
     "These connections open their tunnel by running a command on this Mac, every time they connect:\n\n%@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -190452,6 +191350,7 @@
       }
     },
     "This database cannot change an enum's labels" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -190604,6 +191503,9 @@
           }
         }
       }
+    },
+    "This database cannot set %@ back to its default on a saved row." : {
+
     },
     "This database cannot show the source of %@" : {
       "extractionState" : "manual",
@@ -190876,6 +191778,9 @@
           }
         }
       }
+    },
+    "This database's driver cannot write SQL into %@. Update the driver." : {
+
     },
     "This deletes only the queries listed here, across every connection. Queries the source, date, outcome and search filters are hiding stay. You cannot undo this." : {
       "comment" : "Message for the \"Delete this connection's query history\" button.",
@@ -191846,6 +192751,13 @@
         }
       }
     },
+    "This file is not a socket." : {
+
+    },
+    "This file is not a TablePro theme or a VS Code color theme." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "This file is not a valid TablePro export" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -192129,6 +193041,8 @@
       }
     },
     "This HTTP method is not supported." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -192361,6 +193275,8 @@
       }
     },
     "This is not valid JavaScript." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -195244,6 +196160,7 @@
       }
     },
     "Threads" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -196229,6 +197146,15 @@
           }
         }
       }
+    },
+    "To add it to your PATH, run this in Terminal:" : {
+
+    },
+    "To remove it, run this in Terminal:" : {
+
+    },
+    "To replace that file with a link to this app, run this in Terminal:" : {
+
     },
     "to view data" : {
       "localizations" : {
@@ -197240,6 +198166,7 @@
       }
     },
     "Total Blocks" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -200503,6 +201430,8 @@
       }
     },
     "Unknown client" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -202609,6 +203538,8 @@
       }
     },
     "UPPERCASE" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -203136,6 +204067,12 @@
         }
       }
     },
+    "Use Default Color" : {
+
+    },
+    "Use Default Color for %@" : {
+
+    },
     "Use environment variables in connection fields." : {
       "localizations" : {
         "fr" : {
@@ -203175,6 +204112,12 @@
           }
         }
       }
+    },
+    "Use for Dark Appearance" : {
+
+    },
+    "Use for Light Appearance" : {
+
     },
     "Use IAM database authentication" : {
       "localizations" : {
@@ -203355,6 +204298,12 @@
           }
         }
       }
+    },
+    "Use System Color" : {
+
+    },
+    "Use System Color for %@" : {
+
     },
     "Use text mode to enter JSON." : {
 
@@ -204201,6 +205150,8 @@
       }
     },
     "UUID of the connection" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -205071,6 +206022,7 @@
       }
     },
     "Values from %d loaded rows" : {
+      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -207827,6 +208779,8 @@
       }
     },
     "Whether the column accepts NULL" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -207867,6 +208821,8 @@
       }
     },
     "Whether the column is generated" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -207907,6 +208863,8 @@
       }
     },
     "Whether the column is part of the primary key" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -208027,6 +208985,8 @@
       }
     },
     "Whether the index backs the primary key" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -208067,6 +209027,8 @@
       }
     },
     "Whether the index enforces uniqueness" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -208187,6 +209149,8 @@
       }
     },
     "Whether the partition can be queried and dropped by name" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -208197,6 +209161,8 @@
       }
     },
     "Whether the partition holds subpartitions" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -208247,6 +209213,8 @@
       }
     },
     "Whether the row limit clipped the result" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -209135,7 +210103,8 @@
       }
     },
     "Window Background" : {
-      "extractionState" : "stale",
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -209415,6 +210384,9 @@
         }
       }
     },
+    "With Increase Contrast on, the window uses the system background." : {
+
+    },
     "With no precision on the source, the column keeps %1$lld digits, %2$lld after the point. A value with more is rounded or refused." : {
       "localizations" : {
         "fr" : {
@@ -209638,6 +210610,10 @@
         }
       }
     },
+    "write a row of %@" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Write and Run SQL" : {
       "localizations" : {
         "fr" : {
@@ -209792,6 +210768,10 @@
           }
         }
       }
+    },
+    "Write the cells as a JSON object, such as {\"profile:name\": \"Ann\"}." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Writes %lld files, one for each database." : {
       "localizations" : {

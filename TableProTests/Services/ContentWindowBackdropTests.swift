@@ -6,10 +6,10 @@
 import AppKit
 import Foundation
 @testable import TablePro
+import TableProTheme
 import Testing
 
 /// The real controllers, built offscreen: never ordered front and never closed.
-@Suite("Content windows carry the theme's window backdrop", .serialized)
 @MainActor
 struct ContentWindowBackdropTests {
     private var drawsBackdrop: Bool {

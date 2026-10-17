@@ -135,7 +135,12 @@ final class PluginManager: ObservableObject {
     /// succeeded, such as an Oracle password in its grace period. The default is `nil`, so an
     /// already-built plugin keeps loading and reports none; the minimum stays and no bulk re-release
     /// is needed.
-    nonisolated static let currentPluginKitVersion = 38
+    ///
+    /// 39 adds `PluginRowChange.expressionColumns` and the `cellExpressions` and `uuidCellText` bits of
+    /// `PluginCapabilities`. An already-built plugin declares neither bit, so the host hands it no
+    /// expression and offers no generated UUID through it; the minimum stays and no bulk re-release is
+    /// needed.
+    nonisolated static let currentPluginKitVersion = 39
 
     /// Still 19, so every plugin already published for the previous release keeps loading.
     nonisolated static let minimumCompatiblePluginKitVersion = 19
@@ -184,11 +189,14 @@ final class PluginManager: ObservableObject {
     // Until `loadPlugins()` runs, no load is in flight and a wait could only time out.
     private var hasStartedInitialLoad = false
 
+    private let initialLoadClock: any Clock<Duration>
+
     func waitForInitialLoad() async {
         guard hasStartedInitialLoad, !hasFinishedInitialLoad else { return }
         let waiterId = UUID()
+        let clock = initialLoadClock
         let timeoutTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(10))
+            try? await clock.sleep(for: .seconds(10))
             self?.resumeWaiter(id: waiterId)
         }
         defer { timeoutTask.cancel() }
@@ -246,10 +254,12 @@ final class PluginManager: ObservableObject {
     init(
         userDefaults: UserDefaults = AppStorageEnvironment.shared.defaults,
         builtInPluginsURL: URL? = Bundle.main.builtInPlugInsURL,
-        userPluginsDir: URL = PluginManager.defaultUserPluginsDir()
+        userPluginsDir: URL = PluginManager.defaultUserPluginsDir(),
+        initialLoadClock: any Clock<Duration> = ContinuousClock()
     ) {
         self.builtInPluginsURL = builtInPluginsURL
         self.userPluginsDir = userPluginsDir
+        self.initialLoadClock = initialLoadClock
         Self.clearLegacyNeedsRestartKey(in: userDefaults)
     }
 

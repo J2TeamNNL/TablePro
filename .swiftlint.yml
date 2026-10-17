@@ -189,6 +189,15 @@ custom_rules:
     excluded: ".*/(AppStorageEnvironment|GeneralSettings|SoftwareUpdater|WorkspaceRailViewController|SplitViewAutosaveSweep)\\.swift"
     message: "Resolve preferences through AppStorageEnvironment.shared.defaults. Only a macOS-owned system preference reads the standard domain."
     severity: error
+  # Package code cannot reach AppStorageEnvironment and the iOS app has no sandbox, so `.standard` is
+  # their only default. ManagedPolicy reads MDM-managed keys, which live in the standard domain.
+  storage_environment_defaults_argument:
+    name: "Storage Environment Defaults Argument"
+    regex: '\bUserDefaults[?!]?\s*=\s*\.standard\b'
+    excluded: ['.*/(Packages|Plugins|TableProMobile)/', '.*/ManagedPolicy\.swift']
+    excluded_match_kinds: [comment, doccomment]
+    message: "Default a UserDefaults parameter to AppStorageEnvironment.shared.defaults, or a sandboxed run writes the developer's own com.TablePro."
+    severity: error
   public_error_text_in_log:
     name: "Error Text In The System Log"
     regex: '(\.(localizedDescription|errorDescription|failureReason)(\.prefix\(\d+\))?(\s*\?\?\s*"[^"]*")?|String\(describing:\s*\w*[eE]rr(or)?\)|\\\((?!(has|is|did|was|should)[A-Z])(\w*[eE]rr(or)?|e)(\.(message|description|debugDescription))?)\s*,\s*privacy:\s*\.public'
@@ -466,14 +475,14 @@ custom_rules:
     severity: error
   theme_read_outside_content:
     name: "Theme Read Outside Content"
-    regex: '\bpalette\[|\bpalette\.color\(|\.resolved\[|\bresolved\[\s*\.|\bresolved\.(?:color|cgColor|isOverridden)\(|\bThemeSlot\b|\btheme(?:Background|Foreground)\(|\bvalueWell\(|\bCodeWell\b|\bstyle:\s*\.code\b|\bTheme(?:ShapeStyle|TextViewStyle|TableChrome|TableRowView|TableRowDrawing|WindowBackdrop)\b|\b(?:gridStandInBackground|diffLineForeground|makeEditorTheme)\(|\bCompareStatusStyle\.(?:lineTint|rowTint)|\bTableProEditorTheme\.make\(|\bEditorTabStripPalette\.trackFill\b|\b(?:TreeValueTone\.\w+|tone(?:\(for: \w+\))?)\.color\b|\b(?:ValueSourceEditor|ERDiagramPalette|DiagramCanvasBackdrop|HighlightedSQLTextView)\b'
+    regex: '\bpalette\[|\bpalette\.color\(|\.resolved\[|\bresolved\[\s*\.|\bresolved\.(?:color|cgColor|isOverridden)\(|\bactiveTheme\b|\.pair\b|\.color\(for:\s*\.|\bThemeSlot\b|\bThemeScope\b|\btheme(?:Background|Foreground)\(|\bvalueWell\(|\bCodeWell\b|\bstyle:\s*\.code\b|\bTheme(?:ShapeStyle|TextViewStyle|TableChrome|TableRowView|TableRowDrawing|WindowBackdrop)\b|\b(?:gridStandInBackground|valueStandInBackground|geometryMapWell|diffLineForeground|makeEditorTheme)\(|\bDetailPane(?:BackdropFill|StatusBarMaterial)\b|\bCompareStatusStyle\.(?:lineTint|lineTextOverride|rowTint)|\b(?:TableProEditorTheme|EditorThemeFactory)\.make\(|\b(?:TreeValueTone\.\w+|tone(?:\(for: \w+\))?)\.color\b|\b(?:ValueSourceEditor|ERDiagramPalette|DiagramCanvasBackdrop|HighlightedSQLTextView)\b'
     excluded:
       - '.*/(Packages|Plugins)/'
       - '.*/TablePro/(Theme|Views/Settings/Appearance|Views/Results/Cells|Views/Results/Selection)/'
       - '.*/TablePro/Views/Results/(DataGrid|SortableHeader|CellOverlay)[^/]*\.swift$'
-      - '.*/(SQLEditorView|TableProEditorTheme|HighlightedSQLTextView|SQLStatementPreview|SQLCodePreview|JSONCodeEditor|AIChatCodeBlockView|AIChatToolUseBlockView|AIChatToolResultBlockView|DDLTextView|TriggerEditorView|RewindReviewSheet|AgentProposedStatementsView|VimCursorManager|FoldPreviewView|CodeWell|ValueWell|TextValueEditor|ValueSourceEditor|TextViewerWindowController|SvgViewerContentView|CellImageWindowController|ServerOutputTextView|HexEditorContentView|PhpViewerView|FavoriteEditDialog|OptionsPaneView|SQLPreviewSheet|MaintenanceSheet|HistoryDetailPane)(\+[^/]*)?\.swift$'
-      - '.*/(TabWindowController|DataFileWindowController|CompareSyncWindowController|ValueViewerWindowController)(\+[^/]*)?\.swift$'
-      - '.*/(MainEditorContentView|GridStandInBackground|EditorTabStrip|EditorTabStripSurfaces|VersionHistoryTabView|ObjectSourceTabView|DataFileContentView|FilterPanelView|TableStructureView|TriggerDetailView|ClickHousePartsView|PrivilegeScopeOutlineView|TreeOutlineView|TreeOutlineCoordinator|TreeOutlineCellView|TreeValueStyle|TreeValueTone\+Theme|JSONRowInspectorView|JSONNodeRowView|JSONRowColors|SingleLineEditorView|FieldEditorContent|MultiLineEditorView|JsonEditorView|ImageFieldView|PhpSerializedFieldView|CompareStatusStyle|TextDiffView|FileConflictDiffSheet|AIChatWalkthroughBlockView|ERDiagramPalette|ERDiagramNodeRenderer|ERDiagramScene|ERDiagramSceneView|MagnifiableCanvasView|QueryPlanDiagramView|QueryPlanDetailPane|QueryPlanOutlineCoordinator|ResultChartCanvas|ThemePreviewCard)(\+[^/]*)?\.swift$'
+      - '.*/(SQLEditorView|TableProEditorTheme|HighlightedSQLTextView|SQLStatementPreview|SQLCodePreview|JSONCodeEditor|AIChatCodeBlockView|CodeBlockHighlighter|AIChatToolUseBlockView|AIChatToolResultBlockView|DDLTextView|TriggerEditorView|RewindReviewSheet|AgentProposedStatementsView|VimCursorManager|FoldPreviewView|CodeWell|ValueWell|TextValueEditor|ValueSourceEditor|TextViewerWindowController|SvgViewerContentView|CellImageWindowController|ServerOutputTextView|HexEditorContentView|PhpViewerView|FavoriteEditDialog|OptionsPaneView|SQLPreviewSheet|MaintenanceSheet|HistoryDetailPane|DeeplinkImportSheet|TunnelCommandTransportSections)(\+[^/]*)?\.swift$'
+      - '.*/(TabWindowController|DataFileWindowController|CompareSyncWindowController|ValueViewerWindowController|DetailColumnBackdrop)(\+[^/]*)?\.swift$'
+      - '.*/(MainEditorContentView|GridStandInBackground|AgentResultRowsView|VersionHistoryTabView|ObjectSourceTabView|DataFileContentView|TableStructureView|TriggerDetailView|ClickHousePartsView|CreateTableView|CreateTableFormPreview|PrivilegeScopeOutlineView|SlowQueryListView|QueryInsightsActivityChart|KeyHandlingTableView|TreeOutlineView|TreeOutlineCoordinator|TreeOutlineCellView|TreeValueStyle|TreeValueTone\+Theme|FilterableTreeView|JSONViewerView|ResultsJsonView|ArrayValueEditorView|ArrayJsonElementEditor|JSONRowInspectorView|JSONNodeRowView|JSONRowColors|SingleLineEditorView|FieldEditorContent|MultiLineEditorView|JsonEditorView|ImageFieldView|BlobHexEditorView|GeometryFieldView|PhpSerializedFieldView|CompareStatusStyle|CompareWindowContentView|CompareRowDiffPane|TextDiffView|FileConflictDiffSheet|AIChatWalkthroughBlockView|ERDiagramPalette|ERDiagramNodeRenderer|ERDiagramScene|ERDiagramSceneView|MagnifiableCanvasView|QueryPlanDiagramView|QueryPlanDetailPane|QueryPlanOutlineCoordinator|ResultChartCanvas)(\+[^/]*)?\.swift$'
     excluded_match_kinds: [comment, doccomment]
     message: "A theme colors content and the window backdrop only. Chrome uses a system color; a new content surface joins this rule's excluded list."
     severity: error
@@ -494,14 +503,14 @@ custom_rules:
   # MCP and scripting access control
   mcp_log_token_material:
     name: "MCP Log Token Material"
-    included: ['.*/TablePro/Core/MCP/']
+    included: ['.*/(TablePro/Core/MCP|Packages/TableProMacCore/Sources/TableProMCP)/']
     regex: '(?i)(?-s)^(?=[^\n]*privacy:)[^\n]*?(\\\([^,)\n]*(?:fingerprint|plaintext|tokenhash|salt|verifier|prefix|password|secret))'
     capture_group: 1
     message: "A log line never carries token material, not even a prefix or a digest."
     severity: error
   mcp_reported_status:
     name: "MCP Reported Status"
-    included: ['.*/TablePro/Core/MCP/']
+    included: ['.*/(TablePro/Core/MCP|Packages/TableProMacCore/Sources/TableProMCP)/']
     regex: '\.status\.isConnected\b'
     excluded_match_kinds: [comment, doccomment]
     message: "MCP reports connection health through reportedStatus."
@@ -654,7 +663,7 @@ custom_rules:
   # Tests (listed in TableProTests/.swiftlint.yml and Plugins/.swiftlint.yml)
   suite_without_trait:
     name: "Suite Without A Trait"
-    included: ['.*/(TableProTests|Plugins/[A-Za-z]+Tests)/']
+    included: ['.*/(TableProTests|Plugins/[A-Za-z]+Tests|Packages/TableProMacCore/Tests)/']
     regex: '(?:^#if\b[^\n]*\n[ \t]*|^)(?:@\w+[ \t]+)*@(?:Testing\.)?Suite(?:[ \t]*\(\s*(?:"(?:[^"\\\n]|\\.)*"|#+"[^\n]*?"#+)?\s*\))?(?![ \t]*\()(?=\s)'
     excluded_match_kinds: [comment, doccomment]
     message: "Every top-level @Suite expansion walks every other one, so compile time grows with their square. Keep @Suite only to carry a trait such as .serialized."

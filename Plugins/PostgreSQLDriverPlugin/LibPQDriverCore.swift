@@ -8,6 +8,7 @@
 
 import Foundation
 import TableProPluginKit
+import TableProPostgreSQLCore
 
 final class LibPQDriverCore: @unchecked Sendable {
     private let config: DriverConnectionConfig
@@ -250,6 +251,17 @@ final class LibPQDriverCore: @unchecked Sendable {
     func applyQueryTimeout(_ seconds: Int) async throws {
         let ms = PluginQueryTimeout.milliseconds(seconds)
         _ = try await execute(query: "SET statement_timeout = \(ms)")
+    }
+
+    func executeSessionSetting(
+        _ statement: PostgreSQLBoundStatement,
+        requiresIdleSession: Bool = false
+    ) async throws -> [[PluginCellValue]] {
+        try await connection().executeSessionSetting(
+            statement.sql,
+            parameters: statement.parameters,
+            requiresIdleSession: requiresIdleSession
+        ).rows
     }
 
     /// A connection that has gone away answers `.unknown` rather than `.idle`: a caller that reads

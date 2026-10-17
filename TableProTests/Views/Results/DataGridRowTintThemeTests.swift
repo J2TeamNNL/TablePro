@@ -6,6 +6,7 @@
 import AppKit
 import SwiftUI
 @testable import TablePro
+import TableProTheme
 import Testing
 
 @MainActor
@@ -31,7 +32,6 @@ private final class NoopColumnLayoutPersister: ColumnLayoutPersisting {
 /// main actor can interleave between activating the test theme and restoring the original one.
 /// `.serialized` only orders tests inside this suite and does not provide that. Adding an `await`
 /// anywhere between the two would break it.
-@Suite("DataGridRowView tint follows the theme", .serialized)
 @MainActor
 struct DataGridRowTintThemeTests {
     private static let deleted = RowVisualState(isDeleted: true, isInserted: false, modifiedColumns: [])
@@ -133,8 +133,8 @@ struct DataGridRowTintThemeTests {
         let tint = try renderedTint(of: harness.rowView)
 
         #expect(tint.redComponent > tint.blueComponent)
-        #expect(Self.deleted.highlighted(highlight).tint == engine.resolved[.gridDeleted])
-        #expect(RowVisualState.empty.highlighted(highlight).tint == HighlightColor.blue.washColor)
+        #expect(Self.deleted.highlighted(highlight).tint(in: .live) == engine.resolved[.gridDeleted])
+        #expect(RowVisualState.empty.highlighted(highlight).tint(in: .live) == HighlightColor.blue.washColor)
     }
 
     @Test("A row with no deleted or inserted state stays untinted across a theme change")

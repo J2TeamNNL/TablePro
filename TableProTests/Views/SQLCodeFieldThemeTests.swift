@@ -10,9 +10,9 @@ import AppKit
 import SwiftUI
 @testable import TablePro
 import TableProPluginKit
+import TableProTheme
 import Testing
 
-@Suite("SQL fields in sheets and forms follow the editor theme", .serialized)
 @MainActor
 struct SQLCodeFieldThemeTests {
     // MARK: - Filter SQL preview

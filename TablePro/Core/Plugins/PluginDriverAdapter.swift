@@ -8,6 +8,7 @@ import os
 import TableProConnectionLibrary
 import TableProNumberFormatting
 import TableProPluginKit
+import TableProUtilities
 
 final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseReporting {
     private struct ConnectAttempt {
@@ -343,6 +344,14 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
 
     func applyQueryTimeout(_ seconds: Int) async throws {
         try await pluginDriver.applyQueryTimeout(seconds)
+    }
+
+    func openSessionScope(for purpose: PluginSessionPurpose) async throws -> PluginSessionScope? {
+        try await pluginDriver.openSessionScope(for: purpose)
+    }
+
+    func closeSessionScope(_ scope: PluginSessionScope) async throws {
+        try await pluginDriver.closeSessionScope(scope)
     }
 
     var releasableResourceCommandTitle: String? {

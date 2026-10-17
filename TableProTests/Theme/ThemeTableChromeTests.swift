@@ -11,6 +11,7 @@
 import AppKit
 import SwiftUI
 @testable import TablePro
+import TableProTheme
 import Testing
 
 @MainActor
@@ -83,7 +84,6 @@ private final class FillView: NSView {
 
 /// Each test adopts a pair on the shared `ThemeEngine` and restores it in a `defer`. The bodies are
 /// synchronous and `@MainActor`, so nothing else on the main actor runs between the two.
-@Suite("Content tables follow the theme", .serialized)
 @MainActor
 struct ThemeTableChromeTests {
     private struct Table {
@@ -438,7 +438,7 @@ struct ThemeTableChromeTests {
             #expect(ThemeTableChrome.recordsTextSlot(onThemedSelection: true, onEmphasizedSelection: false, highContrast: false) == .gridText)
             #expect(ThemeTableChrome.recordsTextSlot(onThemedSelection: false, onEmphasizedSelection: true, highContrast: false) == nil)
 
-            try ThemeTestFixture.adopt([.gridText: "#FF0000", .gridSelectionText: "#00AA00"], appearance: .light)
+            try ThemeTestFixture.adopt([.gridText: "#FF0000", .gridSelection: "#C8E1FF", .gridSelectionText: "#00AA00"], appearance: .light)
             #expect(ThemeTableChrome.recordsTextSlot(onThemedSelection: true, onEmphasizedSelection: false, highContrast: false) == .gridSelectionText)
             #expect(ThemeTableChrome.recordsTextSlot(onThemedSelection: false, onEmphasizedSelection: false, highContrast: false) == .gridText)
             #expect(ThemeTableChrome.recordsTextSlot(onThemedSelection: false, onEmphasizedSelection: true, highContrast: false) == nil)

@@ -7,6 +7,7 @@ import Combine
 import Foundation
 import os
 import TableProPluginKit
+import TableProUtilities
 
 internal enum QuickSwitcherRanking {
     static let maxResults = 200
@@ -785,7 +786,13 @@ internal final class QuickSwitcherViewModel: ObservableObject {
                 kind: presentation.kind,
                 subtitle: subtitle,
                 isOpenInTab: openTables.contains(
-                    QuickSwitcherOpenTable(schema: table.schema, name: table.name, browsing: browseSchema)
+                    QuickSwitcherOpenTable(
+                        database: database,
+                        schema: table.schema,
+                        name: table.name,
+                        browsingDatabase: database,
+                        browsingSchema: browseSchema
+                    )
                 ),
                 isReadOnly: !table.type.allowsRowEditing,
                 schemaName: table.schema,

@@ -153,6 +153,9 @@ final class MainContentCoordinator: ObservableObject {
     var browseDatabaseName: String {
         services.databaseManager.browseDatabaseName(for: connection)
     }
+    var newTabDatabaseName: String {
+        tabManager.openingDatabase(browsing: browseDatabaseName)
+    }
     var safeModeLevel: SafeModeLevel { toolbarState.safeModeLevel }
     /// The level the toolbar shows, and the floor under it with Agent mode's included, which is what
     /// the Safe Mode list offers from and what the toolbar's tooltip explains.
@@ -172,9 +175,6 @@ final class MainContentCoordinator: ObservableObject {
     let queryExecutor: QueryExecutor
     internal var executionGate: any ExecutionGate = ExecutionGateProvider.shared
     let windowSidebarState: WindowSidebarState
-    /// Which tab each of this connection's containers was last on, so the connections strip lands
-    /// on that container's work instead of leaving a tab from another database on screen.
-    internal var containerTabHistory = ContainerTabHistory()
 
     // MARK: - Services
 
@@ -189,6 +189,7 @@ final class MainContentCoordinator: ObservableObject {
     private(set) var queryExecutionCoordinator: QueryExecutionCoordinator!
     private(set) var paginationCoordinator: PaginationCoordinator!
     private(set) var rowEditingCoordinator: RowEditingCoordinator!
+    private(set) lazy var browseCursorCoordinator = BrowseCursorCoordinator(parent: self)
 
     /// Stable identifier for this coordinator's window (set by MainContentView on appear)
     @Published var windowId: UUID?
@@ -395,6 +396,7 @@ final class MainContentCoordinator: ObservableObject {
     internal lazy var sourceFileDiskChangeMonitor = SourceFileDiskChangeMonitor(tabManager: tabManager)
     private var schemaSwitchCancellable: AnyCancellable?
     private var clearedEditsCancellable: AnyCancellable?
+    private var browseContainerCancellable: AnyCancellable?
 
     @Published var fileConflictRequest: FileConflictRequest?
 
@@ -724,6 +726,15 @@ final class MainContentCoordinator: ObservableObject {
         ConnectionDataCache.shared(for: connection.id).ensureLoaded()
         changeManager.undoManagerProvider = { [weak self] in self?.contentWindow?.undoManager }
         changeManager.onUndoApplied = { [weak self] result in self?.handleUndoResult(result) }
+        tabManager.onVisibleContainerReconciled = { [weak self] in
+            self?.browseCursorCoordinator.followVisibleContainer()
+        }
+        browseContainerCancellable = services.appEvents.browseContainerChanged
+            .filter { [connectionId = connection.id] changed in changed == connectionId }
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.browseCursorCoordinator.browseContainerDidChange()
+            }
         tabManager.onTabRetargeted = { [weak self] tabId in
             self?.dataTabDelegate?.tableViewCoordinator?.flushPendingColumnLayoutPersistence()
             self?.supersedeExecution(for: tabId)
@@ -966,6 +977,7 @@ final class MainContentCoordinator: ObservableObject {
         externalFileModCancellable = nil
         sourceFileDiskChangeMonitor.cancel()
         schemaSwitchCancellable = nil
+        browseContainerCancellable = nil
         fileWatcher?.stopWatching(connectionId: connectionId)
         fileWatcher = nil
         cancelAllQueryTasks()
@@ -1259,7 +1271,7 @@ final class MainContentCoordinator: ObservableObject {
         databaseName: String? = nil,
         forceNewTab: Bool = false
     ) -> WindowTabOpenDisposition {
-        let targetDatabaseName = databaseName ?? browseDatabaseName
+        let targetDatabaseName = databaseName ?? newTabDatabaseName
         if !forceNewTab,
            let (tab, tabIndex) = tabManager.selectedTabAndIndex,
            tab.tabType == .query,
@@ -1299,7 +1311,7 @@ final class MainContentCoordinator: ObservableObject {
                 mutTab.hasUserInteraction = true
             }
         } else if tabManager.tabs.isEmpty {
-            tabManager.addTab(initialQuery: query, databaseName: browseDatabaseName)
+            tabManager.addTab(initialQuery: query, databaseName: newTabDatabaseName)
         } else {
             let payload = EditorTabPayload(
                 connectionId: connection.id,

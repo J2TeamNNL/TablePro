@@ -526,6 +526,7 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
 
     var settingsCancellable: AnyCancellable?
     var themeCancellable: AnyCancellable?
+    private(set) var themeScope: ThemeScope
     var systemTimeZoneCancellable: AnyCancellable?
     private var accessibilityActivationObserver: (any NSObjectProtocol)?
     private var accessibilityMountedRows = NSRange(location: 0, length: 0)
@@ -585,15 +586,17 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
         isEditable: Bool,
         selectedRowIndices: Binding<Set<Int>>,
         delegate: (any DataGridViewDelegate)?,
-        layoutPersister: any ColumnLayoutPersisting
+        layoutPersister: any ColumnLayoutPersisting,
+        themeScope: ThemeScope = .live
     ) {
         self.changeManager = changeManager
         self.isEditable = isEditable
         self._selectedRowIndices = selectedRowIndices
         self.delegate = delegate
         self.layoutPersister = layoutPersister
+        self.themeScope = themeScope
         self.lastDataGridSettings = AppSettingsManager.shared.dataGrid
-        self.cellRegistry = DataGridCellRegistry()
+        self.cellRegistry = DataGridCellRegistry(scope: themeScope)
         super.init()
         cellRegistry.accessoryDelegate = self
         updateCache()
@@ -632,9 +635,20 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
     }
 
     func observeThemeChanges() {
-        themeCancellable = AppEvents.shared.themeChanged
+        themeCancellable = themeScope.changes
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.themeDidChange() }
+    }
+
+    /// A fixed scope never changes, so the preview hands over a new one for each draft.
+    func adoptThemeScope(_ scope: ThemeScope) {
+        guard scope !== themeScope else { return }
+        themeScope = scope
+        cellRegistry.adopt(scope, in: tableView?.effectiveAppearance ?? NSApp?.effectiveAppearance ?? .currentDrawing())
+        if themeCancellable != nil {
+            observeThemeChanges()
+        }
+        themeDidChange()
     }
 
     /// `themeChanged` also fires for an Accent, Highlight or Increase Contrast change, and none of
@@ -642,7 +656,7 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
     func themeDidChange() {
         guard let tableView else { return }
         cellRegistry.preparePalette(in: tableView.effectiveAppearance)
-        DataGridBodyChrome.applyThemeColors(to: tableView)
+        DataGridBodyChrome.applyThemeColors(to: tableView, scope: themeScope)
         tableView.headerView?.needsDisplay = true
         tableView.cornerView?.needsDisplay = true
         restyleRowNumberCells(in: tableView)
@@ -1123,15 +1137,21 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
         beginCellEdit(row: displayRow, tableColumnIndex: displayCol)
     }
 
+    func beginEditingFirstEditableColumn(displayRow: Int, skipping prefilled: Set<Int> = []) {
+        beginEditing(displayRow: displayRow, column: firstEditableColumn(displayRow: displayRow, skipping: prefilled))
+    }
+
     /// Where the caret goes on a row the user just made. Column 0 is where the row starts, not
     /// necessarily where it can be typed into: a table whose first column the server owns, such as
     /// an identity or a stored generated column, refuses the edit and opens nothing at all, which
-    /// reads as Add Row having done nothing. Falls back to column 0 so a row with no editable
-    /// column at all is still selected and scrolled to.
-    func beginEditingFirstEditableColumn(displayRow: Int) {
-        let columnCount = tableRowsProvider().columns.count
-        let column = (0..<columnCount).first { canStartInlineEdit(row: displayRow, columnIndex: $0) } ?? 0
-        beginEditing(displayRow: displayRow, column: column)
+    /// reads as Add Row having done nothing. A column the row was given a value for, such as a new
+    /// UUID key, is passed over so the first keystroke does not replace it, unless nothing else
+    /// takes the editor. Falls back to column 0 so a row with no editable column at all is still
+    /// selected and scrolled to.
+    func firstEditableColumn(displayRow: Int, skipping prefilled: Set<Int> = []) -> Int {
+        let editable = (0..<tableRowsProvider().columns.count).lazy
+            .filter { self.canStartInlineEdit(row: displayRow, columnIndex: $0) }
+        return editable.first { !prefilled.contains($0) } ?? editable.first ?? 0
     }
 
     func refreshCellPresentations() {

@@ -4,6 +4,11 @@ final class KeyHandlingTableView: NSTableView {
     weak var coordinator: TableViewCoordinator?
     weak var selectionOverlay: GridSelectionOverlay?
 
+    /// A table with no grid draws the app's theme.
+    var themeScope: ThemeScope {
+        coordinator?.themeScope ?? .live
+    }
+
     private var isRaisingOverlay = false
 
     override var acceptsFirstResponder: Bool {
@@ -25,7 +30,7 @@ final class KeyHandlingTableView: NSTableView {
     /// the grid's own rather than `super`'s, for the reason on
     /// `DataGridBodyChrome.drawTableBackground(in:of:)`.
     override func drawBackground(inClipRect clipRect: NSRect) {
-        DataGridBodyChrome.drawTableBackground(in: clipRect, of: self)
+        DataGridBodyChrome.drawTableBackground(in: clipRect, of: self, scope: themeScope)
         guard let coordinator else { return }
         let lastRowBottom = numberOfRows > 0 ? rect(ofRow: numberOfRows - 1).maxY : bounds.minY
         let belowRows = clipRect.intersection(
@@ -419,6 +424,9 @@ final class KeyHandlingTableView: NSTableView {
     }
 
     override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        if let command = Self.setValueCommand(for: item.action) {
+            return canApplySetValue(command)
+        }
         switch item.action {
         case #selector(delete(_:)), #selector(deleteBackward(_:)):
             let hasGridSelection = gridSelection?.isEmpty == false
@@ -841,5 +849,66 @@ final class KeyHandlingTableView: NSTableView {
         }
 
         return super.menu(for: event)
+    }
+}
+
+// MARK: - Edit > Set Value
+
+extension KeyHandlingTableView: SetValueCommandResponding {
+    func setValueEmpty(_ sender: Any?) {
+        applySetValue(.empty)
+    }
+
+    func setValueNull(_ sender: Any?) {
+        applySetValue(.null)
+    }
+
+    func setValueDefault(_ sender: Any?) {
+        applySetValue(.defaultValue)
+    }
+
+    func generateUUIDv4(_ sender: Any?) {
+        applySetValue(.uuid(.v4))
+    }
+
+    func generateUUIDv7(_ sender: Any?) {
+        applySetValue(.uuid(.v7))
+    }
+
+    static func setValueCommand(for action: Selector?) -> SetValueCommand? {
+        switch action {
+        case #selector(SetValueCommandResponding.setValueEmpty(_:)):
+            return SetValueCommand.empty
+        case #selector(SetValueCommandResponding.setValueNull(_:)):
+            return SetValueCommand.null
+        case #selector(SetValueCommandResponding.setValueDefault(_:)):
+            return SetValueCommand.defaultValue
+        case #selector(SetValueCommandResponding.generateUUIDv4(_:)):
+            return SetValueCommand.uuid(.v4)
+        case #selector(SetValueCommandResponding.generateUUIDv7(_:)):
+            return SetValueCommand.uuid(.v7)
+        default:
+            return nil
+        }
+    }
+
+    /// Dimmed unless some target cell takes the command, as the context menu leaves the item out.
+    private func canApplySetValue(_ command: SetValueCommand) -> Bool {
+        guard let coordinator else { return false }
+        return coordinator.isSetValueOffered(command, for: setValueTargets())
+    }
+
+    private func applySetValue(_ command: SetValueCommand) {
+        coordinator?.applySetValue(command, to: setValueTargets())
+    }
+
+    /// The cell selection, else the focused cell, the way the context menu reads the clicked one.
+    private func setValueTargets() -> [SetValueTarget] {
+        guard let coordinator else { return [] }
+        if gridSelection?.isEmpty == false {
+            return coordinator.setValueTargets(clicked: nil)
+        }
+        guard let anchor = pasteAnchorCell() else { return [] }
+        return coordinator.setValueTargets(clicked: SetValueTarget(displayRow: anchor.row, columnIndex: anchor.column))
     }
 }

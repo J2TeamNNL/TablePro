@@ -5,6 +5,8 @@
 
 import AppKit
 import Combine
+import TableProPluginKit
+import TableProTheme
 
 @MainActor
 class DataGridRowView: NSTableRowView {
@@ -39,6 +41,11 @@ class DataGridRowView: NSTableRowView {
 
     var visualState: RowVisualState {
         coordinator?.visualState(for: rowIndex) ?? .empty
+    }
+
+    /// A row outside a grid, as the copy tests build one, draws with the app's theme.
+    private var themeScope: ThemeScope {
+        coordinator?.themeScope ?? .live
     }
 
     /// Draws the row's data cells.
@@ -173,9 +180,8 @@ class DataGridRowView: NSTableRowView {
     /// The columns of an unselected row that a cell range covers with a theme's opaque selection,
     /// whose text has to switch to the theme's selection text like a selected row's does.
     func themedRangeColumns() -> Set<Int> {
-        guard !isSelected, isEmphasized,
-              DataGridBodyChrome.themedSelectionColor(emphasized: true) != nil,
-              let coordinator else { return [] }
+        guard !isSelected, isEmphasized, let coordinator,
+              DataGridBodyChrome.isSelectionThemed(emphasized: true, scope: coordinator.themeScope) else { return [] }
         let columns = coordinator.selectionController.selection.columns(in: rowIndex)
         return Set(columns.compactMap { coordinator.tableColumnIndex(forDisplayPosition: $0) })
     }
@@ -290,30 +296,31 @@ class DataGridRowView: NSTableRowView {
     }
 
     override func drawBackground(in dirtyRect: NSRect) {
-        drawRowBackground(in: dirtyRect)
-        if !isSelected, let tint = visualState.tint {
+        let scope = themeScope
+        drawRowBackground(in: dirtyRect, scope: scope)
+        if !isSelected, let tint = visualState.tint(in: scope) {
             tint.setFill()
             bounds.fill()
         }
-        drawCellSelectionFill(in: dirtyRect)
+        drawCellSelectionFill(in: dirtyRect, scope: scope)
     }
 
     /// The row's stripe from `DataGridBodyChrome`, the owner the pinned gutter and the area past the
     /// last row read too, rather than the `backgroundColor` the table assigns, which is only ever the
     /// system's. A row outside a table has no stripe, and AppKit's own drawing already leaves it clear:
     /// its `backgroundColor` is nil there, so it must not be read.
-    private func drawRowBackground(in dirtyRect: NSRect) {
+    private func drawRowBackground(in dirtyRect: NSRect, scope: ThemeScope) {
         guard let tableView = coordinator?.tableView else {
             super.drawBackground(in: dirtyRect)
             return
         }
-        DataGridBodyChrome.rowBackgroundColor(forRow: rowIndex, of: tableView).setFill()
+        DataGridBodyChrome.rowBackgroundColor(forRow: rowIndex, of: tableView, scope: scope).setFill()
         dirtyRect.fill()
     }
 
     override func drawSelection(in dirtyRect: NSRect) {
         guard isSelected else { return }
-        guard let themed = DataGridBodyChrome.themedSelectionColor(emphasized: isEmphasized) else {
+        guard let themed = DataGridBodyChrome.themedSelectionColor(emphasized: isEmphasized, scope: themeScope) else {
             super.drawSelection(in: dirtyRect)
             return
         }
@@ -323,7 +330,7 @@ class DataGridRowView: NSTableRowView {
 
     /// A cell range on a row the table has selected is already covered by the row's own selection
     /// fill, which runs after this, so only the remaining rows are painted here.
-    private func drawCellSelectionFill(in dirtyRect: NSRect) {
+    private func drawCellSelectionFill(in dirtyRect: NSRect, scope: ThemeScope) {
         guard !isSelected,
               let coordinator,
               let tableView = coordinator.tableView else { return }
@@ -332,7 +339,7 @@ class DataGridRowView: NSTableRowView {
         let columns = selection.columns(in: rowIndex)
         guard !columns.isEmpty else { return }
 
-        cellSelectionFill.setFill()
+        cellSelectionFill(scope: scope).setFill()
 
         for position in columns {
             guard let tableColumnIndex = coordinator.tableColumnIndex(forDisplayPosition: position) else { continue }
@@ -348,11 +355,13 @@ class DataGridRowView: NSTableRowView {
     /// left the range at 1.09:1 against a white grid, which is no visible selection at all. The
     /// system's emphasized accent is far too dark to sit behind text these rows do not recolour, so
     /// that one goes on as a tint; a theme's selection is chosen to sit behind its own text.
-    private var cellSelectionFill: NSColor {
-        let resolved = ThemeEngine.shared.resolved
-        let slot = DataGridBodyChrome.selectionSlot(emphasized: isEmphasized)
-        guard isEmphasized, !resolved.isOverridden(slot) else { return resolved[slot] }
-        return resolved[slot].withAlphaComponent(Self.emphasizedCellSelectionAlpha)
+    private func cellSelectionFill(scope: ThemeScope) -> NSColor {
+        if let themed = DataGridBodyChrome.themedSelectionColor(emphasized: isEmphasized, scope: scope) {
+            return themed
+        }
+        let native = scope.resolved[DataGridBodyChrome.selectionSlot(emphasized: isEmphasized)]
+        guard isEmphasized else { return native }
+        return native.withAlphaComponent(Self.emphasizedCellSelectionAlpha)
     }
 
     private static let emphasizedCellSelectionAlpha: CGFloat = 0.28
@@ -686,15 +695,22 @@ class DataGridRowView: NSTableRowView {
         tableRows: TableRows,
         coordinator: TableViewCoordinator
     ) {
-        let namesWritableColumn = dataColumnIndex >= 0 && dataColumnIndex < tableRows.columns.count
-            && coordinator.isColumnWritable(tableRows.columns[dataColumnIndex])
-        guard coordinator.isEditable, namesWritableColumn else { return }
+        guard coordinator.isEditable, dataColumnIndex >= 0 else { return }
 
-        let setValueItem = NSMenuItem(title: String(localized: "Set Value"), action: nil, keyEquivalent: "")
-        setValueItem.submenu = buildSetValueMenu(dataColumnIndex: dataColumnIndex, tableRows: tableRows)
-        menu.addItem(setValueItem)
+        let clicked = SetValueTarget(displayRow: rowIndex, columnIndex: dataColumnIndex)
+        let setValueMenu = buildSetValueMenu(
+            commands: coordinator.setValueCommands(for: coordinator.setValueTargets(clicked: clicked)),
+            clickedColumn: dataColumnIndex
+        )
+        if !setValueMenu.items.isEmpty {
+            let setValueItem = NSMenuItem(title: String(localized: "Set Value"), action: nil, keyEquivalent: "")
+            setValueItem.submenu = setValueMenu
+            menu.addItem(setValueItem)
+        }
 
-        guard coordinator.supportsFieldRemoval,
+        guard dataColumnIndex < tableRows.columns.count,
+              coordinator.isColumnWritable(tableRows.columns[dataColumnIndex]),
+              coordinator.supportsFieldRemoval,
               coordinator.displayRow(at: rowIndex)?.isAbsent(dataColumnIndex) == false else { return }
         let removeFieldItem = NSMenuItem(
             title: String(localized: "Remove Field"), action: #selector(removeFieldValue(_:)), keyEquivalent: "")
@@ -703,52 +719,39 @@ class DataGridRowView: NSTableRowView {
         menu.addItem(removeFieldItem)
     }
 
-    private func buildSetValueMenu(dataColumnIndex: Int, tableRows: TableRows) -> NSMenu {
+    /// Placeholders, then the engine's functions, then UUIDs, a separator between the groups.
+    func buildSetValueMenu(commands: [SetValueCommand], clickedColumn: Int) -> NSMenu {
         let setValueMenu = NSMenu()
-
-        let emptyItem = NSMenuItem(
-            title: String(localized: "Empty"), action: #selector(setEmptyValue(_:)), keyEquivalent: "")
-        emptyItem.representedObject = dataColumnIndex
-        emptyItem.target = self
-        setValueMenu.addItem(emptyItem)
-
-        let columnName = dataColumnIndex < tableRows.columns.count
-            ? tableRows.columns[dataColumnIndex]
-            : nil
-
-        let isNullable = columnName.flatMap { tableRows.columnNullable[$0] } ?? true
-        if isNullable {
-            let nullItem = NSMenuItem(
-                title: String(localized: "NULL"), action: #selector(setNullValue(_:)), keyEquivalent: "")
-            nullItem.representedObject = dataColumnIndex
-            nullItem.target = self
-            setValueMenu.addItem(nullItem)
-        }
-
-        let serverAssignsValue = columnName.map { tableRows.serverAssignsValue(forColumn: $0) } ?? false
-        if serverAssignsValue {
-            let defaultItem = NSMenuItem(
-                title: String(localized: "Default"), action: #selector(setDefaultValue(_:)), keyEquivalent: "")
-            defaultItem.representedObject = dataColumnIndex
-            defaultItem.target = self
-            setValueMenu.addItem(defaultItem)
-        }
-
-        let columnType: ColumnType? = dataColumnIndex < tableRows.columnTypes.count
-            ? tableRows.columnTypes[dataColumnIndex]
-            : nil
-        if let columnType, columnType.isDateType {
-            setValueMenu.addItem(.separator())
-            for function in Self.dateValueFunctions(for: columnType) {
-                let item = NSMenuItem(
-                    title: function, action: #selector(setSqlFunctionValue(_:)), keyEquivalent: "")
-                item.representedObject = DateSetterContext(columnIndex: dataColumnIndex, value: function)
-                item.target = self
-                setValueMenu.addItem(item)
+        var lastGroup: Int?
+        for command in commands {
+            let group = Self.setValueMenuGroup(command)
+            if let lastGroup, lastGroup != group {
+                setValueMenu.addItem(.separator())
             }
+            lastGroup = group
+            let item = NSMenuItem(
+                title: SetValueOptions.title(for: command), action: #selector(applySetValue(_:)), keyEquivalent: ""
+            )
+            item.representedObject = SetValueMenuChoice(command: command, clickedColumn: clickedColumn)
+            item.target = self
+            setValueMenu.addItem(item)
         }
-
         return setValueMenu
+    }
+
+    private static func setValueMenuGroup(_ command: SetValueCommand) -> Int {
+        switch command {
+        case .empty, .null, .defaultValue: 0
+        case .expression: 1
+        case .uuid: 2
+        }
+    }
+
+    /// The targets are taken when the item is chosen, from the same selection the menu was built over.
+    @objc private func applySetValue(_ sender: NSMenuItem) {
+        guard let coordinator, let choice = sender.representedObject as? SetValueMenuChoice else { return }
+        let clicked = SetValueTarget(displayRow: rowIndex, columnIndex: choice.clickedColumn)
+        coordinator.applySetValue(choice.command, to: coordinator.setValueTargets(clicked: clicked))
     }
 
     @objc private func deleteRow() {
@@ -829,42 +832,9 @@ class DataGridRowView: NSTableRowView {
         )
     }
 
-    @objc private func setNullValue(_ sender: NSMenuItem) {
-        guard let columnIndex = sender.representedObject as? Int else { return }
-        coordinator?.setCellValueAtColumn(nil, at: rowIndex, columnIndex: columnIndex)
-    }
-
     @objc private func removeFieldValue(_ sender: NSMenuItem) {
         guard let columnIndex = sender.representedObject as? Int else { return }
         coordinator?.removeField(row: rowIndex, columnIndex: columnIndex)
-    }
-
-    @objc private func setEmptyValue(_ sender: NSMenuItem) {
-        guard let columnIndex = sender.representedObject as? Int else { return }
-        coordinator?.setCellValueAtColumn("", at: rowIndex, columnIndex: columnIndex)
-    }
-
-    @objc private func setDefaultValue(_ sender: NSMenuItem) {
-        guard let columnIndex = sender.representedObject as? Int else { return }
-        coordinator?.setCellValueAtColumn("__DEFAULT__", at: rowIndex, columnIndex: columnIndex)
-    }
-
-    @objc private func setSqlFunctionValue(_ sender: NSMenuItem) {
-        guard let context = sender.representedObject as? DateSetterContext else { return }
-        coordinator?.setCellValueAtColumn(context.value, at: rowIndex, columnIndex: context.columnIndex)
-    }
-
-    static func dateValueFunctions(for columnType: ColumnType) -> [String] {
-        switch columnType {
-        case .date:
-            return ["CURRENT_DATE"]
-        case .timestamp, .datetime:
-            return columnType.isTimeOnly
-                ? ["CURRENT_TIME"]
-                : ["NOW()", "CURRENT_TIMESTAMP"]
-        default:
-            return []
-        }
     }
 
     @objc private func copyAsInsert() {
@@ -955,14 +925,9 @@ class DataGridRowView: NSTableRowView {
     }
 }
 
-private final class DateSetterContext {
-    let columnIndex: Int
-    let value: String
-
-    init(columnIndex: Int, value: String) {
-        self.columnIndex = columnIndex
-        self.value = value
-    }
+private struct SetValueMenuChoice {
+    let command: SetValueCommand
+    let clickedColumn: Int
 }
 
 /// The view a row's data cells are drawn into.

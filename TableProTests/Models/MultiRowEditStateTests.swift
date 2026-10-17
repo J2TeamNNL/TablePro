@@ -457,7 +457,7 @@ struct MultiRowEditStateTests {
         }
     }
 
-    // MARK: - setFieldToNull / setFieldToDefault / setFieldToFunction / setFieldToEmpty
+    // MARK: - setFieldToNull / setFieldToDefault / setFieldToExpression / setFieldToEmpty
 
     @MainActor @Suite("Set Field Special Values")
     struct SetFieldSpecialValuesTests {
@@ -498,11 +498,12 @@ struct MultiRowEditStateTests {
             #expect(sut.fields[0].pendingValue == nil)
         }
 
-        @Test("setFieldToFunction sets pendingValue to function string")
-        func setFieldToFunctionSetsPendingValue() {
+        @Test("setFieldToExpression holds the SQL as a pending expression")
+        func setFieldToExpressionSetsPendingValue() {
             let sut = makeSUT()
-            sut.setFieldToFunction(at: 0, function: "NOW()")
+            sut.setFieldToExpression(at: 0, expression: CellExpression("NOW()", kinds: [.timestamp]))
             #expect(sut.fields[0].pendingValue == "NOW()")
+            #expect(sut.fields[0].isPendingExpression == true)
             #expect(sut.fields[0].isPendingNull == false)
             #expect(sut.fields[0].isPendingDefault == false)
         }
@@ -535,7 +536,7 @@ struct MultiRowEditStateTests {
             sut.setFieldToDefault(at: 1)
             #expect(sut.fields[1].hasEdit == true)
 
-            sut.setFieldToFunction(at: 2, function: "UUID()")
+            sut.setFieldToExpression(at: 2, expression: CellExpression("NOW()", kinds: [.timestamp]))
             #expect(sut.fields[2].hasEdit == true)
 
             let sut2 = makeSUT()
@@ -787,18 +788,21 @@ struct MultiRowEditStateTests {
             #expect(callbackCalls[0].value == "__DEFAULT__")
         }
 
-        @Test("setFieldToFunction fires callback with function string")
-        func setFieldToFunctionFiresCallback() {
+        /// `onFieldChanged` carries a literal, so an expression sent through it would be saved as quoted text.
+        @Test("setFieldToExpression sends the SQL through the expression callback, not as a literal")
+        func setFieldToExpressionFiresExpressionCallback() {
             let sut = makeSUT()
-            var callbackCalls: [(index: Int, value: String?)] = []
-            sut.onFieldChanged = { index, value, _ in
-                callbackCalls.append((index, value.asText))
-            }
+            var literals: [PluginCellValue] = []
+            var expressions: [(index: Int, sql: String, continuity: FieldEditContinuity)] = []
+            sut.onFieldChanged = { _, value, _ in literals.append(value) }
+            sut.onFieldExpressionChanged = { index, sql, continuity in expressions.append((index, sql, continuity)) }
 
-            sut.setFieldToFunction(at: 0, function: "NOW()")
-            #expect(callbackCalls.count == 1)
-            #expect(callbackCalls[0].index == 0)
-            #expect(callbackCalls[0].value == "NOW()")
+            sut.setFieldToExpression(at: 0, expression: CellExpression("NOW()", kinds: [.timestamp]))
+            #expect(literals.isEmpty)
+            #expect(expressions.count == 1)
+            #expect(expressions.first?.index == 0)
+            #expect(expressions.first?.sql == "NOW()")
+            #expect(expressions.first?.continuity == .discrete)
         }
 
         @Test("setFieldToEmpty fires callback with empty string")
@@ -917,8 +921,8 @@ struct MultiRowEditStateTests {
             #expect(sut.fields[1].pendingValue == "Alice")
         }
 
-        @Test("Uses empty string when original value is nil")
-        func usesEmptyStringWhenOriginalIsNil() {
+        @Test("A NULL the grid staged reads as a pending NULL, not an empty string")
+        func gridStagedNullIsPendingNull() {
             let sut = MultiRowEditState()
             sut.configure(
                 selectedRowIndices: [0],
@@ -928,7 +932,34 @@ struct MultiRowEditStateTests {
                 externallyModifiedColumns: [0]
             )
             #expect(sut.fields[0].hasEdit == true)
-            #expect(sut.fields[0].pendingValue == "")
+            #expect(sut.fields[0].pendingValue == nil)
+            #expect(FieldValueState.resolve(sut.fields[0]) == .pendingNull)
+        }
+
+        @Test("A boolean set to NULL in the grid shows NULL in the inspector's picker, not false")
+        func gridStagedNullBooleanIsPendingNull() {
+            let sut = MultiRowEditState()
+            sut.configure(
+                selectedRowIndices: [0],
+                allRows: [["1", nil]],
+                columns: ["id", "active"],
+                columnTypes: [.integer(rawType: "INT"), .boolean(rawType: "TINYINT(1)")],
+                externallyModifiedColumns: [1]
+            )
+            #expect(FieldValueState.resolve(sut.fields[1]) == .pendingNull)
+        }
+
+        @Test("Rows that disagree keep showing that they disagree after an edit elsewhere")
+        func multipleValuesAreNotPendingNull() {
+            let sut = MultiRowEditState()
+            sut.configure(
+                selectedRowIndices: [0, 1],
+                allRows: [["1", "Alice"], ["2", "Bob"]],
+                columns: ["id", "name"],
+                columnTypes: [.text(rawType: nil), .text(rawType: nil)],
+                externallyModifiedColumns: [1]
+            )
+            #expect(sut.fields[1].isPendingNull == false)
         }
     }
 

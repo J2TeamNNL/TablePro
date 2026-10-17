@@ -10,6 +10,7 @@
 import AppKit
 import SwiftUI
 import TableProPluginKit
+import TableProTheme
 import Testing
 
 @testable import TablePro
@@ -34,7 +35,6 @@ private final class DrawPathRowView: NSTableRowView {
 /// Each test adopts a pair on the shared `ThemeEngine` and restores it in a `defer`. The bodies are
 /// synchronous and `@MainActor`, so nothing else on the main actor runs between the two; an `await`
 /// added anywhere in between would break that.
-@Suite("Data grid drawing follows the theme", .serialized)
 @MainActor
 struct DataGridThemeDrawingTests {
     private static let rowFrame = NSRect(x: 0, y: 0, width: 160, height: 24)
@@ -176,7 +176,7 @@ struct DataGridThemeDrawingTests {
     @Test("Under the default theme a selected row draws exactly what NSTableRowView draws", arguments: [true, false])
     func defaultThemeSelectionIsNative(emphasized: Bool) throws {
         try adopting([:]) {
-            #expect(DataGridBodyChrome.themedSelectionColor(emphasized: emphasized) == nil)
+            #expect(DataGridBodyChrome.themedSelectionColor(emphasized: emphasized, scope: .live) == nil)
 
             let grid = try centerColor(of: selected(DataGridRowView(frame: Self.rowFrame), emphasized: emphasized))
             let stock = try centerColor(of: selected(DrawPathRowView(frame: Self.rowFrame), emphasized: emphasized))
@@ -187,11 +187,11 @@ struct DataGridThemeDrawingTests {
     @Test("Under the default theme the gutter and a selected heading fill with the system selection")
     func defaultThemeSelectionColors() throws {
         try adopting([:]) {
-            #expect(DataGridBodyChrome.selectionColor(emphasized: true) == .selectedContentBackgroundColor)
-            #expect(DataGridBodyChrome.selectionColor(emphasized: false) == .unemphasizedSelectedContentBackgroundColor)
+            #expect(DataGridBodyChrome.selectionColor(emphasized: true, scope: .live) == .selectedContentBackgroundColor)
+            #expect(DataGridBodyChrome.selectionColor(emphasized: false, scope: .live) == .unemphasizedSelectedContentBackgroundColor)
 
             let aqua = try #require(NSAppearance(named: .aqua))
-            let palette = ThemeEngine.shared.dataGridCellPalette(in: aqua)
+            let palette = ThemeScope.live.dataGridCellPalette(in: aqua)
             #expect(palette.selectionText == .alternateSelectedControlTextColor)
             #expect(palette.rowNumberColor(for: .empty, onEmphasizedSelection: true) == .alternateSelectedControlTextColor)
             #expect(palette.rowNumberColor(for: .empty, onEmphasizedSelection: false) == palette.rowNumberText)
@@ -217,7 +217,7 @@ struct DataGridThemeDrawingTests {
             let engine = ThemeEngine.shared
             let selectionText = engine.resolved[.gridSelectionText]
             let aqua = try #require(NSAppearance(named: .aqua))
-            let palette = engine.dataGridCellPalette(in: aqua)
+            let palette = ThemeScope.live.dataGridCellPalette(in: aqua)
             let selectedCell = cellAppearance(palette: palette, onEmphasizedSelection: true)
             let plainCell = cellAppearance(palette: palette, onEmphasizedSelection: false)
 
@@ -226,9 +226,9 @@ struct DataGridThemeDrawingTests {
             #expect(selectedCell.focusColor == selectionText)
             #expect(plainCell.textColor == palette.text)
             #expect(palette.rowNumberColor(for: .empty, onEmphasizedSelection: true) == selectionText)
-            #expect(DataGridBodyChrome.selectionColor(emphasized: true) == engine.resolved[.gridSelection])
-            #expect(DataGridBodyChrome.themedSelectionColor(emphasized: true) == engine.resolved[.gridSelection])
-            #expect(DataGridBodyChrome.themedSelectionColor(emphasized: false) == nil)
+            #expect(DataGridBodyChrome.selectionColor(emphasized: true, scope: .live) == engine.resolved[.gridSelection])
+            #expect(DataGridBodyChrome.themedSelectionColor(emphasized: true, scope: .live) == engine.resolved[.gridSelection])
+            #expect(DataGridBodyChrome.themedSelectionColor(emphasized: false, scope: .live) == nil)
         }
     }
 
@@ -256,10 +256,10 @@ struct DataGridThemeDrawingTests {
         try adopting([:]) {
             let cell = SortableHeaderCell(textCell: "name")
 
-            #expect(cell.foregroundColor(emphasized: false) == .headerTextColor)
-            #expect(cell.foregroundColor(emphasized: true) == .alternateSelectedControlTextColor)
-            #expect(SortableHeaderChrome.lineColor == .separatorColor)
-            #expect(SortableHeaderChrome.backgroundColor == .controlBackgroundColor)
+            #expect(cell.foregroundColor(emphasized: false, scope: .live) == .headerTextColor)
+            #expect(cell.foregroundColor(emphasized: true, scope: .live) == .alternateSelectedControlTextColor)
+            #expect(SortableHeaderChrome.lineColor(scope: .live) == .separatorColor)
+            #expect(SortableHeaderChrome.backgroundColor(scope: .live) == .controlBackgroundColor)
         }
     }
 
@@ -269,10 +269,10 @@ struct DataGridThemeDrawingTests {
             let engine = ThemeEngine.shared
             let cell = SortableHeaderCell(textCell: "name")
 
-            #expect(cell.foregroundColor(emphasized: false) == engine.resolved[.gridHeaderText])
-            #expect(cell.foregroundColor(emphasized: true) == engine.resolved[.gridSelectionText])
-            #expect(SortableHeaderChrome.lineColor == engine.resolved[.gridLine])
-            #expect(SortableHeaderChrome.lineColor != .separatorColor)
+            #expect(cell.foregroundColor(emphasized: false, scope: .live) == engine.resolved[.gridHeaderText])
+            #expect(cell.foregroundColor(emphasized: true, scope: .live) == engine.resolved[.gridSelectionText])
+            #expect(SortableHeaderChrome.lineColor(scope: .live) == engine.resolved[.gridLine])
+            #expect(SortableHeaderChrome.lineColor(scope: .live) != .separatorColor)
         }
     }
 

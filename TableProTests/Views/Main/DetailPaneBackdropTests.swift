@@ -6,9 +6,9 @@
 import AppKit
 import SwiftUI
 @testable import TablePro
+import TableProTheme
 import Testing
 
-@Suite("The detail pane backdrop stops below the toolbar until the toolbar takes the theme", .serialized)
 @MainActor
 struct DetailPaneBackdropTests {
     private static let insetHeight: CGFloat = 20

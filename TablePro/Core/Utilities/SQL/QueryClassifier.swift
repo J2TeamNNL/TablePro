@@ -5,7 +5,9 @@
 
 import Foundation
 import TableProPluginKit
+import TableProRedisCore
 import TableProSQLGrammar
+import TableProUtilities
 
 enum QueryTier: Sendable, Equatable {
     case safe
@@ -859,6 +861,8 @@ private extension QueryClassifier {
             return trimmed.isEmpty ? .safe : weaviateClassification(trimmed)
         case .firestore, .firebaseRealtimeDatabase:
             return trimmed.isEmpty ? .safe : firebaseClassification(trimmed, databaseType: databaseType)
+        case .bigtable:
+            return trimmed.isEmpty ? .safe : bigtableClassification(trimmed)
         default:
             return nil
         }
@@ -1088,5 +1092,36 @@ private extension QueryClassifier {
         default:
             return false
         }
+    }
+
+    /// A PUT that sets a cell to null deletes that cell, so it ranks with DELETE. INSERT refuses a
+    /// key that already has a row, so it never overwrites one.
+    static func bigtableClassification(_ trimmed: String) -> QueryClassification {
+        if trimmed.hasPrefix("BIGTABLE_BROWSE:") {
+            return .safe
+        }
+        let write = QueryClassification(tier: .write, reachesFilesystemOrExecutesCode: false)
+        let destructive = QueryClassification(tier: .destructive, reachesFilesystemOrExecutesCode: false)
+        switch trimmed.prefix(while: { !$0.isWhitespace }).uppercased() {
+        case "GET", "SCAN", "READ":
+            return .safe
+        case "DELETE":
+            return destructive
+        case "PUT":
+            return bigtableBodyDeletesCell(trimmed) ? destructive : write
+        default:
+            return write
+        }
+    }
+
+    /// The body is the JSON object that runs to the end of the text. A quoted row key may itself
+    /// hold a brace, so each brace is tried until one starts an object that parses.
+    private static func bigtableBodyDeletesCell(_ trimmed: String) -> Bool {
+        for brace in trimmed.indices where trimmed[brace] == "{" {
+            guard let data = String(trimmed[brace...]).data(using: .utf8),
+                  let cells = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+            return cells.values.contains { $0 is NSNull }
+        }
+        return false
     }
 }
