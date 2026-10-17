@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: tablepro 0.1.0\n"
 "Report-Msgid-Bugs-To: https://github.com/TableProApp/TablePro/issues\n"
-"POT-Creation-Date: 2026-10-17 11:27+0000\n"
+"POT-Creation-Date: 2026-10-17 11:45+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -2911,6 +2911,14 @@ msgstr[1] ""
 
 #: crates/app/src/ui/result_pane/result_summary.rs
 #, rust-format
+msgid "Stopped after the first {shown} row: the statement did not run past it"
+msgid_plural ""
+"Stopped after the first {shown} rows: the statement did not run past them"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/app/src/ui/result_pane/result_summary.rs
+#, rust-format
 msgid "{rows}+"
 msgstr ""
 
@@ -3528,6 +3536,13 @@ msgstr ""
 msgid ""
 "Changes column “{column}” from {from} to {to}. A value the new type can't "
 "hold is converted or refused."
+msgstr ""
+
+#: crates/app/src/ui/structure_tab/review_dialog.rs
+#, rust-format
+msgid ""
+"Makes column “{column}” NOT NULL. A NULL already in it is converted or "
+"refused."
 msgstr ""
 
 #: crates/app/src/ui/structure_tab/review_dialog.rs
