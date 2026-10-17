@@ -129,7 +129,7 @@ Claude Code loads a rule when it reads or edits a file the rule covers. Under Co
 | Rule | Read before editing |
 | --- | --- |
 | `ai-mcp-security.md` | `TablePro/Core/AI`, `TablePro/Core/MCP`, `Packages/TableProMacCore/Sources/TableProMCP` |
-| `changelog.md` | `CHANGELOG.md` |
+| `changelog.md` | `CHANGELOG.md`, `linux/CHANGELOG.md` |
 | `ci.md` | `.github/workflows`, `.github/actions`, `.github/scripts`, `.github/actionlint.yaml`, `.github/*baseline*`, `scripts/ci`, `.swiftlint.yml`, `**/.swiftlint.yml` |
 | `connection-window.md` | `TablePro/Core/Services/Infrastructure`, `TablePro/Models/Connection`, `TablePro/Core/Database/DatabaseManager*.swift`, `Packages/TableProCore/Sources/TableProDatabase`, `TablePro/Views/Main` |
 | `data-grid.md` | `TablePro/Views/Results`, `TablePro/Core/DataGrid`, `TableProTests/Views/Results` |
