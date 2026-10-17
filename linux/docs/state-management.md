@@ -35,7 +35,7 @@ Windows share nothing but `AppServices`. CI fails on a `thread_local!` under `cr
 
 **Content stays through a failed read.** A browse or structure tab tracks its read with `ContentLoad`. The spinner shows only until the first read lands; a read of the content on screen keeps it there and spins the tab's page in the tab bar, and a failure then leaves it under a `StaleBanner` with Retry. The error page, with Try Again, is for a tab with nothing to show, or whose failed read asked for other rows than the ones on screen.
 
-**The catalog belongs to the session.** `SchemaCatalog` (`crates/session/src/session/schema_catalog.rs`) holds the schemas, each scope's objects and each table's columns. Views read through `Session::schemas`, `objects` and `columns`, or `refresh_objects` and `refresh_columns` to fetch again. Callers that ask for the same thing at once share one fetch, a fetch runs as its own task so a view that closes does not stop it, and a failed refresh keeps the list it had. A schema change calls `invalidate_table`, which marks the table stale and keeps its data until the next fetch lands.
+**The catalog belongs to the session.** `SchemaCatalog` (`crates/session/src/session/schema_catalog.rs`) holds the schemas, each scope's objects and each table's columns. Views read through `Session::schemas`, `objects` and `columns`, or `refresh_objects` and `refresh_columns` to fetch again. Callers that ask for the same thing at once share one fetch, a fetch runs as its own task so a view that closes does not stop it, and a failed refresh keeps the list it had. A schema change calls `invalidate_table`, which marks the table stale and keeps its data until the next fetch lands. The sidebar's Refresh, and an editor run that sent DDL or a commit (`catalog_change::changes_catalog`), cannot name the tables they touched: they call `invalidate_columns`, which does the same for every table, and read the object lists again. A failed read leaves the sidebar's list under a banner with Retry until a read lands.
 
 **Saves go through the workspace.** `WorkspaceHandle` starts, stops and settles every save. Its `SaveLedger` records each running save with its tab, its kind, a cancel token and a process hold, and refuses a second save of the same kind for the same tab. Stop Saving, or a close that chose to stop, cancels the token, which reaches the driver through `run_cancellable`; the save settles when the driver answers.
 
@@ -115,6 +115,12 @@ Events cross to the GTK thread through a channel. `BatchCollector` turns one bat
 - A result set's page is a read-only grid of the rows the run kept, under a `ResultLimitBanner` when the row limit, or the run's, cut it short.
 
 A finished run goes to `HistoryService::record` with the text that was run, `DELIMITER` and `GO` lines included, judged by the dialect of the session that ran it, not the window's current one ([storage.md](storage.md#what-goes-into-the-history)).
+
+### The tab's file
+
+Open SQL File (Ctrl+O) and Save As (Ctrl+Shift+S) bind the tab to a `.sql` file, through the file chooser portal; Save (Ctrl+S) writes to it, or asks for one. The tab is named after the file, and the buffer's own modified flag says whether its text differs from the file's, so Undo back to the saved text clears it. The tab's record keeps the file's URI and that flag (`EditorFileRecord`), and its draft keeps the text, so a restore brings back both.
+
+Closing the tab asks about unsaved file changes through the same Save Changes prompt as row and structure edits (`DirtyKind::UnsavedFile`), and its Save writes the file. Closing the window does not ask: the draft keeps the text for the next session.
 
 ### Open transactions
 

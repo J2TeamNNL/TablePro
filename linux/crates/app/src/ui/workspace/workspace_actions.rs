@@ -14,7 +14,8 @@ use crate::services::history_availability::HistoryAvailability;
 type ActionInput = fn() -> WorkspaceInput;
 
 /// The two actions that need the query database, which opens on a
-/// background task.
+/// background task. Once it failed to open they say why when used, so
+/// they are not left greyed out with no reason.
 const HISTORY_ACTIONS: [&str; 2] = ["show-history", "show-saved-queries"];
 
 /// Add the workspace's actions to the window's own action map, which GTK
@@ -22,8 +23,9 @@ const HISTORY_ACTIONS: [&str; 2] = ["show-history", "show-saved-queries"];
 /// Each one sends its input through `input`, so one activated after the
 /// workspace is gone is dropped rather than handled.
 pub(super) fn install(window: &adw::ApplicationWindow, input: &WorkspaceSender) -> Vec<&'static str> {
-    let entries: [(&'static str, ActionInput); 6] = [
+    let entries: [(&'static str, ActionInput); 7] = [
         ("new-editor-tab", || WorkspaceInput::NewEditorTab),
+        ("refresh-tables", || WorkspaceInput::RefreshCatalog),
         ("reopen-closed-tab", || WorkspaceInput::ReopenClosedTab),
         ("save-query", || WorkspaceInput::SaveActiveQuery),
         ("show-history", || WorkspaceInput::ShowHistory),
@@ -37,7 +39,7 @@ pub(super) fn install(window: &adw::ApplicationWindow, input: &WorkspaceSender) 
             .build()
     });
     window.add_action_entries(actions);
-    // Insensitive until the query database reports it is open.
+    // Insensitive until the query database has opened or failed to.
     for name in HISTORY_ACTIONS {
         set_enabled(window, name, false);
     }
@@ -67,12 +69,9 @@ pub(super) fn spawn_history_gate(
                 return;
             };
             for name in HISTORY_ACTIONS {
-                set_enabled(&window, name, state.is_ready());
+                set_enabled(&window, name, state.is_settled());
             }
             drop(window);
-            if let Some(failure) = state.failure() {
-                tracing::warn!(error = failure, "query history stays unavailable");
-            }
             if availability.changed().await.is_err() {
                 return;
             }
@@ -106,7 +105,7 @@ mod tests {
 
         sender.send_replace(HistoryAvailability::Failed("no disk".to_owned()));
         crate::test_support::drain_main_context();
-        assert!(!enabled(), "stayed enabled after the database failed");
+        assert!(enabled(), "a failed database left the action greyed out with no reason");
 
         gate.abort();
     }

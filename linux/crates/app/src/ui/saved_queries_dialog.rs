@@ -20,11 +20,17 @@ pub struct SavedQueriesDialog {
     store: Option<SavedQueries>,
     active_connection: Option<Uuid>,
     root: adw::Dialog,
+    /// The dialog's own, since it covers the window's.
+    toasts: adw::ToastOverlay,
     search: gtk::SearchEntry,
     groups: gtk::Box,
     stack: gtk::Stack,
     status_page: adw::StatusPage,
+    error_page: adw::StatusPage,
     queries: Vec<SavedQuery>,
+    /// Whether a list was read once. A read that fails after that keeps
+    /// the list on screen.
+    loaded: bool,
 }
 
 pub struct SavedQueriesDialogInit {
@@ -49,13 +55,13 @@ pub enum SavedQueriesDialogInput {
 pub enum SavedQueriesDialogOutput {
     OpenInNewTab(String),
     ReplaceCurrentTabQuery(String),
-    CopyToClipboard(String),
-    ShowToast(String),
 }
 
 #[derive(Debug)]
 pub enum SavedQueriesDialogCmd {
     Loaded(Vec<SavedQuery>),
+    /// The list could not be read, and why.
+    LoadFailed(String),
     Failed(String),
     Changed,
 }
@@ -124,22 +130,41 @@ impl Component for SavedQueriesDialog {
             ))
             .build();
 
+        let retry = gtk::Button::builder()
+            .label(crate::i18n::gettext("Try Again"))
+            .halign(gtk::Align::Center)
+            .build();
+        retry.add_css_class("pill");
+        let sender_for_retry = sender.clone();
+        retry.connect_clicked(move |_| sender_for_retry.deliver(SavedQueriesDialogInput::Refresh));
+        let error_page = adw::StatusPage::builder()
+            .icon_name(crate::ui::icons::DIALOG_ERROR)
+            .title(crate::i18n::gettext("Could Not Read Saved Queries"))
+            .child(&retry)
+            .build();
+
         let stack = gtk::Stack::new();
         stack.add_named(&scroller, Some("list"));
         stack.add_named(&status_page, Some("empty"));
+        stack.add_named(&error_page, Some("error"));
         stack.set_visible_child_name("empty");
         toolbar.set_content(Some(&stack));
-        root.set_child(Some(&toolbar));
+        let toasts = adw::ToastOverlay::new();
+        toasts.set_child(Some(&toolbar));
+        root.set_child(Some(&toasts));
 
         let model = SavedQueriesDialog {
             store: init.store,
             active_connection: init.active_connection,
             root: root.clone(),
+            toasts,
             search,
             groups,
             stack,
             status_page,
+            error_page,
             queries: Vec::new(),
+            loaded: false,
         };
         sender.deliver(SavedQueriesDialogInput::Refresh);
 
@@ -164,7 +189,7 @@ impl Component for SavedQueriesDialog {
             }
             SavedQueriesDialogInput::CopySql(id) => {
                 if let Some(query) = self.query_for(id) {
-                    let _ = sender.output(SavedQueriesDialogOutput::CopyToClipboard(query));
+                    crate::ui::clipboard::copy_text(&self.root, query, |message| self.toast(message));
                 }
             }
             SavedQueriesDialogInput::RenameRequested(id) => self.prompt_rename(id, &sender),
@@ -173,14 +198,9 @@ impl Component for SavedQueriesDialog {
                 sender.oneshot_command(async move {
                     match store.rename(id, &name).await {
                         Ok(()) => SavedQueriesDialogCmd::Changed,
-                        // The only rename that fails for a reason the
-                        // user can act on is a name the connection
-                        // already has.
                         Err(error) => {
                             tracing::warn!(%error, "could not rename the saved query");
-                            SavedQueriesDialogCmd::Failed(crate::i18n::gettext(
-                                "That name is already used by another saved query.",
-                            ))
+                            SavedQueriesDialogCmd::Failed(rename_failure_text(&error))
                         }
                     }
                 });
@@ -205,11 +225,17 @@ impl Component for SavedQueriesDialog {
         match msg {
             SavedQueriesDialogCmd::Loaded(queries) => {
                 self.queries = queries;
+                self.loaded = true;
                 self.render(&sender);
+            }
+            SavedQueriesDialogCmd::LoadFailed(reason) if self.loaded => self.toast(&reason),
+            SavedQueriesDialogCmd::LoadFailed(reason) => {
+                self.error_page.set_description(Some(&reason));
+                self.stack.set_visible_child_name("error");
             }
             SavedQueriesDialogCmd::Changed => sender.deliver(SavedQueriesDialogInput::Refresh),
             SavedQueriesDialogCmd::Failed(message) => {
-                let _ = sender.output(SavedQueriesDialogOutput::ShowToast(message));
+                self.toast(&message);
                 sender.deliver(SavedQueriesDialogInput::Refresh);
             }
         }
@@ -221,6 +247,10 @@ impl SavedQueriesDialog {
         &self.root
     }
 
+    fn toast(&self, message: &str) {
+        self.toasts.add_toast(crate::ui::plain_toast(message));
+    }
+
     fn load(&self, sender: &ComponentSender<Self>) {
         let Some(store) = self.store.clone() else {
             return;
@@ -230,7 +260,9 @@ impl SavedQueriesDialog {
                 Ok(queries) => SavedQueriesDialogCmd::Loaded(queries),
                 Err(error) => {
                     tracing::warn!(%error, "could not read the saved queries");
-                    SavedQueriesDialogCmd::Loaded(Vec::new())
+                    SavedQueriesDialogCmd::LoadFailed(crate::i18n::gettext(
+                        "The query history file could not be read. It may be damaged.",
+                    ))
                 }
             }
         });
@@ -345,7 +377,10 @@ impl SavedQueriesDialog {
             return;
         };
         let dialog = adw::AlertDialog::new(Some(&crate::i18n::gettext("Rename Saved Query")), None);
-        let entry = adw::EntryRow::builder().title(crate::i18n::gettext("Name")).build();
+        let entry = adw::EntryRow::builder()
+            .title(crate::i18n::gettext("Name"))
+            .activates_default(true)
+            .build();
         entry.set_text(&current);
         let group = adw::PreferencesGroup::new();
         group.add(&entry);
@@ -355,6 +390,7 @@ impl SavedQueriesDialog {
         dialog.set_response_appearance("rename", adw::ResponseAppearance::Suggested);
         dialog.set_default_response(Some("rename"));
         dialog.set_close_response("cancel");
+        crate::ui::name_entry::require_name(&dialog, "rename", &entry);
 
         let sender = sender.clone();
         dialog.connect_response(None, move |_, response| {
@@ -393,6 +429,18 @@ impl SavedQueriesDialog {
             }
         });
         dialog.present(Some(&self.root));
+    }
+}
+
+/// What a failed rename tells the user. A taken name is the one the
+/// user can fix from the dialog.
+fn rename_failure_text(error: &tablepro_storage::StorageError) -> String {
+    use tablepro_storage::StorageError;
+    match error {
+        StorageError::NameTaken => crate::i18n::gettext("That name is already used by another saved query."),
+        StorageError::TooLarge { .. } => crate::i18n::gettext("That name is too long."),
+        StorageError::NotFound => crate::i18n::gettext("That saved query was deleted elsewhere."),
+        _ => crate::i18n::gettext("The saved query could not be renamed."),
     }
 }
 
@@ -644,6 +692,134 @@ mod dialog_tests {
 
         crate::test_support::wait_until(RENDER_WAIT, || row_titles(&dialog.model()) == vec!["stale carts"])
             .expect("the deleted query stayed in the list");
+    }
+
+    /// Take away the table the store reads, as a damaged file does,
+    /// through a connection of its own.
+    fn drop_the_table(root: &tempfile::TempDir) {
+        use tablepro_core::statement::{GuardedStatement, StatementBuilder};
+        use tablepro_core::{
+            CallOptions, ConnectEnvironment, ConnectOptions, ConnectTarget, DatabaseDriver, FileEndpoint,
+            ForeignKeyMode, TableRef, WorkspaceSettings, WriteBatch, WriteKind,
+        };
+        use tokio_util::sync::CancellationToken;
+
+        let paths = tablepro_storage::StoragePaths::under(root.path(), "tablepro", "app.tablepro.TablePro");
+        let endpoint = FileEndpoint::open_existing(paths.history_database()).expect("the history file");
+        let options = ConnectOptions {
+            target: ConnectTarget::File(endpoint),
+            workspace_settings: WorkspaceSettings::workspace(false),
+            liveness: tablepro_core::LivenessPolicy::DESKTOP,
+            environment: ConnectEnvironment::new("test"),
+        };
+        let mut drop = StatementBuilder::new();
+        drop.push_sql("DROP TABLE saved_queries");
+        let batch = WriteBatch::new(
+            WriteKind::SchemaChanges,
+            TableRef::unqualified("saved_queries"),
+            vec![GuardedStatement::unguarded(drop.finish())],
+            ForeignKeyMode::Enforced,
+        );
+        relm4::tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime")
+            .block_on(async {
+                let connection = drivers_sqlite::SqliteDriver
+                    .connect(options, CancellationToken::new())
+                    .await
+                    .expect("connect");
+                connection
+                    .write_batch(&batch, CallOptions::new(None, CancellationToken::new()))
+                    .await
+                    .expect("the table dropped");
+                connection.close().await.expect("close");
+            });
+    }
+
+    fn visible_page(dialog: &SavedQueriesDialog) -> Option<String> {
+        dialog.stack.visible_child_name().map(|name| name.to_string())
+    }
+
+    #[gtk4::test]
+    fn a_list_that_cannot_be_read_says_so_and_offers_try_again() {
+        let (root, store, local, _staging) = seeded();
+        drop_the_table(&root);
+        let dialog = SavedQueriesDialog::builder().launch(SavedQueriesDialogInit {
+            store: Some(store),
+            active_connection: Some(local),
+        });
+
+        crate::test_support::wait_until(RENDER_WAIT, || {
+            visible_page(&dialog.model()).as_deref() == Some("error")
+        })
+        .expect("the error page");
+        let model = dialog.model();
+        assert_eq!(model.error_page.title(), "Could Not Read Saved Queries");
+        assert_eq!(
+            model.error_page.description().as_deref(),
+            Some("The query history file could not be read. It may be damaged.")
+        );
+        let retry = model
+            .error_page
+            .child()
+            .and_downcast::<gtk::Button>()
+            .expect("a Try Again button");
+        assert_eq!(retry.label().as_deref(), Some("Try Again"));
+        drop(model);
+
+        retry.emit_clicked();
+        crate::test_support::drain_main_context();
+        assert_eq!(
+            visible_page(&dialog.model()).as_deref(),
+            Some("error"),
+            "Try Again found the table back"
+        );
+    }
+
+    #[gtk4::test]
+    fn copying_a_query_says_so_inside_the_dialog() {
+        let (_root, store, local, _staging) = seeded();
+        let dialog = SavedQueriesDialog::builder().launch(SavedQueriesDialogInit {
+            store: Some(store),
+            active_connection: Some(local),
+        });
+        crate::test_support::wait_until(RENDER_WAIT, || row_titles(&dialog.model()).len() == 2)
+            .expect("the saved queries never rendered");
+        let id = dialog.model().queries[0].id;
+
+        dialog
+            .sender()
+            .send(SavedQueriesDialogInput::CopySql(id))
+            .expect("send");
+        crate::test_support::drain_main_context();
+
+        let toasts = dialog.model().toasts.clone();
+        assert!(
+            crate::test_support::descendants(&toasts)
+                .iter()
+                .filter_map(|widget| widget.downcast_ref::<gtk::Label>())
+                .any(|label| label.label() == "Copied to clipboard"),
+            "the toast went somewhere the dialog covers"
+        );
+    }
+
+    #[test]
+    fn a_rename_failure_says_what_went_wrong() {
+        use tablepro_storage::StorageError;
+
+        assert_eq!(
+            rename_failure_text(&StorageError::NameTaken),
+            "That name is already used by another saved query."
+        );
+        assert_eq!(
+            rename_failure_text(&StorageError::NotFound),
+            "That saved query was deleted elsewhere."
+        );
+        assert_eq!(
+            rename_failure_text(&StorageError::NotInitialised),
+            "The saved query could not be renamed."
+        );
     }
 
     #[gtk4::test]

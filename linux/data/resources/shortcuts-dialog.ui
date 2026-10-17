@@ -112,7 +112,7 @@
         <child>
           <object class="AdwShortcutsItem" id="browse-refresh">
             <property name="title" translatable="yes">Read the Table Again</property>
-            <property name="accelerator">F5</property>
+            <property name="accelerator">F5 &lt;Primary&gt;r</property>
           </object>
         </child>
         <child>
@@ -312,6 +312,24 @@
           </object>
         </child>
         <child>
+          <object class="AdwShortcutsItem" id="editor-open-file">
+            <property name="title" translatable="yes">Open a SQL File</property>
+            <property name="accelerator">&lt;Primary&gt;o</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwShortcutsItem" id="editor-save">
+            <property name="title" translatable="yes">Save to the SQL File</property>
+            <property name="accelerator">&lt;Primary&gt;s</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwShortcutsItem" id="editor-save-as">
+            <property name="title" translatable="yes">Save to Another SQL File</property>
+            <property name="accelerator">&lt;Primary&gt;&lt;Shift&gt;s</property>
+          </object>
+        </child>
+        <child>
           <object class="AdwShortcutsItem" id="editor-find">
             <property name="title" translatable="yes">Find</property>
             <property name="accelerator">&lt;Primary&gt;f</property>
@@ -333,12 +351,6 @@
           <object class="AdwShortcutsItem" id="editor-find-previous">
             <property name="title" translatable="yes">Previous Match</property>
             <property name="accelerator">&lt;Primary&gt;&lt;Shift&gt;g</property>
-          </object>
-        </child>
-        <child>
-          <object class="AdwShortcutsItem" id="win-save-query">
-            <property name="title" translatable="yes">Save the Query Under a Name</property>
-            <property name="action-name">win.save-query</property>
           </object>
         </child>
       </object>

@@ -15,9 +15,10 @@ use uuid::Uuid;
 use crate::ui::browse_tab::{BrowseTabInput, PagingInput, SaveInput};
 use crate::ui::structure_tab::StructureMode;
 use crate::workspace::{
-    RestoredDrafts, TabRecord, WorkspaceFileName, WorkspaceLoad, WorkspaceRecord, WorkspaceSaveError,
+    EditorFileRecord, RestoredDrafts, TabRecord, WorkspaceFileName, WorkspaceLoad, WorkspaceRecord, WorkspaceSaveError,
 };
 
+use super::editor_label::EditorLabel;
 use super::structure_target::StructureTarget;
 use super::tab_factory::EditorPreview;
 use super::tab_index::TabIndex;
@@ -65,7 +66,7 @@ impl WorkspaceModel {
             }
             WorkspaceLoad::Empty => self.retain_drafts(&key, std::iter::empty()),
             // Which drafts the file names is unknown, so none is deleted.
-            WorkspaceLoad::Blocked(_) => self.show_unreadable_workspace_toast(),
+            WorkspaceLoad::Blocked(_) => self.layout_banner.set_revealed(true),
         }
         if unreadable > 0 {
             let count = u32::try_from(unreadable).unwrap_or(u32::MAX);
@@ -120,24 +121,15 @@ impl WorkspaceModel {
             },
             // Its text is on disk already, or there is none to keep, so
             // nothing is written until the user types.
-            TabRecord::Editor { draft } => TabSpec::Editor {
+            TabRecord::Editor { draft, file } => TabSpec::Editor {
                 initial_query: Some(drafts.remove(&draft).unwrap_or_default()),
                 draft: Some(draft),
+                file,
             },
         };
         // Selecting each tab as it opens would show, and so load, every
         // one of them; `reopen` selects the one that was active.
         self.factory.restore(spec)
-    }
-
-    fn show_unreadable_workspace_toast(&self) {
-        let toast = adw::Toast::builder()
-            .title(crate::i18n::gettext("Saved tabs could not be read"))
-            .use_markup(false)
-            .button_label(crate::i18n::gettext("Reset"))
-            .action_name("win.reset-workspace-layout")
-            .build();
-        self.toast_overlay.add_toast(toast);
     }
 
     /// Move the unreadable saved tabs aside, so the open ones can be
@@ -157,11 +149,18 @@ impl WorkspaceModel {
                 if let Some(moved) = moved {
                     tracing::info!(moved = %moved.display(), "moved the unreadable saved tabs aside");
                 }
+                self.layout_banner.set_revealed(false);
                 self.persist_workspace_state();
             }
+            // The banner stays, so Reset can be tried again.
             Err(error) => {
                 tracing::warn!(%error, "could not move the saved tabs aside");
-                self.show_toast(&crate::i18n::gettext("Saved tabs could not be reset"));
+                self.show_error_alert(
+                    &crate::i18n::gettext("Could Not Reset Saved Tabs"),
+                    &crate::i18n::gettext(
+                        "The unreadable file could not be moved aside, so the open tabs are still not saved.",
+                    ),
+                );
             }
         }
     }
@@ -177,6 +176,7 @@ impl WorkspaceModel {
         self.open_tab(TabSpec::Editor {
             initial_query,
             draft: None,
+            file: None,
         });
     }
 
@@ -459,10 +459,29 @@ impl WorkspaceModel {
                 return;
             };
             let buffer = slot.editor.buffer();
-            slot.label = EditorPreview::read(&buffer).label(slot.ordinal);
+            if slot.editor.file().is_none() {
+                slot.label = EditorPreview::read(&buffer).label(slot.ordinal);
+            }
             self.drafts.schedule(&self.draft_scope(), slot.draft, &buffer);
         }
         self.retitle_tab(id);
+    }
+
+    /// A tab saved to a file is named after it, shows whether its text
+    /// is saved, and is restored with it.
+    pub(super) fn on_editor_tab_file_changed(&self, id: Uuid) {
+        {
+            let mut tabs = self.workspace_tabs.borrow_mut();
+            let Some(WorkspaceTab::Editor(slot)) = tabs.get_mut(&id) else {
+                return;
+            };
+            if let Some(file) = slot.editor.file() {
+                slot.label = EditorLabel::file(&file);
+            }
+        }
+        self.retitle_tab(id);
+        self.refresh_unsaved();
+        self.persist_workspace_state();
     }
 
     pub(super) fn on_editor_tab_run_state_changed(&self, id: Uuid, running: bool) {
@@ -552,6 +571,7 @@ fn describe_closed_tab(slot: &WorkspaceTab) -> Option<ClosedTabDescriptor> {
     match slot {
         WorkspaceTab::Editor(s) => Some(ClosedTabDescriptor::Editor {
             query: whole_text(&s.editor.buffer()),
+            file: editor_file_record(&s.editor),
         }),
         WorkspaceTab::Table(s) => Some(ClosedTabDescriptor::Table {
             schema: s.schema.clone(),
@@ -591,9 +611,13 @@ impl WorkspaceModel {
             return;
         };
         match descriptor {
-            ClosedTabDescriptor::Editor { query } => {
+            ClosedTabDescriptor::Editor { query, file } => {
                 let initial = if query.is_empty() { None } else { Some(query) };
-                self.open_editor_tab(initial);
+                self.open_tab(TabSpec::Editor {
+                    initial_query: initial,
+                    draft: None,
+                    file,
+                });
             }
             ClosedTabDescriptor::Table {
                 schema,
@@ -620,6 +644,14 @@ impl WorkspaceModel {
     }
 }
 
+/// The file an editor tab is saved to, as its record keeps it.
+pub(super) fn editor_file_record(editor: &crate::ui::editor::SqlEditor) -> Option<EditorFileRecord> {
+    editor.file().map(|file| EditorFileRecord {
+        uri: file.uri().to_string(),
+        modified: editor.has_unsaved_file_changes(),
+    })
+}
+
 /// The whole script, for the few places that need all of it at once.
 fn whole_text(buffer: &gtk::TextBuffer) -> String {
     buffer.text(&buffer.start_iter(), &buffer.end_iter(), false).to_string()
@@ -634,7 +666,7 @@ pub(crate) struct LoadedWorkspace {
 
 fn saved_drafts(record: &WorkspaceRecord) -> impl Iterator<Item = DraftId> + '_ {
     record.tabs.iter().filter_map(|tab| match tab {
-        TabRecord::Editor { draft } => Some(*draft),
+        TabRecord::Editor { draft, .. } => Some(*draft),
         _ => None,
     })
 }
@@ -684,6 +716,29 @@ mod tests {
         wait_until(WAIT, || freed_page.upgrade().is_none()).expect("the closed page to be freed");
 
         assert!(editor.upgrade().is_none(), "the closed page's editor is still alive");
+    }
+
+    #[gtk4::test]
+    fn unreadable_saved_tabs_are_announced_until_reset() {
+        let test = TestWindow::picker("UnreadableSavedTabs");
+        let dir = test.services.storage.paths().workspaces_dir();
+        std::fs::create_dir_all(&dir).expect("the workspaces folder");
+        std::fs::write(
+            dir.join(crate::workspace::WorkspaceFileName::for_key(&test.key()).file_name()),
+            b"{ not json",
+        )
+        .expect("an unreadable file");
+
+        test.window
+            .send(SessionWindowInput::OpenSaved(Box::new(test.saved.clone())));
+        test.wait_for_page("workspace");
+        let banner = test.workspace().imp().layout_banner.get();
+        wait_until(WAIT, || banner.is_revealed()).expect("the banner says the tabs are not saved");
+        assert_eq!(banner.action_name().as_deref(), Some("win.reset-workspace-layout"));
+
+        WidgetExt::activate_action(&test.window, "win.reset-workspace-layout", None).expect("Reset");
+
+        wait_until(WAIT, || !banner.is_revealed()).expect("the banner goes once the file is moved aside");
     }
 
     #[gtk4::test]

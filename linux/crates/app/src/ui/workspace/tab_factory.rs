@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use gtk4 as gtk;
-use gtk4::glib;
+use gtk4::{gio, glib};
 use libadwaita as adw;
 use libadwaita::prelude::*;
 use tablepro_core::meta::TableRef;
@@ -29,7 +29,7 @@ use crate::ui::browse_tab::{BrowseTab, BrowseTabInit};
 use crate::ui::editor::{SqlEditor, SqlEditorInit};
 use crate::ui::structure_tab::{StructureMode, StructureTab, StructureTabInit};
 use crate::ui::tab_load::FirstLoad;
-use crate::workspace::DraftWriter;
+use crate::workspace::{DraftWriter, EditorFileRecord};
 
 /// What a factory builds its tabs from: the workspace's session, stores
 /// and trackers.
@@ -78,7 +78,11 @@ impl TabFactory {
     fn build(&self, spec: TabSpec, first_load: FirstLoad) -> Option<adw::TabPage> {
         let id = Uuid::new_v4();
         let slot = match spec {
-            TabSpec::Editor { initial_query, draft } => self.editor(id, initial_query, draft),
+            TabSpec::Editor {
+                initial_query,
+                draft,
+                file,
+            } => self.editor(id, initial_query, draft, file),
             TabSpec::Table { table, page } => self.table(id, table, page, first_load)?,
             TabSpec::Structure { target } => self.structure(id, target, first_load)?,
         };
@@ -88,7 +92,7 @@ impl TabFactory {
     /// The overview's new-tab button needs its page back at once.
     pub(super) fn create_editor(&self) -> adw::TabPage {
         let id = Uuid::new_v4();
-        let slot = self.editor(id, None, None);
+        let slot = self.editor(id, None, None, None);
         self.insert(id, slot)
     }
 
@@ -106,7 +110,13 @@ impl TabFactory {
         page
     }
 
-    fn editor(&self, id: Uuid, initial_query: Option<String>, draft: Option<DraftId>) -> WorkspaceTab {
+    fn editor(
+        &self,
+        id: Uuid,
+        initial_query: Option<String>,
+        draft: Option<DraftId>,
+        file: Option<EditorFileRecord>,
+    ) -> WorkspaceTab {
         let parts = &self.parts;
         // Such a tab shows the editor's sample query, which names nothing.
         let opened_empty = initial_query.is_none();
@@ -120,11 +130,17 @@ impl TabFactory {
             close_timeout: parts.context.close_timeout(),
         });
         connect_editor(&editor, id, &parts.input, &parts.toasts);
+        // After the signals are connected, so the workspace marks a tab
+        // restored with unsaved changes.
+        if let Some(file) = file {
+            editor.restore_file(gio::File::for_uri(&file.uri), file.modified);
+        }
         let ordinal = self.free_ordinal();
         let page = self.append(&editor, id);
-        let label = match opened_empty {
-            true => EditorLabel::Untitled(ordinal),
-            false => EditorPreview::read(&editor.buffer()).label(ordinal),
+        let label = match (opened_empty, editor.file()) {
+            (_, Some(file)) => EditorLabel::file(&file),
+            (true, None) => EditorLabel::Untitled(ordinal),
+            (false, None) => EditorPreview::read(&editor.buffer()).label(ordinal),
         };
         let draft = draft.unwrap_or_else(|| {
             // Text a new tab opens with is written even if the user
@@ -323,6 +339,8 @@ pub(super) fn connect_editor(
     });
     let content = input.clone();
     editor.connect_content_changed(move |_| content.deliver(WorkspaceInput::EditorTabContentChanged(tab_id)));
+    let file = input.clone();
+    editor.connect_file_changed(move |_| file.deliver(WorkspaceInput::EditorTabFileChanged(tab_id)));
     let transaction = input.clone();
     editor.connect_transaction_changed(move |_, _| transaction.deliver(WorkspaceInput::EditorTransactionChanged));
     let toast = input.clone();

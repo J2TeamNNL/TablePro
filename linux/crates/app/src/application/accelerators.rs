@@ -106,7 +106,14 @@ pub const ACCELERATORS: &[Accelerator] = &[
     ),
     stock("tab-view.select-tenth", &["<Alt>0"], Unlisted),
     local(BrowseTab, BUBBLE, "browse.filter", &["<Primary>f"], Listed(BrowseTable)),
-    local(BrowseTab, BUBBLE, "browse.refresh", &["F5"], Listed(BrowseTable)),
+    // F5 as in GNOME Files, and Ctrl+R as the GNOME HIG names Reload.
+    local(
+        BrowseTab,
+        BUBBLE,
+        "browse.refresh",
+        &["F5", "<Primary>r"],
+        Listed(BrowseTable),
+    ),
     local(BrowseTab, BUBBLE, "browse.save", &["<Primary>s"], Listed(BrowseTable)),
     local(BrowseTab, BUBBLE, "browse.undo", &["<Primary>z"], Listed(BrowseTable)),
     local(
@@ -226,6 +233,27 @@ pub const ACCELERATORS: &[Accelerator] = &[
         &["<Primary>slash"],
         Listed(ShortcutSection::SqlEditor),
     ),
+    local(
+        SqlEditorTab,
+        BUBBLE,
+        "editor.open-file",
+        &["<Primary>o"],
+        Listed(ShortcutSection::SqlEditor),
+    ),
+    local(
+        SqlEditorTab,
+        BUBBLE,
+        "editor.save",
+        &["<Primary>s"],
+        Listed(ShortcutSection::SqlEditor),
+    ),
+    local(
+        SqlEditorTab,
+        BUBBLE,
+        "editor.save-as",
+        &["<Primary><Shift>s"],
+        Listed(ShortcutSection::SqlEditor),
+    ),
     // GtkSearchEntry binds Ctrl+G and Ctrl+Shift+G itself, and the find
     // bar follows its next-match and previous-match signals.
     local(
@@ -256,7 +284,6 @@ pub const ACCELERATORS: &[Accelerator] = &[
         &["<Primary><Shift>g"],
         Listed(ShortcutSection::SqlEditor),
     ),
-    application("win.save-query", &["<Primary><Shift>s"], ShortcutSection::SqlEditor),
     local(
         StructureTab,
         BUBBLE,

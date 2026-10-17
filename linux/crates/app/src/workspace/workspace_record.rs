@@ -83,7 +83,10 @@ mod tests {
                     schema: None,
                     table: "users".to_owned(),
                 },
-                TabRecord::Editor { draft: DraftId::new() },
+                TabRecord::Editor {
+                    draft: DraftId::new(),
+                    file: None,
+                },
             ],
         };
 
@@ -130,6 +133,7 @@ mod tests {
                     },
                     TabRecord::Editor {
                         draft: DraftId::from_uuid(draft),
+                        file: None,
                     },
                     TabRecord::Structure {
                         schema: Some("sales".to_owned()),
@@ -155,7 +159,10 @@ mod tests {
             active_tab: Some(35),
             tabs: (0..40)
                 .map(|index| match index % 2 {
-                    0 => TabRecord::Editor { draft: DraftId::new() },
+                    0 => TabRecord::Editor {
+                        draft: DraftId::new(),
+                        file: None,
+                    },
                     _ => table(&format!("t{index}")),
                 })
                 .collect(),

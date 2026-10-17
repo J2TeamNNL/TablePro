@@ -122,6 +122,12 @@ pub(crate) struct WorkspaceModel {
     all_schemas_listed: bool,
     toast_overlay: adw::ToastOverlay,
     reconnect_banner: adw::Banner,
+    /// Says the sidebar's list could not be read again, until a read
+    /// lands.
+    catalog_banner: adw::Banner,
+    /// Says the saved tabs could not be read, until Reset moves them
+    /// aside.
+    layout_banner: adw::Banner,
     row_op_spinner: adw::Spinner,
     table_search: gtk::SearchEntry,
     /// Removes a changed host key from known_hosts. `None` without ssh.
@@ -167,6 +173,8 @@ pub(crate) struct WorkspaceModel {
     /// kept: the close has already cleared them.
     closed_tabs_stack: Rc<RefCell<VecDeque<ClosedTabDescriptor>>>,
     _watches: SessionWatches,
+    /// Tells the user once when editor drafts start failing to land.
+    _draft_failures: tablepro_session::runtime::WatchForwarder,
 }
 
 /// The workspace's own slot: a tab reads it for the session, and it
@@ -178,6 +186,35 @@ fn session_slot(window_context: &SessionContext, session: &Arc<Session>) -> Rc<S
     });
     context.active.replace(session.clone());
     context
+}
+
+fn window_inhibitor(window: &adw::ApplicationWindow) -> WindowInhibitor {
+    WindowInhibitor::new(ApplicationInhibit::new(window))
+}
+
+/// The driver's name, or its id when this build has no such driver.
+fn driver_display_name(context: &SessionContext, driver_id: &str) -> String {
+    context
+        .drivers
+        .get(driver_id)
+        .map_or_else(|| driver_id.to_owned(), |driver| driver.display_name().to_owned())
+}
+
+/// Tells the user once each time editor drafts start failing to land.
+fn draft_failure_watch(
+    drafts: &crate::workspace::DraftWriter,
+    input: &WorkspaceSender,
+) -> tablepro_session::runtime::WatchForwarder {
+    let failing = input.clone();
+    tablepro_session::runtime::WatchForwarder::new(
+        drafts.failing(),
+        move |failed: bool| {
+            if failed {
+                failing.deliver(WorkspaceInput::DraftsNotSaved);
+            }
+        },
+        sidebar::spawn_local,
+    )
 }
 
 struct WorkspaceTabParts {
@@ -198,6 +235,7 @@ struct WorkspaceTabParts {
 pub enum ClosedTabDescriptor {
     Editor {
         query: String,
+        file: Option<crate::workspace::EditorFileRecord>,
     },
     Table {
         schema: Option<String>,
@@ -368,6 +406,9 @@ pub(crate) enum WorkspaceInput {
     CatalogChanged(ObjectListSnapshot),
     /// A refresh of that list failed, and the list stays as it was.
     CatalogReadFailed(String),
+    /// Read the session's tables again: the sidebar's Refresh, or a run
+    /// in the editor that changed them.
+    RefreshCatalog,
     /// The default schema's list landed, as a reconnect commits it.
     DefaultListCommitted(ObjectListSnapshot),
     /// The schemas the sidebar's sections are made from, read for
@@ -389,12 +430,17 @@ pub(crate) enum WorkspaceInput {
     EditorTabRunStateChanged(Uuid, bool),
     EditorTabRunFinished(Uuid, crate::workspace::WorkOutcome),
     EditorTabContentChanged(Uuid),
+    /// An editor tab was saved, opened a file, or its text came to
+    /// differ from its file's or match it again.
+    EditorTabFileChanged(Uuid),
     /// The session's saved tabs and their editor text, read off the GTK
     /// thread.
     WorkspaceLoaded(workspace_tabs::LoadedWorkspace),
-    /// The toast's Reset: move the unreadable saved tabs aside.
+    /// The banner's Reset: move the unreadable saved tabs aside.
     ResetWorkspaceLayout,
     WorkspaceLayoutReset(Result<Option<std::path::PathBuf>, crate::workspace::WorkspaceSaveError>),
+    /// An editor draft failed to land after the last one did.
+    DraftsNotSaved,
     ShowHistory,
     ShowSavedQueries,
     SaveActiveQuery,
@@ -431,8 +477,6 @@ pub(crate) enum WorkspaceInput {
         tab: Uuid,
         outcome: crate::workspace::WorkOutcome,
     },
-    /// Text to copy as it is, such as a saved query.
-    CopyText(String),
     WorkspaceTabClosed(Uuid),
     /// Each tab still asks about its own unsaved changes.
     CloseOtherWorkspaceTabs(Uuid),
@@ -516,11 +560,8 @@ impl Workspace {
             tasks.clone(),
         );
         let persistence = workspace_persistence::WorkspacePersistence::new(storage.workspaces().clone());
-        let exports = workspace.export_ledger(&window, &tasks, &context, &input);
-        let imports = import_ledger::ImportLedger::new(
-            context.hold.clone(),
-            WindowInhibitor::new(ApplicationInhibit::new(&window)),
-        );
+        let exports = workspace.export_ledger(&window, &services, &context, &input);
+        let imports = import_ledger::ImportLedger::new(context.hold.clone(), window_inhibitor(&window));
         let sidebar = sidebar::build(&workspace, &input, sidebar::SidebarAffordances::for_session(&session));
         let WorkspaceTabParts {
             tab_view,
@@ -537,12 +578,10 @@ impl Workspace {
         actions.push(shell::SHOW_SIDEBAR);
         let history_gate = workspace_actions::spawn_history_gate(&window, history.availability());
         let watches = SessionWatches::new(&session, &input);
+        let draft_failures = draft_failure_watch(&drafts, &input);
 
         let driver_id = session.metadata().driver_id.clone();
-        let driver_name = context
-            .drivers
-            .get(&driver_id)
-            .map_or_else(|| driver_id.clone(), |driver| driver.display_name().to_owned());
+        let driver_name = driver_display_name(&context, &driver_id);
         let model = WorkspaceModel {
             context,
             key,
@@ -565,6 +604,8 @@ impl Workspace {
             all_schemas_listed: false,
             toast_overlay: imp.toast_overlay.get(),
             reconnect_banner: imp.reconnect_banner.get(),
+            catalog_banner: imp.catalog_banner.get(),
+            layout_banner: imp.layout_banner.get(),
             row_op_spinner: imp.row_op_spinner.get(),
             table_search: imp.table_search.get(),
             ssh: services.ssh(),
@@ -591,6 +632,7 @@ impl Workspace {
             workspace: persistence,
             closed_tabs_stack: Rc::new(RefCell::new(VecDeque::with_capacity(CLOSED_TABS_CAPACITY))),
             _watches: watches,
+            _draft_failures: draft_failures,
         };
         imp.model.replace(Some(model));
         workspace.register_close_blocker(exports);
@@ -613,16 +655,16 @@ impl Workspace {
     fn export_ledger(
         &self,
         window: &adw::ApplicationWindow,
-        tasks: &tablepro_session::runtime::Tasks,
+        services: &AppServices,
         context: &SessionContext,
         input: &WorkspaceSender,
     ) -> Rc<ExportLedger> {
         let imp = self.imp();
         let exports = ExportLedger::new(ExportLedgerInit {
-            tasks: tasks.clone(),
+            tasks: services.tasks.clone(),
             hold: context.hold.clone(),
-            reporter: ExportReporter::new(window, &imp.toast_overlay.get()),
-            inhibitor: WindowInhibitor::new(ApplicationInhibit::new(window)),
+            reporter: ExportReporter::new(window, &imp.toast_overlay.get(), services.file_revealer.clone()),
+            inhibitor: window_inhibitor(window),
         });
         imp.export_operations_button.bind(&exports.jobs());
         let ended = input.clone();
@@ -933,6 +975,7 @@ impl WorkspaceModel {
             }
             WorkspaceInput::CatalogChanged(snapshot) => self.on_catalog_changed(snapshot),
             WorkspaceInput::CatalogReadFailed(message) => self.on_catalog_read_failed(&message),
+            WorkspaceInput::RefreshCatalog => self.refresh_catalog(),
             WorkspaceInput::DefaultListCommitted(snapshot) => self.on_default_list_committed(snapshot),
             WorkspaceInput::SidebarRead { read, objects, schemas } => self.on_sidebar_read(read, &objects, schemas),
             WorkspaceInput::LinkChanged => self.on_link_changed(),
@@ -968,11 +1011,16 @@ impl WorkspaceModel {
             WorkspaceInput::EditorTabRunStateChanged(id, running) => self.on_editor_tab_run_state_changed(id, running),
             WorkspaceInput::EditorTabRunFinished(id, outcome) => {
                 self.report_work(id, crate::workspace::WorkKind::Query, outcome);
+                self.on_editor_run_finished(id);
             }
             WorkspaceInput::EditorTabContentChanged(id) => self.on_editor_tab_content_changed(id),
+            WorkspaceInput::EditorTabFileChanged(id) => self.on_editor_tab_file_changed(id),
             WorkspaceInput::WorkspaceLoaded(loaded) => self.on_workspace_loaded(loaded),
             WorkspaceInput::ResetWorkspaceLayout => self.on_reset_workspace_layout(),
             WorkspaceInput::WorkspaceLayoutReset(outcome) => self.on_workspace_layout_reset(outcome),
+            WorkspaceInput::DraftsNotSaved => self.show_toast(&crate::i18n::gettext(
+                "Editor text could not be saved to disk, so it may not come back after TablePro restarts.",
+            )),
             WorkspaceInput::ShowHistory => self.on_show_history(),
             WorkspaceInput::ShowSavedQueries => self.on_show_saved_queries(),
             WorkspaceInput::ImportCsvRequested { schema, table } => self.on_import_csv_requested(schema, table),
@@ -1004,7 +1052,6 @@ impl WorkspaceModel {
             WorkspaceInput::ExportEnded { tab, outcome } => {
                 self.report_work(tab, crate::workspace::WorkKind::Export, outcome);
             }
-            WorkspaceInput::CopyText(text) => self.on_copy_text(text),
             WorkspaceInput::ReopenClosedTab => self.on_reopen_closed_tab(),
             WorkspaceInput::RefreshTab(id) => self.on_refresh_tab(id),
             WorkspaceInput::FocusTab(id) => self.focus_tab(id),

@@ -193,6 +193,7 @@ crates/app/src/ui/credential_prompt/prompter.rs
 crates/app/src/ui/delete_connection_dialog.rs
 crates/app/src/ui/discard_alert.rs
 crates/app/src/ui/editor/buffer_edit.rs
+crates/app/src/ui/editor/catalog_change.rs
 crates/app/src/ui/editor/completion/catalog_read.rs
 crates/app/src/ui/editor/completion/completion_scope.rs
 crates/app/src/ui/editor/completion/fuzzy.rs
@@ -204,6 +205,7 @@ crates/app/src/ui/editor/completion/sql_proposal.rs
 crates/app/src/ui/editor/completion/sql_proposal_imp.rs
 crates/app/src/ui/editor/completion/tests.rs
 crates/app/src/ui/editor/editor_actions.rs
+crates/app/src/ui/editor/editor_file.rs
 crates/app/src/ui/editor/editor_session_slot.rs
 crates/app/src/ui/editor/find_bar.rs
 crates/app/src/ui/editor/find_state.rs
@@ -339,6 +341,7 @@ crates/app/src/ui/host_key_review.rs
 crates/app/src/ui/icons.rs
 crates/app/src/ui/import_dialog.rs
 crates/app/src/ui/mod.rs
+crates/app/src/ui/name_entry.rs
 crates/app/src/ui/picker/connection_menu.rs
 crates/app/src/ui/picker/connection_row.rs
 crates/app/src/ui/picker/mod.rs
@@ -493,6 +496,7 @@ crates/app/src/workspace/dialog_response.rs
 crates/app/src/workspace/dirty_kind.rs
 crates/app/src/workspace/dirty_tab.rs
 crates/app/src/workspace/draft_writer.rs
+crates/app/src/workspace/editor_file_record.rs
 crates/app/src/workspace/engine_profile.rs
 crates/app/src/workspace/inhibit_reason.rs
 crates/app/src/workspace/legacy_tab_file.rs

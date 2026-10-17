@@ -2,9 +2,9 @@ use std::cell::{Cell, OnceCell, RefCell};
 use std::sync::{Arc, OnceLock};
 
 use glib::subclass::Signal;
-use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
+use gtk4::{gio, glib};
 use libadwaita as adw;
 use libadwaita::subclass::prelude::*;
 use tokio_util::sync::CancellationToken;
@@ -51,7 +51,16 @@ pub struct SqlEditor {
     pub grid_sink: OnceCell<GridSink>,
     /// Whether the last run left a transaction open, as last reported.
     pub transaction_dirty: Cell<bool>,
+    /// Whether the run in flight, or the last one, can change what the
+    /// catalog lists.
+    pub changes_catalog: Cell<bool>,
     pub shut_down: Cell<bool>,
+    /// The file the text was opened from or last saved to.
+    pub file: RefCell<Option<gio::File>>,
+    pub saving: Cell<bool>,
+    /// Counts every change to the buffer, so a save knows whether the
+    /// text it wrote is still what the tab holds.
+    pub edits: Cell<u64>,
     /// Theme and font handlers on the app-wide style manager and
     /// settings, which would otherwise outlive the tab.
     pub(super) app_handlers: RefCell<Vec<HandlerGuard>>,
@@ -100,6 +109,7 @@ impl ObjectImpl for SqlEditor {
                 Signal::builder("transaction-changed")
                     .param_types([bool::static_type()])
                     .build(),
+                Signal::builder("file-changed").build(),
             ]
         })
     }

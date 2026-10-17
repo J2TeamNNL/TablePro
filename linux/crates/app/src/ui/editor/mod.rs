@@ -3,8 +3,10 @@
 //! gets a line in the results list.
 
 mod buffer_edit;
+mod catalog_change;
 mod completion;
 mod editor_actions;
+mod editor_file;
 mod editor_session_slot;
 mod find_bar;
 mod find_state;
@@ -42,6 +44,7 @@ use tablepro_session::runtime::{ProcessHold, Tasks};
 use tokio_util::sync::CancellationToken;
 
 use self::buffer_edit::{CursorAnchor, replace_all_undoable};
+pub(crate) use self::editor_file::file_name;
 use self::imp::RunningScript;
 use self::result_widgets::PageActions;
 use self::run_log::{EntryKind, RunEvent, RunLog};
@@ -113,6 +116,7 @@ impl SqlEditor {
         editor.connect_theme(&init.settings);
         editor.connect_completion(&buffer);
         editor.connect_buffer(&buffer);
+        editor.follow_file_state(&buffer);
         editor.install_actions();
         editor.install_drop_target();
         editor.connect_buttons();
@@ -133,6 +137,12 @@ impl SqlEditor {
     /// Whether the tab's connection holds a transaction the user opened.
     pub fn has_open_transaction(&self) -> bool {
         self.imp().transaction_dirty.get()
+    }
+
+    /// Whether the last run sent a statement that can change what the
+    /// catalog lists, so the window reads it again once the run ends.
+    pub(crate) fn last_run_changes_catalog(&self) -> bool {
+        self.imp().changes_catalog.get()
     }
 
     /// Stop the running query. The results list says what ran before.
@@ -249,7 +259,8 @@ impl SqlEditor {
     }
 
     /// Read a dropped or chosen file and put it in the buffer: the whole
-    /// buffer when it is empty, at the cursor otherwise.
+    /// buffer when it is empty, at the cursor otherwise. A file that
+    /// fills the buffer is the one Save writes back to.
     pub async fn insert_file(&self, file: gio::File, replace: bool) {
         let text = match sql_file::load_text(&file).await {
             Ok(text) => text,
@@ -261,6 +272,7 @@ impl SqlEditor {
         let buffer = self.buffer();
         if replace || buffer_text(&buffer).trim().is_empty() {
             replace_all_undoable(&buffer, &text);
+            self.opened_file(file);
         } else {
             buffer.begin_user_action();
             buffer.insert_at_cursor(&text);
@@ -373,11 +385,17 @@ impl SqlEditor {
                 .line(),
         )
         .unwrap_or_default();
-        let (batches, policy, warnings) = plan_batches(&scoped, self.grammar(), base_line);
+        let grammar = self.grammar();
+        let (batches, policy, warnings) = plan_batches(&scoped, grammar, base_line);
         if batches.is_empty() {
             self.say(&crate::i18n::gettext("There is nothing to run."));
             return;
         }
+        imp.changes_catalog.set(
+            batches
+                .iter()
+                .any(|batch| catalog_change::changes_catalog(&batch.text, grammar)),
+        );
         let statements = batches.iter().map(|batch| UserSql::new(batch.text.as_str())).collect();
         let run = ScriptRun {
             batches,
@@ -795,10 +813,7 @@ impl SqlEditor {
     }
 
     fn choose_file(&self) {
-        let filter = gtk4::FileFilter::new();
-        filter.set_name(Some(&crate::i18n::gettext("SQL files")));
-        filter.add_suffix("sql");
-        filter.add_mime_type("application/sql");
+        let filter = editor_file::sql_filter();
         let filters = gio::ListStore::new::<gtk4::FileFilter>();
         filters.append(&filter);
         let dialog = gtk4::FileDialog::builder()
