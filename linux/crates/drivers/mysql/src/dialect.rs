@@ -455,8 +455,9 @@ mod tests {
 
         let sql = tablepro_core::export::render_sql_insert(
             &dialect(MySqlFlavour::MySql),
-            "t",
+            &tablepro_core::meta::TableRef::unqualified("t"),
             &columns,
+            &[],
             &[vec![Value::Int(1)]],
         );
 
