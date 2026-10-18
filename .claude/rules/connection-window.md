@@ -1,10 +1,10 @@
 ---
 paths:
-  - "TablePro/Core/Services/Infrastructure/**/*"
-  - "TablePro/Models/Connection/**/*"
-  - "TablePro/Core/Database/DatabaseManager*.swift"
-  - "Packages/TableProCore/Sources/TableProDatabase/**/*"
-  - "TablePro/Views/Main/**/*"
+  - "apple/TablePro/Core/Services/Infrastructure/**/*"
+  - "apple/TablePro/Models/Connection/**/*"
+  - "apple/TablePro/Core/Database/DatabaseManager*.swift"
+  - "apple/Packages/TableProCore/Sources/TableProDatabase/**/*"
+  - "apple/TablePro/Views/Main/**/*"
 ---
 
 # Connection windows and sessions

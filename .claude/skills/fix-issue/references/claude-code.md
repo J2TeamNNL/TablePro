@@ -5,7 +5,7 @@
 - Keep a task list with the phases this run uses (`TodoWrite` or the task tools, when present), and progress in `plan.md` either way.
 - Ask with `AskUserQuestion`, recommendation first, only for the cases in Autonomy.
 - The Bash tool's working directory resets to the main checkout between calls: start every command for the tree with `cd <tree> &&`, or pass `-C <tree>`.
-- Claude Code injects `AGENTS.md` and path rules from the session's checkout, which can be on another branch than the tree. The tree's copies, read in `SKILL.md` Phase 2 (Rules read), win.
+- Claude Code injects `AGENTS.md`, a platform guide and path rules from the session's checkout, which can be on another branch than the tree. The tree's copies, read in `SKILL.md` Phase 2 (Rules read), win.
 
 ## Lanes
 

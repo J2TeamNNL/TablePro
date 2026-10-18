@@ -1,8 +1,8 @@
 ---
 paths:
-  - "TablePro/Views/Welcome/**/*"
-  - "TablePro/ViewModels/WelcomeViewModel*.swift"
-  - "Packages/TableProCore/Sources/TableProConnectionLibrary/**/*"
+  - "apple/TablePro/Views/Welcome/**/*"
+  - "apple/TablePro/ViewModels/WelcomeViewModel*.swift"
+  - "apple/Packages/TableProCore/Sources/TableProConnectionLibrary/**/*"
 ---
 
 # Welcome connection list

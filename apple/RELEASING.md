@@ -1,6 +1,6 @@
 # Releasing
 
-This runbook covers the macOS app, its registry plugins and the static libraries; the iOS app ships by hand, and the Linux app's runbook is `linux/docs/releasing.md`. The `release` skill (`.claude/skills/release/SKILL.md`) decides what ships and points at the sections here. Every command below is the maintainer's to run.
+This runbook covers the macOS app, its registry plugins and the static libraries; the iOS app ships by hand, and the Linux app's runbook is `linux/docs/releasing.md`. The `release` skill (`.claude/skills/release/SKILL.md`) decides what ships and points at the sections here. Every command below is the maintainer's to run, from the repository root; a path in prose is relative to `apple/`.
 
 ## Channels
 
@@ -26,6 +26,7 @@ This runbook covers the macOS app, its registry plugins and the static libraries
 - Every fix lands on `main` first, then reaches the line through a cherry-pick PR from `backport/<PR>-<X.Y>`: one fix per PR, titled with the original subject and its ` (#N)`, which is the provenance. A release PR comes from `prep/v<X.Y.Z>`. No PR head branch lives under `release/*`.
 - A line closes when `X.(Y+1).0` ships. A later security or data-loss fix for its users ships as a critical patch on the current stable line. At most two lines are live.
 - After a stable or patch publishes, a PR with the same title cherry-picks its release commit to `main`, and to a newer open line when one exists. The next tag refuses to build until it has.
+- The 0.82 line was cut before the Apple apps moved into `apple/`: on it every path here sits at the repository root, and a pick across the move relies on git's rename detection.
 
 ## Schedule
 
@@ -41,8 +42,8 @@ Tags go out between 13:00 and 15:00 ICT (UTC+7).
 
 ## Notes
 
-- Fragments in `changelog.d/` (`.claude/rules/changelog.md`) become a `CHANGELOG.md` section. The tooling needs towncrier: `python3 -m venv .venv && .venv/bin/pip install --require-hashes -r scripts/release/requirements.txt`.
-- `.venv/bin/python scripts/release/notes.py assemble X.Y.Z [--date YYYY-MM-DD]` runs on `prep/v<X.Y.Z>`. It refuses a beta, an empty `changelog.d/`, and a version `CHANGELOG.md` already has. It credits each fragment ` by @login` when its PR's author is not an OWNER or MEMBER (read with `gh`), then runs `towncrier build`, which deletes the fragments and stages `CHANGELOG.md`.
+- Fragments in `changelog.d/` (`.claude/rules/changelog.md`) become a `CHANGELOG.md` section. The tooling needs the towncrier venv of the root `RELEASING.md`, Notes.
+- `.venv/bin/python apple/scripts/release/notes.py assemble X.Y.Z [--date YYYY-MM-DD]` runs on `prep/v<X.Y.Z>`. It refuses a beta, an empty `changelog.d/`, and a version `CHANGELOG.md` already has. It credits each fragment ` by @login` when its PR's author is not an OWNER or MEMBER (read with `gh`), then runs `towncrier build`, which deletes the fragments and stages `CHANGELOG.md`.
 - The lead: X.Y.0 only, at most 6 plain lines, typed under the heading in the release PR, naming what a reader would change their behavior over. With a lead, What's New, the Sparkle notes and the Telegram post show only the lead. Without one, the Sparkle notes carry the whole section and What's New points at the changelog.
 - A beta gets no section. Its GitHub release body and feed notes are a towncrier draft of the fragments at the tag.
 
@@ -63,9 +64,9 @@ git push origin vX.Y.0-beta.N
 ```bash
 git fetch origin
 git switch -c prep/vX.Y.Z origin/release/X.Y
-.venv/bin/python scripts/release/notes.py assemble X.Y.Z
+.venv/bin/python apple/scripts/release/notes.py assemble X.Y.Z
 # X.Y.0: type the lead under the heading; critical: append ' [CRITICAL]' to it
-git add CHANGELOG.md
+git add apple/CHANGELOG.md
 git commit -m "chore(release): vX.Y.Z"
 git push -u origin prep/vX.Y.Z
 gh pr create --base release/X.Y --title "chore(release): vX.Y.Z" --body "Release notes for vX.Y.Z."
@@ -87,7 +88,7 @@ git switch -c forward/vX.Y.Z origin/main
 git cherry-pick <release commit>
 git push -u origin forward/vX.Y.Z
 gh pr create --base main --title "chore(release): vX.Y.Z" --body "Forward-port of #<PR>."
-python3 scripts/release/notes.py docs X.Y.Z --ref vX.Y.Z --mdx ../tablepro-docs/changelog.mdx
+python3 apple/scripts/release/notes.py docs X.Y.Z --ref vX.Y.Z --mdx ../tablepro-docs/changelog.mdx
 ```
 
 - A cherry-pick conflict on a fragment reworded on `main`: delete the fragment; on `CHANGELOG.md`: keep both sections, in version order. The docs PR is `docs(changelog): vX.Y.Z` in TableProApp/docs, opened with the maintainer's own `gh` (a PR opened with `GITHUB_TOKEN` starts no workflows) and merged once the release is published.
@@ -151,18 +152,18 @@ gh workflow run withdraw.yml --ref v<newest tag> -f version=X.Y.Z
 The `.a` files under `Libs/` and the xcframeworks under `Libs/ios/` live on the immutable `libs-<n>` GitHub release that `Libs/release` names, not in git; `scripts/download-libs.sh` fetches it and verifies every file against the checksums at `HEAD`. `scripts/publish-libs.sh` takes every library you rebuilt, added or removed, verifies the others against `HEAD`, creates the next `libs-<n>` and rewrites `Libs/release` and both checksum files (`--dry-run` only prints). A published `libs-<n>` never changes: a fix is the next `<n>`. Each library is built by a `build-*.sh` in `scripts/` or `scripts/ios/`.
 
 ```bash
-scripts/publish-libs.sh libmongoc_arm64.a libmongoc_x86_64.a libmongoc_universal.a libmongoc.a
-git add Libs/release Libs/checksums.sha256 Libs/ios/checksums.sha256 && git commit -m "build(libs): publish libs-<n>"
+apple/scripts/publish-libs.sh libmongoc_arm64.a libmongoc_x86_64.a libmongoc_universal.a libmongoc.a
+git add apple/Libs/release apple/Libs/checksums.sha256 apple/Libs/ios/checksums.sha256 && git commit -m "build(libs): publish libs-<n>"
 ```
 
 ## Reproducing a Release build
 
 ```bash
 export VERSION=0.0.0-dev BUILD=9999999
-scripts/download-libs.sh && scripts/generate-project.sh macos
-scripts/release/build.sh app --unsigned && scripts/release/package.sh app --unsigned
-scripts/build-dameng.sh both && scripts/build-hana.sh both
-scripts/release/build.sh plugins --unsigned && scripts/release/package.sh plugins --unsigned
+apple/scripts/download-libs.sh && apple/scripts/generate-project.sh macos
+apple/scripts/release/build.sh app --unsigned && apple/scripts/release/package.sh app --unsigned
+apple/scripts/build-dameng.sh both && apple/scripts/build-hana.sh both
+apple/scripts/release/build.sh plugins --unsigned && apple/scripts/release/package.sh plugins --unsigned
 ```
 
 - `build.sh` writes `build/release/` (xcodebuild logs in `build/release/logs/`), `package.sh` writes `dist/`. CI builds the same in Release Build (`.claude/rules/ci.md`, Release Build). Signed: drop `--unsigned`, export the tag's `VERSION` and `BUILD`, and have the Developer ID identity and the provisioning profile `ExportOptions.plist` names. `notarize.sh <path>...` needs the profile `xcrun notarytool store-credentials TablePro --key <p8> --key-id <id> --issuer <issuer>` creates.

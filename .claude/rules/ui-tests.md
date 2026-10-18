@@ -1,7 +1,7 @@
 ---
 paths:
-  - "TableProUITests/**/*"
-  - "TestPlans/UI.xctestplan"
+  - "apple/TableProUITests/**/*"
+  - "apple/TestPlans/UI.xctestplan"
 ---
 
 # UI tests
@@ -16,13 +16,13 @@ The UI plan holds end-to-end flows only. Swift Testing rules, isolation and shar
 
 ## The UI plan
 
-- `TestPlans/UI.xctestplan`: timeouts on, 180 s default and 300 s maximum per case, no code coverage, `retryOnFailure` with `maximumTestRepetitions` 2, so a failed case runs once more.
+- `apple/TestPlans/UI.xctestplan`: timeouts on, 180 s default and 300 s maximum per case, no code coverage, `retryOnFailure` with `maximumTestRepetitions` 2, so a failed case runs once more.
 - A case that passed only on the retry is a flake. Fix it in the same PR, or open an issue for it. `verify.sh` lists it and CI annotates it (`.claude/skills/fix-issue/references/verification-apple.md`, Reading CI).
 - The plan has no language keys: `launchApp` passes them as launch arguments.
 
 ## The harness
 
-- Every suite subclasses `UITestCase` (`TableProUITests/Support/UITestCase.swift`), the only launch path that names a sandbox. The SwiftLint rule `ui_test_base_class` fails `XCUIApplication()` or `: XCTestCase` anywhere else.
+- Every suite subclasses `UITestCase` (`apple/TableProUITests/Support/UITestCase.swift`), the only launch path that names a sandbox. The SwiftLint rule `ui_test_base_class` fails `XCUIApplication()` or `: XCTestCase` anywhere else.
 - The sandbox is one folder per checkout under `$TMPDIR/TableProUITests/`, recreated for each test. Teardown terminates every launched app before deleting it, because the app writes on the way down.
 - `continueAfterFailure` is false. A failed test attaches each launched app's element tree as `element-tree-<n>`.
 - An interruption monitor answers a system privacy alert, since XCTest's own handler misses macOS 26's local-network alert.

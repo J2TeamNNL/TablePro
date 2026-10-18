@@ -1,8 +1,8 @@
 ---
 paths:
-  - "TablePro/Core/AI/**/*"
-  - "TablePro/Core/MCP/**/*"
-  - "Packages/TableProMacCore/Sources/TableProMCP/**/*"
+  - "apple/TablePro/Core/AI/**/*"
+  - "apple/TablePro/Core/MCP/**/*"
+  - "apple/Packages/TableProMacCore/Sources/TableProMCP/**/*"
 ---
 
 # AI and MCP

@@ -127,7 +127,7 @@ docs(linux): clarify the TLS step for a new driver
 
 ## Changelog
 
-A user-visible change adds one towncrier fragment, `changelog.d/<PR>.<type>.md` in this directory, which the release turns into a [CHANGELOG.md](CHANGELOG.md) section ([docs/releasing.md](docs/releasing.md)). The repository-level `CHANGELOG.md` and `changelog.d/` are the macOS release notes; a Linux change never goes there. [`.claude/rules/changelog.md`](../.claude/rules/changelog.md) has the rules for both.
+A user-visible change adds one towncrier fragment, `changelog.d/<PR>.<type>.md` in this directory, which the release turns into a [CHANGELOG.md](CHANGELOG.md) section ([docs/releasing.md](docs/releasing.md)). `apple/CHANGELOG.md` and `apple/changelog.d/` are the macOS release notes; a Linux change never goes there. [`.claude/rules/changelog.md`](../.claude/rules/changelog.md) has the rules for both.
 
 ## Pull requests
 
@@ -144,7 +144,7 @@ A user-visible change adds one towncrier fragment, `changelog.d/<PR>.<type>.md` 
 
 - Documentation for end users (installation, FAQ, screenshots) lives in the [TableProApp/docs](https://github.com/TableProApp/docs) repository.
 - Cross-platform decisions (release cadence, branding, pricing) are not made in this subproject.
-- macOS plugin work, which lives in the repository's `Plugins/` directory.
+- macOS plugin work, which lives in `apple/Plugins/`.
 
 ## Where to start as a contributor
 

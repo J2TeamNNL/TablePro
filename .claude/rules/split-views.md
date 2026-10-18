@@ -1,7 +1,7 @@
 ---
 paths:
-  - "TablePro/**/*Split*.swift"
-  - "TablePro/Core/Services/Infrastructure/WorkspacePane*.swift"
+  - "apple/TablePro/**/*Split*.swift"
+  - "apple/TablePro/Core/Services/Infrastructure/WorkspacePane*.swift"
 ---
 
 # Split views

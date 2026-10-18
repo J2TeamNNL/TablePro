@@ -1,6 +1,6 @@
 # Verification on Apple
 
-Read this when a verdict, a test name or a red CI check needs explaining. The commands, the verdict words and the verdict rules are in `AGENTS.md`, Commands; when each step runs is in `references/platform-apple.md`, Verify.
+Read this when a verdict, a test name or a red CI check needs explaining. The commands, the verdict words and the verdict rules are in `apple/AGENTS.md`, Commands; when each step runs is in `references/platform-apple.md`, Verify.
 
 ## Usage
 
@@ -33,7 +33,7 @@ Read this when a verdict, a test name or a red CI check needs explaining. The co
 
 ## Verdicts
 
-- A test verdict comes from the result bundle or the xunit file, never the console banner. `scripts/lib/xcresult-cases.py` reads both, as it does for the CI summary.
+- A test verdict comes from the result bundle or the xunit file, never the console banner. `apple/scripts/lib/xcresult-cases.py` reads both, as it does for the CI summary.
 - The result-bundle rules, first match wins:
   1. nothing executed and the bundle holds build errors: FAIL, "the test build failed";
   2. nothing executed and `xcodebuild` exited nonzero: FAIL;
@@ -70,7 +70,7 @@ Read this when a verdict, a test name or a red CI check needs explaining. The co
 - MemberImportVisibility errors on a new file that uses `Combine` or `TableProPluginKit` members are real: add the import.
 - CI selects its Xcode in `.github/actions/setup-xcode/action.yml`. A compile error only CI reports is real: compare `xcodebuild -version` with that file, then fix the error. Never re-run hoping it passes.
 - SourceKit diagnostics in the editor are noise. Only an `xcodebuild` run counts.
-- A plugin's scheme is its target name in `project.yml`, not always `<Name>Driver`: `MSSQLDriver`, but `SnowflakeDriverPlugin`. `xcodebuild -list` lists them, and `verify.sh build <Scheme>` builds one.
+- A plugin's scheme is its target name in `apple/project.yml`, not always `<Name>Driver`: `MSSQLDriver`, but `SnowflakeDriverPlugin`. `xcodebuild -list` lists them, and `verify.sh build <Scheme>` builds one.
 - After a package's public API or a type's stored layout changes, a target can still compile against the old `Build/Products/Debug/<Module>.swiftmodule` in DerivedData. The link then fails on the old symbol, or the test host crashes in an outlined destroy. Delete that module's `.swiftmodule` and `.o`, or the checkout's DerivedData folder, and rebuild. A clean CI build never sees it.
 
 ## Test runs
@@ -90,10 +90,10 @@ Read this when a verdict, a test name or a red CI check needs explaining. The co
 ## Lint
 
 - `lint` is SwiftLint only. `agent-docs` is its own step, so a stale doc reference never turns a code lint red; `AGENTS.md`, Writing style and docs, says what it checks.
-- `.swiftlint.yml` `included:` holds six roots: `TablePro`, `Packages`, `Plugins`, `TableProMobile`, `TableProTests`, `TableProUITests`.
+- `apple/.swiftlint.yml` `included:` holds six roots: `TablePro`, `Packages`, `Plugins`, `TableProMobile`, `TableProTests`, `TableProUITests`.
 - Some folders lint with fewer rules through a nested `only_rules` config: `.claude/rules/ci.md`, Writing workflow and lint code.
 - A directory outside `included:` lints nothing and reports 0 violations; the step names it under "NOT LINTED". Pass files.
-- Paths go to SwiftLint as given, resolved against the shell's current directory, not `--root`. Pass absolute paths when the shell is elsewhere.
+- A relative path resolves against the shell's current directory, not `--root`; the step makes it absolute and runs SwiftLint in `apple/`, so `apple/.swiftlint.yml` applies. Pass absolute paths when the shell is elsewhere.
 - `force_cast` and `force_unwrapping` are warnings, so only `--strict` fails them. A plain `swiftlint lint` passes code CI rejects.
 
 ## Reading CI
@@ -107,7 +107,7 @@ Read this when a verdict, a test name or a red CI check needs explaining. The co
 
 ## Worktrees
 
-- `.claude/skills/fix-issue/scripts/worktree.sh <branch> [base]` creates `.claude/worktrees/<branch with / turned into ->` from a fresh fetch of the base, `origin/main` by default. It links `Configs/Secrets.xcconfig`, `Libs/*.a`, `Libs/dylibs`, `Libs/ios/*.xcframework` and the native bridge outputs from the main checkout, and prints the path to pass as `--root`. Run `generate` before its first build.
+- `.claude/skills/fix-issue/scripts/worktree.sh <branch> [base]` creates `.claude/worktrees/<branch with / turned into ->` from a fresh fetch of the base, `origin/main` by default. It links `apple/Configs/Secrets.xcconfig`, `apple/Libs/*.a`, `apple/Libs/dylibs`, `apple/Libs/ios/*.xcframework` and the native bridge outputs from the main checkout, and prints the path to pass as `--root`. Run `generate` before its first build.
 - `worktree.sh --prune-merged [--dry-run]` removes each tree whose pull requests are all merged or closed, with its DerivedData folder. It removes one only when `git status` is clean and no process has its working directory inside; a kept tree says why. A Codex broker started in a tree is the usual process that keeps it.
 - `worktree.sh --remove <branch>` keeps the branch and refuses a tree with uncommitted or untracked changes.
 - Each tree builds into its own DerivedData. `build`, `plugins`, `test`, `uitest` and `ios` wait only for an `xcodebuild` of the same checkout, found by its project path or working directory, so `--no-wait` is safe in your own tree.

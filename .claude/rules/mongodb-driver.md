@@ -1,7 +1,7 @@
 ---
 paths:
-  - "Plugins/MongoDBDriverPlugin/**/*"
-  - "Plugins/MQLExportPlugin/**/*"
+  - "apple/Plugins/MongoDBDriverPlugin/**/*"
+  - "apple/Plugins/MQLExportPlugin/**/*"
 ---
 
 # MongoDB driver

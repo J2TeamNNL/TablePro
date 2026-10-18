@@ -1,8 +1,8 @@
 ---
 paths:
-  - "TablePro/Views/Results/**/*"
-  - "TablePro/Core/DataGrid/**/*"
-  - "TableProTests/Views/Results/**/*"
+  - "apple/TablePro/Views/Results/**/*"
+  - "apple/TablePro/Core/DataGrid/**/*"
+  - "apple/TableProTests/Views/Results/**/*"
 ---
 
 # Data grid

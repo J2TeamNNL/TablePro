@@ -1,6 +1,6 @@
-# Contributing to TablePro
+# Contributing to TablePro for macOS and iOS
 
-[`AGENTS.md`](AGENTS.md) holds the invariants and the rules every change meets; where this file and it disagree, it wins. The docs site lives in [TableProApp/docs](https://github.com/TableProApp/docs), and releasing is in [`RELEASING.md`](RELEASING.md). The Linux app has its own setup and rules in [`linux/CONTRIBUTING.md`](linux/CONTRIBUTING.md).
+This file covers the macOS and iOS apps in `apple/`, and every command in it runs from `apple/`. [`AGENTS.md`](AGENTS.md) holds the invariants and the rules every change meets; where this file and it disagree, it wins. What both apps share, branch naming and pull requests among it, is in the root [`CONTRIBUTING.md`](../CONTRIBUTING.md). The docs site lives in [TableProApp/docs](https://github.com/TableProApp/docs), and releasing is in [`RELEASING.md`](RELEASING.md). The Linux app has its own setup and rules in [`linux/CONTRIBUTING.md`](../linux/CONTRIBUTING.md).
 
 ## Setup
 
@@ -16,7 +16,7 @@
 Fork the repo on GitHub, then:
 
 ```bash
-git clone https://github.com/<your-fork>/TablePro.git && cd TablePro
+git clone https://github.com/<your-fork>/TablePro.git && cd TablePro/apple
 brew install xcodegen swiftlint
 scripts/download-libs.sh
 cp Configs/Secrets.xcconfig.example Configs/Secrets.xcconfig
@@ -71,7 +71,7 @@ xcodebuild build -project TablePro.xcodeproj -scheme AllPlugins -destination 'pl
 
 ## Tests
 
-Prefer `.claude/skills/fix-issue/scripts/verify.sh test <Suite>` ([`AGENTS.md`](AGENTS.md), Commands): it finds the target that declares the suite and fails a run that executed nothing. Where a test goes and how to write one: `.claude/rules/tests.md`; UI flows: `.claude/rules/ui-tests.md`.
+From the repository root, prefer `.claude/skills/fix-issue/scripts/verify.sh test <Suite>` ([`AGENTS.md`](AGENTS.md), Commands): it finds the target that declares the suite and fails a run that executed nothing. Where a test goes and how to write one: `.claude/rules/tests.md`; UI flows: `.claude/rules/ui-tests.md`.
 
 The raw equivalents, in order: a suite in the Unit plan, a UI flow (needs Automation Mode, see Troubleshooting), a TableProCore or TableProOracle suite (no Xcode plan lists those two packages), and the iOS app:
 
@@ -85,7 +85,7 @@ xcodebuild -project TableProMobile/TableProMobile.xcodeproj -scheme TableProMobi
 
 ## Code style
 
-`.swiftlint.yml` is the source of truth. Run `swiftlint lint --strict <changed .swift files>`; CI lints the whole repo the same way on every pull request, and nothing lints during an Xcode build. Formatting the linter leaves to you:
+`.swiftlint.yml` is the source of truth. Run `swiftlint lint --strict <changed .swift files>`; CI lints all of `apple/` the same way on every pull request, and nothing lints during an Xcode build. Formatting the linter leaves to you:
 
 | Rule | Value |
 |---|---|
@@ -113,21 +113,15 @@ The architecture and its invariants: [`AGENTS.md`](AGENTS.md), Architecture and 
 | Yams | SPM | YAML for project folder import |
 | swift-nio, swift-nio-ssl, zstd | SPM | The Kafka plugin's transport, TLS and zstd codec |
 
-## Branch naming
-
-Branch off `main`: `feat/add-cassandra-support`, `fix/query-editor-crash`. PRs target `main`; a `release/<X.Y>` line takes only cherry-picks of fixes already on `main` ([`RELEASING.md`](RELEASING.md#branches)).
-
 ## Pull requests
 
-One logical change per PR, described with the template the PR form opens with. Before you open it:
+Branch naming and the pull request rules are in the root [`CONTRIBUTING.md`](../CONTRIBUTING.md). Before you open one for the Apple apps:
 
 - Tests added or updated.
 - A changelog fragment in `changelog.d/` for a user-visible change (`.claude/rules/changelog.md`).
 - User-facing behavior documented in a paired pull request in [TableProApp/docs](https://github.com/TableProApp/docs) that links this one.
 - User-facing strings localized.
 - SwiftLint clean.
-
-The title format, types and scopes are in the top comment of `.github/pull_request_template.md`. A PR merges when the required checks in [`AGENTS.md`](AGENTS.md), CI, pass; what each workflow runs is in `.claude/rules/ci.md`.
 
 ## Adding a database driver
 
@@ -161,11 +155,3 @@ The export builds the app first, so run `scripts/download-libs.sh` and `scripts/
 | Package resolution fails | `Cmd+Shift+K` and reopen Xcode; then `rm -rf ~/Library/Developer/Xcode/DerivedData` |
 | `Timed out while enabling automation mode`, and UI tests run nothing | Answer the Enable UI Automation prompt with an admin password, or run `sudo automationmodetool enable-automationmode-without-authentication` once |
 | Test runs left defaults domains (`com.TablePro.tests.*`, `com.TablePro.uitest.*`) or temp folders behind | Quit TablePro, then run `scripts/clean-test-residue.sh`. It only reports until you pass `--apply` |
-
-## Reporting bugs
-
-Open a [GitHub issue](https://github.com/TableProApp/TablePro/issues) with your macOS version, TablePro version, steps to reproduce, and, for a database-specific bug, the database type and version.
-
-## License
-
-Contributions are licensed under [AGPLv3](LICENSE).
