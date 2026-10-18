@@ -26,7 +26,7 @@ Before any decision, gather:
 - the tags, newest first: `git -c versionsort.suffix=-beta tag -l 'v*' --sort=-v:refname | head`;
 - the live lines: `git ls-remote --heads origin 'release/*'`;
 - open regressions: `gh issue list --label regression --state open`;
-- the newest beta's age, `gh release view v<X.Y>.0-beta.<N> --json publishedAt -q .publishedAt`, and the code on the line after it, `git log --oneline v<X.Y>.0-beta.<N>..origin/release/<X.Y> -- . ':!apple/changelog.d' ':!apple/CHANGELOG.md'`;
+- the newest beta's age, `gh release view v<X.Y>.0-beta.<N> --json publishedAt -q .publishedAt`, and the code on the line after it, `git log --oneline v<X.Y>.0-beta.<N>..origin/release/<X.Y> -- . ':!apple/changelog.d' ':!apple/CHANGELOG.md'`, without `apple/` on the 0.82 line;
 - open Dependabot alerts: `gh api --paginate 'repos/TableProApp/TablePro/dependabot/alerts?state=open&per_page=100' -q '.[].security_advisory.summary'`;
 - main's push runs: `gh run list --branch main --event push --limit 10`, with macOS Tests, iOS and Package Tests and Release Build green on the commit you would cut;
 - whether `main` has the last stable's `## [X.Y.Z]` heading. If not, the forward-port is missing and the next tag will refuse to build: do that first (section 9).
@@ -47,7 +47,7 @@ Say which and why in one line, then wait for the maintainer to agree. Run: `appl
 
 ## 4. Storage check
 
-Before beta.1 and before a promotion, list the commits that touch user data since the previous stable: `git log --oneline v<prev>..<sha> --` followed by every `paths:` entry of `.claude/rules/data-sync-storage.md`. Read each one for a changed storage or sync format. Sparkle never downgrades, so a format the previous stable cannot read blocks the release until it is fixed on `main`. Run: `apple/RELEASING.md`, Channels.
+Before beta.1 and before a promotion, list the commits that touch user data since the previous stable: `git log --oneline v<prev>..<sha> --` followed by every `paths:` entry of `.claude/rules/data-sync-storage.md`, and each again without `apple/` while the range reaches back before the move into `apple/` (0.82 and 0.83). Read each one for a changed storage or sync format. Sparkle never downgrades, so a format the previous stable cannot read blocks the release until it is fixed on `main`. Run: `apple/RELEASING.md`, Channels.
 
 ## 5. Critical or not
 

@@ -91,7 +91,7 @@ gh pr create --base main --title "chore(release): vX.Y.Z" --body "Forward-port o
 python3 apple/scripts/release/notes.py docs X.Y.Z --ref vX.Y.Z --mdx ../tablepro-docs/changelog.mdx
 ```
 
-- A cherry-pick conflict on a fragment reworded on `main`: delete the fragment; on `CHANGELOG.md`: keep both sections, in version order. The docs PR is `docs(changelog): vX.Y.Z` in TableProApp/docs, opened with the maintainer's own `gh` (a PR opened with `GITHUB_TOKEN` starts no workflows) and merged once the release is published.
+- A cherry-pick conflict on a fragment reworded on `main`: delete the fragment; on `CHANGELOG.md`: keep both sections, in version order. A 0.82 release conflicts on every fragment it deletes (rename/delete, since `main` moved them into `apple/`): `git rm` each one. The docs PR is `docs(changelog): vX.Y.Z` in TableProApp/docs, opened with the maintainer's own `gh` (a PR opened with `GITHUB_TOKEN` starts no workflows) and merged once the release is published.
 
 ## What a tag runs
 

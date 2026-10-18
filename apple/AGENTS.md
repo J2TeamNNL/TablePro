@@ -2,7 +2,7 @@
 
 A native macOS database client (SwiftUI and AppKit), a lightweight alternative to TablePlus. macOS 13.0+, Swift 6 language mode for the app targets (`Configs/Base.xcconfig`), Universal Binary. `TableProMobile/` is the iOS app.
 
-This is the guide for work under `apple/`; a path here is relative to it. The root `AGENTS.md` holds what every app shares: the principles, writing, commits and PRs, CI and the Area rules. Claude Code loads this file through `apple/CLAUDE.md` once a file under `apple/` is read; Codex reads it when started in `apple/`.
+This is the guide for work under `apple/`; a path here is relative to it, except `.claude/` and `.github/`, which sit at the repository root. The root `AGENTS.md` holds what every app shares: the principles, writing, commits and PRs, CI and the Area rules. Claude Code loads this file through `apple/CLAUDE.md` once a file under `apple/` is read; Codex reads it when started in `apple/`.
 
 ## Principles
 
