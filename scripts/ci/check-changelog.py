@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-NOTES_SPEC = importlib.util.spec_from_file_location("notes", ROOT / "scripts" / "release" / "notes.py")
+NOTES_SPEC = importlib.util.spec_from_file_location("notes", ROOT / "apple" / "scripts" / "release" / "notes.py")
 notes = importlib.util.module_from_spec(NOTES_SPEC)
 NOTES_SPEC.loader.exec_module(notes)
 
@@ -60,7 +60,7 @@ class Project(NamedTuple):
 # Each directory with a towncrier.toml, and the tag its title_format links. The Linux release
 # commit also sets the version and date that linux/build-aux/packaging/check_packaging.py compares.
 PROJECTS = (
-    Project("", "v"),
+    Project("apple", "v"),
     Project("linux", "linux-v", ("meson.build", "data/app.tablepro.TablePro.metainfo.xml.in.in",
                                  "build-aux/rpm/tablepro.spec", "data/tablepro.1")),
 )

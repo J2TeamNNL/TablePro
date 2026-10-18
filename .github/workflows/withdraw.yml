@@ -44,7 +44,7 @@ jobs:
       - name: Remove the version from the feed and the plugin manifest
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
-        run: python3 scripts/release/feed.py withdraw "$VERSION" --site build/gh-pages
+        run: python3 apple/scripts/release/feed.py withdraw "$VERSION" --site build/gh-pages
 
       - name: Push gh-pages
         working-directory: build/gh-pages
@@ -58,7 +58,7 @@ jobs:
       - name: Mark the highest stable as Latest
         run: |
           set -euo pipefail
-          latest="$(python3 scripts/release/feed.py latest --site build/gh-pages)"
+          latest="$(python3 apple/scripts/release/feed.py latest --site build/gh-pages)"
           gh release edit "v$latest" --latest
 
   pages:

@@ -3,10 +3,10 @@
 # Create an isolated worktree that can actually build.
 #
 # A fresh worktree of the macOS app fails before compiling until four untracked, gitignored paths
-# are linked from the main checkout. The first failure is "Unable to open base configuration
-# reference file", which reads like a broken toolchain. Symlinks work fine for the linker, so this
-# beats re-running scripts/download-libs.sh per worktree. A checkout that has none of them, as on
-# a machine that does not build the macOS app, gets a plain worktree.
+# under apple/ are linked from the main checkout. The first failure is "Unable to open base
+# configuration reference file", which reads like a broken toolchain. Symlinks work fine for the
+# linker, so this beats re-running apple/scripts/download-libs.sh per worktree. A checkout that has
+# none of them, as on a machine that does not build the macOS app, gets a plain worktree.
 #
 # Usage:
 #   worktree.sh <branch>            # new branch off a freshly fetched origin/main
@@ -124,34 +124,33 @@ link() {
     ln -sfn "$1" "$2"
 }
 
-link "$MAIN_ROOT/Configs/Secrets.xcconfig" "$DIR/Configs/Secrets.xcconfig"
-mkdir -p "$DIR/Libs"
-for archive in "$MAIN_ROOT"/Libs/*.a; do
-    [ -e "$archive" ] && ln -sf "$archive" "$DIR/Libs/$(basename "$archive")"
+MAIN_APPLE="$MAIN_ROOT/apple"
+APPLE="$DIR/apple"
+link "$MAIN_APPLE/Configs/Secrets.xcconfig" "$APPLE/Configs/Secrets.xcconfig"
+mkdir -p "$APPLE/Libs"
+for archive in "$MAIN_APPLE"/Libs/*.a; do
+    [ -e "$archive" ] && ln -sf "$archive" "$APPLE/Libs/$(basename "$archive")"
 done
-link "$MAIN_ROOT/Libs/dylibs" "$DIR/Libs/dylibs"
+link "$MAIN_APPLE/Libs/dylibs" "$APPLE/Libs/dylibs"
 # Libs/ios/checksums.sha256 is tracked, so git already created Libs/ios as a real directory and
 # a symlink named after it would land inside as Libs/ios/ios. Link the xcframeworks themselves.
-mkdir -p "$DIR/Libs/ios"
-for framework in "$MAIN_ROOT"/Libs/ios/*.xcframework; do
-    [ -e "$framework" ] && ln -sfn "$framework" "$DIR/Libs/ios/$(basename "$framework")"
+mkdir -p "$APPLE/Libs/ios"
+for framework in "$MAIN_APPLE"/Libs/ios/*.xcframework; do
+    [ -e "$framework" ] && ln -sfn "$framework" "$APPLE/Libs/ios/$(basename "$framework")"
 done
-link "$MAIN_ROOT/Native/DamengBridge/lib" "$DIR/Native/DamengBridge/lib"
-link "$MAIN_ROOT/Native/HanaBridge/bin" "$DIR/Native/HanaBridge/bin"
+link "$MAIN_APPLE/Native/DamengBridge/lib" "$APPLE/Native/DamengBridge/lib"
+link "$MAIN_APPLE/Native/HanaBridge/bin" "$APPLE/Native/HanaBridge/bin"
 
 missing=""
-[ -e "$DIR/Configs/Secrets.xcconfig" ] || missing="$missing Configs/Secrets.xcconfig"
-[ -e "$DIR/Libs/dylibs" ] || missing="$missing Libs/dylibs"
-[ -e "$DIR/Native/DamengBridge/lib" ] || missing="$missing Native/DamengBridge/lib"
-[ -e "$DIR/Native/HanaBridge/bin" ] || missing="$missing Native/HanaBridge/bin (verify.sh plugins builds it)"
-ls "$DIR"/Libs/*.a > /dev/null 2>&1 || missing="$missing Libs/*.a"
-ls "$DIR"/Libs/ios/*.xcframework > /dev/null 2>&1 || missing="$missing Libs/ios/*.xcframework"
+[ -e "$APPLE/Configs/Secrets.xcconfig" ] || missing="$missing apple/Configs/Secrets.xcconfig"
+[ -e "$APPLE/Libs/dylibs" ] || missing="$missing apple/Libs/dylibs"
+[ -e "$APPLE/Native/DamengBridge/lib" ] || missing="$missing apple/Native/DamengBridge/lib"
+[ -e "$APPLE/Native/HanaBridge/bin" ] || missing="$missing apple/Native/HanaBridge/bin (verify.sh plugins builds it)"
+ls "$APPLE"/Libs/*.a > /dev/null 2>&1 || missing="$missing apple/Libs/*.a"
+ls "$APPLE"/Libs/ios/*.xcframework > /dev/null 2>&1 || missing="$missing apple/Libs/ios/*.xcframework"
 # Only a Mac builds what these feed, so anywhere else their absence is not worth a warning.
 if [ -n "$missing" ] && [ "$(uname -s)" = "Darwin" ]; then
     echo "warning: not linked, the main checkout does not have them:$missing" >&2
 fi
 
 echo "$DIR"
-if [ -L "$DIR/Libs/dylibs" ]; then
-    echo "note: Libs/dylibs shows as untracked here because its .gitignore entry ends in a slash and it is a symlink. Stage explicit paths." >&2
-fi

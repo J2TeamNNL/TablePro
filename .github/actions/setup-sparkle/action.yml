@@ -9,7 +9,7 @@ runs:
       # These tools hold the EdDSA key that signs every update, so they come from the archive SwiftPM
       # verifies for the framework: Sparkle's Package.swift at the pinned revision names its checksum.
       env:
-        RESOLVED: TablePro.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+        RESOLVED: apple/TablePro.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
       run: |
         set -euo pipefail
         pin="$RUNNER_TEMP/sparkle-pin.txt"

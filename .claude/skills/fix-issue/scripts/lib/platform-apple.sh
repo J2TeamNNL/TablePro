@@ -5,9 +5,9 @@
 #   verify.sh [options] generate
 #   verify.sh [options] build [Scheme]          # default scheme: TablePro
 #   verify.sh [options] plugins                 # AllPlugins aggregate
-#   verify.sh [options] test   [Test...]        # TestPlans/Unit.xctestplan, all of it when no Test is named
-#   verify.sh [options] uitest [Test...]        # TestPlans/UI.xctestplan, all of it when no Test is named
-#   verify.sh [options] package <Package> [regex]    # swift test in Packages/<Package>
+#   verify.sh [options] test   [Test...]        # apple/TestPlans/Unit.xctestplan, all of it when no Test is named
+#   verify.sh [options] uitest [Test...]        # apple/TestPlans/UI.xctestplan, all of it when no Test is named
+#   verify.sh [options] package <Package> [regex]    # swift test in apple/Packages/<Package>
 #   verify.sh [options] ios <Suite> [Suite...]       # TableProMobileTests on a simulator
 #   verify.sh [options] abi   <merge-base>
 #   verify.sh [options] lint  <path> [path...]
@@ -22,6 +22,7 @@
 # Here --no-wait skips the wait for another xcodebuild, and --offline pins SwiftPM to Package.resolved.
 
 MAX_WAIT_SECONDS=1800
+APPLE_ROOT="$REPO_ROOT/apple"
 
 # Known false failures in this checkout. Each one presents as a code defect and is not one.
 diagnose_environment() {
@@ -39,7 +40,7 @@ diagnose_environment() {
         found=0
     fi
     if grep -q 'Unable to open base configuration reference file' "$log" 2> /dev/null; then
-        note "cause: the generated project names an xcconfig this checkout lacks. Rerun scripts/generate-project.sh (verify.sh generate)."
+        note "cause: the generated project names an xcconfig this checkout lacks. Rerun apple/scripts/generate-project.sh (verify.sh generate)."
         found=0
     fi
     if grep -q 'The test runner hung before establishing connection' "$log" 2> /dev/null; then
@@ -85,8 +86,10 @@ setup_toolchain() {
 checkout_busy() {
     local pid
     for pid in $(pgrep -f 'Developer/usr/bin/xcodebuild' 2> /dev/null); do
-        ps -o args= -p "$pid" 2> /dev/null | grep -qF "$REPO_ROOT/TablePro.xcodeproj" && return 0
-        [ "$(lsof -a -p "$pid" -d cwd -Fn 2> /dev/null | sed -n 's/^n//p')" = "$REPO_ROOT" ] && return 0
+        ps -o args= -p "$pid" 2> /dev/null | grep -qF "$APPLE_ROOT/TablePro.xcodeproj" && return 0
+        case "$(lsof -a -p "$pid" -d cwd -Fn 2> /dev/null | sed -n 's/^n//p')" in
+            "$REPO_ROOT" | "$APPLE_ROOT") return 0 ;;
+        esac
     done
     return 1
 }
@@ -119,11 +122,11 @@ xcodebuild_flags() {
 test_targets_table() {
     local plan manifest package target table=""
     for plan in Unit UI; do
-        [ -f "$REPO_ROOT/TestPlans/$plan.xctestplan" ] || continue
+        [ -f "$APPLE_ROOT/TestPlans/$plan.xctestplan" ] || continue
         table="$table$(jq -r --arg plan "$plan" '.testTargets[].target.name + "\t" + $plan' \
-            "$REPO_ROOT/TestPlans/$plan.xctestplan")"$'\n'
+            "$APPLE_ROOT/TestPlans/$plan.xctestplan")"$'\n'
     done
-    for manifest in "$REPO_ROOT"/Packages/*/Package.swift; do
+    for manifest in "$APPLE_ROOT"/Packages/*/Package.swift; do
         [ -f "$manifest" ] || continue
         package="${manifest%/Package.swift}"
         package="${package##*/}"
@@ -146,7 +149,7 @@ route_of() {
 # prints as ?<directory>.
 targets_declaring() {
     local file part target
-    git -C "$REPO_ROOT" grep --untracked -l -E \
+    git -C "$APPLE_ROOT" grep --untracked -l -E \
         "^[^/\"]*(struct|class|enum|actor|extension)[[:space:]]+$1([^A-Za-z0-9_]|\$)" -- '*Tests/*.swift' 2> /dev/null \
         | while IFS= read -r file; do
             target=""
@@ -208,14 +211,14 @@ test_regex() {
 # ---------------------------------------------------------------------------- test results
 
 # Beside this script, not under --root, so the parser always matches the tally format read here.
-XCRESULT_CASES="$SCRIPT_DIR/../../../../scripts/lib/xcresult-cases.py"
+XCRESULT_CASES="$SCRIPT_DIR/../../../../apple/scripts/lib/xcresult-cases.py"
 
 # Sets RUN_EXECUTED, RUN_FAILED, RUN_ZERO and RUN_SYSTEM from the cases in a result bundle or xunit
 # file, counted against the run's filters ("<label><TAB><regex>[<TAB>...]"), and notes the tallies.
 apply_tally() {
     local filters="$1" input="$2" out
     out="$(python3 "$XCRESULT_CASES" tally --filters "$filters" "$input")" \
-        || out="cause: scripts/lib/xcresult-cases.py failed, so no case was read."$'\n'"0 0 0 0"
+        || out="cause: apple/scripts/lib/xcresult-cases.py failed, so no case was read."$'\n'"0 0 0 0"
     read -r RUN_EXECUTED RUN_FAILED RUN_ZERO RUN_SYSTEM <<< "$(tail -1 <<< "$out")"
     note "$(sed '$d' <<< "$out")"
 }
@@ -294,7 +297,7 @@ run_plan() {
     done < "$filters"
     note "run: xcodebuild test -testPlan $plan${only[*]+ (${#only[@]} filter(s))}"
     # shellcheck disable=SC2046
-    run_logged "$log" xcodebuild test -project "$REPO_ROOT/TablePro.xcodeproj" -scheme TablePro \
+    run_logged "$log" xcodebuild test -project "$APPLE_ROOT/TablePro.xcodeproj" -scheme TablePro \
         -testPlan "$plan" -resultBundlePath "$bundle" $(xcodebuild_flags) ${only[@]+"${only[@]}"}
     RUN_CODE=$?
     report_xcresult "$bundle" "$RUN_CODE" "$filters" "$log"
@@ -309,12 +312,12 @@ run_plan() {
 
 # A package with a Package.resolved runs pinned to it, the way CI runs it.
 run_swift_tests() {
-    local package="$1" log="$2" filters="$3" dir="$REPO_ROOT/Packages/$1" args=() label regex
+    local package="$1" log="$2" filters="$3" dir="$APPLE_ROOT/Packages/$1" args=() label regex
     [ -f "$dir/Package.resolved" ] && args+=(--force-resolved-versions)
     while IFS=$'\t' read -r label regex _; do
         args+=(--filter "$regex")
     done < "$filters"
-    note "run: swift test --package-path Packages/$package --parallel${args[*]+ ${args[*]}}"
+    note "run: swift test --package-path apple/Packages/$package --parallel${args[*]+ ${args[*]}}"
     # SwiftPM writes the XCTest xunit file only for a parallel run; a serial one leaves just the
     # Swift Testing file, and every XCTest case would go uncounted.
     run_logged "$log" swift test --package-path "$dir" --parallel --xunit-output "${log%.log}.xml" ${args[@]+"${args[@]}"}
@@ -324,9 +327,10 @@ run_swift_tests() {
 }
 
 # SwiftLint applies `.swiftlint.yml`'s `included:` to a directory argument but not to a file
-# argument, so a directory outside that scope lints nothing and reports zero violations.
+# argument, so a directory outside that scope lints nothing and reports zero violations. The
+# arguments are absolute; `included:` is relative to apple/.
 swiftlint_filtered_dirs() {
-    local config="$REPO_ROOT/.swiftlint.yml"
+    local config="$APPLE_ROOT/.swiftlint.yml"
     [ -f "$config" ] || return 0
     local roots
     roots="$(awk '/^included:/ { inside = 1; next }
@@ -337,13 +341,17 @@ swiftlint_filtered_dirs() {
                       print
                   }' "$config")"
     [ -n "$roots" ] || return 0
-    local dropped="" path root covered
+    local dropped="" path relative root covered
     for path in "$@"; do
-        [ -d "$REPO_ROOT/$path" ] || continue
+        [ -d "$path" ] || continue
         covered=0
+        case "${path%/}/" in
+            "$APPLE_ROOT"/*) relative="${path#"$APPLE_ROOT"/}" ;;
+            *) relative="" ;;
+        esac
         for root in $roots; do
-            case "${path%/}/" in
-                "${root%/}/"*) covered=1 ;;
+            case "${relative%/}/" in
+                "${root%/}/"*) [ -n "$relative" ] && covered=1 ;;
             esac
         done
         [ "$covered" -eq 1 ] || dropped="$dropped $path"
@@ -388,7 +396,7 @@ platform_step() {
             setup_toolchain
             require_tool xcodegen
             log="$(new_log generate)"
-            run_logged "$log" "$REPO_ROOT/scripts/generate-project.sh"
+            run_logged "$log" "$APPLE_ROOT/scripts/generate-project.sh"
             code=$?
             if [ $code -eq 0 ]; then
                 STATUS=PASS
@@ -410,13 +418,13 @@ platform_step() {
             log="$(new_log "build-$scheme")"
             : > "$log"
             # Xcode copies the HANA helper into the plugin and never builds it.
-            helper="$REPO_ROOT/Native/HanaBridge/bin/tablepro-hana-helper"
+            helper="$APPLE_ROOT/Native/HanaBridge/bin/tablepro-hana-helper"
             if [ "$scheme" = "AllPlugins" ] && [ ! -e "$helper" ] && command -v go > /dev/null; then
-                "$REPO_ROOT/scripts/build-hana.sh" "$(uname -m)" >> "$log" 2>&1 \
+                "$APPLE_ROOT/scripts/build-hana.sh" "$(uname -m)" >> "$log" 2>&1 \
                     && note "built the HANA helper first: $helper"
             fi
             # shellcheck disable=SC2046
-            xcodebuild -project "$REPO_ROOT/TablePro.xcodeproj" -scheme "$scheme" \
+            xcodebuild -project "$APPLE_ROOT/TablePro.xcodeproj" -scheme "$scheme" \
                 -configuration Debug build $(xcodebuild_flags) >> "$log" 2>&1
             code=$?
             if grep -q '^\*\* BUILD SUCCEEDED \*\*' "$log" 2> /dev/null; then
@@ -436,7 +444,7 @@ platform_step() {
             require_tool jq
             require_tool git
             require_tool python3
-            [ -f "$REPO_ROOT/TestPlans/$plan.xctestplan" ] || { echo "no TestPlans/$plan.xctestplan in $REPO_ROOT" >&2; exit 3; }
+            [ -f "$APPLE_ROOT/TestPlans/$plan.xctestplan" ] || { echo "no TestPlans/$plan.xctestplan in $APPLE_ROOT" >&2; exit 3; }
             TEST_TARGETS="$(test_targets_table)"
             plan_tests="" swift_tests="" packages=""
             for test in "$@"; do
@@ -502,7 +510,7 @@ platform_step() {
             setup_toolchain
             require_tool xcodebuild
             log="$(new_log abi)"
-            run_logged "$log" "$REPO_ROOT/scripts/check-pluginkit-abi.sh" "$1"
+            run_logged "$log" "$APPLE_ROOT/scripts/check-pluginkit-abi.sh" "$1"
             code=$?
             if [ $code -eq 0 ]; then
                 STATUS=PASS
@@ -519,8 +527,17 @@ platform_step() {
             setup_toolchain
             require_tool swiftlint
             log="$(new_log lint)"
-            filtered="$(swiftlint_filtered_dirs "$@")"
-            run_logged "$log" swiftlint lint --strict "$@"
+            # SwiftLint reads the .swiftlint.yml of the directory it runs in, so it runs in apple/
+            # with each argument made absolute against the caller's directory.
+            paths=()
+            for path in "$@"; do
+                case "$path" in
+                    /*) paths+=("$path") ;;
+                    *) paths+=("$PWD/$path") ;;
+                esac
+            done
+            filtered="$(swiftlint_filtered_dirs "${paths[@]}")"
+            run_logged "$log" bash -c 'cd "$1" && shift && swiftlint lint --strict "$@"' _ "$APPLE_ROOT" "${paths[@]}"
             code=$?
             if grep -q 'Loading sourcekitdInProc.framework .* failed' "$log" 2> /dev/null; then
                 STATUS=INCONCLUSIVE
@@ -541,7 +558,7 @@ platform_step() {
 
         package)
             [ $# -ge 1 ] || usage
-            [ -f "$REPO_ROOT/Packages/$1/Package.swift" ] || { echo "no such package: Packages/$1" >&2; exit 3; }
+            [ -f "$APPLE_ROOT/Packages/$1/Package.swift" ] || { echo "no such package: apple/Packages/$1" >&2; exit 3; }
             STEP_DETAIL="$1${2:+ --filter $2}"
             setup_toolchain
             require_tool swift
@@ -565,9 +582,9 @@ platform_step() {
             log="$(new_log "ios-$name")"
             bundle="${log%.log}.xcresult"
             : > "$log"
-            project="$REPO_ROOT/TableProMobile/TableProMobile.xcodeproj"
+            project="$APPLE_ROOT/TableProMobile/TableProMobile.xcodeproj"
             if [ ! -d "$project" ]; then
-                "$REPO_ROOT/scripts/generate-project.sh" ios >> "$log" 2>&1
+                "$APPLE_ROOT/scripts/generate-project.sh" ios >> "$log" 2>&1
             fi
             # CI names one simulator; this machine may not have it, so take the first available iPhone.
             simulator="$(xcrun simctl list devices available 2> /dev/null \
@@ -602,7 +619,7 @@ platform_step() {
             failed=""
             for target in mac ios; do
                 echo "== localization.py plugins --target $target" >> "$log"
-                (cd "$REPO_ROOT" && python3 scripts/localization.py plugins --target "$target") >> "$log" 2>&1 \
+                (cd "$APPLE_ROOT" && python3 scripts/localization.py plugins --target "$target") >> "$log" 2>&1 \
                     || { code=1; failed="$failed $target"; }
             done
             if [ $code -eq 0 ]; then
@@ -612,7 +629,7 @@ platform_step() {
                 STATUS=FAIL
                 note "$(grep -vE '^(==|ok:|  )' "$log" | grep -v '^Run with --add' | sed 's/^/  /' | head -12)"
                 for target in $failed; do
-                    note "  $target: python3 scripts/localization.py plugins --add --target $target"
+                    note "  $target, from apple/: python3 scripts/localization.py plugins --add --target $target"
                 done
             fi
             emit "$log" $code

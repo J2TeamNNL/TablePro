@@ -39,16 +39,17 @@ jobs:
       - name: Lint scripts
         run: |
           set -euo pipefail
-          mapfile -t SCRIPTS < <(find scripts .claude/skills -name '*.sh' | sort)
+          mapfile -t SCRIPTS < <(find scripts apple/scripts .claude/skills -name '*.sh' | sort)
           shellcheck --severity=warning "${SCRIPTS[@]}"
 
       - name: Test the CI and release tooling
         run: |
           set -euo pipefail
           python3 -m unittest discover -s scripts/ci -p 'test_*.py'
-          python3 -m unittest discover -s scripts/lib -p 'test_*.py'
-          python3 -m unittest discover -s scripts -p 'test_localization.py'
-          bash scripts/ci/test_libs_release.sh
+          python3 -m unittest discover -s apple/scripts/ci -p 'test_*.py'
+          python3 -m unittest discover -s apple/scripts/lib -p 'test_*.py'
+          python3 -m unittest discover -s apple/scripts -p 'test_localization.py'
+          bash apple/scripts/ci/test_libs_release.sh
 
       # 3.9 is the macOS /usr/bin/python3 that runs notes.py in the build. The other steps keep the
       # runner's Python, which has PyYAML.
@@ -69,38 +70,39 @@ jobs:
             -r scripts/release/requirements.txt
 
       - name: Test the release tooling
-        run: '"$RUNNER_TEMP/release-venv/bin/python" -m unittest discover -s scripts/release -p "test_*.py"'
+        run: '"$RUNNER_TEMP/release-venv/bin/python" -m unittest discover -s apple/scripts/release -p "test_*.py"'
 
       # towncrier refuses a fragment name it cannot parse once its config sets ignore.
       - name: Check the changelog fragments and CHANGELOG.md
         run: |
           set -euo pipefail
           "$RUNNER_TEMP/release-venv/bin/python" scripts/ci/check-changelog.py
-          "$RUNNER_TEMP/release-venv/bin/towncrier" build --draft --version 0.0.0
+          "$RUNNER_TEMP/release-venv/bin/towncrier" build --draft --dir apple --version 0.0.0
           "$RUNNER_TEMP/release-venv/bin/towncrier" build --draft --dir linux --version 0.0.0
 
       # shellcheck cannot tell a library function from a command, so a missing source is exit 127
       # at release time (v0.67.1).
       - name: Check every script sources the libraries it calls into
-        run: python3 scripts/ci/check-lib-sourcing.py
+        run: python3 apple/scripts/ci/check-lib-sourcing.py
 
       - name: Check plugin-registry.json against the project.yml plugin aggregates
-        run: python3 scripts/ci/check-plugin-manifest.py
+        run: python3 apple/scripts/ci/check-plugin-manifest.py
 
       # The app registers a plugin from these keys without loading it, and loads one without them at launch.
       - name: Check every plugin Info.plist declares the ids its class provides
-        run: python3 scripts/ci/check-plugin-provides.py
+        run: python3 apple/scripts/ci/check-plugin-provides.py
 
       - name: Check no build script hardcodes the deployment target
-        run: bash scripts/ci/check-deployment-target.sh
+        run: bash apple/scripts/ci/check-deployment-target.sh
 
       # iOS alone defaults to MainActor isolation, so a shared plugin file must state its own.
       - name: Check shared plugin sources are explicitly isolated for iOS
-        run: python3 scripts/ci/check-ios-shared-isolation.py
+        run: python3 apple/scripts/ci/check-ios-shared-isolation.py
 
       # A plugin's or package's String(localized:) resolves against the host app's bundle, so its
       # strings live in each app's catalog by hand.
       - name: Check plugin and package strings reach the string catalogs
+        working-directory: apple
         run: |
           set -euo pipefail
           python3 scripts/localization.py plugins
@@ -109,25 +111,25 @@ jobs:
       # xcstringstool accepts a %lld retyped as %@ or a dropped argument, and String(format:) then
       # formats the wrong value at run time.
       - name: Check the string catalogs
-        run: python3 scripts/ci/check-string-catalogs.py
+        run: python3 apple/scripts/ci/check-string-catalogs.py
 
       - name: Check the license inventory against what the build ships
-        run: python3 scripts/ci/check-license-inventory.py
+        run: python3 apple/scripts/ci/check-license-inventory.py
 
       - name: Check both apps pin the Production CloudKit environment
-        run: python3 scripts/ci/check-entitlements.py
+        run: python3 apple/scripts/ci/check-entitlements.py
 
       - name: Check every test target is in its test plan
-        run: python3 scripts/ci/check-test-plans.py
+        run: python3 apple/scripts/ci/check-test-plans.py
 
       - name: Check currentPluginKitVersion moved at most once since the last release
-        run: python3 scripts/ci/check-pluginkit-bump-cadence.py --remote origin
+        run: python3 apple/scripts/ci/check-pluginkit-bump-cadence.py --remote origin
 
       - name: Check the shared-contract drift gates
-        run: scripts/audit-refactor-health.sh --check
+        run: apple/scripts/audit-refactor-health.sh --check
 
       - name: Check no hub grew past its recorded size
-        run: python3 scripts/ci/check-hub-ratchet.py
+        run: python3 apple/scripts/ci/check-hub-ratchet.py
 
       - name: Decide whether the SAP HANA helper changed
         id: native
@@ -142,13 +144,13 @@ jobs:
         if: steps.native.outputs.hana == 'true'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: Native/HanaBridge/go.mod
+          go-version-file: apple/Native/HanaBridge/go.mod
           cache: false
 
       # The helper is pure Go, so Linux analyses it as well as the Mac that builds it.
       - name: Check the SAP HANA helper
         if: steps.native.outputs.hana == 'true'
-        working-directory: Native/HanaBridge
+        working-directory: apple/Native/HanaBridge
         run: |
           set -euo pipefail
           unformatted="$(gofmt -l .)"

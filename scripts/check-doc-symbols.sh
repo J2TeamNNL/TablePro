@@ -5,8 +5,9 @@
 # Prose does not fail a build when the code moves underneath it, so a renamed type or a deleted
 # script stays named in the docs until something asks. This asks.
 #
-# Scope: CLAUDE.md, AGENTS.md, CONTRIBUTING.md, RELEASING.md, .github/pull_request_template.md,
-# linux/CLAUDE.md, linux/AGENTS.md, and every .md under .claude/rules and .claude/skills.
+# Scope: CLAUDE.md, AGENTS.md, CONTRIBUTING.md and RELEASING.md at the root and in apple/,
+# .github/pull_request_template.md, linux/CLAUDE.md, linux/AGENTS.md, and every .md under
+# .claude/rules and .claude/skills.
 # Documents named on the command line replace that set.
 #
 # What is checked. Only mechanical claims, because those are the ones that rot silently:
@@ -53,6 +54,7 @@ if [ "$#" -gt 0 ]; then
     done
 else
     for top in CLAUDE.md AGENTS.md CONTRIBUTING.md RELEASING.md .github/pull_request_template.md \
+        apple/CLAUDE.md apple/AGENTS.md apple/CONTRIBUTING.md apple/RELEASING.md \
         linux/CLAUDE.md linux/AGENTS.md; do
         [ -f "$top" ] && DOCS+=("$top")
     done
@@ -135,11 +137,12 @@ sdk_frameworks_dir() {
 build_symbol_index() {
     local frameworks_dir fw iface
     {
-        find TablePro Plugins Packages TableProTests TableProUITests TableProMobile \
-            -name '*.swift' -type f 2> /dev/null | uncommented_identifiers
+        find apple/TablePro apple/Plugins apple/Packages apple/TableProTests apple/TableProUITests \
+            apple/TableProMobile -name '*.swift' -type f 2> /dev/null | uncommented_identifiers
         find linux/crates -name '*.rs' -type f 2> /dev/null | uncommented_identifiers
-        grep -rhoE '\b[A-Za-z][A-Za-z0-9_]{3,}\b' --include='*.h' Plugins 2> /dev/null
-        grep -hoE '^  [A-Za-z][A-Za-z0-9_+-]*:' project.yml TableProMobile/project.yml 2> /dev/null | tr -d ' :'
+        grep -rhoE '\b[A-Za-z][A-Za-z0-9_]{3,}\b' --include='*.h' apple/Plugins 2> /dev/null
+        grep -hoE '^  [A-Za-z][A-Za-z0-9_+-]*:' apple/project.yml apple/TableProMobile/project.yml 2> /dev/null |
+            tr -d ' :'
         printf '%s\n' $HARNESS_TOOLS $ENV_NAMES
         if command -v xcrun > /dev/null 2>&1; then
             xcrun swift-frontend -print-supported-features 2> /dev/null |
@@ -198,7 +201,7 @@ matches() {
 # Prints the path as it exists on disk, a tab, and how it was resolved.
 resolve_path() {
     local token="$1" dir="$2" candidate
-    for candidate in "$token" "$dir/$token" "$dir/../$token" "TablePro/$token" "TableProUITests/$token"; do
+    for candidate in "$token" "$dir/$token" "$dir/../$token" "apple/TablePro/$token" "apple/TableProUITests/$token"; do
         [ -e "$candidate" ] || continue
         case "$candidate" in
             "$token") printf '%s\t\n' "$candidate" ;;
@@ -209,8 +212,8 @@ resolve_path() {
         return 0
     done
     # A gitignored path is per-developer or downloaded, so a fresh checkout not having it is the
-    # expected state, and flagging Secrets.xcconfig or Libs/*.a would train everyone to ignore this.
-    # A pattern ending in a slash, like Libs/dylibs/, matches only a directory, and git cannot tell
+    # expected state, and flagging Secrets.xcconfig or apple/Libs/*.a would train everyone to ignore this.
+    # A pattern ending in a slash, like DerivedData/, matches only a directory, and git cannot tell
     # that a path it has never seen is one, so an absent directory is asked about with the slash.
     for candidate in "$token" "$dir/$token" "$dir/../$token"; do
         if git check-ignore -q "$candidate" 2> /dev/null || git check-ignore -q "$candidate/" 2> /dev/null; then
@@ -288,7 +291,7 @@ check_symbols() {
         if grep -qxF "$token" "$WORK/resolved"; then
             pass "$token" "$doc:$line"
         elif [ -e "$token" ]; then
-            # A top-level folder, as an Area rules row writes `Libs` for Libs/**/*.
+            # A folder, as an Area rules row writes `apple/Libs` for apple/Libs/**/*.
             pass "$token (top-level path)" "$doc:$line"
         elif printf '%s\n' "$token" | grep -qE "$PLACEHOLDER_PATTERN"; then
             skip "$token (placeholder)" "$doc:$line"
@@ -345,7 +348,7 @@ check_doc() {
 
 check_counts() {
     local total doc line stated
-    total="$(find Plugins -mindepth 1 -maxdepth 1 -name '*Plugin' | wc -l | tr -d ' ')"
+    total="$(find apple/Plugins -mindepth 1 -maxdepth 1 -name '*Plugin' | wc -l | tr -d ' ')"
     for doc in "${DOCS[@]}"; do
         while IFS=: read -r line stated; do
             if [ "$stated" = "$total" ]; then

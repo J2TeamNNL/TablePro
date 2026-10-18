@@ -31,7 +31,7 @@ jobs:
       - name: Run SwiftLint
         run: |
           status=0
-          docker run --rm -v "$PWD:/work" -w /work "$SWIFTLINT_IMAGE" \
+          docker run --rm -v "$PWD:/work" -w /work/apple "$SWIFTLINT_IMAGE" \
             lint --strict --reporter github-actions-logging 2> swiftlint.err || status=$?
           grep -v "^Linting '" swiftlint.err >&2 || true
           if grep -E "Invalid configuration|is not a valid rule identifier" swiftlint.err; then
