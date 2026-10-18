@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: tablepro 0.1.0\n"
 "Report-Msgid-Bugs-To: https://github.com/TableProApp/TablePro/issues\n"
-"POT-Creation-Date: 2026-10-17 15:24+0000\n"
+"POT-Creation-Date: 2026-10-18 18:05+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -90,6 +90,36 @@ msgstr ""
 #: crates/app/src/services/duplicate_name.rs
 #, rust-format
 msgid "{name} (Copy {n})"
+msgstr ""
+
+#: crates/app/src/services/history_availability.rs
+msgid ""
+"The query history was written by a newer version of TablePro. Update "
+"TablePro to read it."
+msgstr ""
+
+#: crates/app/src/services/history_availability.rs
+msgid "The query history could not be updated for this version of TablePro."
+msgstr ""
+
+#: crates/app/src/services/history_availability.rs
+#, rust-format
+msgid "TablePro is not allowed to write {path}."
+msgstr ""
+
+#: crates/app/src/services/history_availability.rs
+#, rust-format
+msgid "The disk that holds {path} is full."
+msgstr ""
+
+#: crates/app/src/services/history_availability.rs
+#, rust-format
+msgid "{path} could not be created."
+msgstr ""
+
+#: crates/app/src/services/history_availability.rs
+#: crates/app/src/ui/saved_queries_dialog.rs
+msgid "The query history file could not be read. It may be damaged."
 msgstr ""
 
 #: crates/app/src/services/secret_labels.rs
@@ -266,7 +296,8 @@ msgstr ""
 msgid "Counting…"
 msgstr ""
 
-#: crates/app/src/ui/browse_tab/pager_bar.rs data/resources/ui/browse-tab.ui
+#: crates/app/src/ui/browse_tab/pager_bar.rs
+#: crates/app/src/ui/saved_queries_dialog.rs data/resources/ui/browse-tab.ui
 #: data/resources/ui/structure-tab.ui
 msgid "Try Again"
 msgstr ""
@@ -435,7 +466,8 @@ msgstr ""
 #: crates/app/src/ui/connect_dialog/mod.rs
 #: crates/app/src/ui/grid/multiline_editor.rs
 #: crates/app/src/ui/workspace/status_pages.rs
-#: data/resources/ui/pending-changes-bar.ui data/resources/ui/structure-tab.ui
+#: data/resources/ui/pending-changes-bar.ui data/resources/ui/sql-editor.ui
+#: data/resources/ui/structure-tab.ui
 msgid "Save"
 msgstr ""
 
@@ -780,6 +812,40 @@ msgctxt "completion group"
 msgid "Database"
 msgstr ""
 
+#: crates/app/src/ui/editor/editor_file.rs
+msgid "Save SQL File"
+msgstr ""
+
+#: crates/app/src/ui/editor/editor_file.rs
+msgid "This tab is already being saved."
+msgstr ""
+
+#: crates/app/src/ui/editor/editor_file.rs
+#, rust-format
+msgid "“{name}” could not be saved: {error}"
+msgstr ""
+
+#: crates/app/src/ui/editor/editor_file.rs
+msgid "Could Not Save File"
+msgstr ""
+
+#: crates/app/src/ui/editor/editor_file.rs
+#: crates/app/src/ui/export/export_failure_text.rs
+#: crates/app/src/ui/grid/row_json_dialog.rs
+#: crates/app/src/ui/history_dialog/history_export.rs
+#: crates/app/src/workspace/close_guard.rs
+msgid "_Close"
+msgstr ""
+
+#: crates/app/src/ui/editor/editor_file.rs
+#: crates/app/src/ui/history_dialog/history_export.rs
+msgid "SQL files"
+msgstr ""
+
+#: crates/app/src/ui/editor/editor_file.rs
+msgid "query"
+msgstr ""
+
 #: crates/app/src/ui/editor/editor_session_slot.rs
 #, rust-format
 msgid "Could not open a connection for this editor: {error}"
@@ -854,11 +920,6 @@ msgstr ""
 
 #: crates/app/src/ui/editor/mod.rs data/resources/ui/find-bar.ui
 msgid "Replace"
-msgstr ""
-
-#: crates/app/src/ui/editor/mod.rs
-#: crates/app/src/ui/history_dialog/history_export.rs
-msgid "SQL files"
 msgstr ""
 
 #: crates/app/src/ui/editor/mod.rs
@@ -1915,6 +1976,111 @@ msgstr ""
 msgid "Set TLS Server Name"
 msgstr ""
 
+#: crates/app/src/ui/export/dialog.rs
+#, rust-format
+msgid ""
+"An Excel sheet holds {limit} rows, and this export has {rows}. Export it as "
+"CSV instead."
+msgstr ""
+
+#: crates/app/src/ui/export/dialog.rs
+msgid "Convert NULL to Empty"
+msgstr ""
+
+#: crates/app/src/ui/export/dialog.rs
+msgid "Convert Line Breaks to Spaces"
+msgstr ""
+
+#: crates/app/src/ui/export/dialog.rs
+msgid "Put Field Names in the First Row"
+msgstr ""
+
+#: crates/app/src/ui/export/dialog.rs
+msgid "Sanitize Formula-Like Values"
+msgstr ""
+
+#: crates/app/src/ui/export/dialog.rs
+msgid ""
+"Prefix values starting with =, +, - or @ so spreadsheets do not run them"
+msgstr ""
+
+#: crates/app/src/ui/export/dialog.rs crates/app/src/ui/import_dialog.rs
+msgid "Delimiter"
+msgstr ""
+
+#: crates/app/src/ui/export/dialog.rs
+msgid "Comma (,)"
+msgstr ""
+
+#: crates/app/src/ui/export/dialog.rs
+msgid "Semicolon (;)"
+msgstr ""
+
+#: crates/app/src/ui/export/dialog.rs crates/app/src/ui/import_dialog.rs
+msgid "Tab"
+msgstr ""
+
+#: crates/app/src/ui/export/dialog.rs
+msgid "Pipe (|)"
+msgstr ""
+
+#: crates/app/src/ui/export/dialog.rs
+msgid "Quote"
+msgstr ""
+
+#: crates/app/src/ui/export/dialog.rs
+msgid "Always"
+msgstr ""
+
+#: crates/app/src/ui/export/dialog.rs
+msgid "Quote if needed"
+msgstr ""
+
+#: crates/app/src/ui/export/dialog.rs
+msgid "Never"
+msgstr ""
+
+#: crates/app/src/ui/export/dialog.rs
+msgid "Line break"
+msgstr ""
+
+#: crates/app/src/ui/export/dialog.rs
+msgid "Decimal separator"
+msgstr ""
+
+#: crates/app/src/ui/export/dialog.rs
+msgid "Period (.)"
+msgstr ""
+
+#: crates/app/src/ui/export/dialog.rs
+msgid "CSV Options"
+msgstr ""
+
+#: crates/app/src/ui/export/dialog.rs crates/app/src/ui/grid/grid_menus.rs
+msgid "Rows"
+msgstr ""
+
+#: crates/app/src/ui/export/dialog.rs data/resources/ui/sql-editor.ui
+msgid "Format"
+msgstr ""
+
+#: crates/app/src/ui/export/dialog.rs crates/app/src/ui/grid/grid_menus.rs
+msgid "Export…"
+msgstr ""
+
+#: crates/app/src/ui/export/dialog.rs
+msgid "Reset to Defaults"
+msgstr ""
+
+#: crates/app/src/ui/export/dialog.rs
+msgid "Export Rows"
+msgstr ""
+
+#: crates/app/src/ui/export/dialog.rs
+#, rust-format
+msgid "{format} files"
+msgstr ""
+
 #: crates/app/src/ui/export/export_failure_text.rs
 #, rust-format
 msgid "Exported {rows} row to {name}"
@@ -2049,18 +2215,11 @@ msgstr ""
 msgid "Couldn't Export"
 msgstr ""
 
-#: crates/app/src/ui/export/export_failure_text.rs
-#: crates/app/src/ui/grid/row_json_dialog.rs
-#: crates/app/src/ui/history_dialog/history_export.rs
-#: crates/app/src/workspace/close_guard.rs
-msgid "_Close"
-msgstr ""
-
-#: crates/app/src/ui/export/export_ledger.rs
+#: crates/app/src/ui/export/export_ledger/mod.rs
 msgid "Stop Exports?"
 msgstr ""
 
-#: crates/app/src/ui/export/export_ledger.rs
+#: crates/app/src/ui/export/export_ledger/mod.rs
 #, rust-format
 msgid "{n} export is still running. Stopping it leaves the file unfinished."
 msgid_plural ""
@@ -2068,11 +2227,11 @@ msgid_plural ""
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/app/src/ui/export/export_ledger.rs
+#: crates/app/src/ui/export/export_ledger/mod.rs
 msgid "_Keep Exporting"
 msgstr ""
 
-#: crates/app/src/ui/export/export_ledger.rs
+#: crates/app/src/ui/export/export_ledger/mod.rs
 msgid "_Stop Exports"
 msgstr ""
 
@@ -2124,111 +2283,6 @@ msgstr[1] ""
 
 #: crates/app/src/ui/export/export_scope.rs
 msgid "Every row"
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs
-#, rust-format
-msgid ""
-"An Excel sheet holds {limit} rows, and this export has {rows}. Export it as "
-"CSV instead."
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs
-msgid "Convert NULL to Empty"
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs
-msgid "Convert Line Breaks to Spaces"
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs
-msgid "Put Field Names in the First Row"
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs
-msgid "Sanitize Formula-Like Values"
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs
-msgid ""
-"Prefix values starting with =, +, - or @ so spreadsheets do not run them"
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs crates/app/src/ui/import_dialog.rs
-msgid "Delimiter"
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs
-msgid "Comma (,)"
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs
-msgid "Semicolon (;)"
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs crates/app/src/ui/import_dialog.rs
-msgid "Tab"
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs
-msgid "Pipe (|)"
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs
-msgid "Quote"
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs
-msgid "Always"
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs
-msgid "Quote if needed"
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs
-msgid "Never"
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs
-msgid "Line break"
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs
-msgid "Decimal separator"
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs
-msgid "Period (.)"
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs
-msgid "CSV Options"
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs crates/app/src/ui/grid/grid_menus.rs
-msgid "Rows"
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs data/resources/ui/sql-editor.ui
-msgid "Format"
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs crates/app/src/ui/grid/grid_menus.rs
-msgid "Export…"
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs
-msgid "Reset to Defaults"
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs
-msgid "Export Rows"
-msgstr ""
-
-#: crates/app/src/ui/export_dialog.rs
-#, rust-format
-msgid "{format} files"
 msgstr ""
 
 #: crates/app/src/ui/file_reveal/reveal_failure_toast.rs
@@ -2606,7 +2660,9 @@ msgstr ""
 
 #: crates/app/src/ui/history_dialog/mod.rs
 #: crates/app/src/ui/preferences_dialog/history_group.rs
-msgid "This permanently deletes every saved query, including pinned ones."
+msgid ""
+"This permanently deletes every history entry, including pinned ones. Saved "
+"queries are kept."
 msgstr ""
 
 #: crates/app/src/ui/history_dialog/mod.rs
@@ -2977,6 +3033,11 @@ msgstr[1] ""
 
 #: crates/app/src/ui/preferences_dialog/history_group.rs
 #, rust-format
+msgid "Query history and saved queries cannot be used. {reason}"
+msgstr ""
+
+#: crates/app/src/ui/preferences_dialog/history_group.rs
+#, rust-format
 msgid "{count} query cleared"
 msgid_plural "{count} queries cleared"
 msgstr[0] ""
@@ -3051,7 +3112,7 @@ msgid "Save a query from the editor and it will be listed here."
 msgstr ""
 
 #: crates/app/src/ui/saved_queries_dialog.rs
-msgid "That name is already used by another saved query."
+msgid "Could Not Read Saved Queries"
 msgstr ""
 
 #: crates/app/src/ui/saved_queries_dialog.rs
@@ -3080,6 +3141,22 @@ msgstr ""
 
 #: crates/app/src/ui/saved_queries_dialog.rs
 msgid "The saved query is removed. The SQL itself is not run or changed."
+msgstr ""
+
+#: crates/app/src/ui/saved_queries_dialog.rs
+msgid "That name is already used by another saved query."
+msgstr ""
+
+#: crates/app/src/ui/saved_queries_dialog.rs
+msgid "That name is too long."
+msgstr ""
+
+#: crates/app/src/ui/saved_queries_dialog.rs
+msgid "That saved query was deleted elsewhere."
+msgstr ""
+
+#: crates/app/src/ui/saved_queries_dialog.rs
+msgid "The saved query could not be renamed."
 msgstr ""
 
 #: crates/app/src/ui/session_window/connecting_page.rs
@@ -3153,7 +3230,7 @@ msgid ""
 msgstr ""
 
 #: crates/app/src/ui/session_window/connections.rs
-#: crates/app/src/ui/workspace/workspace_tabs.rs
+#: data/resources/ui/workspace.ui
 msgid "Reset"
 msgstr ""
 
@@ -3927,12 +4004,22 @@ msgstr ""
 msgid "Unsaved changes"
 msgstr ""
 
+#: crates/app/src/ui/workspace/mod.rs
+msgid ""
+"Editor text could not be saved to disk, so it may not come back after "
+"TablePro restarts."
+msgstr ""
+
 #: crates/app/src/ui/workspace/saves.rs
 msgid "Saved"
 msgstr ""
 
 #: crates/app/src/ui/workspace/shell.rs
 msgid "Search Tables"
+msgstr ""
+
+#: crates/app/src/ui/workspace/shell.rs
+msgid "Refresh Tables"
 msgstr ""
 
 #: crates/app/src/ui/workspace/shell.rs
@@ -4011,6 +4098,18 @@ msgid "No Tables"
 msgstr ""
 
 #: crates/app/src/ui/workspace/status_pages.rs
+msgid "Query History Unavailable"
+msgstr ""
+
+#: crates/app/src/ui/workspace/status_pages.rs
+msgid "Saved Queries Unavailable"
+msgstr ""
+
+#: crates/app/src/ui/workspace/status_pages.rs
+msgid "Could Not Save Query"
+msgstr ""
+
+#: crates/app/src/ui/workspace/status_pages.rs
 msgid "Open a SQL editor tab to save a query."
 msgstr ""
 
@@ -4020,10 +4119,6 @@ msgstr ""
 
 #: crates/app/src/ui/workspace/status_pages.rs
 msgid "Save Query"
-msgstr ""
-
-#: crates/app/src/ui/workspace/status_pages.rs
-msgid "The query database is not open yet."
 msgstr ""
 
 #: crates/app/src/ui/workspace/status_pages.rs
@@ -4092,6 +4187,10 @@ msgid ""
 msgstr ""
 
 #: crates/app/src/ui/workspace/structure.rs
+msgid "Could Not Show CREATE TABLE"
+msgstr ""
+
+#: crates/app/src/ui/workspace/structure.rs
 #, rust-format
 msgid "Table {table} has no columns."
 msgstr ""
@@ -4148,11 +4247,13 @@ msgstr[0] ""
 msgstr[1] ""
 
 #: crates/app/src/ui/workspace/workspace_tabs.rs
-msgid "Saved tabs could not be read"
+msgid "Could Not Reset Saved Tabs"
 msgstr ""
 
 #: crates/app/src/ui/workspace/workspace_tabs.rs
-msgid "Saved tabs could not be reset"
+msgid ""
+"The unreadable file could not be moved aside, so the open tabs are still not "
+"saved."
 msgstr ""
 
 #: crates/app/src/ui/workspace/workspace_tabs.rs
@@ -4835,12 +4936,20 @@ msgstr ""
 msgid "Toggle Line Comment"
 msgstr ""
 
-#: data/resources/shortcuts-dialog.ui data/resources/ui/find-bar.ui
-msgid "Find"
+#: data/resources/shortcuts-dialog.ui
+msgid "Open a SQL File"
 msgstr ""
 
 #: data/resources/shortcuts-dialog.ui
-msgid "Save the Query Under a Name"
+msgid "Save to the SQL File"
+msgstr ""
+
+#: data/resources/shortcuts-dialog.ui
+msgid "Save to Another SQL File"
+msgstr ""
+
+#: data/resources/shortcuts-dialog.ui data/resources/ui/find-bar.ui
+msgid "Find"
 msgstr ""
 
 #: data/resources/shortcuts-dialog.ui
@@ -5030,11 +5139,11 @@ msgid "Clear All History…"
 msgstr ""
 
 #: data/resources/ui/history-dialog.ui
-msgid "Export as SQL"
+msgid "Export as SQL…"
 msgstr ""
 
 #: data/resources/ui/history-dialog.ui
-msgid "Export as CSV"
+msgid "Export as CSV…"
 msgstr ""
 
 #: data/resources/ui/history-row.ui
@@ -5136,7 +5245,8 @@ msgid "Clear query history"
 msgstr ""
 
 #: data/resources/ui/preferences-history-group.ui
-msgid "Removes every saved query, including pinned ones."
+msgid ""
+"Removes every history entry, including pinned ones. Saved queries are kept."
 msgstr ""
 
 #: data/resources/ui/preferences-history-group.ui
@@ -5165,6 +5275,10 @@ msgstr ""
 
 #: data/resources/ui/sql-editor.ui
 msgid "Open SQL File…"
+msgstr ""
+
+#: data/resources/ui/sql-editor.ui
+msgid "Save As…"
 msgstr ""
 
 #: data/resources/ui/sql-editor.ui
@@ -5341,6 +5455,14 @@ msgstr ""
 
 #: data/resources/ui/workspace.ui
 msgid "Filter tables"
+msgstr ""
+
+#: data/resources/ui/workspace.ui
+msgid "Saved tabs could not be read, so the open tabs are not saved"
+msgstr ""
+
+#: data/resources/ui/workspace.ui
+msgid "Moves the unreadable file aside, so the open tabs can be saved"
 msgstr ""
 
 #: data/resources/ui/workspace.ui
