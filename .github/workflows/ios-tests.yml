@@ -68,7 +68,7 @@ jobs:
           }
           udid="$(find_simulator)"
           if [ -z "$udid" ]; then
-            sudo xcodebuild -downloadPlatform iOS
+            xcodebuild -downloadPlatform iOS
             udid="$(find_simulator)"
           fi
           if [ -z "$udid" ]; then
