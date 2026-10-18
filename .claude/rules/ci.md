@@ -34,8 +34,10 @@ The required check names are in `AGENTS.md` (CI). Reading a red check: `.claude/
 
 ## Runners and toolchain
 
-- Every Xcode job in the test and release workflows runs on the `xcode-27` runner label, a GitHub preview image. actionlint learns the label from `.github/actionlint.yaml`. A stable tag builds only on a GA Xcode: `setup-xcode` with `require-release` fails on a beta or Release Candidate.
-- The Xcode version is written once, in `.github/actions/setup-xcode/action.yml`, which runs `xcode-select --switch` and prints `xcodebuild -version`. A workflow never selects Xcode another way.
+- Every Xcode job in the test and release workflows runs on the `xcode-27` runner label, a GitHub preview image. actionlint learns the label from `.github/actionlint.yaml`.
+- The Xcode version and Apple's released build of it are written once, in `.github/actions/setup-xcode/action.yml`. It takes the one non-symlink `/Applications/Xcode*.app` whose `version.plist` has that version, fails on none or several, exports `DEVELOPER_DIR` to the job's later steps and prints `xcodebuild -version`.
+- A workflow never selects Xcode another way, and never runs an Xcode tool under `sudo`, which drops `DEVELOPER_DIR`. A test host gets it from the Unit plan (`.claude/rules/tests.md`, Plans).
+- A stable tag builds only on Apple's released Xcode: `setup-xcode` with `require-release` needs the pinned build and `licenseType` `GM` in the bundle's `LicenseInfo.plist`. The folder name is no signal: the image names the released 27A9275 `Xcode_27.1_Release_Candidate.app`.
 - XcodeGen comes from `.github/actions/setup-xcodegen`, pinned by version and SHA-256.
 - `apple/scripts/release/feed.py` runs Sparkle's `generate_appcast` and `sign_update` from `SPARKLE_BIN`, which `.github/actions/setup-sparkle` sets. The action reads the version and revision from the app's `Package.resolved` (`apple/project.yml` pins Sparkle with `exactVersion`) and checks the archive against the checksum in Sparkle's `Package.swift` at that revision.
 - The Apple jobs that build or test run with `defaults.run.working-directory: apple`, so a `run:` path is relative to `apple/`; an `actions/*` input such as `path:` or `go-version-file:` is still relative to the workspace root.
@@ -48,6 +50,7 @@ The required check names are in `AGENTS.md` (CI). Reading a red check: `.claude/
 - Setup, in order: checkout, setup-xcode, prepare-build (setup-xcodegen, `apple/scripts/download-libs.sh`, `generate-project.sh macos`, SPM restore), resolve, SPM save.
 - One `build-for-testing` with no `-testPlan` builds both plans and writes one `.xctestrun` per plan, with signing, the index store and the compilation cache off.
 - `COMPILE_PLUGINS` is true when the `plugins` detector is not false, on a PR and a push alike; a dispatch has no base, so it always compiles. It adds Go, the Dameng and HANA bridge builds, `xcodebuild build -scheme AllPlugins`, then `apple/scripts/ci/verify-plugin-loads.sh`.
+- With `COMPILE_PLUGINS`, `apple/scripts/check-pluginkit-abi.sh` then checks PluginKit against the newest `v*` tag, `--frozen` on a PR into `release/*`; for that tag the job checks out with `fetch-depth: 0` and `filter: blob:none`.
 - `test-without-building -testPlan Unit`, then `-testPlan UI`. The UI plan runs after a Unit failure too, so one round trip reports both.
 - No shards, and no parallel, iteration or retry flags: the plans decide.
 - `apple/scripts/ci/summarize-xcresult.sh` always runs. Evidence uploads only on failure (`.claude/skills/fix-issue/references/verification-apple.md`, Reading CI).
@@ -108,7 +111,6 @@ The required check names are in `AGENTS.md` (CI). Reading a red check: `.claude/
   - `check-lib-sourcing.py`, `check-plugin-manifest.py`, `check-plugin-provides.py`, `check-deployment-target.sh`, `check-ios-shared-isolation.py`;
   - `localization.py plugins` and `plugins --target ios`;
   - `check-string-catalogs.py`, `check-license-inventory.py`, `check-entitlements.py`, `check-test-plans.py`;
-  - `check-pluginkit-bump-cadence.py`;
   - `apple/scripts/audit-refactor-health.sh --check`, `check-hub-ratchet.py`;
   - the Go checks on the HANA helper, `govulncheck` among them, when the `hana` detector is true. New advisories between changes arrive as Dependabot alerts.
 - `audit-refactor-health.sh --check` fails a file defining a production `DatabaseType` outside `apple/Packages/TableProCore/Sources/TableProCoreTypes/DatabaseType.swift`, unless `.github/duplicate-contract-baseline.txt` lists its path. Moving a listed file moves its baseline path in the same commit. Never add an entry to let a new copy pass.
