@@ -346,6 +346,19 @@ class DocsTests(unittest.TestCase):
             notes.docs(apple, "0.82.0", "v0.82.0", mdx)
             self.assertIn('<Update label="v0.82.0" description="October 20, 2026">', mdx.read_text(encoding="utf-8"))
 
+    def test_docs_reads_a_tag_from_before_the_move_at_the_repository_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = FixtureRepository(Path(directory))
+            (repo.path / "CHANGELOG.md").write_text(CHANGELOG, encoding="utf-8")
+            repo.commit("chore(release): v0.82.0")
+            repo.git("tag", "v0.82.0")
+            apple = repo.path / "apple"
+            apple.mkdir()
+            mdx = repo.path / "changelog.mdx"
+            mdx.write_text(self.MDX, encoding="utf-8")
+            notes.docs(apple, "0.82.0", "v0.82.0", mdx)
+            self.assertIn('<Update label="v0.82.0" description="October 20, 2026">', mdx.read_text(encoding="utf-8"))
+
 
 class AssembleRefusalTests(unittest.TestCase):
     def setUp(self):
