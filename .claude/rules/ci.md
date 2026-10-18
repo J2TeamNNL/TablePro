@@ -88,7 +88,7 @@ The required check names are in `AGENTS.md` (CI). Reading a red check: `.claude/
 ## SwiftLint (`swiftlint.yml`)
 
 - PR, push to main or `release/**`, dispatch; Ubuntu, 10 minutes.
-- Runs the digest-pinned `ghcr.io/realm/swiftlint` image over `apple/`, run from that folder so its `.swiftlint.yml` applies, with `lint --strict`. The image's entrypoint is `swiftlint`, so the command never repeats it.
+- Runs the digest-pinned `ghcr.io/realm/swiftlint` image over `apple/`, run from that folder so its `.swiftlint.yml` applies, with `lint --strict`. Each annotation's path then gets the `apple/` prefix, so it lands on the diff. The image's entrypoint is `swiftlint`, so the command never repeats it.
 - Fails when stderr has `Invalid configuration` or `is not a valid rule identifier`, because SwiftLint drops a custom rule whose regex does not compile and still exits 0.
 
 ## PR title (`pr-title.yml`)

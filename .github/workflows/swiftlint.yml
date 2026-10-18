@@ -32,7 +32,9 @@ jobs:
         run: |
           status=0
           docker run --rm -v "$PWD:/work" -w /work/apple "$SWIFTLINT_IMAGE" \
-            lint --strict --reporter github-actions-logging 2> swiftlint.err || status=$?
+            lint --strict --reporter github-actions-logging > swiftlint.out 2> swiftlint.err || status=$?
+          # SwiftLint names each file from apple/; an annotation lands on the diff only with the repo path.
+          sed 's#^\(::[a-z]* file=\)#\1apple/#' swiftlint.out
           grep -v "^Linting '" swiftlint.err >&2 || true
           if grep -E "Invalid configuration|is not a valid rule identifier" swiftlint.err; then
             echo "::error::A SwiftLint config has a rule SwiftLint could not load."
