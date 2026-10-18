@@ -165,6 +165,15 @@ class BumpCadenceTests(unittest.TestCase):
         apple.write_kit(41)
         self.assertFails(apple.run_check(), "41", "v0.82.0", "39")
 
+    def test_a_release_before_the_apple_move_is_read_from_the_root(self) -> None:
+        self.repo.commit_kit(38, tag="v0.82.0")
+        apple = FixtureRepository(self.repo.path / "apple")
+        apple.commit_kit(39)
+        self.assertPasses(apple.run_check())
+
+        apple.write_kit(40)
+        self.assertFails(apple.run_check(), "40", "v0.82.0", "38")
+
     def test_a_release_with_no_kit_fails(self) -> None:
         self.repo.git("commit", "--quiet", "--allow-empty", "-m", "empty")
         self.repo.git("tag", "v0.74.0")
