@@ -33,7 +33,7 @@ This runbook covers the macOS app, its registry plugins and the static libraries
 Tags go out between 13:00 and 15:00 ICT (UTC+7).
 
 - Monday, the train: promote the open line's newest beta to `vX.Y.0` when the gate passes, forward-port it, then cut `release/X.(Y+1)` from the newest green `main` commit and tag its beta.1. The forward-port merges first: `version.py` refuses beta.1 of X.(Y+1) until `main` has `## [X.Y.0]`.
-- The gate: the line is 7 days old; its newest beta is at least 72 h old and nothing but changelog fragments landed on the line after it; no open issue is labeled `regression`; the storage check passes (`.claude/skills/release/SKILL.md`, section 4).
+- The gate: the line is 7 days old; its newest beta is at least 72 h old and nothing outside `CHANGELOG.md` and `changelog.d/` landed on the line after it; no open issue is labeled `regression`; the storage check passes (`.claude/skills/release/SKILL.md`, section 4).
 - When the gate fails, nothing is promoted or cut. Fix on `main`, pick it, and ship beta.N+1. Promote it on the first Tuesday to Thursday when it is 48 h old with no open `regression` issue, and cut the next beta.1 the same day. That line's train is the first Monday it is 7 days old.
 - Tuesday to Thursday: a beta.N when the line has picks, at most one a day. A patch `X.Y.Z` goes straight to stable, only for a regression from the previous stable, a crash, a plugin that fails to load, a security fix or data loss.
 - Friday to Sunday: no tags, except a critical release or the fix for a build that fails to launch, update or connect.
@@ -97,7 +97,7 @@ python3 apple/scripts/release/notes.py docs X.Y.Z --ref vX.Y.Z --mdx ../tablepro
 
 A `v*` tag runs `release.yml` and nothing else. A run is never cancelled, and every job reads the version, build and channel from `verify`.
 
-- `verify`: `version.py check` refuses a tag that breaks the grammar or the bounds; that `origin/release/<X.Y>` does not contain; whose previous tag on the line is not its ancestor; a stable X.Y.0 with no published beta, or a beta after its X.Y.0; a stable X.Y.0 whose tree differs from its newest published beta outside `CHANGELOG.md` and `changelog.d/`; a `CHANGELOG.md` missing the stable's heading, or a published stable of this or the previous line below it; a stable whose tag still holds fragments in `changelog.d/`. Then it needs macOS Tests, iOS and Package Tests and Release Build green on the tag commit or the nearest first-parent commit that ran them, with no change to the files they read after it, waiting on a pending run. Last, it writes the notes.
+- `verify`: `version.py check` refuses a tag that breaks the grammar or the bounds; that `origin/release/<X.Y>` does not contain; whose previous tag on the line is not its ancestor; a stable X.Y.0 with no published beta, or a beta after its X.Y.0; a stable whose tree differs from its line's newest published beta outside `CHANGELOG.md` and `changelog.d/`, until a stable tag on the line has matched that beta; a `CHANGELOG.md` missing the stable's heading, or a published stable of this or the previous line below it; a stable whose tag still holds fragments in `changelog.d/`. Then it needs macOS Tests, iOS and Package Tests and Release Build green on the tag commit or the nearest first-parent commit that ran them, with no change to the files they read after it, waiting on a pending run. Last, it writes the notes.
 - `app` (`signing`): a GA Xcode for a stable (`setup-xcode` `require-release`), the CloudKit Production schema check, `build.sh app` (archive, export with `scripts/release/ExportOptions.plist`, universal and plugin load checks), `notarize.sh` on the app, `package.sh app`, `notarize.sh` on the DMG.
 - `plugins` (`signing`): the Dameng and HANA bridges, `build.sh plugins` (each target `registry.py targets` prints, universal, signed with Developer ID, the hardened runtime and a timestamp), one notary submission for all, `package.sh plugins` (the zips, described as the manifest will read them).
 - `github-release`: `actions/attest` attests `dist/*`; `gh release create` drafts, uploads and publishes; `gh release verify` and `verify-asset` check the published release.
@@ -144,8 +144,7 @@ gh workflow run withdraw.yml --ref v<newest tag> -f version=X.Y.Z
 - Retention per channel, kit and `minimumSystemVersion`: the two highest builds stay; a beta goes once a stable with the same key has a higher build; a kit below `retainFromPluginKit` goes. A release pruned on arrival is a logged no-op.
 - `retainFromPluginKit` is the kit of the oldest app version still on at least 1% of the machines seen in the last 30 days (license dashboard, App Versions). Check it before each stable and raise it with a normal PR. The manifest keeps the higher of its own value and the tag's, so an older line never lowers it.
 - Accepted risks: the manifest is trusted through HTTPS, the plugin's Team ID check and the sha256, so a rollback or freeze of the manifest goes undetected.
-- A `TABLEPRO_PLUGINKIT_VERSION` bump enters a line only at beta.1, never through a pick or a patch.
-- PluginKit ABI rules: `.claude/rules/plugin-system.md`, ABI.
+- PluginKit ABI rules and when the kit version moves: `.claude/rules/plugin-system.md`, ABI.
 
 ## Static libraries
 

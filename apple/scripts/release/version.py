@@ -227,19 +227,32 @@ def beta_errors(git: Git, version: Version, releases: List[Tuple[str, bool]]) ->
     return [f"{version.tag} needs a published {version.tag}-beta.N release first"]
 
 
-def stable_tree_errors(git: Git, version: Version, releases: List[Tuple[str, bool]]) -> List[str]:
-    betas = published_betas(releases, version.line)
-    if version.is_beta or version.patch != 0 or not betas:
-        return []
-    newest = max(betas, key=lambda beta: beta.build)
+def untested_paths(git: Git, beta: Version, tag: str) -> List[str]:
     # diff-tree names a path from the repository root; the changelog sits in the tree git runs in.
     prefix = git.prefix()
-    untested = [path for path in git.changed_paths(newest.tag, version.tag)
-                if path != f"{prefix}CHANGELOG.md" and not path.startswith(f"{prefix}{FRAGMENTS}")]
+    return [path for path in git.changed_paths(beta.tag, tag)
+            if path != f"{prefix}CHANGELOG.md" and not path.startswith(f"{prefix}{FRAGMENTS}")]
+
+
+def earlier_stables(git: Git, version: Version) -> List[Version]:
+    tags = (try_parse_tag(tag) for tag in git.tags(f"v{version.line}.*"))
+    return [tag for tag in tags
+            if tag is not None and not tag.is_beta and tag.line == version.line and tag.build < version.build]
+
+
+def stable_tree_errors(git: Git, version: Version, releases: List[Tuple[str, bool]]) -> List[str]:
+    betas = published_betas(releases, version.line)
+    if version.is_beta or not betas:
+        return []
+    newest = max(betas, key=lambda beta: beta.build)
+    # No beta can follow a stable tag, so a fix after one that matched the beta ships as a patch.
+    if any(not untested_paths(git, newest, stable.tag) for stable in earlier_stables(git, version)):
+        return []
+    untested = untested_paths(git, newest, version.tag)
     if not untested:
         return []
     return [f"{version.tag} differs from {newest.tag}, the newest published beta, in {', '.join(untested)}: "
-            "ship that in a beta first"]
+            f"revert them on release/{version.line}, then tag the next number"]
 
 
 def changelog_errors(changelog: Optional[str], version: Version, stables: List[Version]) -> List[str]:
