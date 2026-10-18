@@ -321,6 +321,13 @@ custom_rules:
     excluded_match_kinds: [comment, doccomment]
     message: "Activate through AppActivationPolicyController.shared."
     severity: error
+  app_version_outside_bundle_info:
+    name: "App Version Outside Bundle+AppInfo"
+    regex: 'Bundle\.main\.(object\(forInfoDictionaryKey:|infoDictionary\?\[)\s*("CFBundle(ShortVersionString|Version)"|kCFBundle(ShortVersionString|Version)Key)'
+    excluded: ['.*/(Packages|Plugins)/']
+    excluded_match_kinds: [comment, doccomment]
+    message: "Read the app version and build through Bundle+AppInfo (appVersion, buildNumber), so every caller gets the same parse and fallback."
+    severity: error
   prompt_takes_focus:
     name: "Prompt Takes Focus"
     included: ['.*/(AlertHelper|OperationConfirming)\.swift$']
@@ -558,7 +565,7 @@ custom_rules:
   plugin_principal_class_gate:
     name: "Principal Class Behind The Gate"
     included: ['.*/TablePro/Core/Plugins/[^/]+\.swift$']
-    regex: '\bfunc\s+(?!(?:registerBundle|activateLazyBundle|validateDependencies)\b)\w+(?:(?!\bfunc\b)[\s\S])*?(\.principalClass\b)'
+    regex: '\bfunc\s+(?!(?:registerBundle|activateLazyBundle)\b)\w+(?:(?!\bfunc\b)[\s\S])*?(\.principalClass\b)'
     capture_group: 1
     message: "Bundle.principalClass loads the executable. Read it only in a function that already called assertLoadable."
     severity: error

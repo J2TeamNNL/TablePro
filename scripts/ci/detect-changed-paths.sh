@@ -2,11 +2,7 @@
 set -euo pipefail
 
 # Prints "true" when a suite has to run for the changes since <base>, "false" when it can skip.
-#
-# Usage: detect-changed-paths.sh [--base <sha>] macos|plugins|ios|oracle|hana
-#
-# A pull request passes its base, a push passes github.event.before. No base, or the all-zero
-# sha of a new ref, runs everything.
+# Usage: detect-changed-paths.sh [--base <sha>] macos|plugins|ios|oracle|hana|release
 
 BASE=""
 SUITE=""
@@ -20,6 +16,7 @@ done
 
 cd "$(git rev-parse --show-toplevel)"
 
+SKIP=""
 case "$SUITE" in
     macos)
         PATTERNS=('TablePro/' 'TableProTests/' 'TableProUITests/' 'TestPlans/' 'Plugins/' 'Packages/'
@@ -27,7 +24,8 @@ case "$SUITE" in
             'TablePro\.xcodeproj/project\.xcworkspace/xcshareddata/swiftpm/Package\.resolved$'
             'scripts/(generate-project|download-libs|create-openssl-dylibs|build-dameng|build-hana)\.sh$'
             'scripts/lib/' 'scripts/ci/(detect-changed-paths|summarize-xcresult|verify-plugin-loads)\.sh$'
-            '\.github/actions/setup-xcode(gen)?/' '\.github/workflows/macos-tests\.yml$') ;;
+            'scripts/release/notes\.py$' '\.github/actions/(setup-xcode(gen)?|prepare-build)/'
+            '\.github/workflows/macos-tests\.yml$') ;;
     plugins)
         # Registry plugins link the TableProCore and TableProOracle products.
         PATTERNS=('Plugins/' 'Packages/TableProCore/' 'Packages/TableProOracle/' 'Native/' 'Libs/'
@@ -53,25 +51,31 @@ case "$SUITE" in
             '\.github/actions/setup-xcode/' '\.github/workflows/ios-tests\.yml$') ;;
     hana)
         PATTERNS=('Native/HanaBridge/' '\.github/workflows/repo-hygiene\.yml$') ;;
+    release)
+        # A Release build compiles no test target, so the test folders under Plugins/ and
+        # Packages/ are skipped too.
+        PATTERNS=('TablePro/' 'Plugins/' 'Packages/' 'Native/' 'Configs/' 'Libs/' 'project\.yml$'
+            'TablePro\.xcodeproj/project\.xcworkspace/xcshareddata/swiftpm/Package\.resolved$'
+            '\.github/plugin-registry\.json$'
+            'scripts/(generate-project|download-libs|create-openssl-dylibs|build-dameng|build-hana)\.sh$'
+            'scripts/lib/' 'scripts/release/(build|package)\.sh$' 'scripts/release/(notes|registry|version)\.py$'
+            'scripts/ci/(detect-changed-paths|verify-plugin-loads)\.sh$'
+            '\.github/actions/(setup-xcode(gen)?|prepare-build)/' '\.github/workflows/release-build\.yml$')
+        SKIP='Plugins/[^/]+Tests/|Packages/[^/]+/Tests/' ;;
     *)
-        echo "detect-changed-paths.sh: expected macos, plugins, ios, oracle or hana, got '$SUITE'" >&2
+        echo "detect-changed-paths.sh: expected macos, plugins, ios, oracle, hana or release, got '$SUITE'" >&2
         exit 2 ;;
 esac
 
-if [ -z "$BASE" ] || [ -z "${BASE//0/}" ]; then
+# A new branch has no previous commit, so it is compared with the point where it left main.
+if [ -n "$BASE" ] && [ -z "${BASE//0/}" ]; then
+    BASE="$(git merge-base HEAD origin/main 2> /dev/null || true)"
+fi
+
+if [ -z "$BASE" ]; then
     echo "true"
     exit 0
 fi
-
-# A release commit changes only these, so it reuses the verdict of the code it ships.
-RELEASE_ONLY='CHANGELOG\.md|appcast\.xml|TablePro/Resources/WhatsNew\.md|\.github/release-flags\.json'
-
-# Version.xcconfig is the TablePro target's config file, so it counts as release-only only while
-# its diff touches nothing but the two version lines.
-VERSION_DIFF="$(git diff -U0 "$BASE" HEAD -- Configs/Version.xcconfig)"
-OTHER_EDITS="$(awk '/^@@/ { hunk = 1; next }
-    hunk && /^[+-]/ && !/^[+-](MARKETING_VERSION|CURRENT_PROJECT_VERSION) = [0-9.]+$/' <<< "$VERSION_DIFF")"
-[ -n "$OTHER_EDITS" ] || RELEASE_ONLY+='|Configs/Version\.xcconfig'
 
 # Raw NUL-separated paths: core.quotePath would quote a non-ASCII path and defeat the ^ anchor.
 # Files rather than $(...), which drops NUL bytes and would hide grep's exit status.
@@ -79,7 +83,11 @@ CHANGED="$(mktemp)"
 RELEVANT="$(mktemp)"
 trap 'rm -f "$CHANGED" "$RELEVANT"' EXIT
 git -c core.quotePath=false diff --no-renames --name-only -z "$BASE" HEAD > "$CHANGED"
-LC_ALL=C grep -zvE "^($RELEASE_ONLY)$" "$CHANGED" > "$RELEVANT" || [ $? -eq 1 ]
+if [ -n "$SKIP" ]; then
+    LC_ALL=C grep -zvE "^($SKIP)" "$CHANGED" > "$RELEVANT" || [ $? -eq 1 ]
+else
+    cp "$CHANGED" "$RELEVANT"
+fi
 
 JOINED="$(IFS='|'; echo "${PATTERNS[*]}")"
 status=0

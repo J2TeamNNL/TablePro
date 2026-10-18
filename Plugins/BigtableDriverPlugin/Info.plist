@@ -2,10 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>TableProMinAppVersion</key>
-	<string>0.81.0</string>
 	<key>TableProPluginKitVersion</key>
-	<integer>39</integer>
+	<integer>TABLEPRO_PLUGINKIT_VERSION</integer>
 	<key>TableProProvidesDatabaseTypeIds</key>
 	<array>
 		<string>Bigtable</string>

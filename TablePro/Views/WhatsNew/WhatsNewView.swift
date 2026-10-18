@@ -1,20 +1,10 @@
-//
-//  WhatsNewView.swift
-//  TablePro
-//
-
 import SwiftUI
 
-/// What the running version brought, rendered from the bundled `WhatsNew.md`.
-///
-/// Markdown through `AttributedString(markdown:)` rather than a web view, per the native-only
-/// rule. The file is generated from the same CHANGELOG lead block the Sparkle feed carries, so
-/// the window and the update dialog cannot disagree about what a release contained.
 struct WhatsNewView: View {
     private let content: WhatsNewContent
     private let onViewFullChangelog: () -> Void
 
-    init(content: WhatsNewContent = .bundled, onViewFullChangelog: @escaping () -> Void) {
+    init(content: WhatsNewContent = .load() ?? .changelogPointer, onViewFullChangelog: @escaping () -> Void) {
         self.content = content
         self.onViewFullChangelog = onViewFullChangelog
     }
@@ -58,7 +48,7 @@ struct WhatsNewView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(content.title)
                     .font(.title3.weight(.semibold))
-                Text(String(format: String(localized: "Version %@"), Bundle.main.appVersion))
+                Text(String(format: String(localized: "Version %@"), Bundle.main.displayVersion))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -69,21 +59,21 @@ struct WhatsNewView: View {
     }
 }
 
-/// The bundled notes, parsed once.
-///
-/// A missing or unreadable file is not a failure worth showing: the window still opens, says so
-/// plainly and offers the changelog button, which is the route that always works.
 struct WhatsNewContent {
     let title: String
     let paragraphs: [AttributedString]
 
-    static var bundled: WhatsNewContent {
-        guard let url = Bundle.main.url(forResource: "WhatsNew", withExtension: "md"),
+    static var changelogPointer: WhatsNewContent {
+        WhatsNewContent(
+            title: String(localized: "What's New"),
+            paragraphs: [AttributedString(String(localized: "Release notes are on the changelog."))]
+        )
+    }
+
+    static func load(from bundle: Bundle = .main) -> WhatsNewContent? {
+        guard let url = bundle.url(forResource: "WhatsNew", withExtension: "md"),
               let markdown = try? String(contentsOf: url, encoding: .utf8) else {
-            return WhatsNewContent(
-                title: String(localized: "What's New"),
-                paragraphs: [AttributedString(String(localized: "Release notes are on the changelog."))]
-            )
+            return nil
         }
         return parse(markdown)
     }
@@ -112,7 +102,7 @@ struct WhatsNewContent {
         }
 
         if body.isEmpty {
-            body = [AttributedString(String(localized: "Release notes are on the changelog."))]
+            body = changelogPointer.paragraphs
         }
         return WhatsNewContent(title: title, paragraphs: body)
     }

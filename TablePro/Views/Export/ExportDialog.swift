@@ -1,8 +1,3 @@
-//
-//  ExportDialog.swift
-//  TablePro
-//
-
 import AppKit
 import os
 import SwiftUI
@@ -11,6 +6,7 @@ import UniformTypeIdentifiers
 
 struct ExportDialog: View {
     @ObservedObject private var pluginManager = PluginManager.shared
+    @ObservedObject private var registryClient = RegistryClient.shared
     private static let logger = Logger(subsystem: "com.TablePro", category: "ExportDialog")
 
     @Binding var isPresented: Bool
@@ -224,7 +220,7 @@ struct ExportDialog: View {
 
     private var formatsToOffer: [InstallableExportFormat] {
         let installed = Set(pluginManager.allExportPlugins().map { type(of: $0).formatId })
-        return ExportFormatCatalog.notInstalled(installedFormatIds: installed)
+        return ExportFormatCatalog.notInstalled(installedFormatIds: installed, manifest: registryClient.manifest)
     }
 
     private static func offerTag(for format: InstallableExportFormat) -> String {
@@ -247,7 +243,7 @@ struct ExportDialog: View {
 
     @MainActor
     private func installOfferedFormat(_ format: InstallableExportFormat) async {
-        guard await MissingExportFormatPrompt.ensureInstalled(format, window: hostWindow),
+        guard await PluginInstallPrompt.ensureInstalled(format, window: hostWindow),
               let plugin = pluginManager.exportPlugin(forFormat: format.formatId)
         else { return }
         if let settable = plugin as? any SettablePluginDiscoverable {

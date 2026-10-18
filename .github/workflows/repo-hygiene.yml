@@ -6,7 +6,7 @@ name: Repo Hygiene
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, 'release/**']
   workflow_dispatch:
 
 concurrency:
@@ -42,23 +42,53 @@ jobs:
           mapfile -t SCRIPTS < <(find scripts .claude/skills -name '*.sh' | sort)
           shellcheck --severity=warning "${SCRIPTS[@]}"
 
-      # update-registry's tests are plain functions, which unittest discovery would skip.
       - name: Test the CI and release tooling
         run: |
           set -euo pipefail
           python3 -m unittest discover -s scripts/ci -p 'test_*.py'
+          python3 -m unittest discover -s scripts/lib -p 'test_*.py'
           python3 -m unittest discover -s scripts -p 'test_localization.py'
-          python3 .github/scripts/test_update_registry.py
-          bash scripts/ci/test_create_dmg_args.sh
-          bash scripts/ci/test_draft_release.sh
+          bash scripts/ci/test_libs_release.sh
+
+      # 3.9 is the macOS /usr/bin/python3 that runs notes.py in the build. The other steps keep the
+      # runner's Python, which has PyYAML.
+      - name: Set up Python 3.9 for the release tooling
+        id: python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.9"
+          update-environment: false
+
+      - name: Install the release tooling
+        env:
+          PYTHON: ${{ steps.python.outputs.python-path }}
+        run: |
+          set -euo pipefail
+          "$PYTHON" -m venv "$RUNNER_TEMP/release-venv"
+          "$RUNNER_TEMP/release-venv/bin/pip" install --quiet --disable-pip-version-check --require-hashes \
+            -r scripts/release/requirements.txt
+
+      - name: Test the release tooling
+        run: '"$RUNNER_TEMP/release-venv/bin/python" -m unittest discover -s scripts/release -p "test_*.py"'
+
+      # towncrier refuses a fragment name it cannot parse once its config sets ignore.
+      - name: Check the changelog fragments and CHANGELOG.md
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/release-venv/bin/python" scripts/ci/check-changelog.py
+          "$RUNNER_TEMP/release-venv/bin/towncrier" build --draft --version 0.0.0
 
       # shellcheck cannot tell a library function from a command, so a missing source is exit 127
       # at release time (v0.67.1).
       - name: Check every script sources the libraries it calls into
         run: python3 scripts/ci/check-lib-sourcing.py
 
-      - name: Check the plugin manifest against the plugin classes
+      - name: Check plugin-registry.json against the project.yml plugin aggregates
         run: python3 scripts/ci/check-plugin-manifest.py
+
+      # The app registers a plugin from these keys without loading it, and loads one without them at launch.
+      - name: Check every plugin Info.plist declares the ids its class provides
+        run: python3 scripts/ci/check-plugin-provides.py
 
       - name: Check no build script hardcodes the deployment target
         run: bash scripts/ci/check-deployment-target.sh
@@ -92,9 +122,6 @@ jobs:
       - name: Check currentPluginKitVersion moved at most once since the last release
         run: python3 scripts/ci/check-pluginkit-bump-cadence.py --remote origin
 
-      - name: Check the Sparkle version agrees everywhere
-        run: python3 scripts/ci/check-sparkle-version.py
-
       - name: Check the shared-contract drift gates
         run: scripts/audit-refactor-health.sh --check
 
@@ -112,13 +139,12 @@ jobs:
 
       - name: Set up Go
         if: steps.native.outputs.hana == 'true'
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: Native/HanaBridge/go.mod
           cache: false
 
-      # The helper is pure Go, so Linux analyses it as well as the Mac that builds it. govulncheck
-      # runs in build-plugin.yml, before a HANA plugin ships.
+      # The helper is pure Go, so Linux analyses it as well as the Mac that builds it.
       - name: Check the SAP HANA helper
         if: steps.native.outputs.hana == 'true'
         working-directory: Native/HanaBridge
@@ -135,3 +161,5 @@ jobs:
           # go tool would build staticcheck for GOOS too, and Linux cannot run a darwin binary.
           go build -modfile=tools.mod -o "$RUNNER_TEMP/staticcheck" honnef.co/go/tools/cmd/staticcheck
           GOOS=darwin "$RUNNER_TEMP/staticcheck" ./...
+          GOBIN="$RUNNER_TEMP/bin" go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+          GOOS=darwin "$RUNNER_TEMP/bin/govulncheck" ./...

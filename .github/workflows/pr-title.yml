@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # The checkout is the merge commit, so its first parent is the base the pull request lands on.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
@@ -29,7 +30,12 @@ jobs:
           TITLE: ${{ github.event.pull_request.title }}
         run: python3 scripts/ci/check-pr-title.py "$TITLE"
 
-      # The checkout is the merge commit, so its first parent is the base the pull request lands on.
+      - name: Check CHANGELOG.md and the changelog fragments the pull request changes
+        env:
+          PR: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+        run: python3 scripts/ci/check-changelog.py --pr "$PR" --title "$TITLE" --base "$GITHUB_BASE_REF"
+
       - name: Check the added lines and the description against the banned words
         env:
           BODY: ${{ github.event.pull_request.body }}

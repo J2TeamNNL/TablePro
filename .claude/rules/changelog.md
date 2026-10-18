@@ -1,17 +1,19 @@
 ---
 paths:
   - "CHANGELOG.md"
-  - "linux/CHANGELOG.md"
+  - "changelog.d/**/*"
+  - "towncrier.toml"
 ---
 
-# CHANGELOG
+# Changelog
 
-[Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). Entries go under `[Unreleased]`.
+Unreleased changes are towncrier fragments in `changelog.d/`. A release turns them into a `CHANGELOG.md` section with `scripts/release/notes.py assemble` (`RELEASING.md`, Notes).
 
-- **Sections**, each at most once per version and in this order: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`.
-- **An entry is one line naming the change**, not a sentence explaining it, under about 120 characters. Added and Changed name the new thing (`Open in Window for row inspector text fields.`); Fixed names the bug, not the fix (`Empty context menu when right-clicking a read-only inspector field.`). No file paths or type names; an issue reference goes at the end, `(#1234)`.
+- **One file per user-visible change**, named `changelog.d/<PR>.<type>.md`: `<PR>` is the pull request that adds it, `<type>` is `added`, `changed`, `deprecated`, `removed`, `fixed` or `security`. A second entry of the same type in one PR adds a counter, as `towncrier create` does: `3452.fixed.1.md`, then `.2`. The counter does not order entries.
+- **One line, at most 120 characters, ending with a period.** Added and Changed name the new thing (`Open in Window for row inspector text fields.`); Fixed names the bug, not the fix (`Empty context menu when right-clicking a read-only inspector field.`). No file paths or type names.
+- **No refs, no credit, no `- ` prefix.** towncrier links the PR named by the file and adds the bullet; `notes.py` adds ` by @login` when the PR's author is not a maintainer.
 - **One entry per thing a user would notice.** Defects with the same visible symptom share an entry.
-- **No entry** for a fix to something still unreleased (fold it into its entry) or for a docs-only change.
-- **Credits are added at release** by `scripts/ci/changelog_credits.py`: `(#PR by @user)` for outside contributors, `(#PR)` for maintainers. Never write the credit by hand, and reword a contributor's entry in their own PR so the credit stays theirs.
-- **A version may open with a lead block** of at most six lines before its first `###`, naming what a reader would notice. The update window and the Sparkle feed show only that block.
-- After any edit, `grep -n '^## \[' CHANGELOG.md` must still list every released heading.
+- **No fragment** for a fix to something still unreleased (edit that fragment instead) or for a docs-only change.
+- **Only a `chore(release): vX.Y.Z` PR edits `CHANGELOG.md`.**
+- **The lead block and `[CRITICAL]`**: `RELEASING.md`, Notes and Channels.
+- `scripts/ci/check-changelog.py` checks the fragments' text, the headings and the lead blocks in Repo Hygiene, then `towncrier build --draft --version 0.0.0` renders the fragments. towncrier refuses an unknown type and a non-numeric PR number (`ignore`, `issue_pattern`). In PR title, `--pr` checks that a PR into main names each new fragment after itself, that only a release PR edits `CHANGELOG.md`, and that a release PR changes nothing else.

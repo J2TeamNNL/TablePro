@@ -1,8 +1,3 @@
-//
-//  PostLaunchWork.swift
-//  TablePro
-//
-
 import Foundation
 import os
 import TableProUtilities
@@ -40,9 +35,7 @@ internal enum PostLaunchWork {
 
         guard !AppStorageEnvironment.shared.isIsolated else { return }
 
-        /// The registry manifest only feeds the plugin-install UI, and fetching it is a network
-        /// call. A sandboxed run has no user plugins directory to install into anyway.
-        Task { await RegistryClient.shared.ensureManifest(.ifStale) }
+        Task { await RegistryClient.shared.fetch(policy: .ifStale) }
 
         /// The retired per-tab split name left one permanent defaults record per query tab ever
         /// opened, and AppKit offers no way to forget one. Here rather than in the delegate because

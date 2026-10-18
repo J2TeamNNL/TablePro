@@ -1,98 +1,81 @@
 #!/usr/bin/env python3
-"""Fails when .github/plugin-registry.json disagrees with the plugin classes it describes.
+"""Fails when .github/plugin-registry.json and the project.yml plugin aggregates disagree."""
 
-Two of the manifest's fields also exist in Swift: `icon` is `DriverPlugin.iconName`, and
-`databaseTypeIds` is `databaseTypeId` plus `additionalDatabaseTypeIds`. Nothing checked that the
-two agreed, and by the time this was written seven icons had drifted: the registry advertised
-`chart.bar.xaxis` for ClickHouse while the plugin declared `clickhouse-icon`, and so on. Users see
-the manifest's value in the plugin browser and the plugin's value once it is installed.
-
-Every plugin must resolve. A plugin whose declarations cannot be parsed is a failure, not a skip:
-a check that silently passes when it cannot read its input is worse than no check.
-"""
-
-import json
 import pathlib
-import re
 import sys
 
+import yaml
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "scripts" / "release"))
+
+import registry  # noqa: E402
+
 MANIFEST = REPO_ROOT / ".github" / "plugin-registry.json"
-PLUGINS_DIR = REPO_ROOT / "Plugins"
+PROJECT = REPO_ROOT / "project.yml"
 
-ICON = re.compile(r"^\s*(?:public |internal |private )?static (?:let|var) iconName(?:\s*:\s*String)?\s*=\s*\"([^\"]+)\"", re.M)
-PRIMARY_ID = re.compile(r"^\s*(?:public |internal |private )?static (?:let|var) databaseTypeId(?:\s*:\s*String)?\s*=\s*\"([^\"]+)\"", re.M)
-EXTRA_IDS = re.compile(r"^\s*(?:public |internal |private )?static (?:let|var) additionalDatabaseTypeIds\s*(?::\s*\[String\]\s*)?=\s*\[([^\]]*)\]", re.M)
-
-
-def plugin_directory(target):
-    """Plugin folders and targets are named alike once the Driver/Plugin suffixes are dropped."""
-    def normalise(name):
-        return name.lower().replace("driverplugin", "").replace("driver", "").replace("plugin", "")
-
-    wanted = normalise(target)
-    for path in sorted(PLUGINS_DIR.iterdir()):
-        if path.is_dir() and normalise(path.name) == wanted:
-            return path
-    return None
+BUNDLED = "BundledPlugins"
+REGISTRY = "RegistryPlugins"
+ALL = "AllPlugins"
+DRIVER_TEMPLATE = "DriverPlugin"
+APP_TARGET = "TablePro"
 
 
-def declared(directory):
-    """The values the plugin's own class declares, read across its Swift sources."""
-    icon = ids = None
-    extra = []
-    for source in sorted(directory.rglob("*.swift")):
-        text = source.read_text(encoding="utf-8")
-        if icon is None:
-            found = ICON.search(text)
-            icon = found.group(1) if found else None
-        if ids is None:
-            found = PRIMARY_ID.search(text)
-            ids = found.group(1) if found else None
-        found = EXTRA_IDS.search(text)
-        if found and not extra:
-            extra = [part.strip().strip('"') for part in found.group(1).split(",") if part.strip()]
-    return icon, ids, extra
+def embedded_plugins(app):
+    return {dependency["target"] for dependency in app.get("dependencies") or []
+            if "target" in dependency and (dependency.get("copy") or {}).get("destination") == "plugins"}
+
+
+def aggregate_problems(project, plugins):
+    targets, aggregates = project.get("targets") or {}, project.get("aggregateTargets") or {}
+    problems = []
+    for name in (BUNDLED, REGISTRY, ALL):
+        if name not in aggregates:
+            problems.append(f"project.yml has no {name} aggregate target")
+    if problems:
+        return problems
+
+    if sorted(aggregates[ALL]["targets"]) != sorted([BUNDLED, REGISTRY]):
+        problems.append(f"{ALL} must depend on {BUNDLED} and {REGISTRY} only, not {aggregates[ALL]['targets']}")
+
+    registry = set(aggregates[REGISTRY]["targets"])
+    bundled = set(aggregates[BUNDLED]["targets"])
+    published = set(plugins)
+    for name in sorted(published - registry):
+        problems.append(f"{MANIFEST.name} publishes {name} but {REGISTRY} does not build it")
+    for name in sorted(registry - published):
+        problems.append(f"{REGISTRY} builds {name} but {MANIFEST.name} does not publish it")
+
+    embedded = embedded_plugins(targets.get(APP_TARGET) or {})
+    for name in sorted(embedded - bundled):
+        problems.append(f"the {APP_TARGET} target embeds {name} but {BUNDLED} does not list it")
+    for name in sorted(bundled - embedded):
+        problems.append(f"{BUNDLED} lists {name} but the {APP_TARGET} target does not embed it")
+
+    drivers = {name for name, entry in targets.items() if DRIVER_TEMPLATE in (entry.get("templates") or [])}
+    for name in sorted(drivers):
+        count = (name in bundled) + (name in registry)
+        if count != 1:
+            problems.append(f"{name} is in {count} of {BUNDLED} and {REGISTRY}, expected exactly one")
+    for name in sorted((bundled | registry) - drivers):
+        problems.append(f"{name} is in a plugin aggregate but is not a {DRIVER_TEMPLATE} target")
+    return problems
 
 
 def main():
-    with open(MANIFEST, encoding="utf-8") as handle:
-        plugins = json.load(handle)["plugins"]
+    try:
+        plugins = registry.load_metadata(MANIFEST)["plugins"]
+    except registry.RegistryError as error:
+        sys.exit(f"::error::{error}")
+    project = yaml.safe_load(PROJECT.read_text(encoding="utf-8"))
 
-    problems = []
-    for slug, entry in sorted(plugins.items()):
-        directory = plugin_directory(entry["target"])
-        if directory is None:
-            problems.append(f"{slug}: no plugin directory matches target {entry['target']}")
-            continue
-
-        icon, primary, extra = declared(directory)
-        if icon is None:
-            problems.append(f"{slug}: could not read iconName from {directory.name}")
-        elif icon != entry["icon"]:
-            problems.append(f"{slug}: manifest icon {entry['icon']!r} but the plugin declares {icon!r}")
-
-        # An export or import plugin drives no database type and declares none.
-        if entry["databaseTypeIds"] is None:
-            if primary is not None:
-                problems.append(f"{slug}: manifest says no database types but the plugin declares {primary!r}")
-            continue
-
-        if primary is None:
-            problems.append(f"{slug}: could not read databaseTypeId from {directory.name}")
-            continue
-        if [primary, *extra] != entry["databaseTypeIds"]:
-            problems.append(
-                f"{slug}: manifest databaseTypeIds {entry['databaseTypeIds']} "
-                f"but the plugin declares {[primary, *extra]}"
-            )
-
+    problems = aggregate_problems(project, plugins)
     if problems:
         for problem in problems:
             print(f"::error::{problem}", file=sys.stderr)
-        sys.exit(f"\n{len(problems)} plugin(s) disagree with {MANIFEST.name}")
+        sys.exit(f"\n{len(problems)} problem(s) between {MANIFEST.name} and {PROJECT.name}")
 
-    print(f"{len(plugins)} plugins agree with {MANIFEST.name}")
+    print(f"{len(plugins)} plugins in {MANIFEST.name} agree with {PROJECT.name}'s plugin aggregates")
 
 
 if __name__ == "__main__":

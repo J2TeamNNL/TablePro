@@ -1,8 +1,3 @@
-//
-//  CopilotService.swift
-//  TablePro
-//
-
 import Combine
 import Foundation
 import os
@@ -11,6 +6,7 @@ import os
 final class CopilotService: ObservableObject {
     nonisolated private static let logger = Logger(subsystem: "com.TablePro", category: "CopilotService")
     static let shared = CopilotService()
+    nonisolated static let editorPluginInfo = LSPClientInfo(name: "tablepro-copilot", version: Bundle.main.appVersion)
 
     enum Status: Sendable, Equatable {
         case stopped
@@ -112,10 +108,9 @@ final class CopilotService: ObservableObject {
             try await launched.start(executablePath: binaryPath, arguments: ["--stdio"], environment: [:])
 
             let client = LSPClient(transport: launched)
-            let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
             _ = try await client.initialize(
-                clientInfo: LSPClientInfo(name: "TablePro", version: appVersion),
-                editorPluginInfo: LSPClientInfo(name: "tablepro-copilot", version: "1.0.0"),
+                clientInfo: LSPClientInfo(name: "TablePro", version: Bundle.main.appVersion),
+                editorPluginInfo: Self.editorPluginInfo,
                 processId: Int(ProcessInfo.processInfo.processIdentifier)
             )
             await client.initialized()

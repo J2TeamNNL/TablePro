@@ -11,15 +11,23 @@
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>TablePro connects to database servers and SSH tunnels running on your local network, including Bonjour (.local) hostnames.</string>
 	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/TableProApp/TablePro/main/appcast.xml</string>
+	<string>https://updates.tablepro.app/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>EongGFyuahKlYPZwgmnFx8nW3s1CqWlSSU5BDqY6n6Q=</string>
+	<string>PAQXJZpmlif12LfOoRkGQqf5lGQqPPf62E6dn7Jovhk=</string>
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
 	<key>SUAutomaticallyUpdate</key>
 	<true/>
+	<key>TableProPluginKitVersion</key>
+	<string>$(TABLEPRO_PLUGINKIT_VERSION)</string>
+	<key>TableProPluginKitMinimumVersion</key>
+	<string>$(TABLEPRO_PLUGINKIT_MINIMUM_VERSION)</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -537,17 +545,6 @@
 				<true/>
 			</dict>
 			<key>githubusercontent.com</key>
-			<dict>
-				<key>NSIncludesSubdomains</key>
-				<true/>
-				<key>NSExceptionAllowsInsecureHTTPLoads</key>
-				<false/>
-				<key>NSExceptionMinimumTLSVersion</key>
-				<string>TLSv1.2</string>
-				<key>NSExceptionRequiresForwardSecrecy</key>
-				<true/>
-			</dict>
-			<key>jsdelivr.net</key>
 			<dict>
 				<key>NSIncludesSubdomains</key>
 				<true/>

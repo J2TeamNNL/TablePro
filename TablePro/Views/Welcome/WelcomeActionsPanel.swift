@@ -1,8 +1,3 @@
-//
-//  WelcomeActionsPanel.swift
-//  TablePro
-//
-
 import Combine
 import SwiftUI
 
@@ -25,9 +20,8 @@ struct WelcomeActionsPanel: View {
         .map(\.showWelcomeVersionInfo)
         .removeDuplicates()
 
-    /// Captured once, because the stored value is overwritten on the same appearance that reads
-    /// it. Without the capture the line would replace itself with nothing on the next redraw.
-    @State private var lastSeenAppVersion = ""
+    /// Captured once: the same appearance that reads the stored value overwrites it.
+    @State private var showsWhatsNew: Bool?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -43,7 +37,7 @@ struct WelcomeActionsPanel: View {
                         .font(.title2.weight(.semibold))
 
                     if showsVersionInfo {
-                        Text(String(format: String(localized: "Version %@"), Bundle.main.appVersion))
+                        Text(String(format: String(localized: "Version %@"), Bundle.main.displayVersion))
                             .font(.callout)
                             .foregroundStyle(.secondary)
                             .accessibilityIdentifier("welcome-version-line")
@@ -60,7 +54,7 @@ struct WelcomeActionsPanel: View {
                         .accessibilityIdentifier("welcome-check-for-updates-link")
                     }
 
-                    if showsWhatsNew {
+                    if showsWhatsNew == true {
                         Button(String(format: String(localized: "What's New in %@"), Bundle.main.appVersion)) {
                             NSApp.sendAction(#selector(AppDelegate.openChangelog(_:)), to: nil, from: nil)
                         }
@@ -121,18 +115,8 @@ struct WelcomeActionsPanel: View {
     }
 
     private func recordAppVersion() {
-        let defaults = AppStorageEnvironment.shared.defaults
-        let key = PreferenceKeys.lastSeenAppVersion.name
-        let current = Bundle.main.appVersion
-        guard lastSeenAppVersion.isEmpty else { return }
-        lastSeenAppVersion = defaults.string(forKey: key) ?? current
-        defaults.set(current, forKey: key)
-    }
-
-    /// Updates install on quit with no dialog, so the release notes stop passing in front of
-    /// anyone. This is the pull-shaped replacement, shown on the window the user chose to open.
-    private var showsWhatsNew: Bool {
-        !lastSeenAppVersion.isEmpty && lastSeenAppVersion != Bundle.main.appVersion
+        guard showsWhatsNew == nil else { return }
+        showsWhatsNew = WhatsNewNotice(bundle: .main, defaults: AppStorageEnvironment.shared.defaults).recordLaunch()
     }
 
     /// The badge follows entitlement and the support link follows whether anything has been paid,

@@ -1,0 +1,364 @@
+name: Release
+
+# A v* tag builds, signs and notarizes the app and every registry plugin, publishes the GitHub
+# release, then adds it to the gh-pages branch and deploys that to updates.tablepro.app.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      tag: ${{ steps.parse.outputs.tag }}
+      version: ${{ steps.parse.outputs.version }}
+      build: ${{ steps.parse.outputs.build }}
+      channel: ${{ steps.parse.outputs.channel }}
+      critical: ${{ steps.notes.outputs.critical }}
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: Set up Python 3.9
+        id: python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.9"
+          update-environment: false
+
+      - name: Install the release tooling
+        env:
+          SETUP_PYTHON: ${{ steps.python.outputs.python-path }}
+        run: |
+          set -euo pipefail
+          "$SETUP_PYTHON" -m venv "$RUNNER_TEMP/release-venv"
+          "$RUNNER_TEMP/release-venv/bin/pip" install --quiet --disable-pip-version-check --require-hashes \
+            -r scripts/release/requirements.txt
+
+      - name: Check the tag can build
+        run: '"$RUNNER_TEMP/release-venv/bin/python" scripts/release/version.py check "$TAG"'
+
+      - name: Read the version
+        id: parse
+        run: |
+          set -euo pipefail
+          parsed="$("$RUNNER_TEMP/release-venv/bin/python" scripts/release/version.py parse "$TAG")"
+          printf 'tag=%s\n%s\n' "$TAG" "$parsed" >> "$GITHUB_OUTPUT"
+
+      - name: Write the release notes
+        id: notes
+        env:
+          VERSION: ${{ steps.parse.outputs.version }}
+        run: |
+          set -euo pipefail
+          python="$RUNNER_TEMP/release-venv/bin/python"
+          mkdir -p build/notes
+          for kind in body feed lead; do
+            "$python" scripts/release/notes.py "$kind" "$VERSION" > "build/notes/$kind.md"
+          done
+          critical="$("$python" scripts/release/notes.py critical "$VERSION")"
+          echo "critical=$critical" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: notes
+          path: build/notes
+          if-no-files-found: error
+          retention-days: 30
+
+  app:
+    name: App
+    needs: verify
+    runs-on: xcode-27
+    environment: signing
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      BUILD: ${{ needs.verify.outputs.build }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/setup-xcode
+        with:
+          require-release: ${{ needs.verify.outputs.channel == 'stable' }}
+
+      - name: Check the Production CloudKit schema
+        env:
+          CLOUDKIT_MANAGEMENT_TOKEN: ${{ secrets.CLOUDKIT_MANAGEMENT_TOKEN }}
+        run: scripts/export-cloudkit-schema.sh --check
+
+      - name: Write Secrets.xcconfig
+        env:
+          ANALYTICS_HMAC_SECRET: ${{ secrets.ANALYTICS_HMAC_SECRET }}
+        run: printf 'ANALYTICS_HMAC_SECRET = %s\n' "$ANALYTICS_HMAC_SECRET" > Configs/Secrets.xcconfig
+
+      - uses: ./.github/actions/prepare-build
+
+      - uses: ./.github/actions/apple-signing
+        with:
+          certificate-p12: ${{ secrets.CERTIFICATES_P12 }}
+          certificate-password: ${{ secrets.CERTIFICATES_PASSWORD }}
+          provisioning-profile: ${{ secrets.PROVISIONING_PROFILE }}
+          asc-key-id: ${{ secrets.ASC_KEY_ID }}
+          asc-issuer-id: ${{ secrets.ASC_ISSUER_ID }}
+          asc-key-p8: ${{ secrets.ASC_KEY_P8 }}
+
+      - name: Build the app
+        run: scripts/release/build.sh app
+
+      - name: Notarize the app
+        run: scripts/release/notarize.sh build/release/TablePro.app
+
+      - name: Package the app
+        run: scripts/release/package.sh app
+
+      - name: Notarize the disk image
+        run: scripts/release/notarize.sh "dist/TablePro-$VERSION.dmg"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: app
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+
+  plugins:
+    name: Plugins
+    needs: verify
+    runs-on: xcode-27
+    environment: signing
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      BUILD: ${{ needs.verify.outputs.build }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/setup-xcode
+        with:
+          require-release: ${{ needs.verify.outputs.channel == 'stable' }}
+
+      - uses: ./.github/actions/prepare-build
+
+      - name: Set up Go for the SAP HANA helper
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: Native/HanaBridge/go.mod
+          cache: false
+
+      # The Dameng and HANA targets copy these artifacts in and never build them.
+      - name: Build the native bridges
+        run: |
+          scripts/build-dameng.sh both
+          scripts/build-hana.sh both
+
+      - uses: ./.github/actions/apple-signing
+        with:
+          certificate-p12: ${{ secrets.CERTIFICATES_P12 }}
+          certificate-password: ${{ secrets.CERTIFICATES_PASSWORD }}
+          asc-key-id: ${{ secrets.ASC_KEY_ID }}
+          asc-issuer-id: ${{ secrets.ASC_ISSUER_ID }}
+          asc-key-p8: ${{ secrets.ASC_KEY_P8 }}
+
+      - name: Build the registry plugins
+        run: scripts/release/build.sh plugins
+
+      - name: Notarize the plugins
+        run: scripts/release/notarize.sh build/release/plugins/*.tableplugin
+
+      - name: Package the plugins
+        run: scripts/release/package.sh plugins
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: plugins
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+
+  github-release:
+    name: GitHub release
+    needs: [verify, app, plugins]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      TAG: ${{ needs.verify.outputs.tag }}
+      BUILD: ${{ needs.verify.outputs.build }}
+      CHANNEL: ${{ needs.verify.outputs.channel }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: app
+          path: dist
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: plugins
+          path: dist
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: notes
+          path: notes
+
+      - name: Check for a published release
+        id: release
+        run: |
+          if gh api "repos/{owner}/{repo}/releases/tags/$TAG" --silent 2> /dev/null; then
+            echo published=true >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Attest the assets
+        if: steps.release.outputs.published != 'true'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/*
+
+      # gh release create drafts, attaches every asset, then publishes: the order an immutable release needs.
+      - name: Publish the release
+        if: steps.release.outputs.published != 'true'
+        run: |
+          set -euo pipefail
+          # A draft a killed attempt left would shadow the release in gh's lookups by tag.
+          if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft 2> /dev/null)" = true ]; then
+            gh release delete "$TAG" --yes
+          fi
+          flags=(--prerelease --latest=false)
+          if [ "$CHANNEL" = stable ]; then
+            latest="$(gh release view --json tagName --jq .tagName)"
+            latest_build="$(python3 scripts/release/version.py parse "$latest" 2> /dev/null | sed -n 's/^build=//p' || true)"
+            flags=(--latest="$([ "$BUILD" -gt "${latest_build:-0}" ] && echo true || echo false)")
+          fi
+          gh release create "$TAG" --verify-tag --title "$TAG" --notes-file notes/body.md "${flags[@]}" dist/*
+
+      - name: Verify the release
+        run: |
+          set -euo pipefail
+          gh release verify "$TAG"
+          for asset in dist/*; do
+            gh release verify-asset "$TAG" "$asset"
+          done
+
+  feed:
+    name: Feed
+    needs: [verify, github-release]
+    runs-on: macos-latest
+    environment: release
+    timeout-minutes: 20
+    concurrency:
+      group: gh-pages
+      queue: max
+    permissions:
+      contents: write
+      attestations: read
+    env:
+      TAG: ${{ needs.verify.outputs.tag }}
+      CRITICAL: ${{ needs.verify.outputs.critical }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: gh-pages
+          path: build/gh-pages
+
+      - uses: ./.github/actions/setup-sparkle
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: notes
+          path: notes
+
+      - name: Add the release to the feed and the plugin manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          flags=()
+          [ "$CRITICAL" != true ] || flags+=(--critical)
+          python3 scripts/release/feed.py add "$TAG" --site build/gh-pages --notes notes/feed.md \
+            ${flags[@]+"${flags[@]}"}
+
+      - name: Push gh-pages
+        working-directory: build/gh-pages
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add appcast.xml plugins/v3.json
+          git diff --cached --quiet || { git commit -m "release: $TAG" && git push origin HEAD:gh-pages; }
+
+  pages:
+    name: Pages
+    needs: feed
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml
+
+  notify:
+    name: Notify
+    needs: [verify, pages]
+    if: needs.verify.outputs.channel == 'stable'
+    runs-on: ubuntu-latest
+    environment: release
+    continue-on-error: true
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ needs.verify.outputs.tag }}
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: notes
+          path: notes
+
+      # Plain text: the lead goes out as written, with no parse_mode to escape for.
+      - name: Post to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          {
+            printf 'TablePro %s\n' "$VERSION"
+            if [ -s notes/lead.md ]; then
+              printf '\n'
+              cat notes/lead.md
+            fi
+            printf '\n%s/%s/releases/tag/%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$TAG"
+          } > msg.txt
+          curl -fsS --retry 3 -o /dev/null --data-urlencode "chat_id=$TELEGRAM_CHAT_ID" \
+            --data-urlencode text@msg.txt "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage"

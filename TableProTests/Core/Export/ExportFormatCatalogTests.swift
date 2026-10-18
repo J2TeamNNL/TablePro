@@ -1,8 +1,3 @@
-//
-//  ExportFormatCatalogTests.swift
-//  TableProTests
-//
-
 import Foundation
 import TableProPluginKit
 import Testing
@@ -116,5 +111,69 @@ struct ExportFormatCatalogTests {
             ExportFormatCatalog.sorted([StubZebra(), StubParquet(), StubSQL(), StubCSV()]))
         #expect(forwards == backwards)
         #expect(forwards == ["csv", "sql", "parquet", "zebra"])
+    }
+
+    private func manifest(_ plugins: [RegistryPlugin]) -> RegistryManifest {
+        RegistryManifest(schemaVersion: RegistryManifest.supportedSchemaVersion, plugins: plugins)
+    }
+
+    private func registryPlugin(id: String, name: String, exportFormatIds: [String]) -> RegistryPlugin {
+        RegistryPlugin(
+            id: id,
+            name: name,
+            databaseTypeIds: [],
+            exportFormatIds: exportFormatIds,
+            releases: []
+        )
+    }
+
+    @Test("No manifest, or one that lists no export format, offers no install")
+    func noManifestOffersNoInstall() {
+        let unlisted = manifest([
+            registryPlugin(id: "com.TablePro.OracleDriver", name: "Oracle Driver", exportFormatIds: [])
+        ])
+
+        #expect(ExportFormatCatalog.installable(in: nil).isEmpty)
+        #expect(ExportFormatCatalog.installable(in: unlisted).isEmpty)
+        #expect(ExportFormatCatalog.notInstalled(installedFormatIds: [], manifest: nil).isEmpty)
+    }
+
+    @Test("A manifest entry's exportFormatIds decode into an install offer")
+    func decodedManifestOffersItsFormats() throws {
+        let json = """
+        {"schemaVersion": 3, "retainFromPluginKit": 39, "plugins": [{
+            "id": "com.TablePro.ParquetExportPlugin", "name": "Parquet Export",
+            "databaseTypeIds": [], "exportFormatIds": ["parquet"], "releases": []
+        }]}
+        """
+        let decoded = try JSONDecoder().decode(RegistryManifest.self, from: Data(json.utf8))
+        let parquet = InstallableExportFormat(
+            formatId: "parquet",
+            displayName: "Parquet Export",
+            registryPluginId: "com.TablePro.ParquetExportPlugin"
+        )
+
+        #expect(ExportFormatCatalog.installable(in: decoded) == [parquet])
+    }
+
+    @Test("Each format the manifest lists is offered under its plugin's name")
+    func manifestFormatsAreOffered() {
+        let listed = manifest([
+            registryPlugin(id: "com.TablePro.ParquetExportPlugin", name: "Parquet Export", exportFormatIds: ["parquet"]),
+            registryPlugin(id: "com.example.AvroExport", name: "Avro Export", exportFormatIds: ["avro"])
+        ])
+        let parquet = InstallableExportFormat(
+            formatId: "parquet",
+            displayName: "Parquet Export",
+            registryPluginId: "com.TablePro.ParquetExportPlugin"
+        )
+        let avro = InstallableExportFormat(
+            formatId: "avro",
+            displayName: "Avro Export",
+            registryPluginId: "com.example.AvroExport"
+        )
+
+        #expect(ExportFormatCatalog.installable(in: listed) == [parquet, avro])
+        #expect(ExportFormatCatalog.notInstalled(installedFormatIds: ["parquet"], manifest: listed) == [avro])
     }
 }

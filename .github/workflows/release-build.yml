@@ -1,0 +1,91 @@
+name: Release Build
+
+# The Release configuration of the app and every registry plugin, universal and unsigned, packaged
+# the way a tag packages it, so a packaging failure shows on the commit instead of on the tag.
+
+on:
+  push:
+    branches: [main, 'release/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Changes (Release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Decide whether the Release build runs
+        id: decide
+        env:
+          BASE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          run=$(scripts/ci/detect-changed-paths.sh --base "$BASE" release)
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+  # Reads "not false" so a failed changes job builds instead of passing.
+  build:
+    name: Release Build
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.run != 'false' }}
+    runs-on: xcode-27
+    timeout-minutes: 150
+    # The tag's version settings run here first; 9999999 is the largest build at MAJOR 0 (RELEASING.md, Versions).
+    env:
+      VERSION: 0.0.0-dev
+      BUILD: "9999999"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/setup-xcode
+
+      - uses: ./.github/actions/prepare-build
+
+      - name: Set up Go for the SAP HANA helper
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: Native/HanaBridge/go.mod
+          cache: false
+
+      # The Dameng and HANA targets copy these artifacts in and never build them.
+      - name: Build the native bridges
+        run: |
+          scripts/build-dameng.sh both
+          scripts/build-hana.sh both
+
+      - name: Build the app
+        id: app
+        run: scripts/release/build.sh app --unsigned
+
+      # Runs after an app failure too, so one run reports both.
+      - name: Build the registry plugins
+        id: plugins
+        if: ${{ !cancelled() }}
+        run: scripts/release/build.sh plugins --unsigned
+
+      - name: Package the app
+        if: ${{ !cancelled() && steps.app.outcome == 'success' }}
+        run: scripts/release/package.sh app --unsigned
+
+      - name: Package the plugins
+        if: ${{ !cancelled() && steps.plugins.outcome == 'success' }}
+        run: scripts/release/package.sh plugins --unsigned
+
+      - name: Upload the build logs
+        if: ${{ failure() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-build-logs-${{ github.run_attempt }}
+          path: build/release/logs
+          if-no-files-found: ignore
+          retention-days: 7

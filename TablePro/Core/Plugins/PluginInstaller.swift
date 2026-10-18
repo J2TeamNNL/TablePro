@@ -1,161 +1,72 @@
-//
-//  PluginInstaller.swift
-//  TablePro
-//
-
-import CryptoKit
 import Foundation
 import os
 import TableProUtilities
 
-actor PluginInstaller {
+protocol RegistryPluginInstalling: Sendable {
+    func install(
+        _ registryPlugin: RegistryPlugin,
+        release: RegistryRelease,
+        into userPluginsDir: URL,
+        progress: @escaping @Sendable (Double) async -> Void
+    ) async throws -> URL
+
+    func stage(
+        _ registryPlugin: RegistryPlugin,
+        release: RegistryRelease,
+        pluginId: String,
+        bundleName: String,
+        into userPluginsDir: URL,
+        progress: @escaping @Sendable (Double) async -> Void
+    ) async throws -> URL
+}
+
+actor PluginInstaller: RegistryPluginInstalling {
     static let shared = PluginInstaller()
 
     static let logger = Logger(subsystem: "com.TablePro", category: "PluginInstaller")
-
-    private var activeTasks: [String: Task<URL, Error>] = [:]
-    private var stagedUpdates: [String: URL] = [:]
 
     private init() {}
 
     func install(
         _ registryPlugin: RegistryPlugin,
-        binary: RegistryBinary,
+        release: RegistryRelease,
         into userPluginsDir: URL,
-        progressHandler: @escaping @Sendable (StagedInstallState) async -> Void
-    ) async throws -> URL {
-        try await runCoalesced(pluginId: registryPlugin.id) {
-            try await self.performDownloadAndCommit(
-                registryPlugin,
-                binary: binary,
-                into: userPluginsDir,
-                progressHandler: progressHandler
-            )
-        }
-    }
-
-    func update(
-        _ registryPlugin: RegistryPlugin,
-        binary: RegistryBinary,
-        into userPluginsDir: URL,
-        hasLiveConnections: Bool,
-        progressHandler: @escaping @Sendable (StagedInstallState) async -> Void
-    ) async throws -> PluginUpdateResult {
-        if hasLiveConnections {
-            let stagedURL = try await runCoalesced(pluginId: registryPlugin.id) {
-                try await self.performDownloadAndStage(
-                    registryPlugin,
-                    binary: binary,
-                    into: userPluginsDir,
-                    progressHandler: progressHandler
-                )
-            }
-            stagedUpdates[registryPlugin.id] = stagedURL
-            await progressHandler(.staged(at: stagedURL))
-            return .staged(at: stagedURL)
-        }
-
-        let finalURL = try await runCoalesced(pluginId: registryPlugin.id) {
-            try await self.performDownloadAndCommit(
-                registryPlugin,
-                binary: binary,
-                into: userPluginsDir,
-                progressHandler: progressHandler
-            )
-        }
-        return .installed(pluginURL: finalURL)
-    }
-
-    func commitStagedUpdate(pluginId: String, into userPluginsDir: URL) async throws -> URL {
-        guard let stagedURL = stagedUpdates[pluginId] else {
-            throw PluginError.notFound
-        }
-        guard let stagedBundle = Bundle(url: stagedURL) else {
-            throw PluginError.invalidBundle("Cannot create bundle from \(stagedURL.lastPathComponent)")
-        }
-        try PluginCodeSignatureVerifier.verify(bundle: stagedBundle)
-        let bundleName = stagedURL.deletingPathExtension().lastPathComponent
-        let destURL = userPluginsDir.appendingPathComponent("\(bundleName).tableplugin", isDirectory: true)
-        let finalURL = try Self.atomicReplace(stagedBundleURL: stagedURL, destURL: destURL)
-        stagedUpdates.removeValue(forKey: pluginId)
-        try? FileManager.default.removeItem(at: stagedURL.deletingLastPathComponent())
-        return finalURL
-    }
-
-    func discardStagedUpdate(pluginId: String) {
-        guard let stagedURL = stagedUpdates.removeValue(forKey: pluginId) else { return }
-        try? FileManager.default.removeItem(at: stagedURL.deletingLastPathComponent())
-    }
-
-    func hasStagedUpdate(pluginId: String) -> Bool {
-        stagedUpdates[pluginId] != nil
-    }
-
-    func stagedURL(for pluginId: String) -> URL? {
-        stagedUpdates[pluginId]
-    }
-
-    func cancelInstall(pluginId: String) {
-        activeTasks[pluginId]?.cancel()
-    }
-
-    // MARK: - Coalescing
-
-    private func runCoalesced(
-        pluginId: String,
-        body: @Sendable @escaping () async throws -> URL
-    ) async throws -> URL {
-        if let existing = activeTasks[pluginId] {
-            return try await existing.value
-        }
-        let task = Task<URL, Error> {
-            try await body()
-        }
-        activeTasks[pluginId] = task
-        defer { activeTasks.removeValue(forKey: pluginId) }
-        return try await task.value
-    }
-
-    // MARK: - Download + commit (no live connections)
-
-    private func performDownloadAndCommit(
-        _ registryPlugin: RegistryPlugin,
-        binary: RegistryBinary,
-        into userPluginsDir: URL,
-        progressHandler: @escaping @Sendable (StagedInstallState) async -> Void
+        progress: @escaping @Sendable (Double) async -> Void
     ) async throws -> URL {
         let extracted = try await downloadExtractVerify(
             registryPlugin,
-            binary: binary,
+            release: release,
             into: userPluginsDir,
-            progressHandler: progressHandler
+            progress: progress
         )
-
-        defer {
-            try? FileManager.default.removeItem(at: extracted.workingDir)
-        }
+        defer { try? FileManager.default.removeItem(at: extracted.workingDir) }
 
         let destURL = userPluginsDir.appendingPathComponent(extracted.bundleURL.lastPathComponent, isDirectory: true)
-        let finalURL = try Self.atomicReplace(stagedBundleURL: extracted.bundleURL, destURL: destURL)
-        await progressHandler(.installed(pluginURL: finalURL))
-        return finalURL
+        return try Self.atomicReplace(stagedBundleURL: extracted.bundleURL, destURL: destURL)
     }
 
-    // MARK: - Download + stage (live connections)
-
-    private func performDownloadAndStage(
+    func stage(
         _ registryPlugin: RegistryPlugin,
-        binary: RegistryBinary,
+        release: RegistryRelease,
+        pluginId: String,
+        bundleName: String,
         into userPluginsDir: URL,
-        progressHandler: @escaping @Sendable (StagedInstallState) async -> Void
+        progress: @escaping @Sendable (Double) async -> Void
     ) async throws -> URL {
         let extracted = try await downloadExtractVerify(
             registryPlugin,
-            binary: binary,
+            release: release,
             into: userPluginsDir,
-            progressHandler: progressHandler
+            progress: progress
         )
-        return extracted.bundleURL
+        defer { try? FileManager.default.removeItem(at: extracted.workingDir) }
+
+        return try Self.stage(
+            bundleAt: extracted.bundleURL,
+            pluginId: pluginId,
+            bundleName: bundleName,
+            userPluginsDir: userPluginsDir
+        )
     }
 
     // MARK: - Download / extract / verify / quarantine-strip
@@ -167,54 +78,32 @@ actor PluginInstaller {
 
     private func downloadExtractVerify(
         _ registryPlugin: RegistryPlugin,
-        binary: RegistryBinary,
+        release: RegistryRelease,
         into userPluginsDir: URL,
-        progressHandler: @escaping @Sendable (StagedInstallState) async -> Void
+        progress: @escaping @Sendable (Double) async -> Void
     ) async throws -> ExtractedBundle {
         let stagingRoot = Self.stagingRoot(for: userPluginsDir)
         try FileManager.default.createDirectory(at: stagingRoot, withIntermediateDirectories: true)
         let workingDir = stagingRoot.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: workingDir, withIntermediateDirectories: true)
 
-        let context = await MainActor.run {
-            (
-                kit: PluginManager.currentPluginKitVersion,
-                minimumKit: PluginManager.minimumCompatiblePluginKitVersion,
-                session: RegistryClient.shared.session
-            )
-        }
+        let session = await MainActor.run { RegistryClient.shared.session }
 
-        // The registry manifest is fetched over the network, so the URL it names is untrusted
-        // input. The code-signature check is the real gate, but nothing should be fetched over
-        // cleartext on the way to it.
-        guard let downloadURL = URL(string: binary.downloadURL),
+        // The manifest is network input: the signature check is the real gate, but nothing travels over cleartext.
+        guard let downloadURL = URL(string: release.url),
               downloadURL.scheme?.lowercased() == "https" else {
             throw PluginError.downloadFailed("Invalid download URL")
         }
 
-        /// Zero here is "not started", not "nought per cent done", and nothing else arrives until
-        /// the whole file is down: measured on a 25.7 MB download with a known `Content-Length`,
-        /// `download(from:delegate:)` delivered no `URLSessionDownloadDelegate` byte callbacks at
-        /// all, because the async form routes only `URLSessionTaskDelegate` messages to a per-task
-        /// delegate. Anything drawing this has to stay indeterminate until a fraction moves.
-        await progressHandler(.downloading(fraction: 0))
-
-        let (tempDownloadURL, response) = try await context.session.download(from: downloadURL)
+        let (tempDownloadURL, response) = try await Self.download(downloadURL, with: session, progress: progress)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
             throw PluginError.downloadFailed("HTTP \(code)")
         }
 
-        await progressHandler(.downloading(fraction: 0.5))
-
-        let payload = try Data(contentsOf: tempDownloadURL)
-        let digest = SHA256.hash(data: payload)
-        let hex = digest.hexEncoded
-        guard hex == binary.sha256.lowercased() else {
+        guard DownloadedBinary.sha256Hex(ofFileAt: tempDownloadURL.path) == release.sha256.lowercased() else {
             throw PluginError.checksumMismatch
         }
-
-        await progressHandler(.downloading(fraction: 1.0))
 
         let zipURL = workingDir.appendingPathComponent("\(registryPlugin.id).zip")
         try FileManager.default.moveItem(at: tempDownloadURL, to: zipURL)
@@ -227,12 +116,7 @@ actor PluginInstaller {
         }
 
         try PluginCodeSignatureVerifier.verify(bundle: stagedBundle)
-
-        try Self.validateStagedABI(
-            bundleURL: bundleURL,
-            currentKit: context.kit,
-            minimumKit: context.minimumKit
-        )
+        try PluginManager.validateBundleVersions(stagedBundle)
         Self.stripQuarantine(at: bundleURL)
 
         return ExtractedBundle(workingDir: workingDir, bundleURL: bundleURL)
@@ -240,9 +124,58 @@ actor PluginInstaller {
 
     // MARK: - Helpers (nonisolated)
 
+    nonisolated static func download(
+        _ url: URL,
+        with session: URLSession,
+        progress: @escaping @Sendable (Double) async -> Void
+    ) async throws -> (URL, URLResponse) {
+        let observer = DownloadProgressObserver()
+        let forwarding = Task {
+            for await fraction in observer.fractions {
+                await progress(fraction)
+            }
+        }
+        do {
+            let result = try await session.download(from: url, delegate: observer)
+            observer.finish(isComplete: true)
+            await forwarding.value
+            return result
+        } catch {
+            observer.finish(isComplete: false)
+            forwarding.cancel()
+            throw error
+        }
+    }
+
     nonisolated static func stagingRoot(for userPluginsDir: URL) -> URL {
         userPluginsDir.deletingLastPathComponent()
             .appendingPathComponent("PluginStaging", isDirectory: true)
+    }
+
+    nonisolated static func stagedUpdatesRoot(for userPluginsDir: URL) -> URL {
+        stagingRoot(for: userPluginsDir).appendingPathComponent("Updates", isDirectory: true)
+    }
+
+    nonisolated static func stagedUpdateDirectory(for pluginId: String, in userPluginsDir: URL) -> URL {
+        stagedUpdatesRoot(for: userPluginsDir).appendingPathComponent(pluginId, isDirectory: true)
+    }
+
+    @discardableResult
+    nonisolated static func stage(
+        bundleAt bundleURL: URL,
+        pluginId: String,
+        bundleName: String,
+        userPluginsDir: URL
+    ) throws -> URL {
+        let fm = FileManager.default
+        let stagedDir = stagedUpdateDirectory(for: pluginId, in: userPluginsDir)
+        if fm.fileExists(atPath: stagedDir.path) {
+            try fm.removeItem(at: stagedDir)
+        }
+        try fm.createDirectory(at: stagedDir, withIntermediateDirectories: true)
+        let stagedURL = stagedDir.appendingPathComponent(bundleName, isDirectory: true)
+        try fm.moveItem(at: bundleURL, to: stagedURL)
+        return stagedURL
     }
 
     nonisolated static func extractZip(at zipURL: URL, into destDir: URL) throws {
@@ -276,27 +209,6 @@ actor PluginInstaller {
         DownloadedBinary.stripQuarantine(at: url)
     }
 
-    nonisolated static func validateStagedABI(
-        bundleURL: URL,
-        currentKit: Int,
-        minimumKit: Int
-    ) throws {
-        guard let bundle = Bundle(url: bundleURL),
-              let info = bundle.infoDictionary
-        else {
-            throw PluginError.invalidBundle("Cannot read Info.plist")
-        }
-        guard let version = info["TableProPluginKitVersion"] as? Int else {
-            throw PluginError.pluginOutdated(pluginVersion: 0, requiredVersion: currentKit)
-        }
-        if version > currentKit {
-            throw PluginError.incompatibleVersion(required: version, current: currentKit)
-        }
-        if version < minimumKit {
-            throw PluginError.pluginOutdated(pluginVersion: version, requiredVersion: currentKit)
-        }
-    }
-
     nonisolated static func atomicReplace(stagedBundleURL: URL, destURL: URL) throws -> URL {
         var resultURL: NSURL?
         let backupName = "\(destURL.lastPathComponent).bak"
@@ -311,8 +223,6 @@ actor PluginInstaller {
                 options: [],
                 resultingItemURL: &resultURL
             )
-            let backupURL = destDir.appendingPathComponent(backupName)
-            try? FileManager.default.removeItem(at: backupURL)
         } else {
             try FileManager.default.moveItem(at: stagedBundleURL, to: destURL)
         }
@@ -321,14 +231,35 @@ actor PluginInstaller {
     }
 }
 
-enum StagedInstallState: Sendable {
-    case downloading(fraction: Double)
-    case staged(at: URL)
-    case installed(pluginURL: URL)
-    case failed(any Error)
-}
+// The async download sends a task delegate no byte callbacks, but the task's own progress moves.
+private final class DownloadProgressObserver: NSObject, URLSessionTaskDelegate, Sendable {
+    let fractions: AsyncStream<Double>
+    private let continuation: AsyncStream<Double>.Continuation
+    private let observation = OSAllocatedUnfairLock<NSKeyValueObservation?>(uncheckedState: nil)
 
-enum PluginUpdateResult: Sendable {
-    case installed(pluginURL: URL)
-    case staged(at: URL)
+    override init() {
+        (fractions, continuation) = AsyncStream.makeStream(of: Double.self)
+        super.init()
+    }
+
+    func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
+        let continuation = continuation
+        let observation = task.progress.observe(\.fractionCompleted) { progress, _ in
+            // Without a Content-Length the fraction creeps on a guess; the UI stays indeterminate.
+            guard task.countOfBytesExpectedToReceive > 0 else { return }
+            continuation.yield(progress.fractionCompleted)
+        }
+        self.observation.withLockUnchecked { $0 = observation }
+    }
+
+    func finish(isComplete: Bool) {
+        observation.withLockUnchecked { observation in
+            observation?.invalidate()
+            observation = nil
+        }
+        if isComplete {
+            continuation.yield(1)
+        }
+        continuation.finish()
+    }
 }

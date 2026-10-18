@@ -33,7 +33,7 @@ Read this when a verdict, a test name or a red CI check needs explaining. The co
 
 ## Verdicts
 
-- A test verdict comes from the result bundle or the xunit file, never the console banner.
+- A test verdict comes from the result bundle or the xunit file, never the console banner. `scripts/lib/xcresult-cases.py` reads both, as it does for the CI summary.
 - The result-bundle rules, first match wins:
   1. nothing executed and the bundle holds build errors: FAIL, "the test build failed";
   2. nothing executed and `xcodebuild` exited nonzero: FAIL;
@@ -85,7 +85,7 @@ Read this when a verdict, a test name or a red CI check needs explaining. The co
 - `package <Package> [regex]` runs `swift test --parallel` with an xunit file. SwiftPM writes the XCTest xunit file only for a parallel run. A package with a `Package.resolved` also gets `--force-resolved-versions`.
 - A `Package.resolved` written by one toolchain can fail `--force-resolved-versions` on another when a transitive dependency was renamed. Re-pinning only moves the failure; drop the dependency or remove the rename from the graph.
 - `ios <Suite>...` runs `TableProMobileTests` on the first available iPhone simulator with `-parallel-testing-enabled NO -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO ARCHS=arm64`. `ARCHS=arm64` is there because the prebuilt iOS libraries have arm64 simulator slices only.
-- `ios` generates the iOS project when the tree has none. It needs `TableProMobile/Secrets.xcconfig`, which `worktree.sh` links.
+- `ios` generates the iOS project when the tree has none.
 
 ## Lint
 
@@ -99,7 +99,7 @@ Read this when a verdict, a test name or a red CI check needs explaining. The co
 ## Reading CI
 
 - Artifacts exist only for a failed job and are kept 7 days. `macos-tests-<attempt>` holds every `.xcresult` plus `app-diagnostics` (TablePro crash reports and 2 hours of its unified log); `ios-tests-<attempt>` holds `iOS.xcresult`.
-- The step summary lists build errors, failed cases and the slowest cases (`.claude/rules/ci.md`, Summaries). A case that passed only on the UI plan's retry shows as a `Passed only on retry` warning annotation while the job stays green.
+- The step summary lists build errors, runner failures, failed cases and the slowest cases (`.claude/rules/ci.md`, Summaries). A case that passed only on the UI plan's retry shows as a `Passed only on retry` warning annotation while the job stays green.
 - `xcbeautify` can hide a compiler error behind "exit code 65". Read the check-run annotations, which also work while the run is going: `gh api repos/TableProApp/TablePro/check-runs/<job-id>/annotations`. Or open `Build.xcresult` from the artifact.
 - UI evidence: `gh run download <run-id> -n macos-tests-<attempt>`, then `xcrun xcresulttool get test-results activities --test-id <id> --path UI.xcresult` and `xcrun xcresulttool export attachments --path UI.xcresult --output-path <dir>`. The `element-tree-<n>` attachment shows which window held focus; the recording and the Synthesized Event plists show where each event landed.
 - A long silent stretch in the build log is a target's emit-module job, not a stall.
@@ -107,7 +107,7 @@ Read this when a verdict, a test name or a red CI check needs explaining. The co
 
 ## Worktrees
 
-- `.claude/skills/fix-issue/scripts/worktree.sh <branch> [base]` creates `.claude/worktrees/<branch with / turned into ->` from a fresh fetch of the base, `origin/main` by default. It links `Configs/Secrets.xcconfig`, `TableProMobile/Secrets.xcconfig`, `Libs/*.a`, `Libs/dylibs`, `Libs/ios/*.xcframework` and the native bridge outputs from the main checkout, and prints the path to pass as `--root`. Run `generate` before its first build.
+- `.claude/skills/fix-issue/scripts/worktree.sh <branch> [base]` creates `.claude/worktrees/<branch with / turned into ->` from a fresh fetch of the base, `origin/main` by default. It links `Configs/Secrets.xcconfig`, `Libs/*.a`, `Libs/dylibs`, `Libs/ios/*.xcframework` and the native bridge outputs from the main checkout, and prints the path to pass as `--root`. Run `generate` before its first build.
 - `worktree.sh --prune-merged [--dry-run]` removes each tree whose pull requests are all merged or closed, with its DerivedData folder. It removes one only when `git status` is clean and no process has its working directory inside; a kept tree says why. A Codex broker started in a tree is the usual process that keeps it.
 - `worktree.sh --remove <branch>` keeps the branch and refuses a tree with uncommitted or untracked changes.
 - Each tree builds into its own DerivedData. `build`, `plugins`, `test`, `uitest` and `ios` wait only for an `xcodebuild` of the same checkout, found by its project path or working directory, so `--no-wait` is safe in your own tree.

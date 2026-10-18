@@ -1,8 +1,3 @@
-//
-//  PluginError.swift
-//  TablePro
-//
-
 import Foundation
 
 enum PluginError: LocalizedError {
@@ -14,15 +9,13 @@ enum PluginError: LocalizedError {
     case cannotUninstallBuiltIn
     case notFound
     case registryUnreachable
-    case noCompatibleBinary
+    case noCompatibleRelease
     case appTooOldForPlugin(oldestPublishedKit: Int, appKit: Int)
     case installFailed(String)
     case pluginConflict(existingName: String)
-    case appVersionTooOld(minimumRequired: String, currentApp: String)
     case downloadFailed(String)
     case pluginNotInstalled(String)
     case pluginUpdateUnavailable(reason: String)
-    case incompatibleWithCurrentApp(minimumRequired: String)
     case invalidDescriptor(pluginId: String, reason: String)
     case unknownDatabaseType(String)
     case pluginLoadFailed(pluginId: String?, pluginName: String, reason: String?)
@@ -47,24 +40,20 @@ enum PluginError: LocalizedError {
             return String(localized: "Plugin not found")
         case .registryUnreachable:
             return String(localized: "Couldn't reach the plugin registry. Check your connection and try again.")
-        case .noCompatibleBinary:
-            return String(localized: "Plugin does not contain a compatible binary for this architecture")
+        case .noCompatibleRelease:
+            return String(localized: "No build of this plugin works with this version of TablePro.")
         case .appTooOldForPlugin:
             return String(localized: "This plugin needs a newer version of TablePro. Update TablePro, then install it again.")
         case .installFailed(let reason):
             return String(format: String(localized: "Plugin installation failed: %@"), reason)
         case .pluginConflict(let existingName):
             return String(format: String(localized: "A built-in plugin \"%@\" already provides this bundle ID"), existingName)
-        case .appVersionTooOld(let minimumRequired, let currentApp):
-            return String(format: String(localized: "Plugin requires app version %@ or later, but current version is %@"), minimumRequired, currentApp)
         case .downloadFailed(let reason):
             return String(format: String(localized: "Plugin download failed: %@"), reason)
         case .pluginNotInstalled(let databaseType):
-            return String(format: String(localized: "The %@ plugin is not installed. You can download it from the plugin marketplace."), databaseType)
+            return String(format: String(localized: "The %@ plugin is not installed."), databaseType)
         case .pluginUpdateUnavailable(let reason):
             return reason
-        case .incompatibleWithCurrentApp(let minimumRequired):
-            return String(format: String(localized: "This plugin requires TablePro %@ or later"), minimumRequired)
         case .invalidDescriptor(let pluginId, let reason):
             return String(format: String(localized: "Plugin '%@' has an invalid descriptor: %@"), pluginId, reason)
         case .unknownDatabaseType(let databaseType):
@@ -101,15 +90,5 @@ enum PluginError: LocalizedError {
     var isOutdated: Bool {
         if case .pluginOutdated = self { return true }
         return false
-    }
-
-    var isPermanentReconciliationFailure: Bool {
-        switch self {
-        case .noCompatibleBinary, .appTooOldForPlugin, .incompatibleVersion, .incompatibleWithCurrentApp,
-             .appVersionTooOld:
-            return true
-        default:
-            return false
-        }
     }
 }

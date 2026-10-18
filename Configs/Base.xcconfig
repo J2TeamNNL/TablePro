@@ -2,6 +2,8 @@
 // Structure rule: project-wide and per-configuration settings live in Configs/*.xcconfig.
 // Per-target settings live in project.yml, where the target templates are.
 
+#include "PluginKit.xcconfig"
+
 ALWAYS_SEARCH_USER_PATHS = NO
 ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES
 CLANG_ANALYZER_NONNULL = YES
@@ -60,17 +62,11 @@ STRINGS_FILE_OUTPUT_ENCODING = binary
 SWIFT_VERSION = 6.0
 CODE_SIGN_STYLE = Automatic
 
-// Signing knobs. Only the two app targets read them, so plugin bundles and the helper
-// tool sign ad-hoc and a contributor without the official team can still build everything.
-// A contributor overrides these in Configs/Secrets.xcconfig without touching a tracked file,
-// and the release scripts pass their own values on the xcodebuild command line.
+// A contributor overrides these in Configs/Secrets.xcconfig.
 TABLEPRO_DEVELOPMENT_TEAM = D7HJ5TFYCU
 TABLEPRO_APP_BUNDLE_IDENTIFIER = com.TablePro
 
-// Empty by default. scripts/build-release.sh passes a profile UUID on the xcodebuild
-// command line; because only the app target reads this variable, the profile cannot
-// leak into plugin or Swift package targets the way a bare
-// PROVISIONING_PROFILE_SPECIFIER override would.
+// Only the app target reads this, so a profile passed here never reaches a plugin or package target.
 TABLEPRO_PROVISIONING_PROFILE =
 
 #include? "Secrets.xcconfig"
