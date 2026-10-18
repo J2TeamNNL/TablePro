@@ -3,7 +3,7 @@ name: Build Linux
 on:
   pull_request:
   push:
-    branches: [main, "release/**"]
+    branches: [main]
   schedule:
     - cron: "13 14 * * 1"
   workflow_dispatch:
