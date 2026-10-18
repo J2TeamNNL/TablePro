@@ -333,6 +333,19 @@ class DocsTests(unittest.TestCase):
             with self.assertRaisesRegex(notes.NotesError, "beta"):
                 notes.docs(repo.path, "0.83.0-beta.1", "v0.82.0", mdx)
 
+    def test_docs_reads_the_changelog_beside_the_tree_not_at_the_repository_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = FixtureRepository(Path(directory))
+            apple = repo.path / "apple"
+            apple.mkdir()
+            (apple / "CHANGELOG.md").write_text(CHANGELOG, encoding="utf-8")
+            repo.commit("chore(release): v0.82.0")
+            repo.git("tag", "v0.82.0")
+            mdx = repo.path / "changelog.mdx"
+            mdx.write_text(self.MDX, encoding="utf-8")
+            notes.docs(apple, "0.82.0", "v0.82.0", mdx)
+            self.assertIn('<Update label="v0.82.0" description="October 20, 2026">', mdx.read_text(encoding="utf-8"))
+
 
 class AssembleRefusalTests(unittest.TestCase):
     def setUp(self):

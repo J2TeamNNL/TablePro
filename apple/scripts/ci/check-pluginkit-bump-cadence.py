@@ -10,8 +10,9 @@ left v0.74.0 with nothing to install.
 The newest release is the highest vX.Y.Z tag by version number. With --remote the tag list comes
 from that remote and the one tag is fetched when it is missing, so a shallow CI checkout with no tags
 works. The fetch is at depth 1 only in a checkout that is already shallow: in a full clone it would
-cut the history every worktree shares down to that one commit. A tag cut before
-Configs/PluginKit.xcconfig existed declares the kit in PluginManager.swift.
+cut the history every worktree shares down to that one commit. A tag cut before the Apple apps
+moved into apple/ keeps Configs/PluginKit.xcconfig at the root, and one cut before that file
+existed declares the kit in PluginManager.swift.
 test_check_pluginkit_bump_cadence.py pins what it must and must not report.
 """
 
@@ -28,6 +29,12 @@ KIT_CONFIG = "Configs/PluginKit.xcconfig"
 KIT_SETTING = re.compile(r"^TABLEPRO_PLUGINKIT_VERSION\s*=\s*(\d+)\s*$", re.MULTILINE)
 LEGACY_PLUGIN_MANAGER = "TablePro/Core/Plugins/PluginManager.swift"
 LEGACY_DECLARATION = re.compile(r"\bstatic\s+let\s+currentPluginKitVersion\s*=\s*(\d+)\b")
+# Where a tag holds the kit, newest layout first. A path in a tag is relative to the repository root.
+RELEASED_KIT_SOURCES = (
+    (f"apple/{KIT_CONFIG}", KIT_SETTING),
+    (KIT_CONFIG, KIT_SETTING),
+    (LEGACY_PLUGIN_MANAGER, LEGACY_DECLARATION),
+)
 RELEASE_TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 
 
@@ -46,10 +53,10 @@ def kit_version(source: str, origin: str, pattern: re.Pattern[str] = KIT_SETTING
 
 
 def released_kit_version(repo: Path, tag: str) -> int:
-    for path, pattern in ((KIT_CONFIG, KIT_SETTING), (LEGACY_PLUGIN_MANAGER, LEGACY_DECLARATION)):
+    for path, pattern in RELEASED_KIT_SOURCES:
         if has_object(repo, f"{tag}:{path}"):
             return kit_version(git(repo, "show", f"{tag}:{path}"), f"{tag}:{path}", pattern)
-    raise SystemExit(f"ERROR: {tag} has neither {KIT_CONFIG} nor {LEGACY_PLUGIN_MANAGER}")
+    raise SystemExit(f"ERROR: {tag} has none of {', '.join(path for path, _ in RELEASED_KIT_SOURCES)}")
 
 
 def newest_release_tag(names: list[str]) -> str | None:

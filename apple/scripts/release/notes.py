@@ -146,7 +146,7 @@ def fragment_files(root: Path) -> List[Path]:
 
 def towncrier_command() -> List[str]:
     if importlib.util.find_spec("towncrier") is None:
-        raise NotesError("towncrier is not installed; run notes.py with .venv/bin/python (RELEASING.md, Notes)")
+        raise NotesError("towncrier is not installed; run notes.py with the .venv/bin/python of RELEASING.md, Notes")
     return [sys.executable, "-m", "towncrier"]
 
 
@@ -291,7 +291,8 @@ def merge_update(mdx: str, version: str, block: str) -> str:
 def docs(root: Path, version: str, ref: str, mdx: Path, run: Callable = subprocess.run) -> None:
     if _parse(version).is_beta:
         raise NotesError(f"{version} is a beta; the docs changelog lists stables only")
-    shown = git(root, "show", f"{ref}:CHANGELOG.md", run=run)
+    # ./ reads the file beside this tree, apple/, not one at the repository root.
+    shown = git(root, "show", f"{ref}:./CHANGELOG.md", run=run)
     if shown.returncode != 0:
         raise NotesError(f"git show {ref}:CHANGELOG.md: {shown.stderr.strip()}")
     section = find_section(shown.stdout, version)

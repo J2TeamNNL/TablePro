@@ -60,13 +60,14 @@ MINIMAL_TREE = {
 
 class Fixture(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp())
-        (self.root / ".github").mkdir()
+        self.repository = Path(tempfile.mkdtemp())
+        self.root = self.repository / "apple"
+        (self.repository / ".github").mkdir()
         for path, text in MINIMAL_TREE.items():
             self.write(path, text)
 
     def tearDown(self) -> None:
-        shutil.rmtree(self.root)
+        shutil.rmtree(self.repository)
 
     def write(self, path: str, text: str) -> None:
         target = self.root / path
@@ -234,7 +235,7 @@ class RatchetTests(Fixture):
         self.write("TablePro/Models/QueryTabState.swift", "enum TabType: Codable {\n    case query, table\n}\n")
         (self.root / "TablePro/Views/MainContentCoordinator+Rewind.swift").unlink()
         self.assertEqual(self.run_check(update=True)[0], 0)
-        baseline = json.loads((self.root / ratchet.BASELINE).read_text(encoding="utf-8"))
+        baseline = json.loads((self.repository / ratchet.BASELINE).read_text(encoding="utf-8"))
         self.assertEqual(baseline["TabType cases"], 1)
         self.assertEqual(baseline["MainContentCoordinator+ files"], 1)
         self.assertEqual(self.run_check()[0], 1)

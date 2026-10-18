@@ -6,9 +6,11 @@ floor. --update never raises a value: growing a hub means editing the baseline b
 a reviewer sees.
 
 Usage:
-    check-hub-ratchet.py [--root <repo>]            # compare with the baseline
-    check-hub-ratchet.py [--root <repo>] --update   # lower the baseline to what the tree holds
-    check-hub-ratchet.py [--root <repo>] --print    # print the counts as JSON
+    check-hub-ratchet.py [--root <apple>]            # compare with the baseline
+    check-hub-ratchet.py [--root <apple>] --update   # lower the baseline to what the tree holds
+    check-hub-ratchet.py [--root <apple>] --print    # print the counts as JSON
+
+The root is the apple/ tree; the baseline sits in the .github/ of the repository above it.
 """
 
 from __future__ import annotations
@@ -424,7 +426,7 @@ def run(root: Path, update: bool = False, show: bool = False) -> int:
         print(json.dumps(current, indent=2))
         return 0
 
-    baseline_path = root / BASELINE
+    baseline_path = root.parent / BASELINE
     baseline = json.loads(baseline_path.read_text(encoding="utf-8")) if baseline_path.exists() else {}
 
     if update:
@@ -436,7 +438,7 @@ def run(root: Path, update: bool = False, show: bool = False) -> int:
     for line in lowered:
         print(f"lower: {line}")
     if lowered:
-        print("Record the lower counts with: python3 scripts/ci/check-hub-ratchet.py --update")
+        print("Record the lower counts with: python3 apple/scripts/ci/check-hub-ratchet.py --update")
     if not failures:
         return 0
     for line in failures:

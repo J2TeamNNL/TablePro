@@ -1,7 +1,7 @@
 name: TableProMobile
 
 # TableProMobile.xcodeproj is generated from this file and is not in git.
-# Run scripts/generate-project.sh from the repo root; it generates both projects.
+# Run scripts/generate-project.sh; it generates both projects.
 # Build settings shared with the macOS project live in ../Configs/.
 
 options:

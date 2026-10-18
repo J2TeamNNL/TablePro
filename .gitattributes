@@ -44,17 +44,17 @@
 *.plist text eol=lf
 
 # Vendored C headers (database driver bridges, SQLite, tree-sitter grammars)
-Plugins/*/C*/include/** linguist-vendored
-Packages/TableProCore/Sources/CSQLite/include/sqlite3*.h linguist-vendored
-TablePro/Core/SSH/CLibSSH2/** linguist-vendored
-Packages/TableProGrammars/Sources/TreeSitterGrammars/** linguist-vendored
+apple/Plugins/*/C*/include/** linguist-vendored
+apple/Packages/TableProCore/Sources/CSQLite/include/sqlite3*.h linguist-vendored
+apple/TablePro/Core/SSH/CLibSSH2/** linguist-vendored
+apple/Packages/TableProGrammars/Sources/TreeSitterGrammars/** linguist-vendored
 
 # Third-party license texts, copied verbatim
-Native/DamengBridge/LICENSES/** linguist-vendored
-Packages/TableProEditor/LICENSE-*.md linguist-vendored
-TablePro/Resources/ThirdPartyLicenses/texts/** linguist-vendored
+apple/Native/DamengBridge/LICENSES/** linguist-vendored
+apple/Packages/TableProEditor/LICENSE-*.md linguist-vendored
+apple/TablePro/Resources/ThirdPartyLicenses/texts/** linguist-vendored
 # Joins the SQLite copyright page and the source blessing with a sentence of its own.
-TablePro/Resources/ThirdPartyLicenses/texts/sqlite.txt -linguist-vendored
+apple/TablePro/Resources/ThirdPartyLicenses/texts/sqlite.txt -linguist-vendored
 
 # Generated Linux files (Cargo, xgettext, cargo-about, license_metadata.py)
 linux/Cargo.lock linguist-generated

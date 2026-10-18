@@ -24,7 +24,7 @@ case "${1:-}" in
         ;;
 esac
 
-BASELINE_FILE=".github/duplicate-contract-baseline.txt"
+BASELINE_FILE="../.github/duplicate-contract-baseline.txt"
 AUTHORITATIVE="Packages/TableProCore/Sources/TableProCoreTypes/DatabaseType.swift"
 
 baseline_paths() {

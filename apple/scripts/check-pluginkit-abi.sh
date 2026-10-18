@@ -64,9 +64,12 @@ build_interface "$PROJECT_DIR" "$work/head.txt"
 head_result="$RESULT"
 
 echo "Building base ($BASE_REF -> ${base_sha:0:8})..."
-git clone --quiet --local --no-hardlinks "$PROJECT_DIR" "$work/base"
+git clone --quiet --local --no-hardlinks "$(git -C "$PROJECT_DIR" rev-parse --show-toplevel)" "$work/base"
 git -C "$work/base" checkout --quiet "$base_sha"
-build_interface "$work/base" "$work/base.txt"
+# A base from before the Apple apps moved into apple/ keeps project.yml at the root.
+base_dir="$work/base/apple"
+[ -f "$base_dir/project.yml" ] || base_dir="$work/base"
+build_interface "$base_dir" "$work/base.txt"
 [ "$RESULT" = "failed" ] && { echo "::error::base TableProPluginKit build failed at $BASE_REF"; exit 1; }
 base_result="$RESULT"
 
