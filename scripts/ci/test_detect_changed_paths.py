@@ -155,6 +155,50 @@ class DetectChangedPathsTests(unittest.TestCase):
         self.assertEqual(self.verdict_after("macos", "apple/scripts/release/notes.py"), "true")
         self.assertEqual(self.verdict_after("macos", "apple/scripts/release/feed.py"), "false")
 
+    def test_plugins_runs_on_what_the_plugin_build_reads(self):
+        for path in [
+            "apple/Plugins/OracleDriverPlugin/OraclePlugin.swift",
+            "apple/Plugins/TableProPluginKit/PluginKit.swift",
+            "apple/Packages/TableProCore/Sources/Core.swift",
+            "apple/Packages/TableProOracle/Package.swift",
+            "apple/Native/HanaBridge/go.mod",
+            "apple/Native/DamengBridge/src/lib.rs",
+            "apple/Libs/checksums.sha256",
+            "apple/Configs/Base.xcconfig",
+            "apple/project.yml",
+            "apple/TablePro.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
+            "apple/scripts/generate-project.sh",
+            "apple/scripts/download-libs.sh",
+            "apple/scripts/create-openssl-dylibs.sh",
+            "apple/scripts/build-dameng.sh",
+            "apple/scripts/build-hana.sh",
+            "apple/scripts/lib/deployment-target.sh",
+            "apple/scripts/ci/verify-plugin-loads.sh",
+            ".github/actions/setup-xcode/action.yml",
+            ".github/actions/setup-xcodegen/action.yml",
+            ".github/actions/prepare-build/action.yml",
+            ".github/workflows/macos-tests.yml",
+        ]:
+            with self.subTest(path=path):
+                self.assertEqual(self.verdict_after("plugins", path), "true")
+
+    def test_plugins_skips_the_app_its_tests_and_other_workflows(self):
+        for path in [
+            "apple/TablePro/App.swift",
+            "apple/TableProTests/AppTests.swift",
+            "apple/TableProUITests/AppUITests.swift",
+            "apple/TestPlans/Unit.xctestplan",
+            "apple/Packages/TableProMacCore/Sources/MacCore.swift",
+            "apple/Packages/TableProEditor/Sources/Editor.swift",
+            "apple/TableProMobile/App.swift",
+            "apple/scripts/ci/summarize-xcresult.sh",
+            "apple/scripts/release/build.sh",
+            ".github/workflows/ios-tests.yml",
+            ".github/workflows/release-build.yml",
+        ]:
+            with self.subTest(path=path):
+                self.assertEqual(self.verdict_after("plugins", path), "false")
+
     def test_changelog_files_run_no_suite(self):
         for suite in ["macos", "plugins", "oracle", "hana", "release"]:
             for path in ["apple/CHANGELOG.md", "apple/changelog.d/3500.added.md", "apple/towncrier.toml", "appcast.xml"]:
