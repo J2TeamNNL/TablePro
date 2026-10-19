@@ -98,7 +98,7 @@ python3 apple/scripts/release/notes.py docs X.Y.Z --ref vX.Y.Z --mdx ../tablepro
 
 ## What a tag runs
 
-A `v*` tag runs `release.yml` and nothing else. A run is never cancelled, and every job reads the version, build and channel from `verify`.
+A `v*` tag runs `release.yml` and nothing else. A run is never cancelled, and every job reads the version, build and channel from `verify`. `app`, `plugins` and `feed` run on GitHub-hosted runners.
 
 - `verify`: `version.py check` refuses a tag that breaks the grammar or the bounds; that `origin/release/<X.Y>` does not contain; whose previous tag on the line is not its ancestor; on a commit that already carries another `v*` tag; a stable X.Y.0 with no published beta, or a beta after its X.Y.0; a stable that changes shipped source (the `shipped` suite of `scripts/ci/detect-changed-paths.sh`) since its line's newest published beta, until a stable tag on the line has matched that beta, so a patch after a matching X.Y.0 passes; a `CHANGELOG.md` missing the stable's heading, or a published stable of this or the previous line below it; a lead on a patch, of more than 6 lines, or with a line starting with `#` or `- `; a stable whose tag still holds fragments in `changelog.d/`. Then it reads the tag commit's push runs on `release/<X.Y>` once: macOS Tests and iOS and Package Tests must each have completed with success, their test job run and not skipped. A `release/**` push runs every suite, so the line head always gets both (`.claude/rules/ci.md`, Change detector). It never waits: a run still queued or in progress fails it. Release Build is no gate. Last, it writes the notes.
 - `app` (`signing`): a GA Xcode for a stable (`setup-xcode` `require-release`), the CloudKit Production schema check, `build.sh app` (archive, export with `scripts/release/ExportOptions.plist`, universal and plugin load checks), `notarize.sh` on the app, `package.sh app`, `notarize.sh` on the DMG.
@@ -170,3 +170,4 @@ apple/scripts/release/build.sh plugins --unsigned && apple/scripts/release/packa
 ```
 
 - `build.sh` writes `build/release/` (xcodebuild logs in `build/release/logs/`), `package.sh` writes `dist/`. CI builds the same in Release Build (`.claude/rules/ci.md`, Release Build). Signed: drop `--unsigned`, export the tag's `VERSION` and `BUILD`, and have the Developer ID identity and the provisioning profile `ExportOptions.plist` names. `notarize.sh <path>...` needs the profile `xcrun notarytool store-credentials TablePro --key <p8> --key-id <id> --issuer <issuer>` creates.
+- Nightly Release Builds run on the self-hosted Mac. While it is offline, `gh variable set MAC_RUNNER --body github` sends them to `xcode-27`, and `gh variable delete MAC_RUNNER` switches back.

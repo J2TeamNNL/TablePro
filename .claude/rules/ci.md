@@ -27,15 +27,20 @@ The required check names are in `AGENTS.md` (CI). Reading a red check: `.claude/
 
 - `gh-pages` takes no required checks (`apple/RELEASING.md`, Keys and environments).
 - The Apple workflows have no gate job. A test job runs on `!cancelled() && needs.changes.outputs.run != 'false'`. A job its `if:` skips reports success, and a failed changes job runs the suite rather than skipping it.
-- `Changes (macOS)`, `Changes (iOS)`, `Changes (Linux)` and `Changes (Release)` are not required checks.
+- `Changes (macOS)`, `Changes (iOS)` and `Changes (Linux)` are not required checks.
 - A PR need not be up to date with main to merge (`strict_required_status_checks_policy: false`).
 - A required check's name is its job's `name:`. Renaming a job changes the ruleset in the same change, and every open PR then merges main in before its checks report the new name.
 
 ## Runners and toolchain
 
 - Every Xcode job in the test and release workflows runs on the `xcode-27` runner label, a GitHub preview image, except Release Build. actionlint learns the label from `.github/actionlint.yaml`.
-- Release Build runs on `mac-mini-m4pro`, a repo-level self-hosted runner with the labels `self-hosted`, `macOS`, `ARM64` and `tablepro-release`: the maintainer's M4 Pro (12 cores, 24 GB, the Xcode build `setup-xcode` pins, at `/Applications/Xcode.app`), run by launchd as the maintainer's user.
-- No other workflow names `tablepro-release`. Release Build never takes a PR, and fork PR workflows need approval for every outside contributor.
+- Only Release Build uses `mac-mini-m4pro`, a repo-level self-hosted runner with the labels `self-hosted`, `macOS`, `ARM64` and `tablepro-release`: the maintainer's M4 Pro (12 cores, 24 GB, the Xcode build `setup-xcode` pins, at `/Applications/Xcode.app`), run by launchd as the maintainer's user.
+- The repository variable `MAC_RUNNER` picks Release Build's machine: unset is the Mac, `github` is `xcode-27`. A dispatch's `runner` input overrides it. Switching: `apple/RELEASING.md`, Reproducing a Release build.
+- The weekly Release Build always takes `xcode-27`, so it proves the hosted path while the Mac takes the nightlies.
+- Signing, notarization and the feed never run on the Mac: `app`, `plugins` and `feed` in `release.yml` stay on hosted runners, and `MAC_RUNNER` does not reach them.
+- On main only Release Build names `tablepro-release`. A run takes its workflow files from its own ref, though, so any workflow on a pushed branch can send a job there, and so can any fork PR run the maintainer approves. The repo asks approval for every outside contributor's run.
+- Every job on the label runs as the maintainer's user, with their `gh` and git credentials.
+- Never approve a fork PR run that changes `.github/` without reading that change first.
 - The Xcode version, the build every job uses and Apple's released build are written once, in `.github/actions/setup-xcode/action.yml`. It takes the one non-symlink `/Applications/Xcode*.app` whose `version.plist` has that version and build, fails on none or several, exports `DEVELOPER_DIR` to the job's later steps and prints `xcodebuild -version`. The version alone is no pin: the 27.1 beta, 27A9269, is also 27.1.
 - A workflow never selects Xcode another way, and never runs an Xcode tool under `sudo`, which drops `DEVELOPER_DIR`. A test host gets it from the Unit plan (`.claude/rules/tests.md`, Plans).
 - A stable tag builds only on Apple's released Xcode: `setup-xcode` with `require-release` needs Apple's released build and `licenseType` `GM` in the bundle's `LicenseInfo.plist`. The folder name is no signal: the image names the released 27A9275 `Xcode_27.1_Release_Candidate.app`.
@@ -66,10 +71,9 @@ The required check names are in `AGENTS.md` (CI). Reading a red check: `.claude/
 
 ## Release Build (`release-build.yml`)
 
-- Nightly at 19:00 UTC on main and dispatch; never a PR or a push. Never cancelled. Not a required check, and no tag waits for it.
-- `Changes (Release)` outputs `run`. A dispatch always builds. A nightly runs the `release` detector against the head of the last nightly that ended green, read with `gh api`, so a quiet day builds nothing.
-- `Release Build` runs on the self-hosted Mac, or on `xcode-27` when a dispatch picks `runner: github` or, for a nightly, the repository variable `RELEASE_BUILD_RUNNER` is `github`. It has a 150-minute limit and VERSION 0.0.0-dev and BUILD 9999999, so build.sh passes the version settings a tag passes.
-- While the Mac is offline a run waits for it, and GitHub cancels a job still queued after 24 hours. `gh variable set RELEASE_BUILD_RUNNER --body github` sends nightlies to `xcode-27` until `gh variable delete RELEASE_BUILD_RUNNER`.
+- Nightly at 19:00 UTC on main, weekly at 07:00 UTC on Sunday, and dispatch; never a PR or a push. Every run builds. Never cancelled. Not a required check, and no tag waits for it.
+- The machine: Runners and toolchain. `Release Build` has a 150-minute limit and VERSION 0.0.0-dev and BUILD 9999999, so build.sh passes the version settings a tag passes.
+- While the Mac is offline a run waits for it, and GitHub cancels a job still queued after 24 hours.
 - Setup as macOS Tests up to the SPM restore, which it never saves; then Go, `build-dameng.sh both` and `build-hana.sh both`.
 - `apple/scripts/release/build.sh app --unsigned` archives the `TablePro` scheme; `build.sh plugins --unsigned` builds `RegistryPlugins` and copies the publish set, the targets `apple/scripts/release/registry.py targets` reads from `.github/plugin-registry.json`, to `apple/build/release/plugins`. Both build universal. They run `lipo -verify_arch` once per arch (arm64, x86_64), since Xcode 27's `lipo` takes one arch per call, then `verify-plugin-loads.sh`.
 - `apple/scripts/release/package.sh app --unsigned` writes the release assets: the DMG, the `.tar.xz` (extracted and compared with the app) and the dSYMs zip; `package.sh plugins` writes one zip per plugin and the plugin dSYMs zip.
@@ -133,7 +137,7 @@ The required check names are in `AGENTS.md` (CI). Reading a red check: `.claude/
 ## What runs where
 
 - A pull request: both changes jobs; macOS Tests and iOS and Package Tests unless their detector says false (Oracle only when its detector is not false); SwiftLint; Repo Hygiene; PR title. `AllPlugins` only when the `plugins` detector is not false.
-- A push to main or `release/**`: the same minus PR title; never cancelled, the SPM cache saved on a miss. Every code push runs both plans in full. On main a docs-only or changelog-only push skips the suites through the detector; a `release/**` push runs every suite (Change detector). Release Build runs nightly on main and by dispatch only.
+- A push to main or `release/**`: the same minus PR title; never cancelled, the SPM cache saved on a miss. Every code push runs both plans in full. On main a docs-only or changelog-only push skips the suites through the detector; a `release/**` push runs every suite (Change detector). Release Build runs nightly and weekly on main and by dispatch only.
 - A `v*` tag runs only `release.yml`, and a `linux-v*` tag only `release-linux.yml`, which calls `linux-packages.yml`. The test workflows never run on a tag.
 - `workflow_dispatch` exists on every workflow except `pr-title.yml` and `release.yml`.
 - `build-linux.yml` builds and tests the Linux app, and `linux-packages.yml` builds its packages (`linux/docs/testing.md`, CI). What starts each is in its `on:` and job `if:` lines. Flatpak Devel and Minimum Rust version never run on a PR or push, and `linux-packages.yml` never on a push.
@@ -145,7 +149,7 @@ The required check names are in `AGENTS.md` (CI). Reading a red check: `.claude/
 - `release.yml` restores that cache and never saves it, since a save in tag scope is unreadable from other refs.
 - `release-build.yml` restores it and leaves the save to macOS Tests.
 - There is no other Apple cache: no libs or DerivedData cache, and none in the iOS or plugin workflows. The Linux jobs cache Cargo builds through `Swatinem/rust-cache` and the Flatpak build.
-- CI fits the GitHub Free and Pro plans: no paid larger runner. At most 5 hosted macOS jobs run at once, and main runs queue behind PR runs for those slots. Release Build takes none of them unless a dispatch or `RELEASE_BUILD_RUNNER` picks `github`.
+- CI fits the GitHub Free and Pro plans: no paid larger runner. At most 5 hosted macOS jobs run at once, and main runs queue behind PR runs for those slots. Release Build takes one only in its weekly run, or when `MAC_RUNNER` or a dispatch picks `github`.
 
 ## Writing workflow and lint code
 
