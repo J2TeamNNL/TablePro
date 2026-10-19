@@ -22,28 +22,27 @@ fail() {
 }
 
 kits() {
-    awk -F' *= *' -v origin="$1" '
+    awk -F' *= *' '
         $1 == "TABLEPRO_PLUGINKIT_VERSION" { kit = $2 }
         $1 == "TABLEPRO_PLUGINKIT_MINIMUM_VERSION" { minimum = $2 }
         END {
-            if (kit !~ /^[0-9]+$/ || minimum !~ /^[0-9]+$/) {
-                print "::error::no PluginKit versions in " origin
-                exit 1
-            }
+            if (kit !~ /^[0-9]+$/ || minimum !~ /^[0-9]+$/) exit 1
             print kit, minimum
         }'
 }
 
+config="Configs/PluginKit.xcconfig"
+settings="TABLEPRO_PLUGINKIT_VERSION and TABLEPRO_PLUGINKIT_MINIMUM_VERSION"
 # A tag cut before the Apple apps moved into apple/ keeps them at the repository root.
 base_dir=apple
-base_config=apple/Configs/PluginKit.xcconfig
+base_config="apple/$config"
 if ! git -C "$root" cat-file -e "$base:$base_config" 2> /dev/null; then
     base_dir=.
-    base_config=Configs/PluginKit.xcconfig
+    base_config="$config"
 fi
-base_kits="$(git -C "$root" show "$base:$base_config" | kits "$base")"
-head_kits="$(kits HEAD < "$root/Configs/PluginKit.xcconfig")"
-read -r base_kit _ <<< "$base_kits"
+base_kits="$(git -C "$root" show "$base:$base_config" | kits)" || fail "$config at $base does not set $settings to integers."
+head_kits="$(kits < "$root/$config")" || fail "$config does not set $settings to integers."
+read -r base_kit base_minimum <<< "$base_kits"
 read -r head_kit head_minimum <<< "$head_kits"
 
 work="$(mktemp -d)"
@@ -93,26 +92,16 @@ else
     esac
 fi
 
-next=$((base_kit + 1))
-config="Configs/PluginKit.xcconfig"
 if [ "$frozen" -eq 1 ] && [ "$change" != unchanged ]; then
     fail "PluginKit's ABI differs from $base, and a release line never changes it."
 fi
+next=$((base_kit + 1))
 case "$change" in
-    breaking)
-        if [ "$head_kit" -ne "$next" ] || [ "$head_minimum" -ne "$next" ]; then
-            fail "Breaking change since $base: set TABLEPRO_PLUGINKIT_VERSION and TABLEPRO_PLUGINKIT_MINIMUM_VERSION to $next in $config."
-        fi
-        ;;
-    changed)
-        if [ "$head_kit" -ne "$next" ]; then
-            fail "PluginKit's ABI changed since $base: set TABLEPRO_PLUGINKIT_VERSION to $next in $config."
-        fi
-        ;;
-    unchanged)
-        if [ "$head_kit" -ne "$base_kit" ]; then
-            fail "PluginKit's ABI matches $base: TABLEPRO_PLUGINKIT_VERSION stays $base_kit in $config."
-        fi
-        ;;
+    breaking) want_kit=$next want_minimum=$next ;;
+    changed) want_kit=$next want_minimum=$base_minimum ;;
+    unchanged) want_kit=$base_kit want_minimum=$base_minimum ;;
 esac
+if [ "$head_kit" -ne "$want_kit" ] || [ "$head_minimum" -ne "$want_minimum" ]; then
+    fail "PluginKit's ABI against $base: $change. Set TABLEPRO_PLUGINKIT_VERSION to $want_kit and TABLEPRO_PLUGINKIT_MINIMUM_VERSION to $want_minimum in $config."
+fi
 echo "PluginKit ABI against $base: $change; kit $head_kit, minimum $head_minimum."
