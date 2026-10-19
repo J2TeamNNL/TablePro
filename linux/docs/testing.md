@@ -178,6 +178,21 @@ The PostgreSQL, MySQL, SQL Server, ClickHouse and SQLite targets run it, and the
 
 The PostgreSQL, MySQL, MariaDB, SQL Server and ClickHouse targets run it. The `ci` nextest profile prints its times and memory for a passing run, so the job log keeps what the bounds are set from. SQLite has no case: its suites run in the unit suite, where tests share one process, so the peak would count theirs too.
 
+### Value corpus
+
+`value_corpus_suite!` checks that real values read back as the grid shows them. Each driver's `crates/drivers/<engine>/tests/integration/value_corpus.rs` implements `ValueCorpusEngine` and invokes it:
+
+```rust
+tablepro_test_support::value_corpus_suite! {
+    engine: PgEngine,
+    docker: true,
+}
+```
+
+The corpus is a list of `CorpusColumn`s: a column clause, values of it written as SQL, and the text each one shows, or NULL. It covers the engine's dates and times at their extremes and in other zones, high-precision and negative decimals at their scale, JSON, UUIDs, Unicode text, binary values and the engine's other common types. `value_corpus_reads_as_the_grid_shows` adds each column to a scratch table, inserts its values, and reads them back three times: through `read_page`, as a table tab reads a page, through `build_export` and `stream_read` behind a `DeclaredPrecisionSink`, as Export All reads one, and through an editor run of a plain SELECT. The export has to show what the page shows. Each value's text is `value_text` on the type of the column it came back in, the text the grid draws, `<unreadable type>` for a value the driver could not read, and every value that differs is listed in one failure, with a column the server refused. Where the two paths differ on purpose, the value says what each shows (`CorpusColumn::shows_apart`): a MySQL TIMESTAMP is an instant in a table tab and the server's wall time in the editor, and a PostgreSQL run shows the server's own text, as psql does. A value that shows the wrong text is a decoder bug: fix the decoder, never the corpus.
+
+Every target runs it, the MySQL target on MariaDB as well, and SQLite's runs in the unit suite.
+
 ### TLS conformance
 
 Every network driver's `crates/drivers/<engine>/tests/integration/tls.rs` also runs `tls_conformance_suite!` against a TLS-only server built from `TestPki`:
