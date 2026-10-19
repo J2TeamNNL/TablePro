@@ -1,9 +1,9 @@
 ---
 paths:
-  - "Packages/TableProEditor/**/*"
-  - "TablePro/Theme/**/*"
-  - "TablePro/Views/Editor/**/*"
-  - "TablePro/Views/RowInspector/**/*"
+  - "apple/Packages/TableProEditor/**/*"
+  - "apple/TablePro/Theme/**/*"
+  - "apple/TablePro/Views/Editor/**/*"
+  - "apple/TablePro/Views/RowInspector/**/*"
 ---
 
 # Editor

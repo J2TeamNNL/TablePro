@@ -14,7 +14,7 @@ SOURCED = re.compile(r"^\s*(?:source|\.)\s+.*?([A-Za-z0-9_.-]+\.sh)", re.M)
 
 
 def main():
-    root = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "scripts")
+    root = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else pathlib.Path(__file__).resolve().parents[1]
     lib_dir = root / "lib"
     if not lib_dir.is_dir():
         sys.exit(f"check-lib-sourcing.py: no such directory: {lib_dir}")

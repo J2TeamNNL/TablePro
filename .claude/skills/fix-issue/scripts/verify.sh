@@ -226,7 +226,7 @@ case "$STEP" in
             note "$(tail -1 "$log")"
         else
             STATUS=FAIL
-            note "$(grep -E '^(CLAUDE|AGENTS|CONTRIBUTING|RELEASING|\.claude|\.github)' "$log" | sed 's/^/  /' | head -10)"
+            note "$(grep -E '^((apple|linux)/)?(CLAUDE|AGENTS|CONTRIBUTING|RELEASING)|^\.claude|^\.github' "$log" | sed 's/^/  /' | head -10)"
         fi
         emit "$log" $code
         ;;

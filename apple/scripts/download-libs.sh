@@ -8,6 +8,7 @@ set -euo pipefail
 # Usage: scripts/download-libs.sh [--force]
 
 REPO="TableProApp/TablePro"
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 LIBS_DIR="Libs"
 IOS_DIR="$LIBS_DIR/ios"
 FORCE="${1:-}"
@@ -23,7 +24,8 @@ trap 'rm -rf "$WORK"' EXIT
 # replace the checksums it is checked against.
 tracked() {
     if git rev-parse --is-inside-work-tree &> /dev/null; then
-        git show "HEAD:$1"
+        # ./ resolves against this directory, which is apple/ and not the repository root.
+        git show "HEAD:./$1"
     else
         cat "$1"
     fi
@@ -46,7 +48,7 @@ fetch() {
     fi
 }
 
-# Libs/checksums.sha256 holds "Libs/..." paths and is checked from the repo root;
+# Libs/checksums.sha256 holds "Libs/..." paths and is checked from apple/;
 # Libs/ios/checksums.sha256 holds "./..." paths and is checked from inside Libs/ios.
 verify() {
     local run_from="$1" dir="$2" baseline="$3" label="$4"

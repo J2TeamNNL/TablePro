@@ -16,9 +16,9 @@ The method is in the research brief (`references/lanes.md`); this file is the so
 
 The source is the vendored header and the library we ship, not a web page.
 
-- Headers live under `Plugins/*/C*/include/` and `Libs/`. State the version we link, since a build script has named a version we never shipped.
+- Headers live under `apple/Plugins/*/C*/include/` and `apple/Libs/`. State the version we link, since a build script has named a version we never shipped.
 - Quote the header's doc comments for each symbol in play, above all deprecation notes and what a call returns when it cannot do the job.
-- Where the header does not settle it, build a probe and report its output verbatim: C compiled against `Libs/*.a`, a `swiftc` harness, or the vendored CLI.
+- Where the header does not settle it, build a probe and report its output verbatim: C compiled against `apple/Libs/*.a`, a `swiftc` harness, or the vendored CLI.
 
 ## Comparable clients
 

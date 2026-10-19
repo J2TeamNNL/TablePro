@@ -81,7 +81,7 @@ Write `<tree>/.analysis/<slug>/plan.md`, under 80 lines, opening with a progress
 - the tests that fail before the fix, in the targets the profile's Done section says to check first;
 - the changelog fragment, docs, localization and screenshots the change needs.
 
-**Rules read.** List the files `plan.md` touches. Read `<tree>/AGENTS.md`, then every `<tree>/.claude/rules/*.md` whose row in its Area rules table matches one of them, and name them on a `Rules read:` line in `plan.md`. A file added later gets the same check before you edit it. The tree's copies are the ones that apply; a harness may have loaded another checkout's.
+**Rules read.** List the files `plan.md` touches. Read `<tree>/AGENTS.md` and the platform guide the profile's Done section names, then every `<tree>/.claude/rules/*.md` whose row in the root Area rules table matches one of them, and name them on a `Rules read:` line in `plan.md`. A file added later gets the same check before you edit it. The tree's copies are the ones that apply; a harness may have loaded another checkout's.
 
 In Full mode the `critic` lane attacks the plan; fold in what survives an evidence check. Then implement.
 
@@ -102,7 +102,7 @@ Run every step through the tree's wrapper, written out in full each time, since 
 
 The profile lists the platform's steps and when each runs; the guide's Every change section adds the rest.
 
-- Check that the `root:` line names your tree, then read the verdict line. What each verdict means is in the guide (`AGENTS.md`, Commands).
+- Check that the `root:` line names your tree, then read the verdict line. What each verdict means is in the platform guide's Commands section.
 - **Verify in batches**: build once after a coherent set of edits, then re-run only a failed step.
 - **Never run two builds in one tree.** `--no-wait` does not wait for a build already running there, and the second one fails on the locked build database.
 - **Pick tests by what you changed**, not by the test files you edited, and compare the executed count with what you meant to run.

@@ -1,9 +1,9 @@
 ---
 paths:
-  - "TablePro/Views/**/*"
-  - "TablePro/ViewModels/**/*"
-  - "TablePro/Core/Services/Infrastructure/**/*"
-  - "Packages/TableProEditor/**/*"
+  - "apple/TablePro/Views/**/*"
+  - "apple/TablePro/ViewModels/**/*"
+  - "apple/TablePro/Core/Services/Infrastructure/**/*"
+  - "apple/Packages/TableProEditor/**/*"
 ---
 
 # Views and lifecycle

@@ -1,20 +1,20 @@
 ---
 paths:
-  - "TablePro/Core/**/*Storage*.swift"
-  - "TablePro/Core/**/*Sync*.swift"
-  - "TablePro/Core/Database/**/*"
-  - "TablePro/Core/Plugins/PluginMetadataRegistry*.swift"
-  - "TablePro/Core/Services/Query/**/*"
-  - "Packages/TableProCore/Sources/TableProSyncTransport/**/*"
-  - "CloudKit/**/*"
+  - "apple/TablePro/Core/**/*Storage*.swift"
+  - "apple/TablePro/Core/**/*Sync*.swift"
+  - "apple/TablePro/Core/Database/**/*"
+  - "apple/TablePro/Core/Plugins/PluginMetadataRegistry*.swift"
+  - "apple/TablePro/Core/Services/Query/**/*"
+  - "apple/Packages/TableProCore/Sources/TableProSyncTransport/**/*"
+  - "apple/CloudKit/**/*"
 ---
 
 # Storage, sync and the database core
 
 This path holds user data. A silent wrong answer here looks exactly like an empty database, so prove late-completion and cancellation behavior with a test.
 
-- **A synced CKRecord type or field reaches CloudKit Production before anything writes it.** Both apps pin the container to Production, where nothing is auto-created, and CloudKit rejects a whole record that carries an undeclared field. Write fields only through `record.fields(SomeSyncField.self)`, never `record["..."]`. To ship one: add it in Development, deploy to Production in the Console, run `scripts/export-cloudkit-schema.sh`, commit `CloudKit/production-schema.ckdb`, then add it to the matching `verifiedInProduction`. `ProductionSchemaParityTests` checks code against the snapshot in both directions, not against the server, so never edit the snapshot by hand: `scripts/export-cloudkit-schema.sh --check` compares it with Production.
-- **A storage format stays readable by the previous stable.** Sparkle never downgrades, and a beta user can turn betas off (`RELEASING.md`, Channels).
+- **A synced CKRecord type or field reaches CloudKit Production before anything writes it.** Both apps pin the container to Production, where nothing is auto-created, and CloudKit rejects a whole record that carries an undeclared field. Write fields only through `record.fields(SomeSyncField.self)`, never `record["..."]`. To ship one: add it in Development, deploy to Production in the Console, run `apple/scripts/export-cloudkit-schema.sh`, commit `apple/CloudKit/production-schema.ckdb`, then add it to the matching `verifiedInProduction`. `ProductionSchemaParityTests` checks code against the snapshot in both directions, not against the server, so never edit the snapshot by hand: `apple/scripts/export-cloudkit-schema.sh --check` compares it with Production.
+- **A storage format stays readable by the previous stable.** Sparkle never downgrades, and a beta user can turn betas off (`apple/RELEASING.md`, Channels).
 - **Persist, then notify.** `SyncChangeTracker.markDeleted()` runs after the storage write, because its notification can start a sync that re-uploads the record from the stale file.
 - **Concurrent schema loads await the one in-flight `loadTask`** in `SQLSchemaProvider`; never guard with a flag that returns without data.
 - **Every metadata read goes through `DatabaseManager.withMetadataDriver`**, never `MetadataConnectionPool.shared` directly, so an embedded engine with `supportsConnectionPooling = false` (DuckDB, PGlite) stays on its session driver; a second connection to it is a different, empty database.

@@ -104,7 +104,8 @@ TREE=""
 
 new_case() {
     STATE="$SCRATCH/$1/state"
-    TREE="$SCRATCH/$1/tree"
+    # The scripts live in apple/, one level below the repository root, as they do in TablePro.
+    TREE="$SCRATCH/$1/repo/apple"
     mkdir -p "$STATE/assets" "$TREE/scripts" "$TREE/Libs/ios/A.xcframework/ios-arm64" "$TREE/Libs/ios/B.xcframework/ios-arm64"
     cp "$REPO_ROOT/scripts/publish-libs.sh" "$REPO_ROOT/scripts/download-libs.sh" "$TREE/scripts/"
     printf 'a\n' > "$TREE/Libs/liba.a"
@@ -117,7 +118,7 @@ new_case() {
     echo libs-2 > "$TREE/Libs/release"
     (cd "$TREE" && shasum -a 256 Libs/*.a > Libs/checksums.sha256)
     (cd "$TREE/Libs/ios" && find ./*.xcframework -type f -print0 | LC_ALL=C sort -z | xargs -0 shasum -a 256 > checksums.sha256)
-    git -C "$TREE" init -q
+    git -C "$TREE/.." init -q
     commit
 
     mkdir -p "$STATE/assets/libs-2"
@@ -253,7 +254,7 @@ expect_file rebuilt Libs/ios/.downloaded libs-3
     || fail "rebuilt: iOS archive holds $(members "$STATE/assets/libs-3/tablepro-libs-ios-3.tar.gz")"
 tar -tvzf "$STATE/assets/libs-3/tablepro-libs-3.tar.gz" | grep -q 'libc.a -> liba.a' \
     || fail "rebuilt: libc.a is not archived as a link to liba.a"
-[ "$(git -C "$TREE" diff --numstat -- Libs/checksums.sha256)" = "$(printf '1\t1\tLibs/checksums.sha256')" ] \
+[ "$(git -C "$TREE" diff --relative --numstat -- Libs/checksums.sha256)" = "$(printf '1\t1\tLibs/checksums.sha256')" ] \
     || fail "rebuilt: Libs/checksums.sha256 moved more than the libb.a line"
 git -C "$TREE" diff --quiet -- Libs/ios/checksums.sha256 || fail "rebuilt: the iOS checksums moved"
 

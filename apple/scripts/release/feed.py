@@ -20,7 +20,7 @@ from xml.parsers.expat import ExpatError
 import registry
 import version
 
-ROOT = Path(__file__).resolve().parent.parent.parent
+ROOT = Path(__file__).resolve().parents[3]
 SPARKLE_NAMESPACE = "http://www.andymatuschak.org/xml-namespaces/sparkle"
 SPARKLE = "{" + SPARKLE_NAMESPACE + "}"
 APPCAST = "appcast.xml"

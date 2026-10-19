@@ -132,6 +132,9 @@ class Git:
     def list_tree(self, ref: str, path: str) -> List[str]:
         return self._git("ls-tree", "--name-only", ref, "--", path).stdout.splitlines()
 
+    def prefix(self) -> str:
+        return self._git("rev-parse", "--show-prefix").stdout.strip()
+
     def changed_paths(self, base: str, head: str) -> List[str]:
         output = self._git("diff-tree", "-r", "--name-only", "-z", base, head).stdout
         return [path for path in output.split("\0") if path]
@@ -228,8 +231,10 @@ def beta_errors(git: Git, version: Version, releases: List[Tuple[str, bool]]) ->
 
 
 def untested_paths(git: Git, beta: Version, tag: str) -> List[str]:
+    # diff-tree names a path from the repository root; the changelog sits in the tree git runs in.
+    prefix = git.prefix()
     return [path for path in git.changed_paths(beta.tag, tag)
-            if path != "CHANGELOG.md" and not path.startswith(FRAGMENTS)]
+            if path != f"{prefix}CHANGELOG.md" and not path.startswith(f"{prefix}{FRAGMENTS}")]
 
 
 def earlier_stables(git: Git, version: Version) -> List[Version]:
@@ -342,7 +347,7 @@ def coverage_error(github: GitHub, workflow: str, job: str, suite: str, shas: Li
     return f"no {job} run that was not skipped among the {len(shas)} first-parent commits of {tag}"
 
 
-def check(tag: str, git: Git, github: GitHub, changed: Optional[Callable[[str, str], bool]] = None,
+def check(tag: str, git: Git, github: GitHub, changed: Callable[[str, str], bool],
           sleep: Callable[[float], None] = time.sleep, log: Callable[[str], None] = print) -> List[str]:
     try:
         version = parse_tag(tag)
@@ -354,11 +359,11 @@ def check(tag: str, git: Git, github: GitHub, changed: Optional[Callable[[str, s
     errors = branch_errors(git, version)
     errors += beta_errors(git, version, releases)
     errors += stable_tree_errors(git, version, releases)
-    errors += changelog_errors(git.show(tag, "CHANGELOG.md"), version, published_stables(releases))
+    errors += changelog_errors(git.show(tag, "./CHANGELOG.md"), version, published_stables(releases))
     errors += fragment_errors(git.list_tree(tag, FRAGMENTS), version)
     if errors:
         return errors
-    return ci_errors(git, github, version, changed or detector(git.root), sleep, log)
+    return ci_errors(git, github, version, changed, sleep, log)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -377,10 +382,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"version={version}\nbuild={version.build}\nchannel={version.channel}\nline={version.line}")
         return 0
 
-    root = Path(__file__).resolve().parent.parent.parent
+    # Git runs in apple/, so ./ paths and ls-tree read the Apple changelog; the detector is repo-wide.
+    apple = Path(__file__).resolve().parents[2]
     repository = os.environ.get("GITHUB_REPOSITORY", REPOSITORY)
     try:
-        errors = check(args.tag, Git(root), GitHub(repository))
+        errors = check(args.tag, Git(apple), GitHub(repository), detector(apple.parent))
     except RuntimeError as error:
         errors = [str(error)]
     for error in errors:

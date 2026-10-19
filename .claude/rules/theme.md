@@ -1,9 +1,9 @@
 ---
 paths:
-  - "TablePro/Theme/**/*"
-  - "TablePro/Views/**/*"
-  - "TablePro/Core/Services/Infrastructure/*Window*"
-  - "Packages/TableProCore/Sources/TableProTheme/**/*"
+  - "apple/TablePro/Theme/**/*"
+  - "apple/TablePro/Views/**/*"
+  - "apple/TablePro/Core/Services/Infrastructure/*Window*"
+  - "apple/Packages/TableProCore/Sources/TableProTheme/**/*"
 ---
 
 # Theme
@@ -21,7 +21,7 @@ paths:
 
 ## The model: `TableProTheme`
 
-- **`TableProTheme` (`Packages/TableProCore/Sources/TableProTheme`) is the theme model, Foundation only**: `ThemeSlot`, `ThemeColor` (RGBA8 with compositing, mixing and WCAG contrast), `ThemeDefinition`, `ThemeFileFormat`, `ThemeLoadError`, `ThemeResolver`, `ThemeOrdering`, `DefaultSyntaxPalette` and `ThemeFileImporter`. AppKit and SwiftUI stay in `TablePro/Theme`, so the iOS app can adopt the package. Its tests are `TableProThemeTests`, under `swift test`.
+- **`TableProTheme` (`apple/Packages/TableProCore/Sources/TableProTheme`) is the theme model, Foundation only**: `ThemeSlot`, `ThemeColor` (RGBA8 with compositing, mixing and WCAG contrast), `ThemeDefinition`, `ThemeFileFormat`, `ThemeLoadError`, `ThemeResolver`, `ThemeOrdering`, `DefaultSyntaxPalette` and `ThemeFileImporter`. AppKit and SwiftUI stay in `apple/TablePro/Theme`, so the iOS app can adopt the package. Its tests are `TableProThemeTests`, under `swift test`.
 - **`ThemeSlot` is the one registry.** The decoder, the encoder, the theme editor and the VS Code mapping enumerate it. Each slot declares `group` (its file key), `section` (where the theme editor lists it), `label`, `accessibilityLabel` (unique, one whole localized phrase), `yieldsToIncreasedContrast`, `requiresOpaque`, `offersOpacity` and `fallback`, each an exhaustive switch, so a new slot cannot ship without every decision. A slot exists only with a reader: nothing checks for one no view reads, so removing a slot's last reader removes the slot.
 - **Every slot is optional, and `fallback` decides what an unset one draws.** `ThemeDefinition.value(for:highContrast:)` returns `.themed`, `.system(slot)` or `.defaultSyntax(slot)`:
   - `.system`: the slot's native color, `ThemeSlot.nativeColor`.
@@ -59,9 +59,9 @@ paths:
 - **`ThemeEngine` owns the selection**: `mode`, `lightThemeId` and `darkThemeId`, set through `apply(mode:)`, `select(lightThemeId:darkThemeId:)` and `apply(mode:lightThemeId:darkThemeId:)`. It never writes settings. It resolves with `ThemeResolver` over the catalog's themes in `ThemeOrdering` order and follows `ThemeCatalog.$themes` itself, so a save, trash, import, sync or file changed on disk repaints with no view involved; a view never asks it to reapply. A burst of catalog or draft changes costs one resolve per run loop turn, in the common modes, because a color well drag runs the event-tracking mode.
 - **`ThemeResolver` is pure.** A selected theme that is missing, rejected or of the other appearance draws that slot's default, and the saved id stays, so the theme comes back when its file does.
 - **Draft overlay.** `beginPreview(_:)` stands a draft in for the theme with its id until `endPreview(id:)`, so the theme editor repaints the real windows on every change with no file write. A draft no pair slot selects draws nothing.
-- **`ThemeCatalog` owns the files.** Built-ins ship as JSON in `TablePro/Resources/Themes` (ids `tablepro.*`, read-only), besides Default Light and Default Dark from the package. User themes are JSON files in Application Support's `TablePro/Themes` folder, resolved through `AppStorageEnvironment`, with ids from `ThemeIdentifier.generated()`. A user theme is its JSON `id`, in whatever file it loaded from. The catalog reloads whenever TablePro becomes active.
+- **`ThemeCatalog` owns the files.** Built-ins ship as JSON in `apple/TablePro/Resources/Themes` (ids `tablepro.*`, read-only), besides Default Light and Default Dark from the package. User themes are JSON files in Application Support's `TablePro/Themes` folder, resolved through `AppStorageEnvironment`, with ids from `ThemeIdentifier.generated()`. A user theme is its JSON `id`, in whatever file it loaded from. The catalog reloads whenever TablePro becomes active.
 - **A file changed on disk wins.** A save, rename or trash of a theme whose file changed or vanished since it was read throws `changedOnDisk` or `deletedOnDisk` and reloads; it never overwrites the file or recreates it under another name. `trash(id:)` moves the file to the Trash, or into the storage environment's own folder when that is isolated, and returns a `ThemeTrashReceipt` that `restore(_:)` takes back. `rename(id:to:)` refuses a taken name (`nameTaken`, case-insensitive); duplicate and import number theirs. Two files with one name show as "Name 2" in the list only, never in the file, so a display fix never syncs.
-- **A built-in theme carries its source's license**: an entry in `TablePro/Resources/ThirdPartyLicenses/licenses.yml` and its text in `TablePro/Resources/ThirdPartyLicenses/texts`, checked by `scripts/ci/check-license-inventory.py`.
+- **A built-in theme carries its source's license**: an entry in `apple/TablePro/Resources/ThirdPartyLicenses/licenses.yml` and its text in `apple/TablePro/Resources/ThirdPartyLicenses/texts`, checked by `apple/scripts/ci/check-license-inventory.py`.
 
 ## The theme editor
 

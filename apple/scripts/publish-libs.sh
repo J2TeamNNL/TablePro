@@ -48,9 +48,9 @@ done
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-PINNED="$(git show "HEAD:$PIN")"
-git show "HEAD:$MAC_SUMS" > "$WORK/mac.old"
-git show "HEAD:$IOS_SUMS" > "$WORK/ios.old"
+PINNED="$(git show "HEAD:./$PIN")"
+git show "HEAD:./$MAC_SUMS" > "$WORK/mac.old"
+git show "HEAD:./$IOS_SUMS" > "$WORK/ios.old"
 
 MAC_MEMBERS=()
 for lib in "$MAC_DIR"/*.a; do

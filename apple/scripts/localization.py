@@ -47,7 +47,7 @@ try JSONSerialization.data(
 
 def load(path: Path) -> dict:
     if not path.exists():
-        sys.exit(f"FATAL: {path} not found. Run from the repository root.")
+        sys.exit(f"FATAL: {path} not found. Run from apple/.")
     return json.loads(path.read_text(encoding="utf8"))
 
 

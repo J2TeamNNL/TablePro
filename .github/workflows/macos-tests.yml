@@ -49,6 +49,9 @@ jobs:
     env:
       NSUnbufferedIO: "YES"
       COMPILE_PLUGINS: ${{ needs.changes.outputs.plugins != 'false' }}
+    defaults:
+      run:
+        working-directory: apple
     steps:
       # The PluginKit ABI step builds the newest v* tag, so it needs the tags and their history.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -94,7 +97,7 @@ jobs:
         if: ${{ !cancelled() && env.COMPILE_PLUGINS == 'true' }}
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: Native/HanaBridge/go.mod
+          go-version-file: apple/Native/HanaBridge/go.mod
           cache: false
 
       # The Dameng and HANA targets copy these artifacts in and never build them.
@@ -176,7 +179,7 @@ jobs:
         with:
           name: macos-tests-${{ github.run_attempt }}
           path: |
-            *.xcresult
-            app-diagnostics
+            apple/*.xcresult
+            apple/app-diagnostics
           if-no-files-found: ignore
           retention-days: 7

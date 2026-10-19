@@ -40,6 +40,9 @@ exit 65
 
 
 class CheckPluginKitABITests(unittest.TestCase):
+    # Where the app's tree, and so the script, sits in the repository.
+    TREE = "."
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         scratch = Path(self.temp.name)
@@ -52,9 +55,13 @@ class CheckPluginKitABITests(unittest.TestCase):
         self.env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
         self.env["PATH"] = f"{stubs}{os.pathsep}{self.env['PATH']}"
         self.repo = scratch / "repo"
-        (self.repo / "scripts").mkdir(parents=True)
-        shutil.copy(SCRIPT, self.repo / "scripts/check-pluginkit-abi.sh")
+        self.tree = self.repo / self.TREE
+        (self.tree / "scripts").mkdir(parents=True)
+        shutil.copy(SCRIPT, self.tree / "scripts/check-pluginkit-abi.sh")
         self.git("-c", "init.defaultBranch=main", "init", "-q")
+        self.commit_release()
+
+    def commit_release(self):
         self.commit(API, 39, 19, tag="v1.0.0")
 
     def tearDown(self):
@@ -68,12 +75,13 @@ class CheckPluginKitABITests(unittest.TestCase):
         )
         return result.stdout.strip()
 
-    def commit(self, api, kit, minimum, tag=None, config=None):
-        (self.repo / "api.txt").write_text("".join(f"{symbol}\n" for symbol in api), encoding="utf-8")
+    def commit(self, api, kit, minimum, tag=None, config=None, tree=None):
+        tree = tree or self.tree
+        (tree / "api.txt").write_text("".join(f"{symbol}\n" for symbol in api), encoding="utf-8")
         if config is None:
             config = f"TABLEPRO_PLUGINKIT_VERSION = {kit}\nTABLEPRO_PLUGINKIT_MINIMUM_VERSION = {minimum}\n"
-        (self.repo / "Configs").mkdir(exist_ok=True)
-        (self.repo / "Configs/PluginKit.xcconfig").write_text(
+        (tree / "Configs").mkdir(exist_ok=True)
+        (tree / "Configs/PluginKit.xcconfig").write_text(
             "// When to raise each: .claude/rules/plugin-system.md, ABI.\n" + config, encoding="utf-8")
         self.git("add", "-A")
         self.git("commit", "-q", "--allow-empty", "-m", "change")
@@ -83,7 +91,7 @@ class CheckPluginKitABITests(unittest.TestCase):
     def check(self, *args):
         result = subprocess.run(
             ["bash", "scripts/check-pluginkit-abi.sh", *args],
-            cwd=self.repo, env=self.env, capture_output=True, text=True, stdin=subprocess.DEVNULL,
+            cwd=self.tree, env=self.env, capture_output=True, text=True, stdin=subprocess.DEVNULL,
         )
         return result.returncode, result.stdout + result.stderr
 
@@ -180,12 +188,28 @@ class CheckPluginKitABITests(unittest.TestCase):
         self.assertFails("Configs/PluginKit.xcconfig at v1.1.0 does not set")
 
     def test_a_head_that_does_not_build_fails(self):
-        (self.repo / "build-fails").touch()
+        (self.tree / "build-fails").touch()
         self.commit(API, 39, 19)
         self.assertFails("TableProPluginKit does not build at HEAD")
 
     def test_two_bases_are_a_usage_error(self):
         self.assertEqual(self.check("v1.0.0", "v1.0.0")[0], 2)
+
+
+class AppleTreeTests(CheckPluginKitABITests):
+    """Every case again with the tree in apple/, and v1.0.0 cut before it moved there."""
+
+    TREE = "apple"
+
+    def commit_release(self):
+        self.commit(API, 39, 19, tag="v1.0.0", tree=self.repo)
+        self.git("mv", "api.txt", "Configs", "apple/")
+        self.git("commit", "-q", "-m", "move into apple/")
+
+    def test_a_release_cut_after_the_move_is_built_from_apple(self):
+        self.commit(API + ["prepare"], 40, 19, tag="v1.1.0")
+        self.commit(API + ["prepare"], 40, 19)
+        self.assertPasses("against v1.1.0: unchanged; kit 40, minimum 19.")
 
 
 if __name__ == "__main__":

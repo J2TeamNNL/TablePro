@@ -197,7 +197,7 @@ class TargetsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             config = root / registry.PLUGINKIT_CONFIG
-            config.parent.mkdir()
+            config.parent.mkdir(parents=True)
             config.write_text("TABLEPRO_PLUGINKIT_VERSION = 39\nTABLEPRO_PLUGINKIT_MINIMUM_VERSION = 19\n")
             self.assertEqual(registry.pluginkit_version(root), 39)
             config.write_text("TABLEPRO_PLUGINKIT_MINIMUM_VERSION = 19\n")

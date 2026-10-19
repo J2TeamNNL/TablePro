@@ -290,8 +290,8 @@ class FeedSiteTests(unittest.TestCase):
         self.root = self.base / "tag"
         (self.root / ".github").mkdir(parents=True)
         (self.root / ".github/plugin-registry.json").write_text(json.dumps(METADATA))
-        (self.root / "Configs").mkdir()
-        (self.root / "Configs/PluginKit.xcconfig").write_text(
+        (self.root / "apple/Configs").mkdir(parents=True)
+        (self.root / "apple/Configs/PluginKit.xcconfig").write_text(
             "TABLEPRO_PLUGINKIT_VERSION = 39\nTABLEPRO_PLUGINKIT_MINIMUM_VERSION = 19\n")
         self.notes = self.base / "feed.md"
         self.notes.write_text("- A fix. (#1)\n")

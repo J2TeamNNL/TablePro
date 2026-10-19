@@ -33,7 +33,14 @@ kits() {
 
 config="Configs/PluginKit.xcconfig"
 settings="TABLEPRO_PLUGINKIT_VERSION and TABLEPRO_PLUGINKIT_MINIMUM_VERSION"
-base_kits="$(git -C "$root" show "$base:$config" | kits)" || fail "$config at $base does not set $settings to integers."
+# A tag cut before the Apple apps moved into apple/ keeps them at the repository root.
+base_dir=apple
+base_config="apple/$config"
+if ! git -C "$root" cat-file -e "$base:$base_config" 2> /dev/null; then
+    base_dir=.
+    base_config="$config"
+fi
+base_kits="$(git -C "$root" show "$base:$base_config" | kits)" || fail "$config at $base does not set $settings to integers."
 head_kits="$(kits < "$root/$config")" || fail "$config does not set $settings to integers."
 read -r base_kit base_minimum <<< "$base_kits"
 read -r head_kit head_minimum <<< "$head_kits"
@@ -59,8 +66,8 @@ build_kit() {
 
 echo "Building TableProPluginKit at $base"
 git -C "$root" worktree add --quiet --detach "$work/src" "$base"
-(cd "$work/src" && xcodegen generate --quiet --spec project.yml)
-build_kit "$work/src" base || { tail -30 "$work/base.log"; fail "TableProPluginKit does not build at $base"; }
+(cd "$work/src/$base_dir" && xcodegen generate --quiet --spec project.yml)
+build_kit "$work/src/$base_dir" base || { tail -30 "$work/base.log"; fail "TableProPluginKit does not build at $base"; }
 
 echo "Building TableProPluginKit at HEAD"
 build_kit "$root" head || { tail -30 "$work/head.log"; fail "TableProPluginKit does not build at HEAD"; }

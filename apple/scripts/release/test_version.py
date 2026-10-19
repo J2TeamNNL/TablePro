@@ -453,6 +453,45 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(github.run_queries, [])
 
 
+class AppleTreeTests(unittest.TestCase):
+    def test_the_changelog_and_fragments_come_from_the_tree_git_runs_in(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = FixtureRepository(Path(directory))
+            apple = repo.path / "apple"
+            (apple / "changelog.d").mkdir(parents=True)
+            (repo.path / "CHANGELOG.md").write_text(MAIN_CHANGELOG, encoding="utf-8")
+            (apple / "CHANGELOG.md").write_text(
+                MAIN_CHANGELOG.replace("## [0.81.0]", "## [0.81.1] - 2026-10-25\n\n## [0.81.0]"), encoding="utf-8")
+            (apple / "changelog.d" / "3610.fixed.md").write_text("A fix.\n", encoding="utf-8")
+            repo.git("add", "--all")
+            sha = repo.commit("chore(release): v0.81.1")
+            repo.line("0.81", sha)
+            repo.git("tag", "v0.81.1", sha)
+            errors = version.check("v0.81.1", version.Git(apple), FakeGitHub(releases=[("v0.81.0", False)]),
+                                   changed=lambda base, suite: True)
+            self.assertEqual(errors, ["v0.81.1 still has 3610.fixed.md in changelog.d/; assemble again on the line head"])
+
+    def test_a_stable_may_differ_from_its_beta_in_the_apple_changelog_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = FixtureRepository(Path(directory))
+            apple = repo.path / "apple"
+            (apple / "changelog.d").mkdir(parents=True)
+            (apple / "changelog.d" / "3610.fixed.md").write_text("A fix.\n", encoding="utf-8")
+            (apple / "CHANGELOG.md").write_text(MAIN_CHANGELOG, encoding="utf-8")
+            repo.git("add", "--all")
+            repo.git("tag", "v0.82.0-beta.1", repo.commit("fix: a fix"))
+            repo.git("rm", "--quiet", "-r", "apple/changelog.d")
+            (apple / "CHANGELOG.md").write_text(
+                MAIN_CHANGELOG.replace("## [0.81.0]", "## [0.82.0] - 2026-10-26\n\n## [0.81.0]"), encoding="utf-8")
+            (repo.path / "ci.yml").write_text("on: push\n", encoding="utf-8")
+            repo.git("add", "--all")
+            repo.git("tag", "v0.82.0", repo.commit("chore(release): v0.82.0"))
+            errors = version.stable_tree_errors(version.Git(apple), version.parse_tag("v0.82.0"),
+                                                [("v0.82.0-beta.1", False)])
+            self.assertEqual(errors, ["v0.82.0 differs from v0.82.0-beta.1, the newest published beta, in ci.yml: "
+                                      "revert them on release/0.82, then tag the next number"])
+
+
 class DetectorTests(unittest.TestCase):
     def test_the_detector_answer_is_read(self):
         with tempfile.TemporaryDirectory() as directory:

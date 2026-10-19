@@ -4,7 +4,7 @@ Codex loads the skill through `.agents/skills/fix-issue` and the project guide f
 
 ## Rules and tracking
 
-- Codex loads the root `AGENTS.md` of the checkout it started in and nothing else by itself. The tree's guide and rules come from `SKILL.md` Phase 2 (Rules read). When the profile's Done section names another guide, read it.
+- Codex loads the root `AGENTS.md` of the checkout it started in, and a platform guide only when started in its folder. The tree's guides and rules come from `SKILL.md` Phase 2 (Rules read): read the guide the profile's Done section names.
 - Keep progress in `plan.md`, and in the plan or goal tool your session offers, if any.
 - Ask with `request_user_input`, recommendation first, only for the cases in Autonomy.
 

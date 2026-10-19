@@ -12,9 +12,9 @@ from typing import Callable, Dict, List, Optional
 
 import version
 
-ROOT = Path(__file__).resolve().parent.parent.parent
+ROOT = Path(__file__).resolve().parents[3]
 METADATA = ROOT / ".github/plugin-registry.json"
-PLUGINKIT_CONFIG = "Configs/PluginKit.xcconfig"
+PLUGINKIT_CONFIG = "apple/Configs/PluginKit.xcconfig"
 SCHEMA_VERSION = 3
 CHANNELS = ("stable", "beta")
 RELEASES_PER_KEY = 2

@@ -19,50 +19,53 @@ cd "$(git rev-parse --show-toplevel)"
 SKIP=""
 case "$SUITE" in
     macos)
-        PATTERNS=('TablePro/' 'TableProTests/' 'TableProUITests/' 'TestPlans/' 'Plugins/' 'Packages/'
-            'Native/' 'Configs/' 'Libs/' 'project\.yml$'
-            'TablePro\.xcodeproj/project\.xcworkspace/xcshareddata/swiftpm/Package\.resolved$'
-            'scripts/(generate-project|download-libs|create-openssl-dylibs|build-dameng|build-hana)\.sh$'
-            'scripts/lib/' 'scripts/ci/(detect-changed-paths|summarize-xcresult|verify-plugin-loads)\.sh$'
-            'scripts/check-pluginkit-abi\.sh$' 'scripts/release/notes\.py$'
+        PATTERNS=('apple/TablePro/' 'apple/TableProTests/' 'apple/TableProUITests/' 'apple/TestPlans/'
+            'apple/Plugins/' 'apple/Packages/' 'apple/Native/' 'apple/Configs/' 'apple/Libs/' 'apple/project\.yml$'
+            'apple/TablePro\.xcodeproj/project\.xcworkspace/xcshareddata/swiftpm/Package\.resolved$'
+            'apple/scripts/(generate-project|download-libs|create-openssl-dylibs|build-dameng|build-hana)\.sh$'
+            'apple/scripts/lib/' 'apple/scripts/ci/(summarize-xcresult|verify-plugin-loads)\.sh$'
+            'scripts/ci/detect-changed-paths\.sh$'
+            'apple/scripts/check-pluginkit-abi\.sh$' 'apple/scripts/release/notes\.py$'
             '\.github/actions/(setup-xcode(gen)?|prepare-build)/' '\.github/workflows/macos-tests\.yml$') ;;
     plugins)
         # Registry plugins link the TableProCore and TableProOracle products.
-        PATTERNS=('Plugins/' 'Packages/TableProCore/' 'Packages/TableProOracle/' 'Native/' 'Libs/'
-            'Configs/' 'project\.yml$'
-            'TablePro\.xcodeproj/project\.xcworkspace/xcshareddata/swiftpm/Package\.resolved$'
-            'scripts/(generate-project|download-libs|create-openssl-dylibs|build-dameng|build-hana)\.sh$'
-            'scripts/lib/' 'scripts/ci/verify-plugin-loads\.sh$' 'scripts/check-pluginkit-abi\.sh$'
+        PATTERNS=('apple/Plugins/' 'apple/Packages/TableProCore/' 'apple/Packages/TableProOracle/' 'apple/Native/'
+            'apple/Libs/' 'apple/Configs/' 'apple/project\.yml$'
+            'apple/TablePro\.xcodeproj/project\.xcworkspace/xcshareddata/swiftpm/Package\.resolved$'
+            'apple/scripts/(generate-project|download-libs|create-openssl-dylibs|build-dameng|build-hana)\.sh$'
+            'apple/scripts/lib/' 'apple/scripts/ci/verify-plugin-loads\.sh$' 'apple/scripts/check-pluginkit-abi\.sh$'
             '\.github/actions/(setup-xcode(gen)?|prepare-build)/' '\.github/workflows/macos-tests\.yml$') ;;
     ios)
         # The package's TableProPluginKit target is a symlink, so git reports its changes here.
-        PATTERNS=('TableProMobile/' 'Libs/' 'Plugins/TableProPluginKit/'
-            'scripts/(generate-project|download-libs|create-openssl-dylibs)\.sh$' 'scripts/lib/'
-            'scripts/ci/(detect-changed-paths|summarize-xcresult)\.sh$'
+        PATTERNS=('apple/TableProMobile/' 'apple/Libs/' 'apple/Plugins/TableProPluginKit/'
+            'apple/scripts/(generate-project|download-libs|create-openssl-dylibs)\.sh$' 'apple/scripts/lib/'
+            'apple/scripts/ci/summarize-xcresult\.sh$' 'scripts/ci/detect-changed-paths\.sh$'
             '\.github/actions/setup-xcode(gen)?/' '\.github/workflows/ios-tests\.yml$')
         # The iOS project compiles files from Plugins/, Packages/ and TablePro/, so every path its
         # spec reaches outside TableProMobile/ is read from the spec instead of copied here.
-        SHARED="$(grep -oE '\.\./(Configs|Packages|Plugins|TablePro)/[^"[:space:]]*' TableProMobile/project.yml \
-            | sed -E -e 's#^\.\./##' -e 's#/\.?$#/#' -e 's#\.#\\.#g' | sort -u)"
+        SHARED="$(grep -oE '\.\./(Configs|Packages|Plugins|TablePro)/[^"[:space:]]*' apple/TableProMobile/project.yml \
+            | sed -E -e 's#^\.\./#apple/#' -e 's#/\.?$#/#' -e 's#\.#\\.#g' | sort -u)"
         while IFS= read -r shared; do
             PATTERNS+=("$shared")
         done <<< "$SHARED" ;;
     oracle)
-        PATTERNS=('Packages/TableProOracle/' 'scripts/ci/summarize-xcresult\.sh$'
+        PATTERNS=('apple/Packages/TableProOracle/' 'apple/scripts/ci/summarize-xcresult\.sh$'
             '\.github/actions/setup-xcode/' '\.github/workflows/ios-tests\.yml$') ;;
     hana)
-        PATTERNS=('Native/HanaBridge/' '\.github/workflows/repo-hygiene\.yml$') ;;
+        PATTERNS=('apple/Native/HanaBridge/' '\.github/workflows/repo-hygiene\.yml$') ;;
     release)
         # A Release build compiles no test target, so the test folders under Plugins/ and
         # Packages/ are skipped too.
-        PATTERNS=('TablePro/' 'Plugins/' 'Packages/' 'Native/' 'Configs/' 'Libs/' 'project\.yml$'
-            'TablePro\.xcodeproj/project\.xcworkspace/xcshareddata/swiftpm/Package\.resolved$'
+        PATTERNS=('apple/TablePro/' 'apple/Plugins/' 'apple/Packages/' 'apple/Native/' 'apple/Configs/' 'apple/Libs/'
+            'apple/project\.yml$'
+            'apple/TablePro\.xcodeproj/project\.xcworkspace/xcshareddata/swiftpm/Package\.resolved$'
             '\.github/plugin-registry\.json$'
-            'scripts/(generate-project|download-libs|create-openssl-dylibs|build-dameng|build-hana)\.sh$'
-            'scripts/lib/' 'scripts/release/(build|package)\.sh$' 'scripts/release/(notes|registry|version)\.py$'
-            'scripts/ci/(detect-changed-paths|verify-plugin-loads)\.sh$'
+            'apple/scripts/(generate-project|download-libs|create-openssl-dylibs|build-dameng|build-hana)\.sh$'
+            'apple/scripts/lib/' 'apple/scripts/release/(build|package)\.sh$'
+            'apple/scripts/release/(notes|registry|version)\.py$'
+            'apple/scripts/ci/verify-plugin-loads\.sh$' 'scripts/ci/detect-changed-paths\.sh$'
             '\.github/actions/(setup-xcode(gen)?|prepare-build)/' '\.github/workflows/release-build\.yml$')
-        SKIP='Plugins/[^/]+Tests/|Packages/[^/]+/Tests/' ;;
+        SKIP='apple/Plugins/[^/]+Tests/|apple/Packages/[^/]+/Tests/' ;;
     linux)
         # The fast job checks the Linux docs with the repo's docs and word scripts.
         PATTERNS=('linux/' 'scripts/(check-doc-symbols|check-banned-words)\.sh$' 'scripts/banned-words\.txt$'

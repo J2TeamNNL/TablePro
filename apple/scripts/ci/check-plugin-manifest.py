@@ -6,13 +6,13 @@ import sys
 
 import yaml
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT / "scripts" / "release"))
+APPLE_ROOT = pathlib.Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(APPLE_ROOT / "scripts" / "release"))
 
 import registry  # noqa: E402
 
-MANIFEST = REPO_ROOT / ".github" / "plugin-registry.json"
-PROJECT = REPO_ROOT / "project.yml"
+MANIFEST = APPLE_ROOT.parent / ".github" / "plugin-registry.json"
+PROJECT = APPLE_ROOT / "project.yml"
 
 BUNDLED = "BundledPlugins"
 REGISTRY = "RegistryPlugins"

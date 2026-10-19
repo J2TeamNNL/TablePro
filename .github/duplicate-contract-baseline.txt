@@ -1,8 +1,8 @@
 # Production DatabaseType definitions other than the TableProCore source.
-# scripts/audit-refactor-health.sh --check fails when one appears that is not listed here.
+# apple/scripts/audit-refactor-health.sh --check fails when one appears that is not listed here.
 # Remove an entry when its definition moves into TableProCore; never add one to make a new copy pass.
 #
-# Format: databasetype:<file>
+# Format: databasetype:<file>, relative to apple/
 
 # The macOS DatabaseType moved out of DatabaseConnection.swift into a file of its own so that
 # naming a database type stops costing the plugin registry at compile time. Same single

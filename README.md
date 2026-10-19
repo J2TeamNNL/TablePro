@@ -109,10 +109,11 @@ These steps build the macOS and iOS apps; the Linux app builds with Meson and Ca
 Building TablePro requires Xcode 26 or later and
 [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 
-Run the first-time setup from the repository root:
+The macOS and iOS apps live in `apple/`. Run the first-time setup, and every command below, from there:
 
 ```bash
 brew install xcodegen
+cd apple
 scripts/download-libs.sh
 scripts/generate-project.sh
 ```
@@ -135,7 +136,7 @@ xcodebuild \
 
 The app is written to `~/Library/Developer/Xcode/DerivedData/TablePro-*/Build/Products/Debug/TablePro.app`.
 
-To build and run a signed app, put your Apple team and a unique bundle identifier in `Configs/Secrets.xcconfig`. See [Building with a personal Apple team](CONTRIBUTING.md#building-with-a-personal-apple-team).
+To build and run a signed app, put your Apple team and a unique bundle identifier in `apple/Configs/Secrets.xcconfig`. See [Building with a personal Apple team](apple/CONTRIBUTING.md#building-with-a-personal-apple-team).
 
 ## Documentation
 

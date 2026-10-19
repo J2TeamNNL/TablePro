@@ -23,7 +23,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
-          sparse-checkout: scripts
+          # check-changelog.py imports apple/scripts/release/notes.py.
+          sparse-checkout: |
+            scripts
+            apple/scripts/release
 
       - name: Check the title is a Conventional Commits subject within 72 characters
         env:

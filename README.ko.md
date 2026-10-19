@@ -108,10 +108,11 @@ brew install --cask tablepro
 
 TablePro를 빌드하려면 Xcode 26 이상과 [XcodeGen](https://github.com/yonaskolb/XcodeGen)이 필요합니다.
 
-저장소 루트에서 최초 설정을 실행하세요.
+macOS와 iOS 앱은 `apple/`에 있습니다. 최초 설정과 아래의 모든 명령은 그 폴더에서 실행하세요.
 
 ```bash
 brew install xcodegen
+cd apple
 scripts/download-libs.sh
 scripts/generate-project.sh
 ```
@@ -132,7 +133,7 @@ xcodebuild \
 
 앱은 `~/Library/Developer/Xcode/DerivedData/TablePro-*/Build/Products/Debug/TablePro.app`에 생성됩니다.
 
-서명된 앱을 빌드하고 실행하려면 Apple 개발 팀과 고유한 번들 식별자를 `Configs/Secrets.xcconfig`에 입력하세요. [개인 Apple 팀으로 빌드하기](CONTRIBUTING.md#building-with-a-personal-apple-team)를 참고하세요.
+서명된 앱을 빌드하고 실행하려면 Apple 개발 팀과 고유한 번들 식별자를 `apple/Configs/Secrets.xcconfig`에 입력하세요. [개인 Apple 팀으로 빌드하기](apple/CONTRIBUTING.md#building-with-a-personal-apple-team)를 참고하세요.
 
 ## 문서
 
