@@ -25,15 +25,15 @@ case "$SUITE" in
             'apple/scripts/(generate-project|download-libs|create-openssl-dylibs|build-dameng|build-hana)\.sh$'
             'apple/scripts/lib/' 'apple/scripts/ci/(summarize-xcresult|verify-plugin-loads)\.sh$'
             'scripts/ci/detect-changed-paths\.sh$'
-            'apple/scripts/release/notes\.py$' '\.github/actions/(setup-xcode(gen)?|prepare-build)/'
-            '\.github/workflows/macos-tests\.yml$') ;;
+            'apple/scripts/check-pluginkit-abi\.sh$' 'apple/scripts/release/notes\.py$'
+            '\.github/actions/(setup-xcode(gen)?|prepare-build)/' '\.github/workflows/macos-tests\.yml$') ;;
     plugins)
         # Registry plugins link the TableProCore and TableProOracle products.
         PATTERNS=('apple/Plugins/' 'apple/Packages/TableProCore/' 'apple/Packages/TableProOracle/' 'apple/Native/'
             'apple/Libs/' 'apple/Configs/' 'apple/project\.yml$'
             'apple/TablePro\.xcodeproj/project\.xcworkspace/xcshareddata/swiftpm/Package\.resolved$'
             'apple/scripts/(generate-project|download-libs|create-openssl-dylibs|build-dameng|build-hana)\.sh$'
-            'apple/scripts/lib/' 'apple/scripts/ci/verify-plugin-loads\.sh$'
+            'apple/scripts/lib/' 'apple/scripts/ci/verify-plugin-loads\.sh$' 'apple/scripts/check-pluginkit-abi\.sh$'
             '\.github/actions/(setup-xcode(gen)?|prepare-build)/' '\.github/workflows/macos-tests\.yml$') ;;
     ios)
         # The package's TableProPluginKit target is a symlink, so git reports its changes here.
