@@ -4531,6 +4531,9 @@
         }
       }
     },
+    "%@ Plan" : {
+
+    },
     "%@ Preview" : {
       "localizations" : {
         "fr" : {
@@ -50417,6 +50420,9 @@
         }
       }
     },
+    "Copy Relative Path" : {
+
+    },
     "Copy Rows" : {
       "localizations" : {
         "fr" : {
@@ -91556,6 +91562,12 @@
         }
       }
     },
+    "Included" : {
+
+    },
+    "Includes everything in %@." : {
+
+    },
     "Incorrect passphrase" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -98577,6 +98589,9 @@
       "extractionState" : "manual",
       "generatesSymbol" : false
     },
+    "Learn More About Licensing" : {
+
+    },
     "Lease can only be compared with a lease ID, such as 0x7b." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -103354,6 +103369,9 @@
           }
         }
       }
+    },
+    "Local Network Access Required" : {
+
     },
     "Local Secondary Indexes" : {
       "extractionState" : "manual",
@@ -176594,6 +176612,18 @@
         }
       }
     },
+    "TablePro does not have Local Network access, so it cannot reach the SOCKS proxy at %@." : {
+
+    },
+    "TablePro does not have Local Network access, so it cannot reach the SSH jump host at %@." : {
+
+    },
+    "TablePro does not have Local Network access, so it cannot reach the SSH server at %@." : {
+
+    },
+    "TablePro does not have Local Network access, so it cannot reach the database at %@." : {
+
+    },
     "TablePro does not run a pre-connect script on its own." : {
 
     },
@@ -200093,6 +200123,9 @@
           }
         }
       }
+    },
+    "Turn on TablePro in System Settings > Privacy & Security > Local Network, then try again." : {
+
     },
     "Turn one table's structure into a runnable checklist of data quality queries" : {
       "localizations" : {
