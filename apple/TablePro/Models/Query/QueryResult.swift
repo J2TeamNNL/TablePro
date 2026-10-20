@@ -145,6 +145,10 @@ struct TableInfo: Identifiable, Hashable, Sendable {
     /// with versioning turned on is the same table.
     let isSystemVersioned: Bool
 
+    // The column a sequence belongs to. Outside identity, like the comment.
+    let ownedByTable: String?
+    let ownedByColumn: String?
+
     enum TableType: String, Sendable, CaseIterable {
         case table = "TABLE"
         case view = "VIEW"
@@ -216,7 +220,9 @@ struct TableInfo: Identifiable, Hashable, Sendable {
         schema: String? = nil,
         comment: String? = nil,
         partitionCount: Int? = nil,
-        isSystemVersioned: Bool = false
+        isSystemVersioned: Bool = false,
+        ownedByTable: String? = nil,
+        ownedByColumn: String? = nil
     ) {
         self.name = name
         self.type = type
@@ -225,6 +231,8 @@ struct TableInfo: Identifiable, Hashable, Sendable {
         self.comment = comment
         self.partitionCount = partitionCount
         self.isSystemVersioned = isSystemVersioned
+        self.ownedByTable = ownedByTable
+        self.ownedByColumn = ownedByColumn
     }
 
     static func == (lhs: TableInfo, rhs: TableInfo) -> Bool {

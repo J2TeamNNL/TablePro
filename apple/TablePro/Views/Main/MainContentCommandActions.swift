@@ -956,6 +956,10 @@ final class MainContentCommandActions: ObservableObject {
         coordinator?.createView()
     }
 
+    func createSequence() {
+        coordinator?.createSequence()
+    }
+
     func createNewTable() {
         coordinator?.createNewTable()
     }

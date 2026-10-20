@@ -20548,6 +20548,9 @@
         }
       }
     },
+    "After the values already in %@" : {
+
+    },
     "Agent" : {
       "localizations" : {
         "fr" : {
@@ -32125,6 +32128,9 @@
     "Cable" : {
       "extractionState" : "manual",
       "generatesSymbol" : false
+    },
+    "Cache" : {
+
     },
     "Cache Hit Ratio" : {
       "localizations" : {
@@ -56778,6 +56784,9 @@
         }
       }
     },
+    "Data type" : {
+
+    },
     "Database" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -58825,6 +58834,9 @@
           }
         }
       }
+    },
+    "Cycle" : {
+
     },
     "DB needs a database index and a command" : {
       "extractionState" : "manual",
@@ -68344,6 +68356,12 @@
         }
       }
     },
+    "Edit Sequence" : {
+
+    },
+    "Edit Sequence…" : {
+
+    },
     "Edit Trigger" : {
       "localizations" : {
         "fr" : {
@@ -71029,6 +71047,9 @@
           }
         }
       }
+    },
+    "Enter whole numbers only." : {
+
     },
     "Enter your license key, or a team invite code to join a team." : {
       "localizations" : {
@@ -91650,6 +91671,9 @@
         }
       }
     },
+    "Increment" : {
+
+    },
     "Indent" : {
       "localizations" : {
         "fr" : {
@@ -98405,6 +98429,9 @@
           }
         }
       }
+    },
+    "Last value" : {
+
     },
     "Latest" : {
       "localizations" : {
@@ -111935,6 +111962,9 @@
         }
       }
     },
+    "New Sequence…" : {
+
+    },
     "New Session" : {
       "localizations" : {
         "fr" : {
@@ -112764,6 +112794,9 @@
           }
         }
       }
+    },
+    "Next value" : {
+
     },
     "Nightly tables" : {
       "localizations" : {
@@ -117620,6 +117653,9 @@
           }
         }
       }
+    },
+    "No sequences" : {
+
     },
     "No servers yet." : {
       "localizations" : {
@@ -127611,6 +127647,12 @@
           }
         }
       }
+    },
+    "Owned by" : {
+
+    },
+    "Owned by %@" : {
+
     },
     "Owned objects" : {
       "localizations" : {
@@ -158782,6 +158824,9 @@
         }
       }
     },
+    "Sequence Unavailable" : {
+
+    },
     "Sequences" : {
       "localizations" : {
         "fr" : {
@@ -160300,6 +160345,12 @@
           }
         }
       }
+    },
+    "Set Next Value" : {
+
+    },
+    "Set Next Value…" : {
+
     },
     "Set Password" : {
       "localizations" : {
@@ -169199,6 +169250,9 @@
           }
         }
       }
+    },
+    "Start" : {
+
     },
     "Start one to ask about this connection." : {
       "localizations" : {
@@ -180862,6 +180916,9 @@
         }
       }
     },
+    "The cache must be at least 1." : {
+
+    },
     "The catalog location is not a folder: %@" : {
       "localizations" : {
         "fr" : {
@@ -183653,6 +183710,9 @@
         }
       }
     },
+    "The increment cannot be zero." : {
+
+    },
     "The index %@ is left out" : {
       "localizations" : {
         "fr" : {
@@ -184585,6 +184645,9 @@
           }
         }
       }
+    },
+    "The minimum must be less than the maximum." : {
+
     },
     "The name of a DIRECTORY object, not a path. The DBA who created it chose where it points." : {
       "extractionState" : "stale",
@@ -195142,6 +195205,9 @@
           }
         }
       }
+    },
+    "This sequence's settings could not be read, so they cannot be changed here." : {
+
     },
     "This server did not identify as Databend. Check the host and port of its MySQL handler." : {
       "extractionState" : "manual",

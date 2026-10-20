@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import TableProPluginKit
 
 /// Which of the per-object commands (Show DDL, Copy DDL, Refresh Materialized View, Edit Comment)
 /// apply to a row. The sidebar and the menu bar ask the same functions, so the two can never offer
@@ -16,6 +17,8 @@ enum DatabaseObjectToolEligibility {
     struct Support: Equatable {
         var canRefreshMaterializedViews = false
         var commentableTypes: Set<TableInfo.TableType> = []
+        var canSetSequenceValues = false
+        var canAlterSequences = false
 
         static let none = Support()
 
@@ -25,11 +28,18 @@ enum DatabaseObjectToolEligibility {
             let commentable = TableInfo.TableType.allCases.filter { type in
                 driver.objectCommentStatement(name: "t", objectType: type.rawValue, schema: "s", comment: nil) != nil
             }
+            let probe = PluginSequenceDetails(
+                name: "s", schema: "s", dataType: nil, startValue: 1, increment: 1, minValue: 1, maxValue: 10,
+                cacheSize: 1, cycles: false, lastValue: nil, ownedByTable: nil, ownedByColumn: nil
+            )
+            let changed = PluginSequenceSettings(increment: 2, minValue: 1, maxValue: 10, cacheSize: 1, cycles: false)
             return Support(
                 canRefreshMaterializedViews: driver.refreshMaterializedViewStatement(
                     name: "t", schema: "s", concurrently: false
                 ) != nil,
-                commentableTypes: Set(commentable)
+                commentableTypes: Set(commentable),
+                canSetSequenceValues: driver.sequenceNextValueStatement(for: probe, nextValue: .value(1)) != nil,
+                canAlterSequences: driver.alterSequenceStatement(for: probe, settings: changed) != nil
             )
         }
     }
@@ -49,5 +59,13 @@ enum DatabaseObjectToolEligibility {
     static func canEditComment(_ type: TableInfo.TableType?, support: Support, isReadOnly: Bool) -> Bool {
         guard !isReadOnly, let type else { return false }
         return support.commentableTypes.contains(type)
+    }
+
+    static func canSetSequenceValue(_ type: TableInfo.TableType?, support: Support, isReadOnly: Bool) -> Bool {
+        !isReadOnly && type == .sequence && support.canSetSequenceValues
+    }
+
+    static func canEditSequence(_ type: TableInfo.TableType?, support: Support, isReadOnly: Bool) -> Bool {
+        !isReadOnly && type == .sequence && support.canAlterSequences
     }
 }

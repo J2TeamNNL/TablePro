@@ -1057,6 +1057,25 @@ struct MainMenuValidationTests {
         #expect(enabled(#selector(MainSplitViewController.editObjectComment(_:)), context))
     }
 
+    @Test("The sequence commands need the driver and a selected sequence, and New Sequence a template")
+    func sequenceCommandsNeedSupport() {
+        var context = MenuValidationContext()
+        context.isConnected = true
+        #expect(!enabled(#selector(MainSplitViewController.setSequenceNextValue(_:)), context))
+        #expect(!enabled(#selector(MainSplitViewController.editSequence(_:)), context))
+        #expect(!enabled(#selector(MainSplitViewController.createNewSequence(_:)), context))
+        context.canSetSequenceNextValue = true
+        context.canEditSequence = true
+        context.canCreateSequence = true
+        #expect(enabled(#selector(MainSplitViewController.setSequenceNextValue(_:)), context))
+        #expect(enabled(#selector(MainSplitViewController.editSequence(_:)), context))
+        #expect(enabled(#selector(MainSplitViewController.createNewSequence(_:)), context))
+        context.isReadOnly = true
+        #expect(!enabled(#selector(MainSplitViewController.createNewSequence(_:)), context))
+        context.isConnected = false
+        #expect(!enabled(#selector(MainSplitViewController.setSequenceNextValue(_:)), context))
+    }
+
     @Test("Maintenance stays disabled when the driver offers no operations")
     func maintenanceNeedsOperations() {
         var context = MenuValidationContext()

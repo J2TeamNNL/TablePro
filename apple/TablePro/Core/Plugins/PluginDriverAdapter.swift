@@ -512,7 +512,9 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
             schema: table.schema ?? schemaFallback,
             comment: table.comment,
             partitionCount: table.partitionCount,
-            isSystemVersioned: decoded.isSystemVersioned
+            isSystemVersioned: decoded.isSystemVersioned,
+            ownedByTable: table.ownedByTable,
+            ownedByColumn: table.ownedByColumn
         )
     }
 
@@ -1119,6 +1121,20 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         try await pluginDriver.concurrentRefreshAvailability(materializedView: materializedView, schema: schema)
     }
 
+    // MARK: - Sequences
+
+    func fetchSequenceDetails(sequence: String, schema: String?) async throws -> PluginSequenceDetails? {
+        try await pluginDriver.fetchSequenceDetails(sequence: sequence, schema: schema ?? pluginDriver.currentSchema)
+    }
+
+    func sequenceNextValueStatement(for sequence: PluginSequenceDetails, nextValue: PluginSequenceNextValue) -> String? {
+        pluginDriver.sequenceNextValueStatement(for: sequence, nextValue: nextValue)
+    }
+
+    func alterSequenceStatement(for sequence: PluginSequenceDetails, settings: PluginSequenceSettings) -> String? {
+        pluginDriver.alterSequenceStatement(for: sequence, settings: settings)
+    }
+
     // MARK: - All Tables Metadata SQL
 
     func allTablesMetadataSQL(schema: String?) -> String? {
@@ -1129,6 +1145,10 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
 
     func createViewTemplate() -> String? {
         pluginDriver.createViewTemplate()
+    }
+
+    func createSequenceTemplate() -> String? {
+        pluginDriver.createSequenceTemplate()
     }
 
     func editViewFallbackTemplate(viewName: String) -> String? {

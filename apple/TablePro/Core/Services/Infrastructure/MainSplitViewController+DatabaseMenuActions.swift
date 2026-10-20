@@ -155,6 +155,10 @@ extension MainSplitViewController {
         commandActions?.createView()
     }
 
+    @objc func createNewSequence(_ sender: Any?) {
+        commandActions?.createSequence()
+    }
+
     @objc func createNewDatabase(_ sender: Any?) {
         commandActions?.createDatabase()
     }
@@ -189,6 +193,14 @@ extension MainSplitViewController {
 
     @objc func editObjectComment(_ sender: Any?) {
         commandActions?.editObjectComment()
+    }
+
+    @objc func setSequenceNextValue(_ sender: Any?) {
+        commandActions?.setSequenceNextValue()
+    }
+
+    @objc func editSequence(_ sender: Any?) {
+        commandActions?.editSequence()
     }
 
     @objc func runMaintenanceOperation(_ sender: Any?) {

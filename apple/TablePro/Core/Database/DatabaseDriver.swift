@@ -373,6 +373,12 @@ protocol DatabaseDriver: AnyObject, Sendable {
         schema: String?
     ) async throws -> PluginConcurrentRefreshAvailability?
 
+    // MARK: - Sequences
+
+    func fetchSequenceDetails(sequence: String, schema: String?) async throws -> PluginSequenceDetails?
+    func sequenceNextValueStatement(for sequence: PluginSequenceDetails, nextValue: PluginSequenceNextValue) -> String?
+    func alterSequenceStatement(for sequence: PluginSequenceDetails, settings: PluginSequenceSettings) -> String?
+
     // MARK: - Query Cancellation
 
     /// Cancel the currently running query, if any.
@@ -413,6 +419,7 @@ protocol DatabaseDriver: AnyObject, Sendable {
 
     func createViewTemplate() -> String?
     func editViewFallbackTemplate(viewName: String) -> String?
+    func createSequenceTemplate() -> String?
     func castColumnToText(_ column: String) -> String
 
     func foreignKeyDisableStatements() -> [String]?
@@ -503,6 +510,7 @@ extension DatabaseDriver {
 
     func createViewTemplate() -> String? { nil }
     func editViewFallbackTemplate(viewName: String) -> String? { nil }
+    func createSequenceTemplate() -> String? { nil }
     func castColumnToText(_ column: String) -> String { column }
 
     func foreignKeyDisableStatements() -> [String]? { nil }
@@ -808,6 +816,16 @@ extension DatabaseDriver {
         materializedView: String,
         schema: String?
     ) async throws -> PluginConcurrentRefreshAvailability? {
+        nil
+    }
+
+    func fetchSequenceDetails(sequence: String, schema: String?) async throws -> PluginSequenceDetails? { nil }
+
+    func sequenceNextValueStatement(for sequence: PluginSequenceDetails, nextValue: PluginSequenceNextValue) -> String? {
+        nil
+    }
+
+    func alterSequenceStatement(for sequence: PluginSequenceDetails, settings: PluginSequenceSettings) -> String? {
         nil
     }
 

@@ -191,9 +191,11 @@ class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
         }
 
         var result: PluginQueryResult?
+        var answered = PostgreSQLTableListingLadder.leastCapableAttempt
         for attempt in PostgreSQLTableListingLadder.degradableAttempts where result == nil {
             do {
                 result = try await execute(query: query(attempt))
+                answered = attempt
             } catch let error as LibPQPluginError where PostgreSQLTableListingLadder.isDegradable(sqlState: error.sqlState) {
                 reportListingDegrade(past: attempt, error: error)
             }
@@ -203,7 +205,9 @@ class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
         }
 
         guard let result else { return [] }
-        return result.rows.compactMap { PostgreSQLTableListing.table(fromRow: $0.map(\.asText)) }
+        return result.rows.compactMap {
+            PostgreSQLTableListing.table(fromRow: $0.map(\.asText), includesSequences: answered.includeSequences)
+        }
     }
 
     /// The first degrade on a connection is a warning: an undefined column in the plugin's own SQL
@@ -395,6 +399,11 @@ class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
         if let relkind = cols.rows.first?[safe: 1]?.asText,
            PostgreSQLViewDefinition.kind(forRelkind: relkind) != nil {
             return try await fetchViewDefinition(view: table, schema: resolvedSchema)
+        }
+        // A sequence's attributes are its state columns, not a table to recreate.
+        if cols.rows.first?[safe: 1]?.asText == "S",
+           let ddl = try await sequenceDDL(sequence: table, schema: resolvedSchema) {
+            return ddl
         }
 
         let columnDefs = cols.rows.compactMap { $0[0].asText }
