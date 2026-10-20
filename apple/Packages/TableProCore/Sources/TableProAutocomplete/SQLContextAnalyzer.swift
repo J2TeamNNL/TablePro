@@ -53,6 +53,8 @@ public struct TableReference: Hashable, Sendable {
     public let derivedColumns: [String]?
     // Whether `identifier` was quoted in the statement, since a qualifier inserted bare would fold to another name.
     public let isIdentifierQuoted: Bool
+    // Set while a `*` in the derived table still needs the catalog; the provider resolves it into `derivedColumns`.
+    let derivedProjection: DerivedProjection?
 
     public init(
         tableName: String,
@@ -66,6 +68,26 @@ public struct TableReference: Hashable, Sendable {
         self.schema = schema
         self.derivedColumns = derivedColumns
         self.isIdentifierQuoted = isIdentifierQuoted
+        self.derivedProjection = nil
+    }
+
+    init(tableName: String, alias: String?, schema: String?, projection: DerivedProjection, isIdentifierQuoted: Bool) {
+        self.tableName = tableName
+        self.alias = alias
+        self.schema = schema
+        self.derivedColumns = projection.columns { _ in nil }
+        self.isIdentifierQuoted = isIdentifierQuoted
+        self.derivedProjection = projection.tables.isEmpty ? nil : projection
+    }
+
+    func resolvingDerivedColumns(_ columns: [String]) -> TableReference {
+        TableReference(
+            tableName: tableName,
+            alias: alias,
+            schema: schema,
+            derivedColumns: columns,
+            isIdentifierQuoted: isIdentifierQuoted
+        )
     }
 
     public var identifier: String {
@@ -105,6 +127,8 @@ public struct SQLContext: Sendable {
     public let expectsObjectName: Bool     // The table-operand slot of FROM, JOIN or INTO
     public let comparisonColumn: String?   // The column on the other side of a comparison the cursor is a value in
     public let quotedName: SQLQuotedName?
+    public let outputAliases: [String]     // SELECT-list aliases an ORDER BY at the cursor may name, as written
+    public let targetTable: TableReference? // The table the INSERT, UPDATE or MERGE at the cursor writes
 
     public init(
         clauseType: SQLClauseType,
@@ -120,7 +144,9 @@ public struct SQLContext: Sendable {
         isAfterComma: Bool = false,
         expectsObjectName: Bool = false,
         comparisonColumn: String? = nil,
-        quotedName: SQLQuotedName? = nil
+        quotedName: SQLQuotedName? = nil,
+        outputAliases: [String] = [],
+        targetTable: TableReference? = nil
     ) {
         self.clauseType = clauseType
         self.prefix = prefix
@@ -136,13 +162,24 @@ public struct SQLContext: Sendable {
         self.expectsObjectName = expectsObjectName
         self.comparisonColumn = comparisonColumn
         self.quotedName = quotedName
+        self.outputAliases = outputAliases
+        self.targetTable = targetTable
     }
 
     public func replacingTableReferences(_ references: [TableReference]) -> SQLContext {
+        copy(tableReferences: references, offset: 0)
+    }
+
+    // The same context read against a larger text the analyzed one starts `offset` units into.
+    public func offsettingRanges(by offset: Int) -> SQLContext {
+        copy(tableReferences: tableReferences, offset: offset)
+    }
+
+    private func copy(tableReferences references: [TableReference], offset: Int) -> SQLContext {
         SQLContext(
             clauseType: clauseType,
             prefix: prefix,
-            prefixRange: prefixRange,
+            prefixRange: (prefixRange.lowerBound + offset)..<(prefixRange.upperBound + offset),
             dotPrefix: dotPrefix,
             tableReferences: references,
             isInsideString: isInsideString,
@@ -153,7 +190,9 @@ public struct SQLContext: Sendable {
             isAfterComma: isAfterComma,
             expectsObjectName: expectsObjectName,
             comparisonColumn: comparisonColumn,
-            quotedName: quotedName
+            quotedName: quotedName.map { SQLQuotedName(open: $0.open + offset, close: $0.close.map { $0 + offset }) },
+            outputAliases: outputAliases,
+            targetTable: targetTable
         )
     }
 
@@ -189,6 +228,7 @@ public final class SQLContextAnalyzer {
     // The linear DML clauses are left to `scanLinearClause`: a fixed-priority sweep cannot tell the clause nearest the
     // cursor from an earlier one. Order matters here, the more specific pattern first.
     private static let structuralClauseRegexes: [(regex: NSRegularExpression, clause: SQLClauseType)] = {
+        let insertTarget = "\(quotedSegment)(?:\\.\(quotedSegment))*(?:\\s+AS\\s+\(quotedSegment))?"
         let patterns: [(String, SQLClauseType)] = [
             ("\\bADD\\s+(?:COLUMN\\s+)?[`\"']?\\w+[`\"']?\\s+\\w+.*?\\b(?:AFTER|BEFORE)(?:\\s+\\w*)?$",
              .alterTableColumn),
@@ -222,18 +262,12 @@ public final class SQLContextAnalyzer {
             ("\\b(LIMIT|OFFSET)\\s+\\d*$", .limit),
             ("\\bVALUES\\s*(?:\\([^)]*\\)\\s*,?\\s*)+\\w*$", .values),
             ("\\bVALUES\\s*\\([^)]*$", .values),
-            ("\\bINSERT\\s+INTO\\s+\\w+\\s*\\([^)]*$", .insertColumns),
+            ("\\bINSERT\\s+INTO\\s+\(insertTarget)\\s*\\([^)]*$", .insertColumns),
         ]
         return patterns.map { pattern, clause in
             (compileRegex(pattern, options: .caseInsensitive), clause)
         }
     }()
-
-    private static let cteFirstRegex = compileRegex(
-        "(?i)\\bWITH\\s+(?:RECURSIVE\\s+)?([\\w]+)\\s+AS\\s*\\("
-    )
-
-    private static let cteCommaRegex = compileRegex("(?i),\\s*([\\w]+)\\s+AS\\s*\\(")
 
     // Read on the code view, where a quoted name's content is masked to word characters, so a segment may be quoted
     // and hold any character.
@@ -302,10 +336,10 @@ public final class SQLContextAnalyzer {
 
         var tableReferences = extractTableReferences(from: text.forReferences)
 
-        let cteNames = extractCTENames(from: text)
-
-        let derivedTables = Self.derivedTableParser.parse(located.sql)
-        mergeDerivedTables(derivedTables, cteNames: cteNames, into: &tableReferences)
+        let tokens = Self.tokens(of: text, grammar: grammar)
+        let derivedTables = Self.derivedTableParser.visibleTables(in: tokens, cursor: cursor)
+        let cteNames = derivedTables.filter(\.isCommonTableExpression).map(\.alias)
+        mergeDerivedTables(derivedTables, into: &tableReferences)
 
         var seenReferences = Set<TableReference>(tableReferences)
 
@@ -344,6 +378,14 @@ public final class SQLContextAnalyzer {
 
         let isCastTarget = endsWithCastOperator(text.code, before: clauseEnd)
         let comparisonColumn = comparisonTarget(in: text, before: clauseEnd)
+        let outputAliases = resolution.clause == .orderBy
+            ? Self.derivedTableParser.outputAliases(in: tokens, cursor: clauseEnd)
+            : []
+        let targetTable = resolution.clause == .set || resolution.clause == .insertColumns
+            ? Self.derivedTableParser.targetTable(in: tokens, cursor: clauseEnd).map {
+                writtenTable($0, among: tableReferences)
+            }
+            : nil
 
         return SQLContext(
             clauseType: isCastTarget ? .castTarget : resolution.clause,
@@ -359,13 +401,24 @@ public final class SQLContextAnalyzer {
             isAfterComma: isAfterComma,
             expectsObjectName: resolution.expectsObjectName,
             comparisonColumn: comparisonColumn,
-            quotedName: quotedName
+            quotedName: quotedName,
+            outputAliases: outputAliases,
+            targetTable: targetTable
         )
     }
 
     // MARK: - Lexing
 
-    private enum CursorState: Equatable {
+    static func tokens(of text: LexedStatement, grammar: SQLLexicalGrammar) -> SQLTokenStream {
+        let references = text.forReferences
+        return SQLTokenStream(
+            code: references.code,
+            original: references.original,
+            bracketQuotes: grammar.contains(.bracketQuotedIdentifiers)
+        )
+    }
+
+    enum CursorState: Equatable {
         case code
         case comment
         case literal
@@ -374,7 +427,7 @@ public final class SQLContextAnalyzer {
 
     // `code` blanks every comment and literal body and masks every quoted name's content to `_`, offsets kept, so a
     // scan or pattern reads structure from it and a name from `original` at the same range.
-    private struct LexedStatement {
+    struct LexedStatement {
         let original: NSString
         let code: NSString
         let cursor: CursorState
@@ -396,7 +449,7 @@ public final class SQLContextAnalyzer {
         }
     }
 
-    private static func lex(_ statement: NSString, cursor: Int, grammar: SQLLexicalGrammar) -> LexedStatement {
+    static func lex(_ statement: NSString, cursor: Int, grammar: SQLLexicalGrammar) -> LexedStatement {
         let length = statement.length
         var units = [UInt16](repeating: 0, count: length)
         statement.getCharacters(&units, range: NSRange(location: 0, length: length))
@@ -527,31 +580,6 @@ public final class SQLContextAnalyzer {
         default:
             return false
         }
-    }
-
-    // MARK: - CTE Support
-
-    private func extractCTENames(from text: LexedStatement) -> [String] {
-        var cteNames: [String] = []
-        let nsRange = NSRange(location: 0, length: text.code.length)
-
-        if let match = Self.cteFirstRegex.firstMatch(in: text.codeString, range: nsRange) {
-            let nameNSRange = match.range(at: 1)
-            if nameNSRange.location != NSNotFound {
-                cteNames.append(text.original.substring(with: nameNSRange))
-            }
-        }
-
-        Self.cteCommaRegex.enumerateMatches(in: text.codeString, range: nsRange) { match, _, _ in
-            if let match = match {
-                let nameNSRange = match.range(at: 1)
-                if nameNSRange.location != NSNotFound {
-                    cteNames.append(text.original.substring(with: nameNSRange))
-                }
-            }
-        }
-
-        return cteNames
     }
 
     // MARK: - Subquery Support
@@ -750,7 +778,7 @@ public final class SQLContextAnalyzer {
 
     private static let tableRefKeywords: Set<String> = [
         "LEFT", "RIGHT", "INNER", "OUTER", "FULL", "CROSS", "NATURAL",
-        "JOIN", "ON", "AND", "OR", "WHERE", "SELECT", "FROM", "AS", "SET"
+        "JOIN", "ON", "AND", "OR", "WHERE", "SELECT", "FROM", "AS", "SET", "LATERAL"
     ]
 
     private static let bareIdentifierRegex = compileRegex("^\\w+$")
@@ -888,25 +916,31 @@ public final class SQLContextAnalyzer {
 
     // Columns attach to a matching reference, such as a CTE aliased in FROM, and the derived table or CTE is still
     // registered under its own name so it resolves by either identifier.
-    private func mergeDerivedTables(
-        _ derivedTables: [DerivedTable],
-        cteNames: [String],
-        into references: inout [TableReference]
-    ) {
-        let derivedColumnsByAlias = Dictionary(
-            derivedTables.map { ($0.alias.lowercased(), $0.columns) },
+    // SQL Server writes `UPDATE o SET ... FROM orders o`, naming the table by its FROM alias.
+    private func writtenTable(_ target: TableReference, among references: [TableReference]) -> TableReference {
+        guard target.schema == nil, let aliased = references.first(where: {
+            !$0.isDerived && $0.alias?.caseInsensitiveCompare(target.tableName) == .orderedSame
+        }) else { return target }
+        return aliased
+    }
+
+    private func mergeDerivedTables(_ derivedTables: [DerivedTable], into references: inout [TableReference]) {
+        let projectionsByAlias = Dictionary(
+            derivedTables.map { ($0.alias.lowercased(), $0.projection) },
             uniquingKeysWith: { first, _ in first }
         )
 
         for index in references.indices {
             let ref = references[index]
+            // A schema-qualified name is a real table even when a CTE shares its name.
+            guard ref.schema == nil else { continue }
             for key in [ref.tableName.lowercased(), ref.identifier.lowercased()] {
-                guard let columns = derivedColumnsByAlias[key] else { continue }
+                guard let projection = projectionsByAlias[key] else { continue }
                 references[index] = TableReference(
                     tableName: ref.tableName,
                     alias: ref.alias,
-                    schema: ref.schema,
-                    derivedColumns: columns,
+                    schema: nil,
+                    projection: projection,
                     isIdentifierQuoted: ref.isIdentifierQuoted
                 )
                 break
@@ -915,12 +949,13 @@ public final class SQLContextAnalyzer {
 
         var present = Set(references.map { $0.identifier.lowercased() })
         for derived in derivedTables where present.insert(derived.alias.lowercased()).inserted {
-            references.append(
-                TableReference(tableName: derived.alias, alias: derived.alias, derivedColumns: derived.columns)
-            )
-        }
-        for cteName in cteNames where present.insert(cteName.lowercased()).inserted {
-            references.append(TableReference(tableName: cteName, alias: nil))
+            references.append(TableReference(
+                tableName: derived.alias,
+                alias: derived.alias,
+                schema: nil,
+                projection: derived.projection,
+                isIdentifierQuoted: false
+            ))
         }
     }
 

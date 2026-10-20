@@ -148,29 +148,13 @@ final class CompletionEngine {
             return nil
         }
 
-        // Calculate replacement range — translate back to original document
-        // positions by adding windowOffset
         let replaceStart = context.prefixRange.lowerBound + windowOffset
         let replaceEnd = context.prefixRange.upperBound + windowOffset
         let replacementRange = NSRange(
             location: replaceStart, length: replaceEnd - replaceStart
         )
 
-        // Build a context with prefixRange adjusted back to original positions
-        let adjustedContext = SQLContext(
-            clauseType: context.clauseType,
-            prefix: context.prefix,
-            prefixRange: replaceStart..<replaceEnd,
-            dotPrefix: context.dotPrefix,
-            tableReferences: context.tableReferences,
-            isInsideString: context.isInsideString,
-            isInsideComment: context.isInsideComment,
-            cteNames: context.cteNames,
-            nestingLevel: context.nestingLevel,
-            currentFunction: context.currentFunction,
-            isAfterComma: context.isAfterComma,
-            expectsObjectName: context.expectsObjectName
-        )
+        let adjustedContext = context.offsettingRanges(by: windowOffset)
 
         return CompletionContext(
             items: SQLCompletionCasing.applied(to: items, typedPrefix: context.prefix, policy: keywordCase),
