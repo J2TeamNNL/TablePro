@@ -183,6 +183,7 @@ internal final class TableLoadTracer {
         )
         endInterval(for: timing.token, outcome: label)
         drainCompletedTraces()
+        TabSwitchTracer.shared.tableLoadFinished(tabId: timing.token.tabId, outcome: outcome)
     }
 
     private static func label(for outcome: TableLoadOutcome, detail: String?) -> String {
