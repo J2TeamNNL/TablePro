@@ -89,7 +89,7 @@ enum SequenceEditing {
         }
         try await DatabaseObjectCommandRunner.run(
             sql,
-            on: target,
+            in: target.scope,
             connection: connection,
             kind: .writeQuery,
             operationDescription: String(localized: "Set Next Value"),
@@ -113,7 +113,7 @@ enum SequenceEditing {
         }
         try await DatabaseObjectCommandRunner.run(
             sql,
-            on: target,
+            in: target.scope,
             connection: connection,
             kind: .schemaMutation,
             operationDescription: String(localized: "Edit Sequence"),
