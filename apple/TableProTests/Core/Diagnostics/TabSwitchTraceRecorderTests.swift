@@ -126,6 +126,26 @@ struct TabSwitchTraceRecorderTests {
         #expect(recorder.framePresented(sequence: second, at: instant(40))?.total == .milliseconds(10))
     }
 
+    @Test("Selecting another tab after the switch landed ends it as superseded")
+    func selectionMovingAwaySupersedes() throws {
+        var recorder = TabSwitchTraceRecorder()
+        let tabId = UUID()
+
+        _ = recorder.request(.adjacentTab, to: tabId, startedAt: instant(0), at: instant(0))
+        let sequence = try started(recorder.applySelection(tabId: tabId, rows: .requery, at: instant(5)))
+        #expect(recorder.isAwaitingPresentation)
+        let moved = recorder.applySelection(tabId: UUID(), rows: .resident, at: instant(50))
+
+        guard case .ended(let timing) = moved else {
+            Issue.record("Expected the switch to end, got \(moved)")
+            return
+        }
+        #expect(timing.sequence == sequence)
+        #expect(timing.outcome == .superseded)
+        #expect(!recorder.isAwaitingPresentation)
+        #expect(recorder.rowsLoaded(tabId: tabId, completed: true, at: instant(90)) == .ignored)
+    }
+
     @Test("A request replaced before its selection landed is abandoned, not timed")
     func unansweredRequestIsAbandoned() {
         var recorder = TabSwitchTraceRecorder()

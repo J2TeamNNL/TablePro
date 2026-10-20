@@ -50,11 +50,15 @@ internal final class TabSwitchTracer {
     }
 
     internal func selectionApplied(tabId: UUID, rows: TabSwitchRows, window: NSWindow?) {
+        // Another window's selection does not move the switch this one is showing.
+        if recorder.isAwaitingPresentation, window !== self.window { return }
         switch recorder.applySelection(tabId: tabId, rows: rows, at: clock.now) {
         case .ignored:
             return
         case .abandoned(let sequence):
             end(.abandoned(sequence: sequence))
+        case .ended(let timing):
+            end(.timed(timing))
         case .started(let sequence):
             self.window = window
             logger.debug("tabswitch #\(sequence) selected rows=\(rows.rawValue, privacy: .public)")

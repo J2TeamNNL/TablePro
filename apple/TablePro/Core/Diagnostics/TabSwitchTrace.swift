@@ -65,6 +65,7 @@ internal struct TabSwitchTraceRecorder {
         case ignored
         case started(sequence: Int)
         case abandoned(sequence: Int)
+        case ended(TabSwitchTiming)
     }
 
     internal enum RowsResult: Equatable {
@@ -98,6 +99,10 @@ internal struct TabSwitchTraceRecorder {
 
     internal init() {}
 
+    internal var isAwaitingPresentation: Bool {
+        current?.selection != nil
+    }
+
     // NSEvent.timestamp and systemUptime share mach_absolute_time, so the difference is the event's age.
     internal static func startInstant(
         eventTimestamp: TimeInterval?,
@@ -128,7 +133,14 @@ internal struct TabSwitchTraceRecorder {
         rows: TabSwitchRows,
         at now: ContinuousClock.Instant
     ) -> SelectionResult {
-        guard var trace = current, trace.selection == nil, trace.tabId == tabId else { return .ignored }
+        guard var trace = current else { return .ignored }
+        if let selection = trace.selection {
+            // The user moved on, through a path that asks for no switch of its own, such as the sidebar.
+            guard tabId != trace.tabId else { return .ignored }
+            current = nil
+            return .ended(timing(trace, selection, outcome: .superseded, at: now))
+        }
+        guard trace.tabId == tabId else { return .ignored }
         guard trace.requestedAt.duration(to: now) <= Self.requestExpiry else {
             current = nil
             return .abandoned(sequence: trace.sequence)
