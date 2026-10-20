@@ -183,6 +183,11 @@ final class QueryTabManager: ObservableObject {
         selectedTabId = id
     }
 
+    // On screen: the selected tab of the connection the key window shows.
+    func isShowing(_ id: UUID) -> Bool {
+        isFrontmost && selectedTabId == id
+    }
+
     func tabId(at index: Int) -> UUID? {
         let strip = visibleTabs
         guard strip.indices.contains(index) else { return nil }

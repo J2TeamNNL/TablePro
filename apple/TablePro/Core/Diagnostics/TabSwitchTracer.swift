@@ -25,6 +25,7 @@ internal final class TabSwitchTracer {
     private var recorder = TabSwitchTraceRecorder()
     private var intervals: [Int: OSSignpostIntervalState] = [:]
     private weak var window: NSWindow?
+    private var isShowing: (@MainActor () -> Bool)?
 
     internal func requestSwitch(
         _ trigger: TabSwitchTrigger,
@@ -49,7 +50,13 @@ internal final class TabSwitchTracer {
         )
     }
 
-    internal func selectionApplied(tabId: UUID, rows: TabSwitchRows, window: NSWindow?) {
+    // isShowing answers, when the frame comes, whether the window still shows that tab.
+    internal func selectionApplied(
+        tabId: UUID,
+        rows: TabSwitchRows,
+        window: NSWindow?,
+        isShowing: @escaping @MainActor () -> Bool
+    ) {
         // Another window's selection does not move the switch this one is showing.
         if recorder.isAwaitingPresentation, window !== self.window { return }
         switch recorder.applySelection(tabId: tabId, rows: rows, at: clock.now) {
@@ -61,6 +68,7 @@ internal final class TabSwitchTracer {
             end(.timed(timing))
         case .started(let sequence):
             self.window = window
+            self.isShowing = isShowing
             logger.debug("tabswitch #\(sequence) selected rows=\(rows.rawValue, privacy: .public)")
             guard rows == .resident else { return }
             awaitFrame(sequence)
@@ -88,7 +96,14 @@ internal final class TabSwitchTracer {
         }
     }
 
+    // A connection switch or a sidebar click can leave the tab while its rows load, with no selection change here.
     private func framePresented(_ sequence: Int) {
+        guard isShowing?() ?? true else {
+            if let ending = recorder.supersede(sequence: sequence, at: clock.now) {
+                end(ending)
+            }
+            return
+        }
         guard let timing = recorder.framePresented(sequence: sequence, at: clock.now) else { return }
         end(.timed(timing))
     }

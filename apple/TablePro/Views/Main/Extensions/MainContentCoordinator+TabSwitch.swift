@@ -148,7 +148,8 @@ extension MainContentCoordinator {
             TabSwitchTracer.shared.selectionApplied(
                 tabId: newId,
                 rows: TabSwitchRows(loads: isLoadingRows(newId), needsReload: needsReload),
-                window: contentWindow
+                window: contentWindow,
+                isShowing: { [weak manager = tabManager] in manager?.isShowing(newId) ?? false }
             )
         } else {
             /// An entry with no tab of its own. The outgoing tab's edits were saved onto it above,

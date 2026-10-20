@@ -163,6 +163,12 @@ internal struct TabSwitchTraceRecorder {
         return .awaitFrame(sequence: trace.sequence)
     }
 
+    internal mutating func supersede(sequence: Int, at now: ContinuousClock.Instant) -> Ending? {
+        guard let trace = current, trace.sequence == sequence else { return nil }
+        current = nil
+        return end(trace, as: .superseded, at: now)
+    }
+
     internal mutating func framePresented(sequence: Int, at now: ContinuousClock.Instant) -> TabSwitchTiming? {
         guard let trace = current, trace.sequence == sequence,
               let selection = trace.selection, !selection.awaitingRows

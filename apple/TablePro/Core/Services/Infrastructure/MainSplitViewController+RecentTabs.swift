@@ -164,7 +164,12 @@ internal extension MainSplitViewController {
         workspaces.select(reference.connectionId)
         // Only the connection changes, so no tab selection reaches handleTabChange.
         if !changesTab {
-            TabSwitchTracer.shared.selectionApplied(tabId: reference.tabId, rows: arriving, window: view.window)
+            TabSwitchTracer.shared.selectionApplied(
+                tabId: reference.tabId,
+                rows: arriving,
+                window: view.window,
+                isShowing: { [weak manager] in manager?.isShowing(reference.tabId) ?? false }
+            )
         }
     }
 
