@@ -119,6 +119,7 @@ targets:
           - TableProCoreTypes
           - TableProDatabase
           - TableProGeometry
+          - TableProGoogleCloud
           - TableProImport
           - TableProModels
           - TableProMSSQLCore

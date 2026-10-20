@@ -7,12 +7,14 @@ nonisolated struct ConnectionFormSecrets: Equatable, Sendable {
     var sshKeyPassphrase = ""
     var privateKey: String?
     var jumpHostCredentials: [UUID: JumpHostCredential] = [:]
+    var iam = ConnectionIAMSecrets()
 }
 
 nonisolated struct ConnectionFormSecretWrites: Equatable, Sendable {
     var password: String?
     var sshPassword: String?
     var sshKeyPassphrase: String?
+    var iam = ConnectionIAMSecretWrites()
 }
 
 nonisolated struct ConnectionFormSnapshot: Equatable, Sendable {
@@ -60,7 +62,8 @@ extension ConnectionFormViewModel {
             sshPassword: sshEnabled ? Self.changedSecret(sshPassword, loaded: storedSecrets.sshPassword) : nil,
             sshKeyPassphrase: sshEnabled
                 ? Self.changedSecret(sshKeyPassphrase, loaded: storedSecrets.sshKeyPassphrase)
-                : nil
+                : nil,
+            iam: iamSecretWrites
         )
     }
 
@@ -70,7 +73,8 @@ extension ConnectionFormViewModel {
             sshPassword: sshEnabled && !sshPassword.isEmpty ? sshPassword : storedSecrets.sshPassword,
             sshKeyPassphrase: sshEnabled && !sshKeyPassphrase.isEmpty ? sshKeyPassphrase : storedSecrets.sshKeyPassphrase,
             privateKey: pastedPrivateKey,
-            jumpHostCredentials: jumpHostCredentialsUnreadable ? storedSecrets.jumpHostCredentials : jumpHostCredentials
+            jumpHostCredentials: jumpHostCredentialsUnreadable ? storedSecrets.jumpHostCredentials : jumpHostCredentials,
+            iam: iamSecretsAfterSave
         )
     }
 

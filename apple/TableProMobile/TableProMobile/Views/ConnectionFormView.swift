@@ -18,6 +18,7 @@ struct ConnectionFormView: View {
     @State private var hapticError = false
     @State private var pasteTarget: CertificateRole?
     @State private var showPKCS12Password = false
+    @State private var pastingServiceAccountKey = false
     @State private var pushedJumpHostId: UUID?
 
     var onSaved: (UUID) -> Void
@@ -28,6 +29,7 @@ struct ConnectionFormView: View {
         case sshKey
         case certificate(CertificateRole)
         case pkcs12
+        case serviceAccountKey
         var id: Int { hashValue }
     }
 
@@ -73,6 +75,13 @@ struct ConnectionFormView: View {
         Binding(
             get: { viewModel.sshKeyFileError != nil },
             set: { if !$0 { viewModel.dismissSSHKeyFileError() } }
+        )
+    }
+
+    private var showServiceAccountKeyFileError: Binding<Bool> {
+        Binding(
+            get: { viewModel.iam.serviceAccountKeyFileError != nil },
+            set: { if !$0 { viewModel.dismissServiceAccountKeyFileError() } }
         )
     }
 
@@ -142,6 +151,9 @@ struct ConnectionFormView: View {
                 viewModel.loadCertificateSummaries()
                 await viewModel.loadStoredCredentials(secureStore: appState.secureStore)
             }
+            .task(id: viewModel.iam.identityCenter.request) {
+                await viewModel.runIdentityCenterRequest()
+            }
             .navigationTitle(viewModel.isEditing ? String(localized: "Edit Connection") : String(localized: "New Connection"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -168,6 +180,7 @@ struct ConnectionFormView: View {
                 case .pkcs12:
                     viewModel.stagePKCS12(result)
                     showPKCS12Password = viewModel.pendingPKCS12 != nil
+                case .serviceAccountKey: viewModel.importServiceAccountKeyFile(result)
                 case nil: break
                 }
             }
@@ -178,6 +191,9 @@ struct ConnectionFormView: View {
             .onDisappear { viewModel.prompts.cancelAll() }
             .sheet(item: $pasteTarget) { role in
                 CertificatePasteSheet(viewModel: viewModel, role: role)
+            }
+            .sheet(isPresented: $pastingServiceAccountKey) {
+                ServiceAccountKeyPasteSheet(viewModel: viewModel)
             }
             .alert("Certificate Password", isPresented: $showPKCS12Password) {
                 SecureField("Password", text: $viewModel.pkcs12Password)
@@ -212,6 +228,11 @@ struct ConnectionFormView: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(viewModel.sshKeyFileError ?? "")
+            }
+            .alert("Service Account Key", isPresented: showServiceAccountKeyFileError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(viewModel.iam.serviceAccountKeyFileError ?? "")
             }
             .libraryWriteFailureAlert(
                 viewModel.saveFailure,
@@ -419,13 +440,22 @@ struct ConnectionFormView: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .keyboardType(.asciiCapable)
-            SecureField("Password", text: $viewModel.password)
+            if !viewModel.signsInWithIAM {
+                SecureField("Password", text: $viewModel.password)
+            }
         } header: {
             Text("Server")
         } footer: {
             if viewModel.type == .redis {
                 Text("Username is for Redis 6 and later ACL users. Leave it empty for password-only servers.")
             }
+        }
+        if viewModel.offersIAM {
+            ConnectionAuthenticationSection(
+                viewModel: viewModel,
+                onChooseKeyFile: { present(.serviceAccountKey) },
+                onPasteKey: { pastingServiceAccountKey = true }
+            )
         }
         Section("Database") {
             TextField("Database Name", text: $viewModel.database)
@@ -604,6 +634,7 @@ struct ConnectionFormView: View {
         case .duckdbDatabase: return duckDBContentTypes
         case .certificate: return certificateContentTypes
         case .pkcs12: return pkcs12ContentTypes
+        case .serviceAccountKey: return [.json]
         default: return [.data]
         }
     }
