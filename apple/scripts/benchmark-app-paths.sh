@@ -6,7 +6,8 @@
 # Builds Release with scripts/release/build.sh unless --app names a build, signs a copy ad hoc and
 # drives it in a TABLEPRO_UI_TEST_SANDBOX. Keys go through System Events, so the terminal needs
 # Accessibility and Automation permission and the Mac must stay idle and unlocked for the run.
-# MySQL and PostgreSQL default to local servers (brew services), seeded into a tablepro_bench database.
+# MySQL (the socket its client uses) and PostgreSQL (127.0.0.1:5432) default to local servers, seeded
+# into a tablepro_bench database.
 #
 # Usage:
 #   scripts/benchmark-app-paths.sh                              # build Release, run every path

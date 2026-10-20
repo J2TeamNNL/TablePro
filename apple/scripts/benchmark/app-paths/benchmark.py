@@ -124,8 +124,10 @@ MYSQL_DIGITS = "(SELECT 0 d UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELE
 
 def mysql_command(server, sql, database=None):
     command = ["mysql", "--batch", "--skip-column-names", "-u", server["user"]]
-    if server["host"] != "localhost":
-        command += ["-h", server["host"], "-P", str(server["port"])]
+    if server.get("socket"):
+        command += ["--protocol=SOCKET", "--socket=%s" % server["socket"]]
+    else:
+        command += ["--protocol=TCP", "-h", server["host"], "-P", str(server["port"])]
     if database:
         command.append(database)
     return run(command + ["-e", sql]).stdout.strip()
@@ -195,14 +197,15 @@ def prepare_postgres(server):
     """.format(rows=TABLE_ROWS), BENCH_DATABASE)
 
 
-def connection_record(name, database_type, sort_order, database, host="", port=0, user=""):
-    return {
+def connection_record(name, database_type, sort_order, database, server=None):
+    server = server or {"host": "", "port": 0, "user": ""}
+    record = {
         "id": str(uuid.uuid4()).upper(),
         "name": name,
-        "host": host,
-        "port": port,
+        "host": server["host"],
+        "port": server["port"],
         "database": database,
-        "username": user,
+        "username": server["user"],
         "type": database_type,
         "sshEnabled": False,
         "sshHost": "",
@@ -212,6 +215,10 @@ def connection_record(name, database_type, sort_order, database, host="", port=0
         "sortOrder": sort_order,
         "safeModeLevel": "silent",
     }
+    # MySQLLocalSocket.fieldKey: without it the driver connects over TCP even to localhost.
+    if server.get("socket"):
+        record["additionalFields"] = {"localSocketPath": server["socket"]}
+    return record
 
 
 def table_tab(table, database="", quote='"'):
@@ -609,12 +616,29 @@ def record_baseline(results, current_machine, current_app, runs):
     log("wrote %s" % BASELINE)
 
 
-def parse_server(text, default_port):
+# The socket the server reports, so the app connects where the client seeded.
+def default_mysql_socket():
+    if shutil.which("mysql") is None:
+        return "127.0.0.1:3306"
+    try:
+        result = subprocess.run(["mysql", "--batch", "--skip-column-names", "-e", "SELECT @@socket"],
+                                capture_output=True, text=True, timeout=10)
+    except subprocess.TimeoutExpired:
+        return "127.0.0.1:3306"
+    socket_path = result.stdout.strip()
+    return socket_path if result.returncode == 0 and socket_path.startswith("/") else "127.0.0.1:3306"
+
+
+# user@host:port; for MySQL also user@/path/to.sock. A PostgreSQL host may be a socket directory.
+def parse_server(text, default_port, mysql_socket=False):
     match = re.match(r"^(?:([^@]+)@)?([^:]+)(?::(\d+))?$", text)
     if not match:
         raise argparse.ArgumentTypeError("expected user@host:port, got %s" % text)
     user, host, port = match.groups()
-    return {"user": user or os.environ.get("USER", ""), "host": host, "port": int(port or default_port)}
+    server = {"user": user or os.environ.get("USER", ""), "host": host, "port": int(port or default_port)}
+    if mysql_socket and host.startswith("/"):
+        server.update({"host": "localhost", "socket": host})
+    return server
 
 
 def main():
@@ -622,7 +646,7 @@ def main():
     parser.add_argument("app", type=Path, help="a signed TablePro.app")
     parser.add_argument("--runs", type=int, default=10)
     parser.add_argument("--paths", default=",".join(PATHS), help="comma-separated: " + ", ".join(PATHS))
-    parser.add_argument("--mysql", default="localhost", help="user@host:port, localhost uses the socket")
+    parser.add_argument("--mysql", help="user@host:port or user@/path/to.sock; default: the mysql client's own socket")
     parser.add_argument("--postgres", default="127.0.0.1:5432", help="user@host:port")
     parser.add_argument("--record", action="store_true", help="write this run as the baseline")
     parser.add_argument("--keep", action="store_true", help="keep the fixtures and logs")
@@ -632,8 +656,11 @@ def main():
     unknown = [name for name in wanted if name not in PATHS]
     if unknown:
         parser.error("unknown path: %s" % ", ".join(unknown))
-    mysql = parse_server(options.mysql, 3306)
-    postgres = parse_server(options.postgres, 5432)
+    try:
+        postgres = parse_server(options.postgres, 5432)
+        mysql = parse_server(options.mysql, 3306, mysql_socket=True) if options.mysql else None
+    except argparse.ArgumentTypeError as error:
+        parser.error(str(error))
 
     busy = os.getloadavg()[0] > os.cpu_count() / 2
     if busy and options.record:
@@ -674,10 +701,11 @@ def main():
             make_sqlite(path, [("bench_rows", TABLE_ROWS), ("bench_small", 3)])
             engines.append(("table-sqlite", connection_record("Bench SQLite", "SQLite", 0, str(path))))
         if "table-mysql" in wanted:
+            mysql = mysql or parse_server(default_mysql_socket(), 3306, mysql_socket=True)
             try:
                 prepare_mysql(mysql)
                 engines.append(("table-mysql", connection_record(
-                    "Bench MySQL", "MySQL", 0, BENCH_DATABASE, mysql["host"], mysql["port"], mysql["user"])))
+                    "Bench MySQL", "MySQL", 0, BENCH_DATABASE, mysql)))
             except (BenchmarkError, subprocess.CalledProcessError) as error:
                 log("skipping table-mysql: %s" % (getattr(error, "stderr", None) or error))
                 skipped.append("table-mysql")
@@ -685,8 +713,7 @@ def main():
             try:
                 prepare_postgres(postgres)
                 engines.append(("table-postgresql", connection_record(
-                    "Bench PostgreSQL", "PostgreSQL", 0, BENCH_DATABASE,
-                    postgres["host"], postgres["port"], postgres["user"])))
+                    "Bench PostgreSQL", "PostgreSQL", 0, BENCH_DATABASE, postgres)))
             except (BenchmarkError, subprocess.CalledProcessError) as error:
                 log("skipping table-postgresql: %s" % (getattr(error, "stderr", None) or error))
                 skipped.append("table-postgresql")
