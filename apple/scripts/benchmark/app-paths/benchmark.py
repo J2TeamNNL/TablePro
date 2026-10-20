@@ -469,8 +469,8 @@ def table_sandbox(work, name, record):
     return sandbox
 
 
-def switch_samples(app, sandbox, work, runs):
-    results = {"tabs-next": [], "tabs-recent": []}
+def switch_samples(app, sandbox, work, runs, wanted):
+    results = {}
     with RunningApp(app, sandbox, work / "tabs.log") as running:
         running.launch_ms()
         running.bring_forward()
@@ -491,6 +491,9 @@ def switch_samples(app, sandbox, work, runs):
 
         for path_name, key, modifiers in (("tabs-next", "]", ("command", "shift")),
                                           ("tabs-recent", 48, ("control",))):
+            if path_name not in wanted:
+                continue
+            results[path_name] = []
             for index in range(runs):
                 trigger, rows, outcome, total = press(key, modifiers)
                 if outcome != "presented":
@@ -729,9 +732,8 @@ def main():
             make_sqlite(path, [("t%02d" % (index + 1), 1000) for index in range(SWITCH_TABS)])
             sandbox = switch_sandbox(work, path)
             sandboxes.append(sandbox)
-            for name, samples in switch_samples(options.app, sandbox, work, options.runs).items():
-                if name in wanted:
-                    add(name, [value for value, _ in samples], [rows for _, rows in samples])
+            for name, samples in switch_samples(options.app, sandbox, work, options.runs, wanted).items():
+                add(name, [value for value, _ in samples], [rows for _, rows in samples])
     except BenchmarkError as error:
         log("benchmark stopped: %s" % error)
         return 2
