@@ -3,6 +3,8 @@ import TableProDatabase
 import TableProModels
 
 struct RowDetailView: View {
+    // Tracks writes and shows the transaction; `coordinator` is set only where a referenced table can be opened.
+    @Environment(ConnectionCoordinator.self) private var connectionCoordinator
     @State private var viewModel: RowDetailViewModel
     @State private var fkPreviewItem: FKPreviewItem?
     @State private var showShareSheet = false
@@ -81,6 +83,8 @@ struct RowDetailView: View {
                 rowNavigator
             }
         }
+        .transactionBar(for: connectionCoordinator)
+        .leavesAfterRollBack(of: connectionCoordinator, isTableRow: viewModel.table != nil, isEditing: viewModel.isEditing)
         .navigationBarBackButtonHidden(viewModel.isEditing)
         .holdsScene(withUnsavedChanges: viewModel.hasUnsavedEdits)
         .navigationTitle(viewModel.table?.name ?? String(format: String(localized: "Row %d of %d"), viewModel.currentIndex + 1, viewModel.rows.count))
@@ -401,7 +405,9 @@ struct RowDetailView: View {
     }
 
     private func handleSave() async {
-        let success = await viewModel.saveChanges()
+        let success = await connectionCoordinator.track(failed: { _ in viewModel.operationError != nil }) {
+            await viewModel.saveChanges()
+        }
         if viewModel.pendingWriteConfirmation {
             showSaveConfirmation = true
             return
@@ -414,7 +420,9 @@ struct RowDetailView: View {
     }
 
     private func executePendingSave() async {
-        let success = await viewModel.executePendingSave()
+        let success = await connectionCoordinator.track(failed: { _ in viewModel.operationError != nil }) {
+            await viewModel.executePendingSave()
+        }
         if success {
             hapticSuccess.toggle()
         } else {
