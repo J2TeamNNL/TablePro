@@ -33,7 +33,7 @@ internal enum ContainerChangeRerunPolicy {
 }
 
 struct MainEditorContentView: View {
-    @ObservedObject private var schemaService = SchemaService.shared
+    @ObservedObject var schemaService = SchemaService.shared
     @ObservedObject private var licenseManager = LicenseManager.shared
     @ObservedObject private var settingsManager = AppSettingsManager.shared
     /// A query tab nests its own editor/results split, whose two minimums are required constraints.
@@ -966,7 +966,7 @@ struct MainEditorContentView: View {
     /// Whether the grid is the thing on screen, which is what decides if there is anything to jump
     /// a column into. Asked of the resolver so it cannot disagree with what was actually rendered,
     /// which is what a second hand-written copy of the condition used to do.
-    private func showsGrid(tab: QueryTab, rows: TableRows) -> Bool {
+    func showsGrid(tab: QueryTab, rows: TableRows) -> Bool {
         resultPresentation(for: tab, rows: rows).content == .grid
     }
 
@@ -1044,7 +1044,7 @@ struct MainEditorContentView: View {
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
-    private func resolvedTableRows(for tab: QueryTab) -> TableRows {
+    func resolvedTableRows(for tab: QueryTab) -> TableRows {
         coordinator.tabSessionRegistry.existingTableRows(for: tab.id) ?? TableRows()
     }
 
@@ -1106,122 +1106,6 @@ struct MainEditorContentView: View {
         )
     }
 
-    // MARK: - Status Bar
-
-    private func statusBar(tab: QueryTab) -> some View {
-        let resolvedRows = resolvedTableRows(for: tab)
-        let structureFooter = coordinator.structureSessions[tab.id]?.footer ?? StructureFooterCapability()
-        let isExecuting = coordinator.tabExecution.isBusy(tab.id)
-        let snapshot = StatusBarSnapshot(
-            tab: tab,
-            tableRows: resolvedRows,
-            displayRowCount: coordinator.displayIDs(forTab: tab.id)?.count,
-            isFetching: isExecuting,
-            hasStructureActions: structureFooter.isActive,
-            isQueryPlan: tab.display.activeExplainResult != nil,
-            paginationCapability: coordinator.paginationCapability,
-            hasServerOutput: !(tab.display.activeResultSet?.serverOutput.isEmpty ?? true),
-            activeResultStatusMessage: tab.display.activeResultSet?.statusMessage
-        )
-        return ResultStatusBar(
-            model: ResultStatusModel(
-                snapshot: snapshot,
-                viewMode: tab.display.resultsViewMode,
-                selectedRowCount: selectionState.indices.count
-            ),
-            snapshot: snapshot,
-            filterState: tab.filterState,
-            columnState: StatusBarColumnState(
-                hidden: tab.columnLayout.hiddenColumns,
-                columns: coordinator.columnCatalog(for: tab, resultRows: resolvedRows),
-                onToggle: { coordinator.toggleColumnVisibility($0) },
-                onShowAll: { coordinator.showAllColumns() },
-                onHideAll: { coordinator.hideAllColumns($0) },
-                onReset: { coordinator.resetColumns() },
-                onJumpToColumn: !tab.display.isResultsCollapsed
-                    && showsGrid(tab: tab, rows: resolvedRows)
-                    ? { coordinator.showColumnJump(seededWith: $0) }
-                    : nil
-            ),
-            highlightState: StatusBarHighlightState(
-                rules: coordinator.highlightRules(for: tab),
-                columns: resolvedRows.columns,
-                isPersisted: coordinator.highlightRuleScope(for: tab) != nil,
-                presentationRequest: tab.display.highlightRulesPresentationRequest,
-                onChange: { [coordinator, tabId = tab.id] rules in
-                    coordinator.setHighlightRules(rules, forTab: tabId)
-                },
-                onDismiss: { [coordinator] tabId in
-                    coordinator.discardIncompleteHighlightRules(forTab: tabId)
-                }
-            ),
-            paginationCallbacks: PaginationCallbacks(
-                onFirst: onFirstPage,
-                onPrevious: onPreviousPage,
-                onNext: onNextPage,
-                onLast: onLastPage,
-                onPageSizeChange: onPageSizeChange,
-                onShowAll: onShowAll,
-                onGoToPage: onGoToPage,
-                onRequestExactCount: { coordinator.paginationCoordinator.requestExactRowCount() }
-            ),
-            structureFooter: structureFooter,
-            execution: ExecutionReadout(
-                tabId: tab.id,
-                execution: coordinator.tabExecution,
-                lastTiming: coordinator.toolbarState.queryTiming(forTab: tab.id),
-                onCancel: { coordinator.stopExecution(for: tab.id) }
-            ),
-            selectionSummary: coordinator.selectionSummary,
-            isRefreshingSchema: schemaService.isRefreshing(connectionId: connectionId),
-            viewMode: resultsViewModeBinding(for: tab),
-            resultSetMenu: resultSetMenuModel(for: tab),
-            onActivateResultSet: { coordinator.switchActiveResultSet(to: $0, in: tab.id) },
-            onToggleResultSetPin: { coordinator.togglePinResultSet(id: $0) },
-            onCloseResultSet: { coordinator.closeResultSet(id: $0) },
-            onCloseOtherResultSets: { keptId in
-                for other in tab.display.resultSets where other.id != keptId && !other.isPinned {
-                    coordinator.closeResultSet(id: other.id)
-                }
-            },
-            onToggleFilters: { coordinator.toggleFilterPanel() },
-            onFetchAll: { coordinator.fetchAllRows() },
-            onStructureAdd: { coordinator.structureActions?.addRow?() },
-            onStructureRemove: { coordinator.structureActions?.removeRow?() }
-        )
-    }
-
-    /// Empty unless the resolver says the chooser is on screen, so the bar and the pane agree on
-    /// whether there is a choice to make.
-    ///
-    /// Asked with only the three fields that decide it rather than a full `resultPresentation`,
-    /// which would pull the tab's whole row buffer out of the session registry to answer a question
-    /// that does not depend on a single row.
-    private func resultSetMenuModel(for tab: QueryTab) -> ResultSetMenuModel {
-        var selectorInputs = QueryResultInputs()
-        selectorInputs.tabType = tab.tabType
-        selectorInputs.viewMode = tab.display.resultsViewMode
-        selectorInputs.resultSetCount = tab.display.resultSets.count
-        guard QueryResultPresentation(inputs: selectorInputs).showsResultSetSelector else {
-            return ResultSetMenuModel(entries: [], activeOrdinal: 0, total: 0)
-        }
-        let activeId = tab.display.activeResultSet?.id
-        let entries = tab.display.resultSets.enumerated().map { index, resultSet in
-            ResultSetMenuEntry(
-                id: resultSet.id,
-                label: resultSet.label,
-                isPinned: resultSet.isPinned,
-                isActive: resultSet.id == activeId,
-                ordinal: index + 1
-            )
-        }
-        return ResultSetMenuModel(
-            entries: entries,
-            activeOrdinal: entries.first(where: \.isActive)?.ordinal ?? entries.count,
-            total: entries.count
-        )
-    }
-
     private func scopeBarModel(for tab: QueryTab) -> QueryScopeBarModel {
         QueryScopeBarModel(
             containers: containerDatabases(for: tab),
@@ -1244,19 +1128,6 @@ struct MainEditorContentView: View {
             aiActions: coordinator.aiQueryActionAvailability(for: tab),
             shortcutHint: { label, action in
                 settingsManager.keyboard.shortcutHint(label, for: action)
-            }
-        )
-    }
-
-    private func resultsViewModeBinding(for tab: QueryTab) -> Binding<ResultsViewMode> {
-        Binding(
-            get: { tab.display.resultsViewMode },
-            set: { newValue in
-                Task { @MainActor in
-                    if let index = tabManager.selectedTabIndex {
-                        tabManager.mutate(at: index) { $0.display.resultsViewMode = newValue }
-                    }
-                }
             }
         )
     }
