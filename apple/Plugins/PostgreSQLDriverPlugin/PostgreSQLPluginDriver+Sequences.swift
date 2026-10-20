@@ -25,7 +25,21 @@ extension PostgreSQLPluginDriver {
     func fetchSequenceDetails(sequence: String, schema: String?) async throws -> PluginSequenceDetails? {
         let schemaName = schema ?? core.currentSchema
         let definitions = try await sequenceDefinitions(schema: schemaName, dependentOnTable: nil, named: sequence)
-        return definitions.first?.details(schema: schemaName)
+        guard let definition = definitions.first else { return nil }
+        return definition.details(schema: schemaName, position: await position(schema: schemaName, sequence: sequence))
+    }
+
+    // Needs SELECT on the sequence; a role without it gets no position rather than a guess.
+    private func position(schema: String, sequence: String) async -> PostgreSQLSequencePosition? {
+        do {
+            let query = PostgreSQLSequencePosition.query(schema: schema, sequence: sequence)
+            return PostgreSQLSequencePosition(row: try await execute(query: query).rows.first)
+        } catch {
+            Self.sequenceLogger.debug(
+                "Sequence position unavailable for \(sequence, privacy: .public): \(error.localizedDescription)"
+            )
+            return nil
+        }
     }
 
     func sequenceDDL(sequence: String, schema: String) async throws -> String? {

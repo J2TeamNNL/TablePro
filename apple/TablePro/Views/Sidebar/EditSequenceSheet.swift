@@ -90,8 +90,8 @@ struct EditSequenceSheet: View {
                     LabeledContent(String(localized: "Start"), value: String(start))
                 }
                 LabeledContent(
-                    String(localized: "Last value"),
-                    value: details.lastValue.map { String($0) } ?? String(localized: "None")
+                    String(localized: "Next value"),
+                    value: details.nextValue.map { String($0) } ?? String(localized: "Unknown")
                 )
                 if let owner = SequenceSheetHeader.owner(of: details) {
                     LabeledContent(String(localized: "Owned by"), value: owner)

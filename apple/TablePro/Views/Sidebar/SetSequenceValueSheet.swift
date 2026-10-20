@@ -91,8 +91,8 @@ struct SetSequenceValueSheet: View {
     private func form(_ details: PluginSequenceDetails) -> some View {
         Form {
             Section {
-                LabeledContent(String(localized: "Last value")) {
-                    Text(details.lastValue.map { String($0) } ?? String(localized: "None"))
+                LabeledContent(String(localized: "Currently")) {
+                    Text(details.nextValue.map { String($0) } ?? String(localized: "Unknown"))
                         .textSelection(.enabled)
                 }
                 if let owner = SequenceSheetHeader.owner(of: details) {
@@ -162,19 +162,12 @@ struct SetSequenceValueSheet: View {
         do {
             let details = try await SequenceEditing.details(of: target)
             source = details.ownedByColumn == nil ? .value : .ownedColumn
-            valueText = Self.suggestedValue(for: details).map { String($0) } ?? ""
+            valueText = details.nextValue.map { String($0) } ?? ""
             phase = .editing(details)
         } catch {
             Self.logger.error("Failed to read sequence: \(error.publicLogShape, privacy: .public)")
             phase = .loadFailed(error.localizedDescription)
         }
-    }
-
-    // Checked, since a sequence at its bound has no next value to suggest.
-    static func suggestedValue(for details: PluginSequenceDetails) -> Int64? {
-        guard let last = details.lastValue else { return details.startValue }
-        let (next, overflow) = last.addingReportingOverflow(details.increment ?? 1)
-        return overflow ? nil : next
     }
 
     private func save() async {

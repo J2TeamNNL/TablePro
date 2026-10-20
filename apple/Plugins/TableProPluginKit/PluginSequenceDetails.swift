@@ -17,6 +17,8 @@ public struct PluginSequenceDetails: Codable, Sendable, Equatable {
     public let cycles: Bool
     // Nil before the first nextval, or where the user cannot read it.
     public let lastValue: Int64?
+    // What the next nextval returns; nil where the sequence cannot be read or is exhausted.
+    public let nextValue: Int64?
     // OWNED BY or an identity column; always in the sequence's own schema.
     public let ownedByTable: String?
     public let ownedByColumn: String?
@@ -32,6 +34,7 @@ public struct PluginSequenceDetails: Codable, Sendable, Equatable {
         cacheSize: Int64?,
         cycles: Bool,
         lastValue: Int64?,
+        nextValue: Int64?,
         ownedByTable: String?,
         ownedByColumn: String?
     ) {
@@ -45,6 +48,7 @@ public struct PluginSequenceDetails: Codable, Sendable, Equatable {
         self.cacheSize = cacheSize
         self.cycles = cycles
         self.lastValue = lastValue
+        self.nextValue = nextValue
         self.ownedByTable = ownedByTable
         self.ownedByColumn = ownedByColumn
     }

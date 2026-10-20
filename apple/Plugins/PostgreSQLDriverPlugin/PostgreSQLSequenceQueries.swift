@@ -86,7 +86,7 @@ struct PostgreSQLSequenceDefinition: Equatable, Sendable {
         return " CACHE \(cache)"
     }
 
-    func details(schema: String) -> PluginSequenceDetails {
+    func details(schema: String, position: PostgreSQLSequencePosition? = nil) -> PluginSequenceDetails {
         PluginSequenceDetails(
             name: name,
             schema: schema,
@@ -98,9 +98,45 @@ struct PostgreSQLSequenceDefinition: Equatable, Sendable {
             cacheSize: cacheSize.flatMap { Int64($0) },
             cycles: cycles,
             lastValue: lastValue.flatMap { Int64($0) },
+            nextValue: position?.nextValue(
+                increment: increment.flatMap { Int64($0) } ?? 1,
+                minValue: minValue.flatMap { Int64($0) },
+                maxValue: maxValue.flatMap { Int64($0) },
+                cycles: cycles
+            ),
             ownedByTable: ownedByTable,
             ownedByColumn: ownedByColumn
         )
+    }
+}
+
+// The sequence relation's own row: pg_sequences reports NULL both before the first nextval and after
+// setval(..., false), so only last_value with is_called says where the sequence stands.
+struct PostgreSQLSequencePosition: Equatable, Sendable {
+    let lastValue: Int64
+    let isCalled: Bool
+
+    static func query(schema: String, sequence: String) -> String {
+        "SELECT last_value, is_called FROM \(PostgreSQLObjectQueries.qualifiedName(schema: schema, name: sequence))"
+    }
+
+    init(lastValue: Int64, isCalled: Bool) {
+        self.lastValue = lastValue
+        self.isCalled = isCalled
+    }
+
+    init?(row: [PluginCellValue]?) {
+        guard let last = row?[safe: 0]?.asText.flatMap({ Int64($0) }) else { return nil }
+        self.init(lastValue: last, isCalled: PostgreSQLCatalogBoolean.isTrue(row?[safe: 1]?.asText))
+    }
+
+    func nextValue(increment: Int64, minValue: Int64?, maxValue: Int64?, cycles: Bool) -> Int64? {
+        guard isCalled else { return lastValue }
+        let (next, overflow) = lastValue.addingReportingOverflow(increment)
+        let inRange = !overflow && next >= (minValue ?? .min) && next <= (maxValue ?? .max)
+        if inRange { return next }
+        guard cycles else { return nil }
+        return increment > 0 ? minValue : maxValue
     }
 }
 

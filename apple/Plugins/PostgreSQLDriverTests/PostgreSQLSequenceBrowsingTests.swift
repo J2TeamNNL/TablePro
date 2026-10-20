@@ -85,7 +85,7 @@ struct PostgreSQLSequenceStatementTests {
         PluginSequenceDetails(
             name: name, schema: schema, dataType: "integer", startValue: start, increment: increment,
             minValue: increment < 0 ? -2_147_483_648 : 1, maxValue: increment < 0 ? -1 : 2_147_483_647,
-            cacheSize: 1, cycles: false, lastValue: 3, ownedByTable: owner?.0, ownedByColumn: owner?.1
+            cacheSize: 1, cycles: false, lastValue: 3, nextValue: 4, ownedByTable: owner?.0, ownedByColumn: owner?.1
         )
     }
 
@@ -176,7 +176,7 @@ struct PostgreSQLSequenceStatementTests {
     func alterNoCycle() throws {
         let current = PluginSequenceDetails(
             name: "s", schema: "public", dataType: "bigint", startValue: 1, increment: 1, minValue: 1,
-            maxValue: 10, cacheSize: 1, cycles: true, lastValue: nil, ownedByTable: nil, ownedByColumn: nil
+            maxValue: 10, cacheSize: 1, cycles: true, lastValue: nil, nextValue: nil, ownedByTable: nil, ownedByColumn: nil
         )
         var settings = try #require(current.settings)
         settings.cycles = false
@@ -290,5 +290,40 @@ struct PostgreSQLSequenceDefinitionDDLTests {
             #expect(sql.contains("= 'it''s'"))
             #expect(sql.contains("AS owner_dependency"))
         }
+    }
+}
+
+struct PostgreSQLSequencePositionTests {
+    @Test("After setval(..., false) the next value is the value set, not the start")
+    func notCalledIsTheValueItself() {
+        let position = PostgreSQLSequencePosition(lastValue: 100, isCalled: false)
+        #expect(position.nextValue(increment: 1, minValue: 1, maxValue: 1_000, cycles: false) == 100)
+    }
+
+    @Test("After a nextval the next value is one step on, in either direction")
+    func calledStepsOn() {
+        #expect(PostgreSQLSequencePosition(lastValue: 41, isCalled: true)
+            .nextValue(increment: 1, minValue: 1, maxValue: 1_000, cycles: false) == 42)
+        #expect(PostgreSQLSequencePosition(lastValue: -10, isCalled: true)
+            .nextValue(increment: -5, minValue: -1_000, maxValue: -1, cycles: false) == -15)
+    }
+
+    @Test("An exhausted sequence has no next value, and a cycling one starts over")
+    func bounds() {
+        let atMax = PostgreSQLSequencePosition(lastValue: .max, isCalled: true)
+        #expect(atMax.nextValue(increment: 1, minValue: 1, maxValue: .max, cycles: false) == nil)
+        #expect(atMax.nextValue(increment: 1, minValue: 1, maxValue: .max, cycles: true) == 1)
+        let atMin = PostgreSQLSequencePosition(lastValue: -100, isCalled: true)
+        #expect(atMin.nextValue(increment: -1, minValue: -100, maxValue: -1, cycles: true) == -1)
+    }
+
+    @Test("The position is read from the sequence relation itself")
+    func positionQuery() {
+        #expect(PostgreSQLSequencePosition.query(schema: "it's", sequence: "s\"q")
+            == "SELECT last_value, is_called FROM \"it's\".\"s\"\"q\"")
+        #expect(PostgreSQLSequencePosition(row: [.text("51"), .text("f")]) == PostgreSQLSequencePosition(
+            lastValue: 51, isCalled: false
+        ))
+        #expect(PostgreSQLSequencePosition(row: [.null, .text("t")]) == nil)
     }
 }

@@ -30,7 +30,7 @@ enum DatabaseObjectToolEligibility {
             }
             let probe = PluginSequenceDetails(
                 name: "s", schema: "s", dataType: nil, startValue: 1, increment: 1, minValue: 1, maxValue: 10,
-                cacheSize: 1, cycles: false, lastValue: nil, ownedByTable: nil, ownedByColumn: nil
+                cacheSize: 1, cycles: false, lastValue: nil, nextValue: nil, ownedByTable: nil, ownedByColumn: nil
             )
             let changed = PluginSequenceSettings(increment: 2, minValue: 1, maxValue: 10, cacheSize: 1, cycles: false)
             return Support(

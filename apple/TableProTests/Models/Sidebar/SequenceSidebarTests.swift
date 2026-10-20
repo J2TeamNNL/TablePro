@@ -180,27 +180,3 @@ struct SequenceExportMergeTests {
         #expect(merged.objects.contains { $0.name == "orders" && $0.kind == .table })
     }
 }
-
-@MainActor
-struct SetSequenceValueSuggestionTests {
-    private func details(last: Int64?, increment: Int64?, start: Int64? = 1) -> PluginSequenceDetails {
-        PluginSequenceDetails(
-            name: "s", schema: "public", dataType: "bigint", startValue: start, increment: increment,
-            minValue: 1, maxValue: .max, cacheSize: 1, cycles: false, lastValue: last,
-            ownedByTable: nil, ownedByColumn: nil
-        )
-    }
-
-    @Test("The suggestion is one step past the last value, or the start before the first call")
-    func suggestion() {
-        #expect(SetSequenceValueSheet.suggestedValue(for: details(last: 41, increment: 1)) == 42)
-        #expect(SetSequenceValueSheet.suggestedValue(for: details(last: 10, increment: -5)) == 5)
-        #expect(SetSequenceValueSheet.suggestedValue(for: details(last: nil, increment: 1, start: 7)) == 7)
-    }
-
-    @Test("A sequence at its bound suggests nothing rather than overflowing")
-    func overflow() {
-        #expect(SetSequenceValueSheet.suggestedValue(for: details(last: .max, increment: 1)) == nil)
-        #expect(SetSequenceValueSheet.suggestedValue(for: details(last: .min, increment: -1)) == nil)
-    }
-}

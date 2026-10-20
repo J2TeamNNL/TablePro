@@ -55532,6 +55532,9 @@
         }
       }
     },
+    "Currently" : {
+
+    },
     "Cursor" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -98429,9 +98432,6 @@
           }
         }
       }
-    },
-    "Last value" : {
-
     },
     "Latest" : {
       "localizations" : {
