@@ -1426,6 +1426,14 @@ final class MainContentCommandActions: ObservableObject {
         coordinator.togglePinResultSet(id: activeId)
     }
 
+    var canCompareResult: Bool {
+        coordinator?.canCompareActiveResult ?? false
+    }
+
+    func compareResult() {
+        coordinator?.compareActiveResult()
+    }
+
     func closeResultTab() {
         guard let coordinator else { return }
         let tab = coordinator.tabManager.selectedTab

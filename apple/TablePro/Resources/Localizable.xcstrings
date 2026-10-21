@@ -75,6 +75,99 @@
         }
       }
     },
+    "%1$d only left, %2$d only right, %3$d changed, %4$d same" : {
+
+    },
+    "Both results stopped at the row cap and are compared on the rows they hold. A row past the cap can show as only on one side." : {
+
+    },
+    "Cannot Compare" : {
+
+    },
+    "Choose a Result" : {
+
+    },
+    "Compare Result With…" : {
+
+    },
+    "Compare Results" : {
+
+    },
+    "Compare With" : {
+
+    },
+    "Comparing" : {
+
+    },
+    "Comparing…" : {
+
+    },
+    "Key %@ matches more than one row in the left result. Choose key columns that identify a single row, or match whole rows." : {
+
+    },
+    "Key %@ matches more than one row in the right result. Choose key columns that identify a single row, or match whole rows." : {
+
+    },
+    "Left" : {
+
+    },
+    "Match Whole Rows" : {
+
+    },
+    "No Columns in Common" : {
+
+    },
+    "No Result to Compare With" : {
+
+    },
+    "Only Left" : {
+
+    },
+    "Only Right" : {
+
+    },
+    "Only in the left result, not compared: %@" : {
+
+    },
+    "Only in the right result, not compared: %@" : {
+
+    },
+    "Pick the result to compare this one with." : {
+
+    },
+    "Result %1$d: %2$@" : {
+
+    },
+    "Result Closed" : {
+
+    },
+    "Right" : {
+
+    },
+    "Rows with the same values in these columns are compared. With none chosen, whole rows are matched." : {
+
+    },
+    "Run another query in this tab, or pin a result in another tab." : {
+
+    },
+    "That result is no longer open. Choose another one." : {
+
+    },
+    "The left result stopped at the row cap and is compared on the %@ rows it holds. A row past the cap can show as only on the right." : {
+
+    },
+    "The right result stopped at the row cap and is compared on the %@ rows it holds. A row past the cap can show as only on the left." : {
+
+    },
+    "The two results share no column name, so there is nothing to compare." : {
+
+    },
+    "This Tab" : {
+
+    },
+    "Whole row" : {
+
+    },
     "__name__ is the document's ID in this collection, such as alice." : {
       "extractionState" : "manual",
       "generatesSymbol" : false
@@ -227,6 +320,18 @@
           }
         }
       }
+    },
+    "left value, differs" : {
+
+    },
+    "only in the left result" : {
+
+    },
+    "only in the right result" : {
+
+    },
+    "right value, differs" : {
+
     },
     "—" : {
       "extractionState" : "stale",
@@ -2587,6 +2692,9 @@
           }
         }
       }
+    },
+    "%@ available" : {
+
     },
     "%@ bytes" : {
 
@@ -8395,6 +8503,9 @@
         }
       }
     },
+    "%d characters" : {
+
+    },
     "%d columns" : {
       "localizations" : {
         "fr" : {
@@ -9909,6 +10020,9 @@
           }
         }
       }
+    },
+    "%d spaces" : {
+
     },
     "%d statements applied" : {
       "extractionState" : "manual",
@@ -14586,6 +14700,9 @@
         }
       }
     },
+    "A .sql-formatter.json in a linked SQL folder replaces these rules for the files opened from that folder." : {
+
+    },
     "A %@ attribute has a payload of the wrong shape" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -16249,6 +16366,9 @@
           }
         }
       }
+    },
+    "A SELECT list, SET list or WHERE condition that fits in this width stays on one line." : {
+
     },
     "A SELECT to export. Use instead of 'tables'." : {
       "localizations" : {
@@ -21553,6 +21673,9 @@
           }
         }
       }
+    },
+    "Align column aliases" : {
+
     },
     "All" : {
       "localizations" : {
@@ -27033,6 +27156,9 @@
     "As stored" : {
 
     },
+    "As written" : {
+
+    },
     "Ascending" : {
       "localizations" : {
         "fr" : {
@@ -27650,6 +27776,12 @@
           }
         }
       }
+    },
+    "At the end of the line" : {
+
+    },
+    "At the start of the line" : {
+
     },
     "At their declared lengths the columns pass InnoDB's 8,126-byte record limit, so this one is %@, which does not enforce a length." : {
       "localizations" : {
@@ -43890,6 +44022,9 @@
         }
       }
     },
+    "Commands" : {
+
+    },
     "Commands for the current tab and connection" : {
       "localizations" : {
         "fr" : {
@@ -43899,6 +44034,9 @@
           }
         }
       }
+    },
+    "Commas:" : {
+
     },
     "Comment" : {
       "extractionState" : "manual",
@@ -53404,7 +53542,13 @@
     "Couldn't Export the Theme" : {
 
     },
+    "Couldn't Format Query" : {
+
+    },
     "Couldn't Import “%@”" : {
+
+    },
+    "Couldn't Import Formatter Rules" : {
 
     },
     "Couldn't Move File to Trash" : {
@@ -57184,6 +57328,9 @@
           }
         }
       }
+    },
+    "Database CPU" : {
+
     },
     "Database default" : {
       "localizations" : {
@@ -62037,6 +62184,9 @@
           }
         }
       }
+    },
+    "Deletes" : {
+
     },
     "Deletes %lld rows from %@" : {
       "localizations" : {
@@ -70578,6 +70728,9 @@
           }
         }
       }
+    },
+    "Engines that match function names by exact case, such as ClickHouse, keep the case you typed." : {
+
     },
     "Enter a _key for the new row. Bigtable has no generated keys." : {
       "extractionState" : "manual",
@@ -83582,6 +83735,9 @@
         }
       }
     },
+    "Formatter" : {
+
+    },
     "Formatter error: %@" : {
       "localizations" : {
         "fr" : {
@@ -84106,6 +84262,9 @@
           }
         }
       }
+    },
+    "Function case:" : {
+
     },
     "Function: %@" : {
       "localizations" : {
@@ -92006,6 +92165,12 @@
         }
       }
     },
+    "Indent width:" : {
+
+    },
+    "Indent with:" : {
+
+    },
     "Index" : {
 
     },
@@ -93470,6 +93635,9 @@
           }
         }
       }
+    },
+    "Inserts" : {
+
     },
     "Inside an array" : {
       "localizations" : {
@@ -95723,6 +95891,9 @@
         }
       }
     },
+    "Join condition:" : {
+
+    },
     "Joins this column with the one to its right." : {
       "localizations" : {
         "fr" : {
@@ -97449,6 +97620,9 @@
           }
         }
       }
+    },
+    "Keyspace Hit Ratio" : {
+
     },
     "Keyword" : {
       "extractionState" : "manual",
@@ -100769,6 +100943,9 @@
         }
       }
     },
+    "Line width:" : {
+
+    },
     "Link" : {
       "extractionState" : "manual",
       "generatesSymbol" : false
@@ -103852,6 +104029,9 @@
         }
       }
     },
+    "Logical Reads" : {
+
+    },
     "Login Handshake Timed Out" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -105400,6 +105580,9 @@
         }
       }
     },
+    "Match what I type" : {
+
+    },
     "Match what I type, otherwise lowercase" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -105411,9 +105594,6 @@
           }
         }
       }
-    },
-    "Match what I type" : {
-
     },
     "Match what I type, otherwise UPPERCASE" : {
       "extractionState" : "manual",
@@ -123388,6 +123568,9 @@
         }
       }
     },
+    "On its own line" : {
+
+    },
     "On Quit" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -123464,6 +123647,9 @@
           }
         }
       }
+    },
+    "On the JOIN line" : {
+
     },
     "On the Server" : {
       "localizations" : {
@@ -123656,6 +123842,9 @@
           }
         }
       }
+    },
+    "One item per line" : {
+
     },
     "One JSON object" : {
       "extractionState" : "manual",
@@ -126743,6 +126932,9 @@
           }
         }
       }
+    },
+    "Operations" : {
+
     },
     "Operations, sorted by name" : {
       "localizations" : {
@@ -140499,6 +140691,9 @@
         }
       }
     },
+    "Read the live server panels TablePro shows: active sessions, server metrics, and slow queries. Available on every engine that has a Server Dashboard in TablePro." : {
+
+    },
     "Read the live server panels TablePro shows: active sessions, server metrics, and slow queries. Available on PostgreSQL, MySQL, SQL Server, ClickHouse, and Typesense." : {
 
     },
@@ -146840,6 +147035,9 @@
         }
       }
     },
+    "Resident Memory" : {
+
+    },
     "Resolved on every connect. It stays on this Mac and never syncs, because it can name a command to run." : {
       "localizations" : {
         "fr" : {
@@ -147231,6 +147429,9 @@
           }
         }
       }
+    },
+    "Restore Defaults" : {
+
     },
     "Restore Dump Cancelled" : {
       "comment" : "A title for a result sheet that indicates a restore operation was cancelled.",
@@ -151445,6 +151646,9 @@
         }
       }
     },
+    "Rules file:" : {
+
+    },
     "Rules for this query result are not saved." : {
       "localizations" : {
         "fr" : {
@@ -152825,6 +153029,9 @@
           }
         }
       }
+    },
+    "Same as editor (%@)" : {
+
     },
     "same element" : {
       "localizations" : {
@@ -167320,6 +167527,9 @@
         }
       }
     },
+    "Spaces" : {
+
+    },
     "Spacing" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -175139,6 +175349,9 @@
         }
       }
     },
+    "Tab width (%d)" : {
+
+    },
     "Tab width:" : {
       "localizations" : {
         "fr" : {
@@ -176709,9 +176922,6 @@
         }
       }
     },
-    "Table, column and schema names take this case in autocomplete and in Copy as INSERT and UPDATE when the server reads the new spelling as the same name. Other names are quoted as stored." : {
-
-    },
     "Table-level CHECK constraints" : {
       "localizations" : {
         "fr" : {
@@ -176721,6 +176931,9 @@
           }
         }
       }
+    },
+    "Table, column and schema names take this case in autocomplete and in Copy as INSERT and UPDATE when the server reads the new spelling as the same name. Other names are quoted as stored." : {
+
     },
     "TablePro" : {
       "extractionState" : "stale",
@@ -183917,6 +184130,12 @@
         }
       }
     },
+    "The file is larger than %@, too large for a rules file." : {
+
+    },
+    "The file is not a JSON object." : {
+
+    },
     "The file is not valid JSON." : {
       "extractionState" : "manual",
       "generatesSymbol" : false
@@ -184176,6 +184395,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le formulaire n’a produit aucune instruction à exécuter."
+          }
+        }
+      }
+    },
+    "The formatter rules in “%@” could not be read. %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The formatter rules in “%1$@” could not be read. %2$@"
           }
         }
       }
@@ -186876,6 +187105,9 @@
           }
         }
       }
+    },
+    "The rules file is not a regular file." : {
+
     },
     "The run button sits in the gutter, which needs line numbers." : {
 
@@ -190405,6 +190637,9 @@
           }
         }
       }
+    },
+    "The value of “%@” is not valid." : {
+
     },
     "The value of %@ must be text or null. Bigtable stores bytes, so a number is written as its digits." : {
       "extractionState" : "manual",
@@ -204306,6 +204541,9 @@
         }
       }
     },
+    "Updates" : {
+
+    },
     "Updates when TablePro restarts" : {
 
     },
@@ -205391,6 +205629,9 @@
           }
         }
       }
+    },
+    "Used Memory" : {
+
     },
     "User" : {
       "localizations" : {
