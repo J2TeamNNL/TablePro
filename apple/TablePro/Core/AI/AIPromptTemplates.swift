@@ -29,9 +29,12 @@ enum AIPromptTemplates {
         return prompt
     }
 
-    static func onDeviceQueryActionInstructions(connectionRules: String?) -> String {
+    static func onDeviceQueryActionInstructions(engineName: String?, connectionRules: String?) -> String {
         var instructions = "You are the database assistant in TablePro, a database client. "
-            + "Answer the request about the user's query briefly and in plain language. "
+        if let engineName, !engineName.isEmpty {
+            instructions += "The user's database is \(engineName); answer for its dialect. "
+        }
+        instructions += "Answer the request about the user's query briefly and in plain language. "
             + "Base every claim on the query and the table structure given, and say so when something you need is missing. "
             + "Put any SQL in a fenced code block."
         if let rules = connectionRules?.trimmingCharacters(in: .whitespacesAndNewlines), !rules.isEmpty {

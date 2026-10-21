@@ -52,6 +52,7 @@ extension GlobalStateSuites {
             #expect(!viewModel.isStreaming)
             let sent = try #require(model.streamedRequests.first)
             #expect(sent.request.prompt.contains("SELECT id FROM orders"))
+            #expect(sent.request.instructions.contains("MySQL"))
             #expect(!sent.request.instructions.contains(WalkthroughEnvelopeParser.openFence))
         }
 

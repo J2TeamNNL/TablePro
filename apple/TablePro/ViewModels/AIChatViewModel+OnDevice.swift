@@ -6,6 +6,7 @@
 import Combine
 import Foundation
 import os
+import TableProPluginKit
 import TableProSQLGrammar
 
 struct OnDeviceRefusal: Equatable {
@@ -48,9 +49,12 @@ extension AIChatViewModel {
         trimMessagesIfNeeded()
         let assistantID = assistant.id
         streamingState = .streaming(assistantID: assistantID)
-        let rules = connection?.aiRules
+        let instructions = AIPromptTemplates.onDeviceQueryActionInstructions(
+            engineName: connection.map { PluginMetadataRegistry.shared.snapshot(for: $0.type)?.displayName ?? $0.type.rawValue },
+            connectionRules: connection?.aiRules
+        )
         streamingTask = Task { [weak self] in
-            await self?.answerOnDevice(userTurn: userTurn, assistantID: assistantID, model: model, connectionRules: rules)
+            await self?.answerOnDevice(userTurn: userTurn, assistantID: assistantID, model: model, instructions: instructions)
         }
     }
 
@@ -67,9 +71,8 @@ extension AIChatViewModel {
         userTurn: ChatTurn,
         assistantID: UUID,
         model: any OnDeviceLanguageModel,
-        connectionRules: String?
+        instructions: String
     ) async {
-        let instructions = AIPromptTemplates.onDeviceQueryActionInstructions(connectionRules: connectionRules)
         let pending = unresolvedQueryContext(in: userTurn)
         var snapshots: [QueryContextSnapshot] = []
         var candidates: [OnDeviceRequest] = []

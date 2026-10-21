@@ -122,6 +122,12 @@ struct AIChatPanelView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer()
+                if viewModel.isStreaming {
+                    Button(String(localized: "Stop Generating")) {
+                        viewModel.cancelStream()
+                    }
+                    .controlSize(.small)
+                }
                 Button(String(localized: "Settings…")) {
                     WindowOpener.shared.openSettings(tab: .ai)
                 }
