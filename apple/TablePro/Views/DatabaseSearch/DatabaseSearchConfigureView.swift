@@ -43,7 +43,13 @@ internal struct DatabaseSearchConfigureView: View {
                 .accessibilityIdentifier("database-search-match")
                 Toggle(String(localized: "Match Case"), isOn: $session.options.isCaseSensitive)
                     .toggleStyle(.checkbox)
+                    .disabled(!session.caseMatching.isAdjustable)
                     .accessibilityIdentifier("database-search-case-sensitive")
+                if let reason = session.caseMatching.fixedReason {
+                    Text(reason)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             labelled(String(localized: "Columns")) {
                 Toggle(String(localized: "Include binary columns"), isOn: $session.options.includesBinaryColumns)

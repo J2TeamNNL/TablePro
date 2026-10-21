@@ -34,6 +34,7 @@ internal final class DatabaseSearchSession: ObservableObject, Identifiable {
     internal let id = UUID()
     internal let launch: DatabaseSearchLaunchRequest
     internal let scopeDescription: String
+    internal let caseMatching: FilterCaseMatching
     private let reader: any DatabaseSearchReading
 
     @Published internal var options = DatabaseSearchOptions()
@@ -57,10 +58,12 @@ internal final class DatabaseSearchSession: ObservableObject, Identifiable {
     internal init(
         launch: DatabaseSearchLaunchRequest,
         scopeDescription: String,
+        caseMatching: FilterCaseMatching,
         reader: any DatabaseSearchReading
     ) {
         self.launch = launch
         self.scopeDescription = scopeDescription
+        self.caseMatching = caseMatching
         self.reader = reader
     }
 

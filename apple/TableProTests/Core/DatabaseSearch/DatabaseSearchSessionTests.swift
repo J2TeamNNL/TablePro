@@ -55,6 +55,7 @@ struct DatabaseSearchSessionTests {
         let session = DatabaseSearchSession(
             launch: DatabaseSearchLaunchRequest(database: "shop", schema: schema),
             scopeDescription: "Local / shop",
+            caseMatching: .engine(.caseFoldFunction),
             reader: reader
         )
         await session.loadTablesIfNeeded()

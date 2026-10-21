@@ -45,6 +45,7 @@ struct DatabaseSearchResultOpeningTests {
         let session = DatabaseSearchSession(
             launch: DatabaseSearchLaunchRequest(database: "archive", schema: nil),
             scopeDescription: "",
+            caseMatching: .engine(.caseFoldFunction),
             reader: StaticSearchReader()
         )
         coordinator.activeSheet = .searchDatabase(session)
@@ -72,6 +73,7 @@ struct DatabaseSearchResultOpeningTests {
         let session = DatabaseSearchSession(
             launch: DatabaseSearchLaunchRequest(database: "shop", schema: nil),
             scopeDescription: "",
+            caseMatching: .engine(.caseFoldFunction),
             reader: StaticSearchReader()
         )
 

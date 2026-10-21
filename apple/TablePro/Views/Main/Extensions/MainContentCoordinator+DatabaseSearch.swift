@@ -28,9 +28,11 @@ extension MainContentCoordinator {
         }
         databaseSearchSession?.stop()
         let endpoint = DatabaseEndpoint.from(connection: connection, database: launch.database, schema: launch.schema)
+        let dialect = try? resolveSQLDialect(for: connection.type)
         let session = DatabaseSearchSession(
             launch: launch,
             scopeDescription: endpoint.qualifiedDescription,
+            caseMatching: .engine(dialect?.caseSensitivityStyle ?? .unsupported),
             reader: DatabaseSearchLiveReader(connection: connection, database: launch.database)
         )
         databaseSearchSession = session

@@ -134,6 +134,17 @@ struct DatabaseSearchColumnPlannerTests {
         #expect(filters.map(\.columnName) == ["name"])
     }
 
+    @Test("An exact match skips SQL Server's legacy TEXT, which has no equality, and keeps TEXT elsewhere")
+    func exactSkipsSQLServerText() {
+        var options = DatabaseSearchOptions(term: "hello")
+        options.matchMode = .exact
+        let notes = [Column(name: "notes", type: .text(rawType: "text"))]
+        #expect(DatabaseSearchColumnPlanner.filters(for: notes, options: options, family: .mssql).isEmpty)
+        #expect(DatabaseSearchColumnPlanner.filters(for: notes, options: options, family: .postgres).count == 1)
+        options.matchMode = .contains
+        #expect(DatabaseSearchColumnPlanner.filters(for: notes, options: options, family: .mssql).count == 1)
+    }
+
     @Test("An exact match on a SET takes a list of declared labels")
     func exactSetTakesALabelList() {
         let colors = Column(name: "colors", type: .set(rawType: "set", values: ["red", "green", "blue"]))

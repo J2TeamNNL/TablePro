@@ -22,11 +22,15 @@ internal enum DatabaseSearchColumnPlanner {
         let isCaseSensitive: Bool
     }
 
-    internal static func filters(for columns: [Column], options: DatabaseSearchOptions) -> [TableFilter] {
+    internal static func filters(
+        for columns: [Column],
+        options: DatabaseSearchOptions,
+        family: SQLTypeFamily? = nil
+    ) -> [TableFilter] {
         let term = options.trimmedTerm
         guard !term.isEmpty else { return [] }
         return columns.compactMap { column in
-            guard let match = match(for: column.type, term: term, options: options) else { return nil }
+            guard let match = match(for: column.type, term: term, options: options, family: family) else { return nil }
             return TableFilter(
                 columnName: column.name,
                 filterOperator: match.filterOperator,
@@ -36,7 +40,12 @@ internal enum DatabaseSearchColumnPlanner {
         }
     }
 
-    private static func match(for type: ColumnType, term: String, options: DatabaseSearchOptions) -> Match? {
+    private static func match(
+        for type: ColumnType,
+        term: String,
+        options: DatabaseSearchOptions,
+        family: SQLTypeFamily?
+    ) -> Match? {
         let textMatch = Match(filterOperator: options.matchMode.textOperator, isCaseSensitive: options.isCaseSensitive)
         // A typed comparison keeps the column's own type and its index, so it never folds case.
         let typedMatch = Match(filterOperator: .equal, isCaseSensitive: true)
@@ -50,7 +59,7 @@ internal enum DatabaseSearchColumnPlanner {
             if options.matchMode.usesPattern {
                 return patternRefusingTypes.contains(baseTypeName(rawType)) ? nil : textMatch
             }
-            guard ColumnTypeSQLQuoting.hasEqualityOperator(type),
+            guard ColumnTypeSQLQuoting.hasEqualityOperator(type, family: family),
                   ColumnTypeSQLQuoting.isCharacterType(.text(rawType: unwrappedTypeName(rawType)))
             else { return nil }
             return textMatch

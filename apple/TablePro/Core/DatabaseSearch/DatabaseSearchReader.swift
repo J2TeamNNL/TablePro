@@ -67,7 +67,7 @@ internal final class DatabaseSearchLiveReader: DatabaseSearchReading {
                 }
                 return DatabaseSearchColumnPlanner.Column(name: info.name, type: type.withAllowedValues(labels))
             }
-            let filters = DatabaseSearchColumnPlanner.filters(for: columns, options: options)
+            let filters = DatabaseSearchColumnPlanner.filters(for: columns, options: options, family: family)
             guard let query = DatabaseSearchQuery.build(
                 target: target,
                 columns: columns,
