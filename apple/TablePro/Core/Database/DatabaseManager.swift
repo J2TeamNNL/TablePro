@@ -21,6 +21,7 @@ final class DatabaseManager: ObservableObject {
     internal let pluginManager: PluginManager
     internal let aiAccessApprovals: AIAccessApprovals
     internal let preConnectScriptConsent: PreConnectScriptConsent
+    internal let postDisconnectScripts: PostDisconnectScripts
     internal let localNetworkProbe: any LocalNetworkAccessProbing
     internal var historyRecorder: QueryHistoryRecording = QueryHistoryManager.shared
 
@@ -132,6 +133,11 @@ final class DatabaseManager: ObservableObject {
     /// The connections a session keeps on databases it is not browsing. See `SessionLanes`.
     internal let sessionLanes = SessionLanes()
 
+    /// Which session connections hold a transaction, recorded after every turn on them.
+    internal lazy var sessionTransactions = SessionTransactionTracker { [weak self] key, driver in
+        self?.isLiveSessionDriver(driver, for: key) ?? false
+    }
+
     /// The driver each connection's health monitor last pinged, so the reconnect that follows a
     /// failed ping acts only on that driver and never on one a database switch put in its place.
     /// Held, not just identified: a closed driver that was freed would hand its address, and with it
@@ -181,6 +187,7 @@ final class DatabaseManager: ObservableObject {
         pluginManager: PluginManager = .shared,
         aiAccessApprovals: AIAccessApprovals = .shared,
         preConnectScriptConsent: PreConnectScriptConsent = PreConnectScriptConsent(),
+        postDisconnectScripts: PostDisconnectScripts = PostDisconnectScripts(),
         localNetworkProbe: any LocalNetworkAccessProbing = NetworkFrameworkLocalNetworkProbe()
     ) {
         self.connectionStorage = connectionStorage
@@ -188,7 +195,11 @@ final class DatabaseManager: ObservableObject {
         self.pluginManager = pluginManager
         self.aiAccessApprovals = aiAccessApprovals
         self.preConnectScriptConsent = preConnectScriptConsent
+        self.postDisconnectScripts = postDisconnectScripts
         self.localNetworkProbe = localNetworkProbe
+        sessionLanes.onClose = { [weak self] connectionId in
+            self?.sessionTransactions.prune(connectionId)
+        }
         observeConnectionUpdates()
         observeHealthCheckSetting()
     }
