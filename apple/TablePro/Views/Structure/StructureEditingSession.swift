@@ -169,6 +169,7 @@ internal final class StructureEditingSession: ObservableObject {
             coordinator: nil
         )
         gridDelegate.referenceMenus.schemaName = schemaName
+        gridDelegate.schemaName = schemaName
         wrappedChangeManager = AnyChangeManager(changeManager)
     }
 

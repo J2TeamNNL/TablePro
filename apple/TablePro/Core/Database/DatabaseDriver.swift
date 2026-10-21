@@ -166,6 +166,7 @@ protocol DatabaseDriver: AnyObject, Sendable {
 
     /// Fetch triggers for a specific table
     func fetchTriggers(table: String) async throws -> [TriggerInfo]
+    func fetchTriggers(table: String, schema: String?) async throws -> [TriggerInfo]
     func fetchCheckConstraints(table: String) async throws -> [CheckConstraintInfo]
 
     /// Trigger editing hooks (optional — nil when unsupported)
@@ -208,6 +209,7 @@ protocol DatabaseDriver: AnyObject, Sendable {
     /// Fetch foreign keys for all tables in the current database/schema in bulk.
     /// Default implementation falls back to per-table fetchForeignKeys.
     func fetchAllForeignKeys() async throws -> [String: [ForeignKeyInfo]]
+    func fetchAllForeignKeys(schema: String?) async throws -> [String: [ForeignKeyInfo]]
 
     /// Whether `fetchAllForeignKeys` is a single query. False means it degrades to one round trip
     /// per table, which is too expensive to run ahead of the user.
@@ -257,6 +259,7 @@ protocol DatabaseDriver: AnyObject, Sendable {
 
     /// Fetch table metadata (size, comment, engine, etc.)
     func fetchTableMetadata(tableName: String) async throws -> TableMetadata
+    func fetchTableMetadata(tableName: String, schema: String?) async throws -> TableMetadata
 
     // The comment alone, which some engines answer without the row probe their metadata runs.
     func fetchObjectComment(tableName: String) async throws -> String?
@@ -557,6 +560,14 @@ extension DatabaseDriver {
 
     func fetchTriggers(table: String) async throws -> [TriggerInfo] { [] }
 
+    func fetchTriggers(table: String, schema: String?) async throws -> [TriggerInfo] {
+        try await fetchTriggers(table: table)
+    }
+
+    func fetchTableMetadata(tableName: String, schema: String?) async throws -> TableMetadata {
+        try await fetchTableMetadata(tableName: tableName)
+    }
+
     func fetchCheckConstraints(table: String) async throws -> [CheckConstraintInfo] { [] }
 
     func createTriggerTemplate(table: String) -> String? { nil }
@@ -693,6 +704,10 @@ extension DatabaseDriver {
     }
 
     var providesBulkForeignKeyFetch: Bool { false }
+
+    func fetchAllForeignKeys(schema: String?) async throws -> [String: [ForeignKeyInfo]] {
+        try await fetchAllForeignKeys()
+    }
 
     func fetchAllForeignKeys() async throws -> [String: [ForeignKeyInfo]] {
         let allTables = try await fetchTables()

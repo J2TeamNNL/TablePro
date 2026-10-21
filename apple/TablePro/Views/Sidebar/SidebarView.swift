@@ -45,7 +45,27 @@ struct SidebarView: View {
     private var hasAnyMatch: Bool {
         SidebarObjectKind.allCases.contains { kind in
             countFor(kind: kind) > 0
-        } || !otherSchemaMatches.isEmpty
+        } || !otherSchemaMatches.isEmpty || !attachedSchemaMatches.isEmpty
+    }
+
+    private var attachedSchemaMatches: [String] {
+        guard rootShape == .flat, !viewModel.filterQuery.isEmpty, let database = activeDatabase,
+              PluginManager.shared.listsAttachedDatabases(for: viewModel.databaseType) else { return [] }
+        let searchText = viewModel.filterQuery
+        return SidebarAttachedSchemas.visible(
+            attached: schemaService.attachedSchemas(for: connectionId),
+            database: database,
+            searchText: searchText,
+            loadedContent: { schema in
+                DatabaseTreeFilter.loadedObjectBuckets(
+                    in: treeMetadata,
+                    connectionId: connectionId,
+                    database: database,
+                    schema: schema,
+                    searchText: searchText
+                )
+            }
+        )
     }
 
     /// The schemas the flat outline lists below its own sections. Counted here too, or a search

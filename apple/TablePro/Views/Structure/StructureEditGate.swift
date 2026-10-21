@@ -20,18 +20,35 @@ import TableProPluginKit
 struct StructureEditGate {
     let databaseType: DatabaseType
     let objectKind: TableInfo.TableType
+    var schema: String?
 
     private var matrix: StructureObjectEditMatrix {
         PluginManager.shared.structureEditMatrix(for: databaseType)
     }
 
-    private var canEditSchema: Bool { databaseType.supportsSchemaEditing }
+    private var canEditSchema: Bool { databaseType.supportsSchemaEditing && attachedRefusal == nil }
+
+    /// A table in a database attached beside the opened file. The engine writes its structure
+    /// statements without the database's name, so they would reach a same-named table in the opened
+    /// file, or fail; nothing is offered instead.
+    private var attachedRefusal: String? {
+        guard let schema, !schema.isEmpty, PluginManager.shared.listsAttachedDatabases(for: databaseType) else {
+            return nil
+        }
+        return String(
+            format: String(localized: "\"%@\" is an attached database. Change its tables' structure from a connection that opens it."),
+            schema
+        )
+    }
 
     func allows(_ operation: StructureEditOperation) -> Bool {
         resolve(operation).isAvailable
     }
 
     func resolve(_ operation: StructureEditOperation) -> StructureEditAvailability {
+        if let attachedRefusal {
+            return .unavailable(reason: attachedRefusal)
+        }
         /// The foreign key arm is answered by `ForeignKeyEditPolicy`, which also owns the `.alter`
         /// versus `.rebuild` distinction the save itself reads, and which words an engine's refusal
         /// as "cannot add or remove a table's foreign keys" rather than the sentence every other
@@ -55,7 +72,7 @@ struct StructureEditGate {
             support: PluginManager.shared.foreignKeyEditSupport(for: databaseType),
             engineName: databaseType.displayName,
             kindRefusal: kindRefusal(.addForeignKey),
-            canEditSchema: canEditSchema
+            canEditSchema: databaseType.supportsSchemaEditing
         )
     }
 
@@ -63,7 +80,7 @@ struct StructureEditGate {
     /// `ForeignKeyEditPolicy` and `ColumnReorderPolicy`, which own the engine half of the same
     /// decision and would otherwise have to word a refusal about a kind they cannot see.
     func kindRefusal(_ operation: StructureEditOperation) -> String? {
-        StructureEditEligibility.refusalReason(for: operation, on: objectKind, matrix: matrix)
+        attachedRefusal ?? StructureEditEligibility.refusalReason(for: operation, on: objectKind, matrix: matrix)
     }
 
     /// Every field of the Columns grid this object lets the user change. A view keeps Name, Default
@@ -79,7 +96,9 @@ struct StructureEditGate {
     }
 
     var allowsTriggerEditing: Bool {
-        databaseType.supportsTriggerEditing && TriggerEditEligibility.kindAcceptsTriggers(objectKind)
+        attachedRefusal == nil
+            && databaseType.supportsTriggerEditing
+            && TriggerEditEligibility.kindAcceptsTriggers(objectKind)
     }
 
     func locksField(at index: Int, on tab: StructureTab, orderedFields: [StructureColumnField]) -> Bool {

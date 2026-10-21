@@ -740,9 +740,16 @@
     "“%@” Changed on Disk" : {
 
     },
+    "\"%@\" is a name the database keeps for itself. Choose another name." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "\"%@\" is a reserved theme identifier." : {
       "extractionState" : "manual",
       "generatesSymbol" : false
+    },
+    "\"%@\" is an attached database. Change its tables' structure from a connection that opens it." : {
+
     },
     "“%@” is compressed." : {
       "localizations" : {
@@ -27679,6 +27686,9 @@
       "extractionState" : "manual",
       "generatesSymbol" : false
     },
+    "Attach" : {
+
+    },
     "Attach a connection to this conversation first." : {
       "localizations" : {
         "fr" : {
@@ -27729,6 +27739,12 @@
         }
       }
     },
+    "Attach Database" : {
+
+    },
+    "Attach Database…" : {
+
+    },
     "Attached %1$d of %2$d files. %3$@" : {
       "localizations" : {
         "fr" : {
@@ -27738,6 +27754,17 @@
           }
         }
       }
+    },
+    "Attached Databases" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Attached databases open only for a database file on this Mac, not for a database on a server." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Attached each time the connection opens. Reach a table as name.table, and browse each database in the sidebar." : {
+
     },
     "Attachments" : {
       "extractionState" : "stale",
@@ -37757,6 +37784,9 @@
           }
         }
       }
+    },
+    "Choose the database files to attach each time this connection opens." : {
+
     },
     "Choose the extension's file again in Edit Connection." : {
       "extractionState" : "manual",
@@ -51196,6 +51226,10 @@
           }
         }
       }
+    },
+    "Could not attach \"%@\": %@" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Could not attach %1$d files. %2$@" : {
       "localizations" : {
@@ -108863,6 +108897,10 @@
         }
       }
     },
+    "More than one attached database is named \"%@\"." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "More than one check constraint is named %@. Change or delete all of them in the same save." : {
       "localizations" : {
         "fr" : {
@@ -113323,6 +113361,9 @@
           }
         }
       }
+    },
+    "No Attached Databases" : {
+
     },
     "No available local port for SSH tunnel" : {
       "localizations" : {
@@ -143634,6 +143675,9 @@
           }
         }
       }
+    },
+    "Remove Attached Database" : {
+
     },
     "Remove attachment" : {
       "localizations" : {
@@ -180851,6 +180895,14 @@
         }
       }
     },
+    "The attached database \"%@\" has no file." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "The attached file \"%@\" has no name." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "The authenticity of host '%@' can't be established.\n\n%@ key fingerprint is:\n%@\n\nAre you sure you want to continue connecting?" : {
       "localizations" : {
         "en" : {
@@ -185126,6 +185178,9 @@
         }
       }
     },
+    "The name a statement uses for this database, as in name.table." : {
+
+    },
     "The name of a DIRECTORY object, not a path. The DBA who created it chose where it points." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -187125,6 +187180,9 @@
         }
       }
     },
+    "The saved list could not be read. Adding a database replaces it." : {
+
+    },
     "The saved list could not be read. Adding an extension replaces it." : {
       "localizations" : {
         "fr" : {
@@ -187134,6 +187192,10 @@
           }
         }
       }
+    },
+    "The saved list of attached databases is not in a format TablePro can read." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "The saved Microsoft Entra ID sign-in expired. Sign in again." : {
       "extractionState" : "manual",
@@ -189003,6 +189065,10 @@
           }
         }
       }
+    },
+    "The structure of a table in an attached database cannot be changed here." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "The structure of the tables this query uses is read when the request is sent." : {
       "localizations" : {

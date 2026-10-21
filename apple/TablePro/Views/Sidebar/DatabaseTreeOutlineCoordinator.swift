@@ -630,7 +630,8 @@ final class DatabaseTreeOutlineCoordinator: NSObject, NSTextFieldDelegate {
             routineDisplayLabel: { [weak self] ref in
                 self?.routineDisplayLabels[ref.id] ?? ref.routine.name
             },
-            showsPartitions: showsPartitions
+            showsPartitions: showsPartitions,
+            listsAttachedSchemas: listsAttachedSchemas
         )
     }
 

@@ -43,6 +43,10 @@ actor DuckDBConnectionActor {
     /// replayed, it is what stops a release happening at all.
     private var sessionSetup: [String] = []
 
+    /// The databases the connection attaches itself, which a reopen attaches again, so holding them
+    /// is no reason to keep the file.
+    private var configuredAttachments: [AttachedDatabase] = []
+
     /// `duckdb_settings()` reports no default, so a setting the user changed is visible only
     /// against what the connection opened with.
     private var baselineSettings: [String: String] = [:]
@@ -76,6 +80,10 @@ actor DuckDBConnectionActor {
         sessionSetup = statements
     }
 
+    func setConfiguredAttachments(_ attachments: [AttachedDatabase]) {
+        configuredAttachments = attachments
+    }
+
     func captureSettingsBaseline() {
         baselineSettings = (try? readSettings()) ?? [:]
     }
@@ -84,6 +92,7 @@ actor DuckDBConnectionActor {
         closeHandle()
         openSpec = nil
         sessionSetup = []
+        configuredAttachments = []
         baselineSettings = [:]
         hasOpenTransaction = false
         isReleased = false
@@ -123,6 +132,10 @@ actor DuckDBConnectionActor {
 
         guard FileManager.default.fileExists(atPath: spec.path) else {
             throw DuckDBPluginError.fileMissing(spec.path)
+        }
+        // A replayed ATTACH would create an empty database where the attached file was.
+        if let gone = configuredAttachments.first(where: { !FileManager.default.fileExists(atPath: $0.expandedPath) }) {
+            throw DuckDBPluginError.fileMissing(gone.expandedPath)
         }
 
         try openHandle(spec: spec)
@@ -338,7 +351,10 @@ actor DuckDBConnectionActor {
     }
 
     private func readHeldStateCounts() throws -> (catalogs: Int, sessionObjects: Int) {
-        let result = try runInternalQuery(DuckDBSchemaQueries.sessionHeldState)
+        let result = try runInternalQuery(DuckDBSchemaQueries.sessionHeldState(
+            excluding: configuredAttachments,
+            readOnly: openSpec?.accessMode == .readOnly
+        ))
         guard let row = result.rows.first, row.count >= 2 else {
             throw DuckDBPluginError.queryFailed("DuckDB reported no session state")
         }
