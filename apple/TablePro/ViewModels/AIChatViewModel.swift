@@ -104,6 +104,7 @@ final class AIChatViewModel: ObservableObject {
     var queryContextMetadata: any ScopedMetadataProviding
     var inFlightColumnFetches: [String: Task<Void, Never>] = [:]
     var inFlightSchemaLoad: Task<Void, Never>?
+    var relevantTableNames: [String] = []
     nonisolated(unsafe) var streamingTask: Task<Void, Never>?
     var prepTask: Task<Void, Never>?
 
@@ -354,6 +355,7 @@ final class AIChatViewModel: ObservableObject {
         inFlightColumnFetches.removeAll()
         inFlightSchemaLoad?.cancel()
         inFlightSchemaLoad = nil
+        relevantTableNames = []
         currentQuery = nil
         queryResults = nil
         editorTarget = nil

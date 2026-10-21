@@ -39,7 +39,7 @@ extension AIChatViewModel {
         let invocationText = body.isEmpty ? "/\(command.name)" : "/\(command.name) \(body)"
         let needsSchema = command.promptTemplate.contains(CustomSlashCommandVariable.schema.placeholder)
         if needsSchema {
-            await ensureSchemaLoaded()
+            await ensureSchemaLoaded(relevantTo: body)
         }
         let renderingContext = CustomSlashCommandRenderer.Context(
             query: currentQuery,

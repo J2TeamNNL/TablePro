@@ -60,10 +60,15 @@ extension AIChatViewModel {
         await task.value
     }
 
-    func ensureSchemaLoaded() async {
+    /// With a `question`, the tables that match it get their columns loaded and listed first.
+    func ensureSchemaLoaded(relevantTo question: String? = nil) async {
+        if let question {
+            prioritizeSchema(for: question)
+        }
         if let inFlight = inFlightSchemaLoad {
             await inFlight.value
-            return
+            // The load in flight fetched for the previous order; a new order may need other tables.
+            guard question != nil else { return }
         }
         let task: Task<Void, Never> = Task { [weak self] in
             guard let self else { return }
@@ -98,7 +103,7 @@ extension AIChatViewModel {
         guard let connection else { return }
         let connId = connection.id
         let settings = services.appSettings.ai
-        let tablesToFetch = Array(tables.prefix(settings.maxSchemaTables))
+        let tablesToFetch = Array(orderedTables().prefix(settings.maxSchemaTables))
         guard !tablesToFetch.isEmpty else { return }
 
         await withTaskGroup(of: (String, [ColumnInfo]).self) { group in
@@ -193,13 +198,33 @@ extension AIChatViewModel {
     /// `tables` lists the one schema the session browses, where a table name is unique, so the
     /// name-keyed column and foreign key maps join to it by name.
     private func schemaTables() -> [AISchemaTable] {
-        tables.map { table in
+        orderedTables().map { table in
             AISchemaTable(
                 table: table,
                 columns: columnsByTable[table.name] ?? [],
                 foreignKeys: foreignKeysByTable[table.name] ?? []
             )
         }
+    }
+
+    private func prioritizeSchema(for question: String) {
+        let text = [question, currentQuery ?? ""].joined(separator: "\n")
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        relevantTableNames = AISchemaContext.relevantTableNames(
+            in: tables,
+            columnsByTable: columnsByTable,
+            question: text,
+            maxTables: services.appSettings.ai.maxSchemaTables
+        )
+    }
+
+    private func orderedTables() -> [TableInfo] {
+        let all = tables
+        guard !relevantTableNames.isEmpty else { return all }
+        let byName = Dictionary(all.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
+        let relevant = relevantTableNames.compactMap { byName[$0] }
+        let picked = Set(relevant.map(\.name))
+        return relevant + all.filter { !picked.contains($0.name) }
     }
 
     private func defaultSchema(for connection: DatabaseConnection) -> String? {

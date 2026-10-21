@@ -125,7 +125,10 @@ extension AIChatViewModel {
         prepTask = Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             if settings.includeSchema {
-                await self.ensureSchemaLoaded()
+                let question = await MainActor.run {
+                    self.messages.last { $0.role == .user }?.plainText
+                }
+                await self.ensureSchemaLoaded(relevantTo: question)
             }
             if Task.isCancelled { return }
             let priorTurns: [ChatTurn] = await MainActor.run {

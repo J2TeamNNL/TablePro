@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import TableProAutocomplete
 import TableProPluginKit
 
 /// One table as the schema context describes it. The producer joins each table to its own columns
@@ -156,12 +157,42 @@ struct AISchemaContext {
             }
         }
 
-        if tables.count > maxTables {
-            lines.append(
-                "\n… and \(tables.count - maxTables) more tables (not shown)"
-            )
+        let hiddenTables = tables.dropFirst(maxTables)
+        if !hiddenTables.isEmpty {
+            let listed = hiddenTables.prefix(maxListedHiddenTables).map { entry in
+                SchemaQualifiedName.render(
+                    name: entry.table.name,
+                    schema: entry.table.schema,
+                    implicitSchemaName: defaultSchema,
+                    quote: { "\(q)\($0)\(q)" }
+                )
+            }
+            var line = "\nOther tables (columns not shown): " + listed.joined(separator: ", ")
+            if hiddenTables.count > listed.count {
+                line += ", … and \(hiddenTables.count - listed.count) more"
+            }
+            lines.append(line)
         }
 
         return lines.joined(separator: "\n")
+    }
+
+    static let maxListedHiddenTables = 200
+
+    /// Names of the tables that match `question`, best first, so the prompt spends its column budget
+    /// on them. Empty when every table already fits, or when nothing matches.
+    static func relevantTableNames(
+        in tables: [TableInfo],
+        columnsByTable: [String: [ColumnInfo]],
+        question: String,
+        maxTables: Int
+    ) -> [String] {
+        guard tables.count > maxTables else { return [] }
+        let documents = tables.map { table in
+            var details = (columnsByTable[table.name] ?? []).flatMap { [$0.name, $0.comment ?? ""] }
+            if let comment = table.comment { details.append(comment) }
+            return SchemaRelevanceDocument(name: table.name, details: details)
+        }
+        return SchemaRelevanceRanker.rank(documents, for: question).map { tables[$0].name }
     }
 }
