@@ -84,9 +84,10 @@ internal final class LaunchTracer {
         var previous: TimeInterval = 0
         for mark in marks {
             // String(format:) ignores the width of a %@ argument, so the name is padded here.
+            let name = mark.stage.rawValue
             lines.append(String(
                 format: "  %@ %8.1f  (+%6.1f)",
-                mark.stage.rawValue.padding(toLength: 26, withPad: " ", startingAt: 0),
+                name + String(repeating: " ", count: max(0, 26 - name.count)),
                 mark.offset * 1_000,
                 (mark.offset - previous) * 1_000
             ))

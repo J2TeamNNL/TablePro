@@ -48,6 +48,11 @@ internal final class TabSwitchTracer {
             id: signposter.makeSignpostID(),
             "#\(sequence, privacy: .public) \(trigger.rawValue, privacy: .public)"
         )
+        Task { [weak self] in
+            try? await Task.sleep(for: TabSwitchTraceRecorder.requestExpiry)
+            guard let self, let ending = self.recorder.abandonUnselected(sequence: sequence) else { return }
+            self.end(ending)
+        }
     }
 
     // isShowing answers, when the frame comes, whether the window still shows that tab.
@@ -67,6 +72,10 @@ internal final class TabSwitchTracer {
         case .ended(let timing):
             end(.timed(timing))
         case .started(let sequence):
+            guard let window else {
+                abandon(sequence)
+                return
+            }
             self.window = window
             self.isShowing = isShowing
             logger.debug("tabswitch #\(sequence) selected rows=\(rows.rawValue, privacy: .public)")
@@ -88,12 +97,17 @@ internal final class TabSwitchTracer {
 
     private func awaitFrame(_ sequence: Int) {
         guard let window else {
-            framePresented(sequence)
+            abandon(sequence)
             return
         }
         window.afterNextFrame { [weak self] in
             self?.framePresented(sequence)
         }
+    }
+
+    private func abandon(_ sequence: Int) {
+        guard let ending = recorder.abandon(sequence: sequence) else { return }
+        end(ending)
     }
 
     // A connection switch or a sidebar click can leave the tab while its rows load, with no selection change here.

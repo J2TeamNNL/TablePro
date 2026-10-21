@@ -184,8 +184,8 @@ internal final class TableLoadTracer {
         )
         endInterval(for: timing.token, outcome: label)
         drainCompletedTraces()
-        // A superseded load ending late says nothing about the rows the tab now waits for.
-        guard ownsTab else { return }
+        // A superseded load ending late, or a duplicate trigger dropped, says nothing about the rows the tab now waits for.
+        guard ownsTab, outcome != .loadAlreadyInFlight else { return }
         TabSwitchTracer.shared.tableLoadFinished(tabId: timing.token.tabId, outcome: outcome)
     }
 

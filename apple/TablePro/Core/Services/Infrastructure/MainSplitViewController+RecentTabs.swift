@@ -159,11 +159,11 @@ internal extension MainSplitViewController {
         let manager = sessionState.tabManager
         TabSwitchTracer.shared.requestSwitch(.recentTab, to: reference.tabId)
         let changesTab = manager.selectedTabId != reference.tabId
-        let arriving = sessionState.coordinator.arrivingRows(for: reference.tabId)
+        let arriving = changesTab ? nil : sessionState.coordinator.arrivingRows(for: reference.tabId)
         manager.selectedTabId = reference.tabId
         workspaces.select(reference.connectionId)
         // Only the connection changes, so no tab selection reaches handleTabChange.
-        if !changesTab {
+        if let arriving {
             TabSwitchTracer.shared.selectionApplied(
                 tabId: reference.tabId,
                 rows: arriving,
