@@ -407,6 +407,9 @@ internal enum DatabaseTreeMenuSpec {
         context: DatabaseTreeMenuContext
     ) -> [DatabaseTreeMenuItem] {
         var items: [DatabaseTreeMenuItem] = []
+        if targets.count == 1, context.canSearchData, !clicked.isSystem {
+            items.append(.command(searchTitle(for: clicked, context: context), .searchContainer(clicked)))
+        }
         if ExportPreselection.canPreselect(
             containers: targets,
             activeDatabase: context.activeDatabase,
@@ -443,6 +446,13 @@ internal enum DatabaseTreeMenuSpec {
             items.append(.command(dropTitle(for: droppable, context: context), .dropContainers(droppable)))
         }
         return items
+    }
+
+    private static func searchTitle(for container: DatabaseContainerRef, context: DatabaseTreeMenuContext) -> String {
+        String(
+            format: String(localized: "Search %@\u{2026}"),
+            container.kind == .schema ? context.schemaEntityName : context.containerEntityName
+        )
     }
 
     private static func backUpTitle(count: Int) -> String {

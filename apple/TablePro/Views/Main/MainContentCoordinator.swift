@@ -91,6 +91,7 @@ enum ActiveSheet: Identifiable {
     /// carries its scope: the document is written where it was read, not wherever the object
     /// browser points by the time Save is pressed.
     case documentEditor(DocumentEditorRequest)
+    case searchDatabase(DatabaseSearchSession)
 
     var id: String {
         switch self {
@@ -114,6 +115,7 @@ enum ActiveSheet: Identifiable {
         case .rewind: "rewind"
         case .tableRebuildReview: "tableRebuildReview"
         case .documentEditor(let request): "documentEditor-\(request.id.uuidString)"
+        case .searchDatabase(let session): "searchDatabase-\(session.id.uuidString)"
         }
     }
 }
@@ -309,6 +311,8 @@ final class MainContentCoordinator: ObservableObject {
     @Published var containerDropRequest: DatabaseDropRequest?
     @Published var importFile: ImportFileHandoff?
     @Published var exportPreselection: ExportPreselection?
+    // Kept after the sheet closes, so reopening Search Database after opening a result shows the results again.
+    var databaseSearchSession: DatabaseSearchSession?
     @Published var pendingLoadTrigger: TableLoadTrigger?
     var deferredRestoreLoadTabId: UUID?
 
@@ -1002,6 +1006,8 @@ final class MainContentCoordinator: ObservableObject {
         draftSaveTask = nil
         redisDatabaseSwitchTask?.cancel()
         redisDatabaseSwitchTask = nil
+        databaseSearchSession?.stop()
+        databaseSearchSession = nil
 
         dataTabDelegate?.tableViewCoordinator?.releaseData()
 
