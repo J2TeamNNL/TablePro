@@ -296,6 +296,20 @@ struct ToolbarContextResolverTests {
         #expect(hidden.contains(MainWindowToolbar.refresh) == false)
     }
 
+    @Test("A type's tab stages changes, so it keeps the commit control other object tabs lose")
+    func typeTabKeepsSaveChanges() {
+        let typeTab = ToolbarContext(
+            tabKind: .objectSource,
+            resultsMode: nil,
+            pane: .content,
+            isConnected: true,
+            hasSelectedWorkspace: true,
+            stagesObjectChanges: true
+        )
+        #expect(Self.hidden(typeTab).contains(MainWindowToolbar.saveChanges) == false)
+        #expect(typeTab.visibilityKey.stagesObjectChanges)
+    }
+
     @Test("The four kinds that can stage a change keep both content commands", arguments: [
         TabType.query, .table, .usersRoles, .erDiagram,
     ])

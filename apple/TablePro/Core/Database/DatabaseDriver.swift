@@ -306,7 +306,17 @@ protocol DatabaseDriver: AnyObject, Sendable {
     /// listed, because its `identity` is the driver's own key for finding it again.
     func fetchUserDefinedType(_ type: UserDefinedTypeInfo) async throws -> UserDefinedTypeInfo
 
-    func generateDropTypeSQL(type: UserDefinedTypeInfo) -> String?
+    /// `cascade` also drops what depends on the type; nil when the driver has no such drop.
+    func generateDropTypeSQL(type: UserDefinedTypeInfo, cascade: Bool) -> String?
+
+    /// Mirrors `PluginDatabaseDriver.createUserDefinedTypeStatements(_:)`.
+    func createUserDefinedTypeStatements(_ definition: PluginUserDefinedTypeDefinition) -> [String]?
+
+    /// Mirrors `PluginDatabaseDriver.alterUserDefinedTypeStatements(type:change:)`.
+    func alterUserDefinedTypeStatements(type: UserDefinedTypeInfo, change: PluginUserDefinedTypeChange) -> [String]?
+
+    /// Mirrors `PluginDatabaseDriver.userDefinedTypeChangeRunsOutsideTransaction(_:)`.
+    func userDefinedTypeChangeRunsOutsideTransaction(_ change: PluginUserDefinedTypeChange) -> Bool
 
     /// Fetch every trigger in the given schema, across all its tables.
     func fetchAllTriggers(schema: String?) async throws -> [TriggerInfo]
@@ -907,7 +917,15 @@ extension DatabaseDriver {
         return type
     }
 
-    func generateDropTypeSQL(type: UserDefinedTypeInfo) -> String? { nil }
+    func generateDropTypeSQL(type: UserDefinedTypeInfo, cascade: Bool) -> String? { nil }
+
+    func createUserDefinedTypeStatements(_ definition: PluginUserDefinedTypeDefinition) -> [String]? { nil }
+
+    func alterUserDefinedTypeStatements(type: UserDefinedTypeInfo, change: PluginUserDefinedTypeChange) -> [String]? {
+        nil
+    }
+
+    func userDefinedTypeChangeRunsOutsideTransaction(_ change: PluginUserDefinedTypeChange) -> Bool { false }
 
     func fetchAllTriggers(schema: String?) async throws -> [TriggerInfo] { [] }
 

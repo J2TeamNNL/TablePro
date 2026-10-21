@@ -310,7 +310,9 @@ struct MainEditorContentView: View {
 
     @ViewBuilder
     private func objectSourceContent(tab: QueryTab) -> some View {
-        if let objectRef = tab.display.objectRef {
+        if let objectRef = tab.display.objectRef, objectRef.kind == .userType {
+            userTypeContent(tab: tab, objectRef: objectRef)
+        } else if let objectRef = tab.display.objectRef {
             ObjectSourceTabView(
                 connectionId: connection.id,
                 databaseType: connection.type,
@@ -1341,5 +1343,38 @@ extension MainEditorContentView {
                 settingsManager.keyboard.shortcutHint(label, for: action)
             }
         )
+    }
+}
+
+fileprivate extension MainEditorContentView {
+    /// The editor is kept per tab on the coordinator, keyed by the tab's id rather than the type's
+    /// name, so a rename that retitles the tab keeps its queue.
+    @ViewBuilder
+    func userTypeContent(tab: QueryTab, objectRef: DatabaseObjectRef) -> some View {
+        Group {
+            if let model = coordinator.userTypeEditors[tab.id] {
+                UserTypeTabView(
+                    model: model,
+                    databaseType: connection.type,
+                    isReadOnly: coordinator.safeModeLevel.blocksAllWrites,
+                    onOpenInEditor: { source in
+                        coordinator.openObjectSourceInEditor(model.objectRef, source: source)
+                    },
+                    onChangeStateChanged: { hasChanges in
+                        coordinator.publishUserTypeEditorState(tabId: tab.id, hasChanges: hasChanges)
+                    },
+                    onLeave: { coordinator.releaseUserTypeEditorState(tabId: tab.id) },
+                    onPreviewSQL: { coordinator.previewUserTypeChanges(tabId: tab.id) },
+                    onSave: { coordinator.saveUserTypeChanges(tabId: tab.id) }
+                )
+            } else {
+                Color.clear
+                    .onAppear {
+                        guard coordinator.userTypeEditors[tab.id] == nil else { return }
+                        coordinator.userTypeEditors[tab.id] = coordinator.makeUserTypeEditor(for: objectRef, tabId: tab.id)
+                    }
+            }
+        }
+        .id(tab.id)
     }
 }

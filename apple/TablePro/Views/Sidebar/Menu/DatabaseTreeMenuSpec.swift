@@ -51,6 +51,7 @@ internal enum DatabaseTreeMenuSpec {
         case .containerObjectKindSection(let group):
             let database = group.database.nilIfEmpty
             return [
+                DatabaseTreeMenuSection(newTypeItems(kind: group.kind, database: database, schema: group.schema, context: context)),
                 DatabaseTreeMenuSection([.command(String(localized: "Refresh"), .refreshContainerObjectKind(group))]),
                 DatabaseTreeMenuSection(newFolderItems(
                     kind: group.kind,
@@ -336,18 +337,38 @@ internal enum DatabaseTreeMenuSpec {
         if ref.type.qualifiedName != ref.type.name {
             copies.append(.command(String(localized: "Copy Qualified Name"), .copyText(ref.type.qualifiedName)))
         }
-        var sections = [
-            DatabaseTreeMenuSection(copies),
-            DatabaseTreeMenuSection([.command(String(localized: "Show Definition"), .showObjectSource(ref.objectRef))])
-        ]
+        var writes: [DatabaseTreeMenuItem] = []
+        if DatabaseObjectToolEligibility.canRenameType(
+            ref.type.kind,
+            support: context.objectToolSupport,
+            isReadOnly: context.isReadOnly
+        ) {
+            writes.append(.command(String(localized: "Rename"), .renameUserType(ref)))
+        }
         if DatabaseObjectToolEligibility.canDropType(
             ref.type.kind,
             support: context.objectToolSupport,
             isReadOnly: context.isReadOnly
         ) {
-            sections.append(DatabaseTreeMenuSection([.command(String(localized: "Drop Type…"), .dropUserType(ref))]))
+            writes.append(.command(String(localized: "Drop Type…"), .dropUserType(ref)))
         }
-        return sections
+        return [
+            DatabaseTreeMenuSection(copies),
+            DatabaseTreeMenuSection([.command(String(localized: "Show Definition"), .showObjectSource(ref.objectRef))]),
+            DatabaseTreeMenuSection(writes)
+        ]
+    }
+
+    private static func newTypeItems(
+        kind: SidebarObjectKind,
+        database: String?,
+        schema: String?,
+        context: DatabaseTreeMenuContext
+    ) -> [DatabaseTreeMenuItem] {
+        guard kind == .type,
+              DatabaseObjectToolEligibility.canCreateType(support: context.objectToolSupport, isReadOnly: context.isReadOnly)
+        else { return [] }
+        return [.command(String(localized: "New Type…"), .newUserType(database: database, schema: schema))]
     }
 
     private static func redisSections(_ node: RedisKeyNode) -> [DatabaseTreeMenuSection] {
@@ -380,6 +401,7 @@ internal enum DatabaseTreeMenuSpec {
         }
         items.append(.command(String(localized: "Refresh"), .refreshObjectKind(kind)))
         return [
+            DatabaseTreeMenuSection(newTypeItems(kind: kind, database: nil, schema: nil, context: context)),
             DatabaseTreeMenuSection(items),
             DatabaseTreeMenuSection(context.offersBrowsedFolders ? newFolderItems(kind: kind, container: .browsed) : [])
         ]

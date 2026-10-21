@@ -107,7 +107,16 @@
     "%@ is read-only, so rows cannot be added." : {
 
     },
+    "%@, without checking stored values" : {
+
+    },
+    "A check needs an expression." : {
+
+    },
     "A dictionary for each row, keyed by column" : {
+
+    },
+    "A field needs a type." : {
 
     },
     "A foreign key named “%@” already exists." : {
@@ -116,13 +125,28 @@
     "A foreign key staged in this diagram uses “%1$@.%2$@”. Save or undo that key before renaming the column." : {
 
     },
+    "A label cannot be empty." : {
+
+    },
+    "A label cannot be removed or moved once it exists." : {
+
+    },
     "A larger binary value stays on the server until you open, copy or export it. Applies to tables with a primary key." : {
+
+    },
+    "A name cannot be empty." : {
 
     },
     "A transaction is open on this connection. Commit or roll it back in TablePro, then run the shortcut again." : {
 
     },
     "AI Policy controls in-app AI agents. External Clients controls Raycast, Cursor, Claude Desktop, other MCP clients, AppleScript, and Shortcuts. Effective scope is the minimum of the requesting token's scope and the External Clients level." : {
+
+    },
+    "Add Check" : {
+
+    },
+    "Add Field" : {
 
     },
     "Add Foreign Key…" : {
@@ -138,6 +162,24 @@
 
     },
     "Add a row to ${table}" : {
+
+    },
+    "Add check %@" : {
+
+    },
+    "Add check “%1$@”: %2$@" : {
+
+    },
+    "Add field “%1$@” %2$@" : {
+
+    },
+    "Add label “%1$@” after “%2$@”" : {
+
+    },
+    "Add label “%1$@” before “%2$@”" : {
+
+    },
+    "Add label “%@” at the end" : {
 
     },
     "Add multiple rows to a table on a saved connection. Provide the rows as a JSON array, CSV text, or a file." : {
@@ -162,7 +204,16 @@
     "Added one row to %@." : {
 
     },
+    "After" : {
+
+    },
     "Allow NULL" : {
+
+    },
+    "Also drop the columns, functions and other objects that use this type" : {
+
+    },
+    "At the End" : {
 
     },
     "Attach" : {
@@ -185,6 +236,12 @@
     "Attached each time the connection opens. Reach a table as name.table, and browse each database in the sidebar." : {
 
     },
+    "Base Type" : {
+
+    },
+    "Before" : {
+
+    },
     "Binary values limit must be between 1 and 1,048,576 KB." : {
 
     },
@@ -203,10 +260,28 @@
     "Cannot Compare" : {
 
     },
+    "Change field “%1$@” to %2$@" : {
+
+    },
+    "Check" : {
+
+    },
+    "Check the values already stored" : {
+
+    },
+    "Check the values already stored against the selected constraint" : {
+
+    },
+    "Checks" : {
+
+    },
     "Choose a Result" : {
 
     },
     "Choose a Type" : {
+
+    },
+    "Choose the base type." : {
 
     },
     "Choose the database files to attach each time this connection opens." : {
@@ -252,10 +327,40 @@
     "Could not read the columns of %@." : {
 
     },
+    "Couldn't Rename Type" : {
+
+    },
+    "Create Type" : {
+
+    },
     "Database or Schema" : {
 
     },
     "Delete Foreign Key %@" : {
+
+    },
+    "Drop Constraint" : {
+
+    },
+    "Drop Field" : {
+
+    },
+    "Drop constraint “%@”" : {
+
+    },
+    "Drop field “%@”" : {
+
+    },
+    "Drop type “%@”?" : {
+
+    },
+    "Dropped" : {
+
+    },
+    "Edit Field" : {
+
+    },
+    "Every field needs a name." : {
 
     },
     "First Value" : {
@@ -302,6 +407,18 @@
       "extractionState" : "manual",
       "generatesSymbol" : false
     },
+    "Name the type." : {
+
+    },
+    "Named by the server" : {
+
+    },
+    "New Name" : {
+
+    },
+    "New Type" : {
+
+    },
     "No Attached Databases" : {
 
     },
@@ -323,7 +440,13 @@
     "None (Cross Join)" : {
 
     },
+    "Not Null" : {
+
+    },
     "Not loaded, %@" : {
+
+    },
+    "Not validated" : {
 
     },
     "Only Left" : {
@@ -350,13 +473,49 @@
     "Pick the tables to join. Their foreign keys become the join conditions." : {
 
     },
+    "Position" : {
+
+    },
     "Provide a JSON object or an array of objects." : {
 
     },
     "References" : {
 
     },
+    "Refuse NULL" : {
+
+    },
     "Remove Attached Database" : {
+
+    },
+    "Remove the comment" : {
+
+    },
+    "Remove the default" : {
+
+    },
+    "Remove this change from the queue" : {
+
+    },
+    "Remove “%@”" : {
+
+    },
+    "Rename Label" : {
+
+    },
+    "Rename Type" : {
+
+    },
+    "Rename field “%1$@” to “%2$@”" : {
+
+    },
+    "Rename label “%1$@” to “%2$@”" : {
+
+    },
+    "Rename the selected label" : {
+
+    },
+    "Rename to “%@”" : {
 
     },
     "Result %1$d: %2$@" : {
@@ -395,7 +554,19 @@
     "Run another query in this tab, or pin a result in another tab." : {
 
     },
+    "Save Type Changes" : {
+
+    },
     "Second value" : {
+
+    },
+    "Section" : {
+
+    },
+    "Set the comment" : {
+
+    },
+    "Set the default to %@" : {
 
     },
     "Shortcuts" : {
@@ -411,6 +582,12 @@
 
     },
     "Some rows are no longer in the table, so their values could not be read." : {
+
+    },
+    "Statement" : {
+
+    },
+    "Subtype" : {
 
     },
     "Table Data" : {
@@ -435,6 +612,9 @@
     "The attached file \"%@\" has no name." : {
       "extractionState" : "manual",
       "generatesSymbol" : false
+    },
+    "The changes were saved, but the type could not be read back. Reload before editing it again." : {
+
     },
     "The column “%1$@” is no longer in “%2$@”." : {
 
@@ -476,6 +656,12 @@
     "The schema changes staged in this diagram will be lost." : {
 
     },
+    "The server refused a change, so nothing was saved." : {
+
+    },
+    "The server refused a change. The changes before it were saved." : {
+
+    },
     "The structure of a table in an attached database cannot be changed here." : {
       "extractionState" : "manual",
       "generatesSymbol" : false
@@ -486,19 +672,58 @@
     "The two results share no column name, so there is nothing to compare." : {
 
     },
+    "The type changed on the server since it was read. Reload it, then save again." : {
+
+    },
     "This Tab" : {
+
+    },
+    "This cannot be undone. The drop fails while a column or other object still uses it." : {
+
+    },
+    "This cannot be undone. Without Cascade, the drop fails while a column, function or other type still uses it." : {
+
+    },
+    "This change does not apply to this kind of type." : {
 
     },
     "This connection's startup commands leave a transaction open, so rows added from Shortcuts could not be committed." : {
 
     },
+    "This database cannot make the change “%@”." : {
+
+    },
     "This database reports no tables to join." : {
+
+    },
+    "This server cannot rename a label." : {
 
     },
     "Too many rows. Add up to %lld rows at a time." : {
 
     },
+    "Turn off to add the check now and validate the stored values later." : {
+
+    },
+    "Validate" : {
+
+    },
+    "Validate constraint “%@”" : {
+
+    },
+    "Validated on save" : {
+
+    },
+    "Was %@" : {
+
+    },
+    "Was “%@”" : {
+
+    },
     "Whole row" : {
+
+    },
+    "^[%lld change](inflect: true)" : {
 
     },
     "__name__ is the document's ID in this collection, such as alice." : {
@@ -865,6 +1090,30 @@
       "shouldTranslate" : false
     },
     "“%@” already has a column with that name." : {
+
+    },
+    "“%@” is already a constraint." : {
+
+    },
+    "“%@” is already a field." : {
+
+    },
+    "“%@” is already a label." : {
+
+    },
+    "“%@” is already validated." : {
+
+    },
+    "“%@” is listed twice." : {
+
+    },
+    "“%@” is not a constraint any more." : {
+
+    },
+    "“%@” is not a field any more." : {
+
+    },
+    "“%@” is not a label any more." : {
 
     },
     "…and %d more lines" : {

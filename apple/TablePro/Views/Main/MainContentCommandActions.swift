@@ -885,6 +885,7 @@ final class MainContentCommandActions: ObservableObject {
             }
         }
         guard await applySelectedDiagramEdits(in: coordinator) else { return false }
+        guard await applySelectedTypeChanges() else { return false }
 
         // Data grid changes or pending table operations take priority
         let hasDataChanges = coordinator.changeManager.hasChanges
@@ -933,12 +934,10 @@ final class MainContentCommandActions: ObservableObject {
         let victims = tabs.filter { tab in
             tab.id != selectedId && coordinator.hasStagedStructureEdits(in: tab)
         }
-        guard !victims.isEmpty else { return true }
-
         for tab in victims {
             guard await applyStagedSchemaWork(of: tab, in: coordinator) else { return false }
         }
-        return true
+        return await applyBackgroundTypeChanges(in: tabs)
     }
 
 
@@ -1019,6 +1018,7 @@ final class MainContentCommandActions: ObservableObject {
         if saveSelectedDiagram() {
             return
         }
+        if saveSelectedTypeChanges() { return }
         if coordinator?.tabManager.selectedTab?.display.resultsViewMode == .structure {
             applyStagedStructureChanges()
         } else if coordinator?.changeManager.hasChanges == true

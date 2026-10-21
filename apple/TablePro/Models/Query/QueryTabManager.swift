@@ -604,7 +604,9 @@ final class QueryTabManager: ObservableObject {
     /// One tab per object, so opening the same routine twice returns to the tab already showing
     /// it, the way opening the same table does.
     func addObjectSourceTab(objectRef: DatabaseObjectRef) {
-        if let existing = tabs.first(where: { $0.tabType == .objectSource && $0.display.objectRef == objectRef }) {
+        if let existing = tabs.first(where: {
+            $0.tabType == .objectSource && $0.display.objectRef?.namesSameObject(as: objectRef) == true
+        }) {
             selectedTabId = existing.id
             return
         }

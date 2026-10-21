@@ -139,8 +139,8 @@ extension DatabaseTreeOutlineCoordinator {
             ClipboardService.shared.writeText(text)
         case .showObjectSource(let ref):
             mainCoordinator?.showObjectSource(ref)
-        case .dropUserType(let ref):
-            mainCoordinator?.dropUserType(ref)
+        case .dropUserType, .renameUserType, .newUserType:
+            performUserTypeCommand(command)
         case .refreshRedisKeys:
             sidebarState?.redisKeyTreeViewModel?.reload()
         case .copyRedisNamespacePrefix(let prefix):
@@ -230,6 +230,19 @@ extension DatabaseTreeOutlineCoordinator {
         Task { @MainActor in
             await activate(ref)
             body()
+        }
+    }
+
+    private func performUserTypeCommand(_ command: SidebarMenuCommand) {
+        switch command {
+        case .dropUserType(let ref):
+            mainCoordinator?.dropUserType(ref)
+        case .renameUserType(let ref):
+            beginRename(.userType(ref))
+        case .newUserType(let database, let schema):
+            mainCoordinator?.newUserType(database: database, schema: schema)
+        default:
+            break
         }
     }
 

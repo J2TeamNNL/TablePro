@@ -243,6 +243,15 @@ struct MainContentView: View {
             EditSequenceSheet(target: target, connection: connection)
         case .documentEditor(let request):
             DocumentEditorSheet(request: request, databaseType: connection.type)
+        case .createUserType(let database, let schema):
+            CreateUserTypeSheet(
+                connection: connection,
+                database: database ?? coordinator.browseDatabaseName,
+                schema: schema,
+                onCreated: { definition in
+                    coordinator.openCreatedUserType(definition, database: database ?? coordinator.browseDatabaseName)
+                }
+            )
         case .searchDatabase(let session):
             DatabaseSearchSheet(session: session) { result in
                 coordinator.openDatabaseSearchResult(result, in: session)
@@ -334,7 +343,8 @@ struct MainContentView: View {
             selectedTabId: tabManager.selectedTabId,
             isFileDirty: tabManager.selectedTab?.content.isFileDirty ?? false,
             hasCreateTablePending: toolbarState.hasCreateTablePending,
-            hasPrincipalChanges: toolbarState.hasPrincipalChanges
+            hasPrincipalChanges: toolbarState.hasPrincipalChanges,
+            hasTypeChanges: toolbarState.hasTypeChanges
         )
     }
 

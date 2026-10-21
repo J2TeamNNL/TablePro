@@ -695,6 +695,21 @@ public protocol PluginDatabaseDriver: AnyObject, Sendable {
     func generateRenameEnumLabelSQL(type: PluginUserDefinedTypeInfo, from oldLabel: String, to newLabel: String) -> String?
     func generateDropTypeSQL(type: PluginUserDefinedTypeInfo) -> String?
 
+    /// The statements that create a type. Nil for a kind the engine cannot create from a statement,
+    /// which keeps that kind off the New Type sheet.
+    func createUserDefinedTypeStatements(_ definition: PluginUserDefinedTypeDefinition) -> [String]?
+
+    /// The statements for one queued change. Nil for a change this engine or server version cannot
+    /// make, which keeps it out of the editor.
+    func alterUserDefinedTypeStatements(type: PluginUserDefinedTypeInfo, change: PluginUserDefinedTypeChange) -> [String]?
+
+    /// Whether this server refuses the change's statements inside a transaction block, so a save
+    /// holding it has to run each statement on its own.
+    func userDefinedTypeChangeRunsOutsideTransaction(_ change: PluginUserDefinedTypeChange) -> Bool
+
+    /// `cascade` also drops what depends on the type. Nil when the engine has no such drop.
+    func generateDropTypeSQL(type: PluginUserDefinedTypeInfo, cascade: Bool) -> String?
+
     // All-tables metadata SQL (optional — returns nil for non-SQL databases)
     func allTablesMetadataSQL(schema: String?) -> String?
 
@@ -812,6 +827,29 @@ public extension PluginDatabaseDriver {
     ) -> String? { nil }
 
     func generateDropTypeSQL(type: PluginUserDefinedTypeInfo) -> String? { nil }
+
+    func createUserDefinedTypeStatements(_ definition: PluginUserDefinedTypeDefinition) -> [String]? { nil }
+
+    /// A driver that only answers the two enum label hooks keeps them reachable through this one.
+    func alterUserDefinedTypeStatements(
+        type: PluginUserDefinedTypeInfo,
+        change: PluginUserDefinedTypeChange
+    ) -> [String]? {
+        switch change {
+        case .addEnumLabel(let label, let placement):
+            return generateAddEnumLabelSQL(type: type, label: label, placement: placement).map { [$0] }
+        case .renameEnumLabel(let oldLabel, let newLabel):
+            return generateRenameEnumLabelSQL(type: type, from: oldLabel, to: newLabel).map { [$0] }
+        default:
+            return nil
+        }
+    }
+
+    func generateDropTypeSQL(type: PluginUserDefinedTypeInfo, cascade: Bool) -> String? {
+        cascade ? nil : generateDropTypeSQL(type: type)
+    }
+
+    func userDefinedTypeChangeRunsOutsideTransaction(_ change: PluginUserDefinedTypeChange) -> Bool { false }
 
     /// Engines whose partitions are metadata on one table object, rather than
     /// separate relations, have nothing to nest and keep the empty default.

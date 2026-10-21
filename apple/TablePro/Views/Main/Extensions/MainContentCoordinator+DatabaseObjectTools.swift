@@ -2,7 +2,7 @@
 //  MainContentCoordinator+DatabaseObjectTools.swift
 //  TablePro
 //
-//  Copy DDL, Refresh Materialized View, Edit Comment and Drop Type on one object.
+//  Copy DDL, Refresh Materialized View and Edit Comment on one object.
 //
 
 import AppKit
@@ -97,31 +97,6 @@ extension MainContentCoordinator {
             } catch {
                 AlertHelper.showErrorSheet(
                     title: String(localized: "Couldn't Refresh Materialized View"),
-                    message: error.localizedDescription,
-                    window: contentWindow
-                )
-            }
-        }
-    }
-
-    // MARK: - Drop Type
-
-    func dropUserType(_ ref: DatabaseTreeUserTypeRef) {
-        guard !safeModeLevel.blocksAllWrites,
-              let scope = services.databaseManager.resolvedScope(
-                  database: ref.database,
-                  schema: ref.schema,
-                  for: connectionId
-              )
-        else { return }
-        Task {
-            do {
-                try await UserTypeDropping.drop(ref.type, in: scope, connection: connection)
-            } catch ExecutionGateError.cancelledByUser {
-            } catch {
-                Self.objectToolsLogger.error("Drop Type failed: \(error.publicLogShape, privacy: .public)")
-                AlertHelper.showErrorSheet(
-                    title: String(localized: "Drop Failed"),
                     message: error.localizedDescription,
                     window: contentWindow
                 )
