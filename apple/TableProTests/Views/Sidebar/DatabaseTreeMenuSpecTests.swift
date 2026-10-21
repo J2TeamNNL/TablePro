@@ -1196,6 +1196,14 @@ struct DatabaseTreeMenuSpecTests {
         #expect(titles(schemaSections).contains("Search Schema\u{2026}"))
     }
 
+    @Test("A schema drawn in a hierarchical tree offers Search Schema too")
+    func hierarchicalSchemaOffersSearch() {
+        let issued = commands(DatabaseTreeMenuSpec.sections(
+            for: context(clicked: .hierarchicalSchemaSection(schema: "SALES"))
+        ))
+        #expect(issued.contains(.searchContainer(.schema(database: "app", schema: "SALES"))))
+    }
+
     @Test("Search is not offered on an engine it cannot run on, a system container or a multi-selection")
     func searchNeedsOneUserContainer() {
         func offersSearch(_ sections: [DatabaseTreeMenuSection]) -> Bool {

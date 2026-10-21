@@ -56,11 +56,13 @@ internal enum DatabaseSearchColumnPlanner {
             return textMatch
         case .enumType, .set:
             if options.matchMode.usesPattern { return textMatch }
-            // An engine refuses `=` against a label its enum does not declare.
-            guard let labels = type.enumValues, labels.contains(where: { matchesLabel($0, term, options) }) else {
-                return nil
-            }
-            return textMatch
+            // An engine refuses `=` against a label its enum does not declare; a SET value is a list of them.
+            guard let labels = type.enumValues else { return nil }
+            let parts = type.isSetType
+                ? term.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+                : [term]
+            let declared = parts.allSatisfy { part in labels.contains { matchesLabel($0, part, options) } }
+            return declared ? textMatch : nil
         case .json:
             return options.matchMode.usesPattern ? textMatch : nil
         case .integer:

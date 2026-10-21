@@ -132,6 +132,16 @@ struct DatabaseSearchColumnPlannerTests {
         #expect(filters.map(\.columnName) == ["name"])
     }
 
+    @Test("An exact match on a SET takes a list of declared labels")
+    func exactSetTakesALabelList() {
+        let colors = Column(name: "colors", type: .set(rawType: "set", values: ["red", "green", "blue"]))
+        var options = DatabaseSearchOptions(term: "red,blue")
+        options.matchMode = .exact
+        #expect(DatabaseSearchColumnPlanner.filters(for: [colors], options: options).count == 1)
+        options.term = "red,pink"
+        #expect(DatabaseSearchColumnPlanner.filters(for: [colors], options: options).isEmpty)
+    }
+
     @Test("An exact match on an enum needs a declared label")
     func exactEnumNeedsALabel() {
         let status = Column(name: "status", type: .enumType(rawType: "enum", values: ["open", "closed"]))

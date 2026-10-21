@@ -362,7 +362,7 @@ internal enum DatabaseTreeMenuSpec {
             /// Oracle, Snowflake, Trino, Dameng and BigQuery draw their schemas here rather than as
             /// container rows, and several of them need a schema-scoped source, so leaving Copy To
             /// on the container path alone put it out of reach on exactly the engines that require it.
-            DatabaseTreeMenuSection(copyItems(ref, context: context)),
+            DatabaseTreeMenuSection(searchItems(ref, context: context) + copyItems(ref, context: context)),
             DatabaseTreeMenuSection(writes)
         ]
     }
@@ -407,8 +407,8 @@ internal enum DatabaseTreeMenuSpec {
         context: DatabaseTreeMenuContext
     ) -> [DatabaseTreeMenuItem] {
         var items: [DatabaseTreeMenuItem] = []
-        if targets.count == 1, context.canSearchData, !clicked.isSystem {
-            items.append(.command(searchTitle(for: clicked, context: context), .searchContainer(clicked)))
+        if targets.count == 1 {
+            items += searchItems(clicked, context: context)
         }
         if ExportPreselection.canPreselect(
             containers: targets,
@@ -448,11 +448,16 @@ internal enum DatabaseTreeMenuSpec {
         return items
     }
 
-    private static func searchTitle(for container: DatabaseContainerRef, context: DatabaseTreeMenuContext) -> String {
-        String(
+    private static func searchItems(
+        _ clicked: DatabaseContainerRef,
+        context: DatabaseTreeMenuContext
+    ) -> [DatabaseTreeMenuItem] {
+        guard context.canSearchData, !clicked.isSystem else { return [] }
+        let title = String(
             format: String(localized: "Search %@\u{2026}"),
-            container.kind == .schema ? context.schemaEntityName : context.containerEntityName
+            clicked.kind == .schema ? context.schemaEntityName : context.containerEntityName
         )
+        return [.command(title, .searchContainer(clicked))]
     }
 
     private static func backUpTitle(count: Int) -> String {
