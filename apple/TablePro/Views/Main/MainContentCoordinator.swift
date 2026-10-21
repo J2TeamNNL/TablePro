@@ -313,6 +313,7 @@ final class MainContentCoordinator: ObservableObject {
     @Published var importFile: ImportFileHandoff?
     @Published var importBatch: ImportBatchFiles.Resolution?
     @Published var exportPreselection: ExportPreselection?
+    @Published var exportFormatId: String?
     @Published var pendingLoadTrigger: TableLoadTrigger?
     var deferredRestoreLoadTabId: UUID?
 
