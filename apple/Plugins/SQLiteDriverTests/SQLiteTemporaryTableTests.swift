@@ -42,7 +42,12 @@ struct SQLiteTemporaryTableTests {
         try await withDriver { driver in
             _ = try await driver.execute(query: "CREATE TABLE t (main_col INT)")
             _ = try await driver.execute(
-                query: "CREATE TEMP TABLE t (temp_col INT CHECK (temp_col > 0), doubled INT GENERATED ALWAYS AS (temp_col * 2))"
+                query: """
+                    CREATE TEMP TABLE t (
+                        temp_col INT, doubled INT GENERATED ALWAYS AS (temp_col * 2),
+                        CONSTRAINT positive CHECK (temp_col > 0)
+                    )
+                    """
             )
 
             let ddl = try await driver.fetchTableDDL(table: "t", schema: nil)
