@@ -56,6 +56,7 @@ internal final class DatabaseSearchLiveReader: DatabaseSearchReading {
         let databaseType = connection.type
         let dialect = try resolveSQLDialect(for: databaseType)
         let family = SQLTypeFamily.of(databaseType)
+        let engine = DatabaseSearchColumnPlanner.Engine(databaseType: databaseType, dialect: dialect)
         let rowCap = Self.rowCap
         let scope = DatabaseScope(connectionId: connection.id, database: database, schema: target.schema)
         return try await manager.withCancellableRead(scope: scope, route: manager.metadataRoute(for: scope)) { driver in
@@ -67,7 +68,7 @@ internal final class DatabaseSearchLiveReader: DatabaseSearchReading {
                 }
                 return DatabaseSearchColumnPlanner.Column(name: info.name, type: type.withAllowedValues(labels))
             }
-            let filters = DatabaseSearchColumnPlanner.filters(for: columns, options: options, family: family)
+            let filters = DatabaseSearchColumnPlanner.filters(for: columns, options: options, engine: engine)
             guard let query = DatabaseSearchQuery.build(
                 target: target,
                 columns: columns,
@@ -78,6 +79,8 @@ internal final class DatabaseSearchLiveReader: DatabaseSearchReading {
                 quoteIdentifier: { driver.quoteIdentifier($0) },
                 driver: CompareMetadataService.pluginDriver(from: driver)
             ) else { return .noSearchableColumns }
+            // A Stop that landed between the metadata reads found no statement to abort.
+            try Task.checkCancellation()
             let result = try await driver.execute(query: query.sql)
             if let error = result.error { throw error }
             return query.match(from: result.rows).map { .matched($0) } ?? .noMatch

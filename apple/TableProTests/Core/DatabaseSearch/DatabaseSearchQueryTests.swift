@@ -35,7 +35,11 @@ struct DatabaseSearchQueryTests {
         dialect: SQLDialectDescriptor = Self.postgres,
         rowCap: Int = 1_000
     ) -> DatabaseSearchQuery? {
-        let filters = DatabaseSearchColumnPlanner.filters(for: columns, options: DatabaseSearchOptions(term: term))
+        let filters = DatabaseSearchColumnPlanner.filters(
+            for: columns,
+            options: DatabaseSearchOptions(term: term),
+            engine: DatabaseSearchColumnPlanner.Engine(family: .postgres, castsToText: true)
+        )
         return DatabaseSearchQuery.build(
             target: target,
             columns: columns,

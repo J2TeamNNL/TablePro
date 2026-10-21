@@ -17,6 +17,31 @@ internal enum DatabaseSearchColumnPlanner {
         }
     }
 
+    // One failing predicate fails the table's whole query, so a column joins only where the engine is known to take it.
+    internal struct Engine: Equatable, Sendable {
+        internal let family: SQLTypeFamily
+        internal let castsToText: Bool
+
+        internal init(family: SQLTypeFamily, castsToText: Bool) {
+            self.family = family
+            self.castsToText = castsToText
+        }
+
+        internal init(databaseType: DatabaseType, dialect: SQLDialectDescriptor) {
+            self.init(family: SQLTypeFamily.of(databaseType), castsToText: dialect.textCastTypeName != nil)
+        }
+
+        // MySQL, SQLite and SQL Server match LIKE against any column natively; the others need the dialect's cast.
+        internal var patternReadsAnyColumn: Bool {
+            castsToText || [.mysql, .sqlite, .mssql].contains(family)
+        }
+
+        // Trino rejects `date = '2024-01-05'`; an engine the app has no type family for may too.
+        internal var comparesQuotedTypedLiterals: Bool {
+            family != .generic
+        }
+    }
+
     private struct Match {
         let filterOperator: FilterOperator
         let isCaseSensitive: Bool
@@ -25,12 +50,12 @@ internal enum DatabaseSearchColumnPlanner {
     internal static func filters(
         for columns: [Column],
         options: DatabaseSearchOptions,
-        family: SQLTypeFamily? = nil
+        engine: Engine
     ) -> [TableFilter] {
         let term = options.trimmedTerm
         guard !term.isEmpty else { return [] }
         return columns.compactMap { column in
-            guard let match = match(for: column.type, term: term, options: options, family: family) else { return nil }
+            guard let match = match(for: column.type, term: term, options: options, engine: engine) else { return nil }
             return TableFilter(
                 columnName: column.name,
                 filterOperator: match.filterOperator,
@@ -44,27 +69,28 @@ internal enum DatabaseSearchColumnPlanner {
         for type: ColumnType,
         term: String,
         options: DatabaseSearchOptions,
-        family: SQLTypeFamily?
+        engine: Engine
     ) -> Match? {
         let textMatch = Match(filterOperator: options.matchMode.textOperator, isCaseSensitive: options.isCaseSensitive)
         // A typed comparison keeps the column's own type and its index, so it never folds case.
         let typedMatch = Match(filterOperator: .equal, isCaseSensitive: true)
+        let pattern = options.matchMode.usesPattern
 
         switch type {
         case .text(let rawType):
             if type.isUUIDType {
-                return UUID(uuidString: term) != nil ? typedMatch : nil
+                return engine.comparesQuotedTypedLiterals && UUID(uuidString: term) != nil ? typedMatch : nil
             }
             guard type.hasEmptyValue else { return nil }
-            if options.matchMode.usesPattern {
+            let isCharacter = ColumnTypeSQLQuoting.isCharacterType(.text(rawType: unwrappedTypeName(rawType)))
+            if pattern {
+                guard isCharacter || engine.patternReadsAnyColumn else { return nil }
                 return patternRefusingTypes.contains(baseTypeName(rawType)) ? nil : textMatch
             }
-            guard ColumnTypeSQLQuoting.hasEqualityOperator(type, family: family),
-                  ColumnTypeSQLQuoting.isCharacterType(.text(rawType: unwrappedTypeName(rawType)))
-            else { return nil }
+            guard isCharacter, ColumnTypeSQLQuoting.hasEqualityOperator(type, family: engine.family) else { return nil }
             return textMatch
         case .enumType, .set:
-            if options.matchMode.usesPattern { return textMatch }
+            if pattern { return engine.patternReadsAnyColumn ? textMatch : nil }
             // An engine refuses `=` against a label its enum does not declare; a SET value is a list of them.
             guard let labels = type.enumValues else { return nil }
             let parts = type.isSetType
@@ -73,19 +99,19 @@ internal enum DatabaseSearchColumnPlanner {
             let declared = parts.allSatisfy { part in labels.contains { matchesLabel($0, part, options) } }
             return declared ? textMatch : nil
         case .json:
-            return options.matchMode.usesPattern ? textMatch : nil
+            return pattern && engine.patternReadsAnyColumn ? textMatch : nil
         case .integer:
             return RowValueCopyFormatter.isIntegerLiteral(term) ? typedMatch : nil
         case .decimal:
             return PluginNumericLiteral.isValid(term) ? typedMatch : nil
         case .date:
-            guard !type.isTimeOnly else { return nil }
+            guard engine.comparesQuotedTypedLiterals, !type.isTimeOnly else { return nil }
             return DatabaseSearchTermParser.isDate(term) ? typedMatch : nil
         case .timestamp, .datetime:
-            guard !type.isTimeOnly else { return nil }
+            guard engine.comparesQuotedTypedLiterals, !type.isTimeOnly else { return nil }
             return DatabaseSearchTermParser.isDateTime(term) ? typedMatch : nil
         case .blob:
-            guard options.includesBinaryColumns, options.matchMode.usesPattern else { return nil }
+            guard options.includesBinaryColumns, pattern, engine.patternReadsAnyColumn else { return nil }
             return textMatch
         case .boolean, .spatial, .array:
             return nil

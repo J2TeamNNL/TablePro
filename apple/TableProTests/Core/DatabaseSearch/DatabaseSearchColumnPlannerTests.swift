@@ -6,6 +6,9 @@ import Testing
 
 struct DatabaseSearchColumnPlannerTests {
     private typealias Column = DatabaseSearchColumnPlanner.Column
+    private typealias Engine = DatabaseSearchColumnPlanner.Engine
+
+    private static let postgres = Engine(family: .postgres, castsToText: true)
 
     private static let columns: [Column] = [
         Column(name: "email", type: .text(rawType: "varchar(255)")),
@@ -28,7 +31,7 @@ struct DatabaseSearchColumnPlannerTests {
     private func searched(_ term: String, _ configure: (inout DatabaseSearchOptions) -> Void = { _ in }) -> [String: TableFilter] {
         var options = DatabaseSearchOptions(term: term)
         configure(&options)
-        let filters = DatabaseSearchColumnPlanner.filters(for: Self.columns, options: options)
+        let filters = DatabaseSearchColumnPlanner.filters(for: Self.columns, options: options, engine: Self.postgres)
         return Dictionary(uniqueKeysWithValues: filters.map { ($0.columnName, $0) })
     }
 
@@ -129,7 +132,8 @@ struct DatabaseSearchColumnPlannerTests {
         options.matchMode = .exact
         let filters = DatabaseSearchColumnPlanner.filters(
             for: [Column(name: "name", type: .text(rawType: "Nullable(String)"))],
-            options: options
+            options: options,
+            engine: Engine(family: .clickhouse, castsToText: true)
         )
         #expect(filters.map(\.columnName) == ["name"])
     }
@@ -139,10 +143,40 @@ struct DatabaseSearchColumnPlannerTests {
         var options = DatabaseSearchOptions(term: "hello")
         options.matchMode = .exact
         let notes = [Column(name: "notes", type: .text(rawType: "text"))]
-        #expect(DatabaseSearchColumnPlanner.filters(for: notes, options: options, family: .mssql).isEmpty)
-        #expect(DatabaseSearchColumnPlanner.filters(for: notes, options: options, family: .postgres).count == 1)
+        #expect(DatabaseSearchColumnPlanner.filters(for: notes, options: options, engine: Engine(family: .mssql, castsToText: false)).isEmpty)
+        #expect(DatabaseSearchColumnPlanner.filters(for: notes, options: options, engine: Self.postgres).count == 1)
         options.matchMode = .contains
-        #expect(DatabaseSearchColumnPlanner.filters(for: notes, options: options, family: .mssql).count == 1)
+        #expect(DatabaseSearchColumnPlanner.filters(for: notes, options: options, engine: Engine(family: .mssql, castsToText: false)).count == 1)
+    }
+
+    @Test("An engine that cannot read every column as text searches only its character columns")
+    func strictEngineSearchesCharacterColumnsOnly() {
+        let trino = Engine(family: .generic, castsToText: false)
+        var options = DatabaseSearchOptions(term: "ada")
+        options.includesBinaryColumns = true
+        let words = DatabaseSearchColumnPlanner.filters(for: Self.columns, options: options, engine: trino)
+        #expect(Set(words.map(\.columnName)) == ["email", "notes", "body"])
+
+        let oracle = Engine(family: .oracle, castsToText: false)
+        let oracleWords = DatabaseSearchColumnPlanner.filters(for: Self.columns, options: options, engine: oracle)
+        #expect(Set(oracleWords.map(\.columnName)) == ["email", "notes", "body"])
+
+        let mysql = Engine(family: .mysql, castsToText: false)
+        let mysqlWords = DatabaseSearchColumnPlanner.filters(for: Self.columns, options: options, engine: mysql)
+        #expect(Set(mysqlWords.map(\.columnName)) == ["email", "notes", "profile", "body", "avatar"])
+    }
+
+    @Test("An engine without a type family gets no quoted date or UUID comparison")
+    func genericEngineSkipsTypedLiterals() {
+        let trino = Engine(family: .generic, castsToText: false)
+        let date = DatabaseSearchColumnPlanner.filters(for: Self.columns, options: DatabaseSearchOptions(term: "2024-02-29"), engine: trino)
+        #expect(date.map(\.columnName).contains("born") == false)
+        let uuid = DatabaseSearchColumnPlanner.filters(
+            for: Self.columns, options: DatabaseSearchOptions(term: "6F9619FF-8B86-D011-B42D-00C04FC964FF"), engine: trino
+        )
+        #expect(uuid.map(\.columnName).contains("token") == false)
+        let number = DatabaseSearchColumnPlanner.filters(for: Self.columns, options: DatabaseSearchOptions(term: "42"), engine: trino)
+        #expect(number.map(\.columnName).contains("id"))
     }
 
     @Test("An exact match on a SET takes a list of declared labels")
@@ -150,9 +184,9 @@ struct DatabaseSearchColumnPlannerTests {
         let colors = Column(name: "colors", type: .set(rawType: "set", values: ["red", "green", "blue"]))
         var options = DatabaseSearchOptions(term: "red,blue")
         options.matchMode = .exact
-        #expect(DatabaseSearchColumnPlanner.filters(for: [colors], options: options).count == 1)
+        #expect(DatabaseSearchColumnPlanner.filters(for: [colors], options: options, engine: Self.postgres).count == 1)
         options.term = "red,pink"
-        #expect(DatabaseSearchColumnPlanner.filters(for: [colors], options: options).isEmpty)
+        #expect(DatabaseSearchColumnPlanner.filters(for: [colors], options: options, engine: Self.postgres).isEmpty)
     }
 
     @Test("An exact match on an enum needs a declared label")
@@ -160,11 +194,11 @@ struct DatabaseSearchColumnPlannerTests {
         let status = Column(name: "status", type: .enumType(rawType: "enum", values: ["open", "closed"]))
         var options = DatabaseSearchOptions(term: "OPEN")
         options.matchMode = .exact
-        #expect(DatabaseSearchColumnPlanner.filters(for: [status], options: options).count == 1)
+        #expect(DatabaseSearchColumnPlanner.filters(for: [status], options: options, engine: Self.postgres).count == 1)
         options.isCaseSensitive = true
-        #expect(DatabaseSearchColumnPlanner.filters(for: [status], options: options).isEmpty)
+        #expect(DatabaseSearchColumnPlanner.filters(for: [status], options: options, engine: Self.postgres).isEmpty)
         options.term = "pending"
         options.isCaseSensitive = false
-        #expect(DatabaseSearchColumnPlanner.filters(for: [status], options: options).isEmpty)
+        #expect(DatabaseSearchColumnPlanner.filters(for: [status], options: options, engine: Self.postgres).isEmpty)
     }
 }
