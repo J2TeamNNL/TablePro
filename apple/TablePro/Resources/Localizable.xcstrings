@@ -4631,6 +4631,16 @@
         }
       }
     },
+    "%@ on branch %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ on branch %2$@"
+          }
+        }
+      }
+    },
     "%@ or more" : {
       "localizations" : {
         "fr" : {
@@ -24705,6 +24715,9 @@
         }
       }
     },
+    "Another Git command is still running in this repository." : {
+
+    },
     "Another index is already named %@." : {
       "localizations" : {
         "fr" : {
@@ -31024,6 +31037,9 @@
         }
       }
     },
+    "Binary File" : {
+
+    },
     "Block" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -35328,6 +35344,9 @@
         }
       }
     },
+    "Changed Files" : {
+
+    },
     "Changed since the save" : {
       "localizations" : {
         "fr" : {
@@ -35495,6 +35514,9 @@
           }
         }
       }
+    },
+    "Changes Unavailable" : {
+
     },
     "Changing %@ from %@ to %@ can truncate existing values." : {
       "localizations" : {
@@ -44322,7 +44344,22 @@
     "Commit" : {
 
     },
+    "Commit Changes" : {
+
+    },
+    "Commit Message" : {
+
+    },
     "Commit the transaction" : {
+
+    },
+    "Commit…" : {
+
+    },
+    "Committed" : {
+
+    },
+    "Committing…" : {
 
     },
     "Compact" : {
@@ -53787,6 +53824,12 @@
           }
         }
       }
+    },
+    "Couldn't Pull \"%@\"" : {
+
+    },
+    "Couldn't Push \"%@\"" : {
+
     },
     "Couldn't Put the Theme Back" : {
 
@@ -63480,6 +63523,9 @@
         }
       }
     },
+    "Diff Unavailable" : {
+
+    },
     "Difference" : {
       "localizations" : {
         "fr" : {
@@ -73049,6 +73095,9 @@
           }
         }
       }
+    },
+    "Every file in this folder matches the last commit." : {
+
     },
     "Every geometry in this column is empty or null." : {
       "localizations" : {
@@ -85330,6 +85379,15 @@
           }
         }
       }
+    },
+    "Git is not installed. Install the Command Line Tools or Xcode." : {
+
+    },
+    "Git printed more output than TablePro can read." : {
+
+    },
+    "Git stopped with the message below." : {
+
     },
     "GitHub Repository" : {
       "localizations" : {
@@ -98646,6 +98704,9 @@
         }
       }
     },
+    "Last Commit" : {
+
+    },
     "Last Connected" : {
       "localizations" : {
         "fr" : {
@@ -107636,6 +107697,9 @@
     "Mesh" : {
       "extractionState" : "manual",
       "generatesSymbol" : false
+    },
+    "Message" : {
+
     },
     "Message too large. Shorten it and send it again." : {
       "localizations" : {
@@ -118799,6 +118863,9 @@
           }
         }
       }
+    },
+    "No Text Changes" : {
+
     },
     "No text column to search" : {
       "localizations" : {
@@ -137271,9 +137338,18 @@
         }
       }
     },
+    "Pull" : {
+
+    },
     "Pull Request" : {
       "extractionState" : "manual",
       "generatesSymbol" : false
+    },
+    "Pulled \"%@\"" : {
+
+    },
+    "Pulling…" : {
+
     },
     "Purchase License" : {
       "localizations" : {
@@ -137360,6 +137436,15 @@
           }
         }
       }
+    },
+    "Push" : {
+
+    },
+    "Pushed \"%@\"" : {
+
+    },
+    "Pushing…" : {
+
     },
     "Put field names in the first row" : {
       "extractionState" : "stale",
@@ -147163,6 +147248,9 @@
           }
         }
       }
+    },
+    "Resolve the conflict in a Git client before committing this file." : {
+
     },
     "Resident Memory" : {
 
@@ -181467,6 +181555,9 @@
         }
       }
     },
+    "The branch and its upstream branch each have commits the other lacks. Finish this pull in a Git client." : {
+
+    },
     "The broker answered a coordinator lookup with no coordinator." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -190272,6 +190363,9 @@
         }
       }
     },
+    "The text matches the last commit." : {
+
+    },
     "The theme has more than %@ token color rules." : {
       "extractionState" : "manual",
       "generatesSymbol" : false
@@ -193954,6 +194048,9 @@
         }
       }
     },
+    "This file can't be shown as text." : {
+
+    },
     "This file cannot be saved in that format." : {
       "localizations" : {
         "fr" : {
@@ -193963,6 +194060,9 @@
           }
         }
       }
+    },
+    "This file has unsaved changes in an editor tab. The commit takes the saved file." : {
+
     },
     "This file is encrypted" : {
       "localizations" : {
@@ -194129,6 +194229,9 @@
         }
       }
     },
+    "This file is too large to compare line by line." : {
+
+    },
     "This file requires a newer version of TablePro (format version %d)" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -194265,6 +194368,9 @@
           }
         }
       }
+    },
+    "This folder is not in a Git repository." : {
+
     },
     "This foreign key needs a referenced table." : {
       "localizations" : {
@@ -199127,6 +199233,9 @@
           }
         }
       }
+    },
+    "Too Large to Compare" : {
+
     },
     "Too Large to Preview" : {
       "localizations" : {
@@ -211865,6 +211974,9 @@
           }
         }
       }
+    },
+    "Working Copy" : {
+
     },
     "Wrap each table in a transaction" : {
       "localizations" : {
