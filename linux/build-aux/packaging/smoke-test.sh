@@ -75,6 +75,10 @@ if [ -n "$linguas" ]; then
     languages="$(sed 's/#.*//' "$linguas")"
 else
     languages="$(find /usr/share/locale -path '*/LC_MESSAGES/tablepro.mo' | cut -d/ -f5)"
+    if [ -z "$languages" ]; then
+        echo "smoke-test.sh: the package installed no translation catalogue" >&2
+        exit 1
+    fi
 fi
 for lang in $languages; do
     if [ ! -f "/usr/share/locale/$lang/LC_MESSAGES/tablepro.mo" ]; then

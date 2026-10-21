@@ -19,7 +19,7 @@ msgstr ""
 #. Translators: your names, one per line, as "Name <email>" or "Name https://site".
 #: crates/app/src/application/about_dialog.rs
 msgid "translator-credits"
-msgstr ""
+msgstr "Ngô Quốc Đạt https://github.com/datlechin"
 
 #: crates/app/src/application/imp.rs
 msgid "Open a new window"

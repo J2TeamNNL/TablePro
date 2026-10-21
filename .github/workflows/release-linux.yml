@@ -1,10 +1,11 @@
 name: Release Linux
 
 # A linux-vX.Y.Z tag publishes the Linux release: the source and vendor
-# tarballs and the translation template on GitHub Releases, the signed Debian source package for each
-# Ubuntu series to the Launchpad PPA, which builds and publishes the .deb,
-# and the tag to the COPR project's custom webhook, which builds the
-# Fedora packages from the release (linux/build-aux/rpm/copr-sources.sh).
+# tarballs and the translation template on GitHub Releases, the signed
+# Debian source package for each Ubuntu series to the Launchpad PPA, which
+# builds and publishes the .deb, and the tag to the COPR project's custom
+# webhook, which builds the Fedora packages from the release
+# (linux/build-aux/rpm/copr-sources.sh).
 # A pre-release tag such as linux-v0.2.0-rc.1 publishes a GitHub
 # pre-release and skips the PPA and COPR.
 #
@@ -124,7 +125,7 @@ jobs:
         run: |
           meson setup _build --fatal-meson-warnings
           meson compile -C _build tablepro-pot
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-pot
           path: linux/po/tablepro.pot
