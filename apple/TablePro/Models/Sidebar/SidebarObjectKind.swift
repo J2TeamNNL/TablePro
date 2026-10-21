@@ -20,11 +20,11 @@ enum SidebarObjectKind: String, CaseIterable, Sendable, Hashable {
     case view
     case materializedView
     case foreignTable
+    case sequence
     case procedure
     case function
     case trigger
     case type
-    case sequence
 
     var displayName: String {
         switch self {
