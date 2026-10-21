@@ -182,6 +182,7 @@ struct MainContentView: View {
                 if !$0 {
                     coordinator.activeSheet = nil
                     coordinator.exportPreselection = nil
+                    coordinator.exportFormatId = nil
                     /// Cleared on every dismissal, Cancel included. The request holds the closure
                     /// that runs the rebuild, and that closure holds the structure view, which
                     /// holds this coordinator; leaving it set after a cancel keeps the cycle alive
@@ -462,6 +463,11 @@ struct MainContentView: View {
                 }
                 Divider()
             }
+            ConnectionTransactionBar(
+                connectionId: connection.id,
+                transactions: DatabaseManager.shared.sessionTransactions,
+                databaseManager: DatabaseManager.shared
+            )
             editorContentView
         }
         .onChange(of: toolbarState.connectionWarning) { warning in

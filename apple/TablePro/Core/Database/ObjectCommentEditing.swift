@@ -9,6 +9,7 @@
 import Combine
 import Foundation
 import TableProPluginKit
+import TableProSQLGrammar
 
 enum DatabaseObjectCommandError: LocalizedError, Equatable {
     case notConnected
@@ -28,10 +29,9 @@ enum ObjectCommentEditing {
     /// predate a change made in another window or another app.
     static func currentComment(of target: DatabaseObjectTarget) async throws -> String? {
         let name = target.name
-        let metadata = try await DatabaseManager.shared.withMetadataDriver(scope: target.scope) { driver in
-            try await driver.fetchTableMetadata(tableName: name)
+        return try await DatabaseManager.shared.withMetadataDriver(scope: target.scope) { driver in
+            try await driver.fetchObjectComment(tableName: name)
         }
-        return metadata.comment
     }
 
     static func statement(for comment: String?, on target: DatabaseObjectTarget, driver: DatabaseDriver) -> String? {

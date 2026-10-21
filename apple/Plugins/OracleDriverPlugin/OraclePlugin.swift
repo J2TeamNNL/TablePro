@@ -8,6 +8,7 @@ import os
 import TableProLogRedaction
 import TableProOracleCore
 import TableProPluginKit
+import TableProSQLVocabulary
 
 final class OraclePlugin: NSObject, TableProPlugin, DriverPlugin, PluginDiagnosticProvider {
     static let pluginName = "Oracle Driver"
@@ -138,35 +139,37 @@ final class OraclePlugin: NSObject, TableProPlugin, DriverPlugin, PluginDiagnost
             "RETURNING", "CONNECT", "LEVEL", "START", "WITH", "PRIOR",
             "ROWNUM", "ROWID", "DUAL", "SYSDATE", "SYSTIMESTAMP"
         ],
-        functions: [
-            "COUNT", "SUM", "AVG", "MAX", "MIN", "LISTAGG",
-            "CONCAT", "SUBSTR", "INSTR", "LENGTH", "LOWER", "UPPER",
-            "TRIM", "LTRIM", "RTRIM", "REPLACE", "LPAD", "RPAD",
-            "INITCAP", "TRANSLATE",
-            "SYSDATE", "SYSTIMESTAMP", "CURRENT_DATE", "CURRENT_TIMESTAMP",
-            "ADD_MONTHS", "MONTHS_BETWEEN", "LAST_DAY", "NEXT_DAY",
-            "EXTRACT", "TO_DATE", "TO_CHAR", "TO_NUMBER", "TO_TIMESTAMP",
-            "TRUNC", "ROUND",
-            "CEIL", "FLOOR", "ABS", "POWER", "SQRT", "MOD", "SIGN",
-            "NVL", "NVL2", "DECODE", "COALESCE", "NULLIF",
-            "GREATEST", "LEAST", "CAST",
-            "SYS_GUID", "DBMS_RANDOM.VALUE", "USER", "SYS_CONTEXT"
-        ],
-        dataTypes: OracleTypeCatalog.dataTypes,
-        tableOptions: [
-            "TABLESPACE", "PCTFREE", "INITRANS"
-        ],
+        functions: SQLEngineVocabulary.oracle.functions,
+        dataTypes: SQLEngineVocabulary.oracle.dataTypes,
+        tableOptions: SQLEngineVocabulary.oracle.tableOptions,
         regexSyntax: .regexpLike,
         booleanLiteralStyle: .numeric,
         likeEscapeStyle: .explicit,
         paginationStyle: .offsetFetch,
         offsetFetchOrderBy: "",
         autoLimitStyle: .fetchFirst,
-        caseSensitivityStyle: .caseFoldFunction
+        caseSensitivityStyle: .caseFoldFunction,
+        operators: SQLEngineVocabulary.oracle.operators.compactMap(SQLOperatorDescriptor.init(vocabulary:)),
+        textCastTypeName: nil,
+        functionNamesAreCaseInsensitive: SQLEngineVocabulary.oracle.functionNamesAreCaseInsensitive
     )
 
     func createDriver(config: DriverConnectionConfig) -> any PluginDatabaseDriver {
         OraclePluginDriver(config: config)
+    }
+}
+
+private extension SQLOperatorDescriptor {
+    init?(vocabulary entry: SQLEngineVocabulary.Operator) {
+        guard let category = Category(rawValue: entry.category),
+              let placement = Placement(rawValue: entry.placement) else { return nil }
+        self.init(
+            symbol: entry.symbol,
+            summary: entry.summary,
+            category: category,
+            placement: placement,
+            appliesToTypes: entry.appliesToTypes
+        )
     }
 }
 
@@ -175,6 +178,7 @@ final class OraclePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     private var core: OracleCoreConnection?
     private var _currentSchema: String?
     private var _serverVersion: String?
+    let principalState = OSAllocatedUnfairLock(initialState: OraclePrincipalState())
 
     private static let logger = Logger(subsystem: "com.TablePro", category: "OraclePluginDriver")
 
@@ -193,6 +197,7 @@ final class OraclePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
             .dataCompare,
             .cellExpressions,
             .uuidCellText,
+            .userManagement,
         ]
     }
 
@@ -1174,7 +1179,7 @@ final class OraclePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     // MARK: - Private Helpers
 
     /// Set at login before `core` is, so a driver with a core always has it.
-    private func serverRelease() throws -> OracleServerRelease {
+    func serverRelease() throws -> OracleServerRelease {
         guard let release = core?.serverRelease else { throw OraclePluginError(core: .notConnected) }
         return release
     }

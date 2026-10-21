@@ -7,12 +7,14 @@ import TableProSQLGrammar
 final class SQLCompletionService: QueryCompletionService {
     private let engine: CompletionEngine
     private let grammar: SQLLexicalGrammar
+    private let identifierCaseSource: @MainActor () -> SQLIdentifierCase
     private var lastContext = SQLContext.unanalyzed
 
     init(
         schemaProvider: SQLSchemaProvider?,
         databaseType: DatabaseType?,
-        profile: QueryCompletionProfile? = nil
+        profile: QueryCompletionProfile? = nil,
+        identifierCase: @escaping @MainActor () -> SQLIdentifierCase = { .default }
     ) {
         let dialect = profile?.resolvedDialect
             ?? databaseType.flatMap { PluginManager.shared.sqlDialect(for: $0) }
@@ -26,12 +28,14 @@ final class SQLCompletionService: QueryCompletionService {
             statementCompletions: statementCompletions
         )
         self.grammar = databaseType?.lexicalGrammar ?? .ansi
+        self.identifierCaseSource = identifierCase
     }
 
     var triggerCharacters: Set<String> { [".", " ", ":", "(", ","] }
 
     // Read per request, so a changed setting applies to the next keystroke rather than the next connection.
     private var keywordCase: SQLKeywordCase { AppSettingsManager.shared.editor.keywordCase }
+    private var identifierCase: SQLIdentifierCase { identifierCaseSource() }
 
     func updateFavoriteKeywords(_ keywords: [String: (name: String, query: String)]) {
         engine.updateFavoriteKeywords(keywords)
@@ -51,35 +55,34 @@ final class SQLCompletionService: QueryCompletionService {
             items,
             prefix: matchText,
             context: lastContext,
-            keywordCase: keywordCase
+            keywordCase: keywordCase,
+            identifierCase: identifierCase
         )
     }
 
     func completions(in text: NSString, at offset: Int, isManualTrigger: Bool) async -> QueryCompletionSession? {
-        guard !SQLCompletionTriggerPolicy.suppressesAfterStatementBreak(in: text, at: offset) else { return nil }
-
-        let window = SQLCompletionWindow.cut(text, around: offset)
-
-        guard let context = await engine.getCompletions(
-            text: window.text,
-            cursorPosition: offset - window.start,
-            keywordCase: keywordCase
-        ) else {
+        guard !SQLCompletionTriggerPolicy.suppressesAfterStatementBreak(in: text, at: offset),
+              let window = await SQLCompletionWindow.cut(text as String, around: offset, grammar: grammar),
+              let result = await engine.getCompletions(
+                  text: window.text,
+                  cursorPosition: offset - window.start,
+                  keywordCase: keywordCase,
+                  identifierCase: identifierCase
+              ) else {
             return nil
         }
-        guard !SQLCompletionTriggerPolicy.suppressesEmptyPrefix(
-            context.sqlContext,
-            isManualTrigger: isManualTrigger
-        ) else { return nil }
 
-        lastContext = context.sqlContext
+        let context = result.sqlContext.offset(by: window.start)
+        guard !SQLCompletionTriggerPolicy.suppressesEmptyPrefix(context, isManualTrigger: isManualTrigger) else {
+            return nil
+        }
+
+        lastContext = context
         return QueryCompletionSession(
-            items: context.items,
-            candidates: context.candidates,
-            replacementRange: NSRange(
-                location: context.replacementRange.location + window.start,
-                length: context.replacementRange.length
-            )
+            items: result.items,
+            candidates: result.candidates,
+            replacementRange: NSRange(context.prefixRange),
+            quotedName: context.quotedName
         )
     }
 }
