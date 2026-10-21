@@ -311,6 +311,7 @@ final class MainContentCoordinator: ObservableObject {
     @Published var containerDropRequest: DatabaseDropRequest?
     @Published var importFile: ImportFileHandoff?
     @Published var exportPreselection: ExportPreselection?
+    @Published var exportFormatId: String?
     // Kept after the sheet closes, so reopening Search Database after opening a result shows the results again.
     var databaseSearchSession: DatabaseSearchSession?
     @Published var pendingLoadTrigger: TableLoadTrigger?
