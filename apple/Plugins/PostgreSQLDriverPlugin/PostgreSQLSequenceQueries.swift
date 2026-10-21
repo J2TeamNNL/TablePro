@@ -14,8 +14,8 @@ struct PostgreSQLSequenceDefinition: Equatable, Sendable {
     let maxValue: String?
     let increment: String?
     let cycles: Bool
-    let lastValue: String?
-    let needsLastValueRead: Bool
+    private(set) var lastValue: String?
+    private(set) var needsLastValueRead: Bool
     var dataType: String?
     var cacheSize: String?
     var ownedByTable: String?
@@ -24,21 +24,9 @@ struct PostgreSQLSequenceDefinition: Equatable, Sendable {
     var ownerDependency: String?
 
     func withLastValue(_ value: String?) -> PostgreSQLSequenceDefinition {
-        var read = PostgreSQLSequenceDefinition(
-            name: name,
-            startValue: startValue,
-            minValue: minValue,
-            maxValue: maxValue,
-            increment: increment,
-            cycles: cycles,
-            lastValue: value,
-            needsLastValueRead: false
-        )
-        read.dataType = dataType
-        read.cacheSize = cacheSize
-        read.ownedByTable = ownedByTable
-        read.ownedByColumn = ownedByColumn
-        read.ownerDependency = ownerDependency
+        var read = self
+        read.lastValue = value
+        read.needsLastValueRead = false
         return read
     }
 
@@ -214,12 +202,7 @@ enum PostgreSQLSequenceQueries {
     private static func ownerColumns(sequence: String) -> String {
         let dependency = PostgreSQLTableListing.sequenceOwnerDependency("d", sequence: sequence)
         return """
-        (SELECT owner.relname FROM pg_catalog.pg_depend d
-                            JOIN pg_catalog.pg_class owner ON owner.oid = d.refobjid
-                            WHERE \(dependency) LIMIT 1) AS owned_by_table,
-                               (SELECT a.attname FROM pg_catalog.pg_depend d
-                            JOIN pg_catalog.pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
-                            WHERE \(dependency) LIMIT 1) AS owned_by_column,
+        \(PostgreSQLTableListing.sequenceOwnerColumns(sequence: sequence)),
                                (SELECT d.deptype::text FROM pg_catalog.pg_depend d
                             WHERE \(dependency) LIMIT 1) AS owner_dependency
         """
@@ -323,18 +306,16 @@ enum PostgreSQLSequenceStatements {
             let descending = increment < 0
             let start = sequence.startValue ?? (descending ? -1 : 1)
             let source = PostgreSQLObjectQueries.qualifiedName(schema: schema, name: table)
-            let relation = PostgreSQLObjectQueries.qualifiedName(schema: schema, name: sequence.name)
             let quotedColumn = PostgreSQLObjectQueries.quoteIdentifier(column)
             let afterColumn = "COALESCE(pg_catalog.\(descending ? "min" : "max")(\(quotedColumn))::bigint + \(increment), \(start))"
-            // Never behind where the sequence already is: another session may hold values cached past it.
-            let current = "(SELECT CASE WHEN is_called THEN last_value + \(increment) ELSE last_value END FROM \(relation))"
-            let value = "\(descending ? "LEAST" : "GREATEST")(\(afterColumn), \(current))"
-            // One query string is one implicit transaction: the lock holds writers off until setval lands,
-            // and with row security off a policy that would hide rows fails the read instead.
-            let rowSecurity = hasRowSecurity ? "SET LOCAL row_security = off;\n" : ""
-            return rowSecurity
-                + "LOCK TABLE \(source) IN SHARE ROW EXCLUSIVE MODE;\n"
-                + "SELECT pg_catalog.setval(\(target), \(value), false) FROM \(source)"
+            // The statement locks only when the role may: SHARE ROW EXCLUSIVE needs UPDATE, DELETE or TRUNCATE.
+            // Without the lock a concurrent insert can still land between the read and the setval.
+            let rowSecurity = hasRowSecurity ? "SET LOCAL row_security = off; " : ""
+            let privileges = PostgreSQLObjectQueries.quoteLiteral(source)
+            return "DO $tablepro$ BEGIN \(rowSecurity)"
+                + "IF pg_catalog.has_table_privilege(\(privileges), 'UPDATE, DELETE, TRUNCATE') THEN "
+                + "LOCK TABLE \(source) IN SHARE ROW EXCLUSIVE MODE; END IF; "
+                + "PERFORM pg_catalog.setval(\(target), \(afterColumn), false) FROM \(source); END $tablepro$"
         @unknown default:
             return nil
         }

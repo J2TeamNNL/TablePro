@@ -12,7 +12,7 @@ extension MCPConnectionBridge {
         let tables = try await DatabaseManager.shared.withMetadataDriver(scope: scope) { driver in
             try await driver.fetchTables(schema: scope.schema)
         }
-        let ordered = Self.sortedTables(tables)
+        let ordered = Self.sortedTables(tables.excludingSequences())
 
         guard includeRowCounts, ordered.count <= Self.rowCountFanOutLimit else {
             return .object([

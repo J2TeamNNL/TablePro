@@ -390,6 +390,30 @@ struct PostgreSQLSequenceQueryTests {
         #expect(read.lastValue == "4")
         #expect(!read.needsLastValueRead)
     }
+
+    @Test("Reading a last value keeps every other field")
+    func withLastValueKeepsTheRest() {
+        var definition = PostgreSQLSequenceDefinition(
+            name: "s", startValue: "1", minValue: "1", maxValue: "10", increment: "1",
+            cycles: true, lastValue: nil, needsLastValueRead: true
+        )
+        definition.dataType = "integer"
+        definition.cacheSize = "5"
+        definition.ownedByTable = "t"
+        definition.ownedByColumn = "c"
+        definition.ownerDependency = "a"
+        var expected = definition
+        expected = PostgreSQLSequenceDefinition(
+            name: "s", startValue: "1", minValue: "1", maxValue: "10", increment: "1",
+            cycles: true, lastValue: "4", needsLastValueRead: false
+        )
+        expected.dataType = "integer"
+        expected.cacheSize = "5"
+        expected.ownedByTable = "t"
+        expected.ownedByColumn = "c"
+        expected.ownerDependency = "a"
+        #expect(definition.withLastValue("4") == expected)
+    }
 }
 
 struct PostgreSQLCollationAndMetadataQueryTests {

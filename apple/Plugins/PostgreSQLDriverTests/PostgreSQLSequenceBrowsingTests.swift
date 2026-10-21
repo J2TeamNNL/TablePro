@@ -53,6 +53,15 @@ struct PostgreSQLSequenceListingTests {
         #expect(owner.lowerBound < schema.lowerBound)
     }
 
+    @Test("The sequence sheet reads the owner the way the sidebar listing does")
+    func sheetSharesTheSidebarOwnerRead() {
+        let owner = PostgreSQLTableListing.sequenceOwnerColumns(sequence: "c.oid")
+        let sheet = PostgreSQLSequenceQueries.sequenceList(
+            schema: "public", dependentOnTable: nil, source: .sequencesView
+        )
+        #expect(sheet.contains(owner))
+    }
+
     @Test("A sequence row carries its owner and its schema")
     func sequenceRowParses() throws {
         let row: [String?] = ["orders_id_seq", "SEQUENCE", nil, nil, "orders", "id", "sales"]
@@ -95,17 +104,22 @@ struct PostgreSQLSequenceStatementTests {
         #expect(sql == "SELECT pg_catalog.setval('\"public\".\"orders_id_seq\"', 42, false)")
     }
 
-    @Test("After the owning column: past the column's highest value, never behind the sequence, writers held off")
+    @Test("After the owning column: past the column's highest value, locking only where the role may")
     func afterOwnedColumnAscending() {
         let sql = PostgreSQLSequenceStatements.nextValue(sequence(), schema: "public", nextValue: .afterOwnedColumn)
         #expect(sql == """
-            SET LOCAL row_security = off;
-            LOCK TABLE "public"."orders" IN SHARE ROW EXCLUSIVE MODE;
-            SELECT pg_catalog.setval('"public"."orders_id_seq"', \
-            GREATEST(COALESCE(pg_catalog.max("id")::bigint + 1, 1), \
-            (SELECT CASE WHEN is_called THEN last_value + 1 ELSE last_value END FROM "public"."orders_id_seq")), \
-            false) FROM "public"."orders"
+            DO $tablepro$ BEGIN SET LOCAL row_security = off; \
+            IF pg_catalog.has_table_privilege('"public"."orders"', 'UPDATE, DELETE, TRUNCATE') THEN \
+            LOCK TABLE "public"."orders" IN SHARE ROW EXCLUSIVE MODE; END IF; \
+            PERFORM pg_catalog.setval('"public"."orders_id_seq"', \
+            COALESCE(pg_catalog.max("id")::bigint + 1, 1), false) FROM "public"."orders"; END $tablepro$
             """)
+    }
+
+    @Test("The value can land below the sequence's current position")
+    func afterOwnedColumnCanLowerTheSequence() {
+        let sql = PostgreSQLSequenceStatements.nextValue(sequence(), schema: "public", nextValue: .afterOwnedColumn)
+        #expect(sql?.contains("GREATEST") == false)
     }
 
     @Test("A server without row security gets no row_security setting")
@@ -113,7 +127,7 @@ struct PostgreSQLSequenceStatementTests {
         let sql = PostgreSQLSequenceStatements.nextValue(
             sequence(), schema: "public", nextValue: .afterOwnedColumn, hasRowSecurity: false
         )
-        #expect(sql?.hasPrefix("LOCK TABLE") == true)
+        #expect(sql?.hasPrefix("DO $tablepro$ BEGIN IF pg_catalog.has_table_privilege") == true)
     }
 
     @Test("A descending sequence continues below the column's lowest value")
@@ -121,8 +135,7 @@ struct PostgreSQLSequenceStatementTests {
         let sql = PostgreSQLSequenceStatements.nextValue(
             sequence(increment: -2, start: -1), schema: "public", nextValue: .afterOwnedColumn
         )
-        #expect(sql?.contains("LEAST(COALESCE(pg_catalog.min(\"id\")::bigint + -2, -1), ") == true)
-        #expect(sql?.contains("THEN last_value + -2 ELSE last_value END") == true)
+        #expect(sql?.contains("COALESCE(pg_catalog.min(\"id\")::bigint + -2, -1), false)") == true)
     }
 
     @Test("A sequence no column owns has no column to continue from")
@@ -140,11 +153,11 @@ struct PostgreSQLSequenceStatementTests {
             schema: "it's",
             nextValue: .afterOwnedColumn
         )
-        #expect(sql?.contains("SELECT pg_catalog.setval('\"it''s\".\"we\"\"ird''s\"', ") == true)
+        #expect(sql?.contains("PERFORM pg_catalog.setval('\"it''s\".\"we\"\"ird''s\"', ") == true)
+        #expect(sql?.contains("has_table_privilege('\"it''s\".\"t''b\"', ") == true)
         #expect(sql?.contains("LOCK TABLE \"it's\".\"t'b\" IN SHARE ROW EXCLUSIVE MODE;") == true)
-        #expect(sql?.contains("FROM \"it's\".\"we\"\"ird's\")") == true)
         #expect(sql?.contains("pg_catalog.max(\"c\"\"l\")") == true)
-        #expect(sql?.hasSuffix("FROM \"it's\".\"t'b\"") == true)
+        #expect(sql?.contains("FROM \"it's\".\"t'b\"; END") == true)
     }
 
     @Test("ALTER SEQUENCE names only what changed")

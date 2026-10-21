@@ -109,7 +109,7 @@ struct QueryContextBuilder {
             let tableScope = DatabaseScope(connectionId: scope.connectionId, database: scope.database, schema: schema)
             do {
                 inventories[QueryContextSchemaKey(schema)] = try await metadata.withMetadataDriver(scope: tableScope) { driver in
-                    try await driver.fetchTables(schema: schema)
+                    try await driver.fetchTables(schema: schema).excludingSequences()
                 }
             } catch {
                 Self.logger.warning("Table list for AI context failed: \(error.publicLogShape, privacy: .public)")

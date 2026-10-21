@@ -246,6 +246,12 @@ struct TableInfo: Identifiable, Hashable, Sendable {
     }
 }
 
+extension Sequence where Element == TableInfo {
+    func excludingSequences() -> [TableInfo] {
+        filter { $0.type != .sequence }
+    }
+}
+
 /// Information about a table column
 struct ColumnInfo: Identifiable, Hashable {
     let id = UUID()

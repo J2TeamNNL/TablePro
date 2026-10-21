@@ -24,9 +24,12 @@ extension PostgreSQLPluginDriver {
 
     func fetchSequenceDetails(sequence: String, schema: String?) async throws -> PluginSequenceDetails? {
         let schemaName = schema ?? core.currentSchema
-        let definitions = try await sequenceDefinitions(schema: schemaName, dependentOnTable: nil, named: sequence)
-        guard let definition = definitions.first else { return nil }
-        return definition.details(schema: schemaName, position: await position(schema: schemaName, sequence: sequence))
+        async let definitions = sequenceDefinitions(schema: schemaName, dependentOnTable: nil, named: sequence)
+        async let position = position(schema: schemaName, sequence: sequence)
+        guard let definition = try await definitions.first else {
+            throw PluginObjectSourceError.notFound(sequence)
+        }
+        return await definition.details(schema: schemaName, position: position)
     }
 
     // Needs SELECT on the sequence; a role without it gets no position rather than a guess.

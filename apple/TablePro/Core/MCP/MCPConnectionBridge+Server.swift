@@ -443,7 +443,7 @@ extension MCPConnectionBridge {
             scope: scope,
             workload: .bulk
         ) { driver -> (tables: [TableInfo], columns: [String: [ColumnInfo]]) in
-            let tables = MCPConnectionBridge.sortedTables(try await driver.fetchTables(schema: scope.schema))
+            let tables = MCPConnectionBridge.sortedTables(try await driver.fetchTables(schema: scope.schema).excludingSequences())
             let limited = Array(tables.prefix(MCPConnectionBridge.schemaResourceTableLimit))
             var columns: [String: [ColumnInfo]] = [:]
             for table in limited {

@@ -121,7 +121,7 @@ actor SQLSchemaProvider {
         let task = Task<Void, Never> {
             do {
                 let fetched = try await driver.fetchTables()
-                await self.setLoadedTables(fetched)
+                await self.setLoadedTables(fetched.excludingSequences())
             } catch {
                 Self.logger.error(
                     "[schema] loadSchema failed: \(error.publicLogShape, privacy: .public)"

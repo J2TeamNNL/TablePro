@@ -1155,12 +1155,12 @@ struct DatabaseMenuCommandTests {
         #expect(submenu?.items.isEmpty == true, "The submenu is filled when it opens, not at build time")
     }
 
-    @Test("New Folder follows New Sequence and routes through the responder chain")
-    func newFolderFollowsNewSequence() throws {
+    @Test("New Folder follows New View and routes through the responder chain")
+    func newFolderFollowsNewView() throws {
         let items = databaseMenu()?.items ?? []
-        let sequenceIndex = try #require(items.firstIndex { $0.title == String(localized: "New Sequence…") })
-        try #require(sequenceIndex + 1 < items.count)
-        let folder = items[sequenceIndex + 1]
+        let viewIndex = try #require(items.firstIndex { $0.title == String(localized: "New View…") })
+        try #require(viewIndex + 1 < items.count)
+        let folder = items[viewIndex + 1]
 
         #expect(folder.title == String(localized: "New Folder"))
         #expect(folder.action == #selector(MainSplitViewController.createTableFolder(_:)))

@@ -74,7 +74,7 @@ internal enum MCPSchemaSearch {
         let needle = request.term.lowercased()
         let listing = try await tables(reaching: request.tableReach, in: request.scope, metadata: metadata)
         let tableMatches = ordered(
-            listing.tables.filter { $0.name.lowercased().contains(needle) },
+            listing.tables.excludingSequences().filter { $0.name.lowercased().contains(needle) },
             preferring: request.scope.schema
         ).map { table in
             Match.table(name: table.name, schema: table.schema, type: table.type)

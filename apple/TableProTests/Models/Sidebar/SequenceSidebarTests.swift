@@ -24,6 +24,12 @@ struct SequenceSidebarTests {
         #expect(SidebarObjectKind.visible(itemCounts: [.table: 1, .sequence: 2]) == [.table, .sequence])
     }
 
+    @Test("Consumers that read columns drop sequences from a listing")
+    func excludingSequences() {
+        let listing = [TableInfo(name: "orders", type: .table, rowCount: nil), sequence()]
+        #expect(listing.excludingSequences().map(\.name) == ["orders"])
+    }
+
     @Test("A sequence's owning column is named on hover and to VoiceOver")
     func ownerIsDescribed() {
         let owner = String(format: String(localized: "Owned by %@"), "orders.id")

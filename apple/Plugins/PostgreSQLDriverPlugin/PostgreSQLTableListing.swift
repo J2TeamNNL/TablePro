@@ -68,7 +68,7 @@ nonisolated enum PostgreSQLTableListing {
         let partitionCountColumn = includePartitionAwareness
             ? "CASE WHEN c.relkind = 'p' THEN (SELECT pg_catalog.count(*) FROM pg_catalog.pg_inherits ci WHERE ci.inhparent = c.oid) END"
             : "NULL::bigint"
-        let ownerColumns = includeSequences ? ",\n       " + sequenceOwnerColumns : ""
+        let ownerColumns = includeSequences ? ",\n       " + sequenceOwnerColumns(sequence: "c.oid", onlyWhen: "c.relkind = 'S'") : ""
         let schemaColumn = listing.projectsSchema ? ",\n       c.nspname AS schema_name" : ""
         // Unfenced, a reader's five-schema listing ran 42 ms instead of 12; one schema is fastest unfenced.
         let fence = listing.projectsSchema ? "\n      OFFSET 0" : ""
@@ -145,20 +145,24 @@ nonisolated enum PostgreSQLTableListing {
     }
 
     // deptype 'a' is OWNED BY (serial), 'i' an identity column. Either names one column.
-    private static let sequenceOwnerColumns = """
-        CASE WHEN c.relkind = 'S' THEN (
-                   SELECT owner.relname
-                   FROM pg_catalog.pg_depend d
-                   JOIN pg_catalog.pg_class owner ON owner.oid = d.refobjid
-                   WHERE \(sequenceOwnerDependency("d", sequence: "c.oid"))
-                   LIMIT 1) END AS owned_by_table,
-               CASE WHEN c.relkind = 'S' THEN (
-                   SELECT a.attname
-                   FROM pg_catalog.pg_depend d
-                   JOIN pg_catalog.pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
-                   WHERE \(sequenceOwnerDependency("d", sequence: "c.oid"))
-                   LIMIT 1) END AS owned_by_column
-        """
+    static func sequenceOwnerColumns(sequence: String, onlyWhen condition: String? = nil) -> String {
+        func owned(_ select: String, as alias: String) -> String {
+            let subquery = """
+                (SELECT \(select)
+                   WHERE \(sequenceOwnerDependency("d", sequence: sequence))
+                   LIMIT 1)
+                """
+            return condition.map { "CASE WHEN \($0) THEN \(subquery) END AS \(alias)" } ?? "\(subquery) AS \(alias)"
+        }
+        return owned(
+            "owner.relname FROM pg_catalog.pg_depend d JOIN pg_catalog.pg_class owner ON owner.oid = d.refobjid",
+            as: "owned_by_table"
+        ) + ",\n       " + owned(
+            "a.attname FROM pg_catalog.pg_depend d JOIN pg_catalog.pg_attribute a "
+                + "ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid",
+            as: "owned_by_column"
+        )
+    }
 
     static func sequenceOwnerDependency(_ alias: String, sequence: String) -> String {
         """
