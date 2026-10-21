@@ -41,9 +41,9 @@ final class SearchDatabaseUITests: UITestCase {
             "Opening a match must open its table in a tab"
         )
         let grid = fixtureGrid(in: window, app: app)
-        XCTAssertTrue(grid.waitForValue("Brook", row: 0, column: 1, timeout: 30), "The tab must show the matching row")
+        XCTAssertTrue(grid.waitForValue("Brook", row: 1, column: 2, timeout: 30), "The tab must show the matching row")
         XCTAssertFalse(
-            grid.cell(row: 1, column: 1).waitToExist(timeout: 2),
+            grid.cell(row: 2, column: 2).waitToExist(timeout: 2),
             "The tab must be filtered to the matching rows"
         )
     }
