@@ -107,7 +107,8 @@ extension MainContentCoordinator {
 
         tabManager.mutate(tabId: tabId) { $0.execution.errorMessage = nil }
 
-        let runsStatement = request.driverStep?.runsStatement == true
+        // EXPLAIN ANALYZE and an actual plan run the statement, and a CREATE TABLE AS among them changes the catalog.
+        let ranWrite = request.operationKind(databaseType: conn.type).declaresWrite
         let explainTask = Task { [weak self] in
             guard let self else { return }
             do {
@@ -125,7 +126,7 @@ extension MainContentCoordinator {
                         driver: driver, sql: request.sql, parameters: nil, rowCap: nil
                     )
                 }
-                if runsStatement { Self.postStatementRan(request.subjectSQL, on: conn) }
+                if ranWrite { Self.postStatementRan(request.subjectSQL, on: conn) }
                 let rawText = ExplainPlanTextFlattener.flatten(rows: fetchResult.rows)
                 let plan = ExplainPlanParserRegistry.plan(from: rawText, format: request.format)
 
@@ -211,7 +212,7 @@ extension MainContentCoordinator {
                     )
                 }
             } catch {
-                if runsStatement { Self.postStatementRan(request.subjectSQL, on: conn) }
+                if ranWrite { Self.postStatementRan(request.subjectSQL, on: conn) }
                 await MainActor.run { [weak self] in
                     guard let self else { return }
                     guard tabExecution.settle(claim) else { return }
