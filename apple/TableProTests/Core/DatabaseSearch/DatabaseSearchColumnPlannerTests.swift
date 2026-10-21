@@ -69,7 +69,9 @@ struct DatabaseSearchColumnPlannerTests {
         #expect(moment["born"] == nil)
 
         #expect(searched("2023-02-29")["born"] == nil)
-        #expect(searched("2024-02-29 24:00")["created_at"] == nil)
+        #expect(searched("2024-02-29 24:00:00")["created_at"] == nil)
+        #expect(searched("2024-02-29 13:45")["created_at"] == nil)
+        #expect(searched("2024-02-29T13:45:10")["created_at"]?.filterOperator == .equal)
     }
 
     @Test("A UUID joins UUID columns, anything else leaves them out")

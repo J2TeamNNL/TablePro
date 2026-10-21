@@ -113,16 +113,14 @@ internal enum DatabaseSearchTermParser {
         return isCalendarDate(characters)
     }
 
-    // `yyyy-MM-dd HH:mm`, with optional seconds and fraction, and a space or `T` between.
+    // `yyyy-MM-dd HH:mm:ss` with an optional fraction, a space or `T` between: the one shape every engine,
+    // Oracle's ANSI literal included, reads as a timestamp.
     internal static func isDateTime(_ term: String) -> Bool {
         let characters = Array(term)
-        guard characters.count >= 16, characters[10] == " " || characters[10] == "T",
+        guard characters.count >= 19, characters[10] == " " || characters[10] == "T",
               isCalendarDate(Array(characters[0..<10])),
               let hour = number(characters, 11..<13), (0...23).contains(hour), characters[13] == ":",
-              let minute = number(characters, 14..<16), (0...59).contains(minute)
-        else { return false }
-        guard characters.count > 16 else { return true }
-        guard characters.count >= 19, characters[16] == ":",
+              let minute = number(characters, 14..<16), (0...59).contains(minute), characters[16] == ":",
               let second = number(characters, 17..<19), (0...59).contains(second)
         else { return false }
         guard characters.count > 19 else { return true }
