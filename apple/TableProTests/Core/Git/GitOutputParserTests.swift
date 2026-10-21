@@ -164,6 +164,7 @@ struct GitFileStatusTests {
         #expect(GitFileStatus(staged: .unmerged, unstaged: .unmerged).badge == .conflicted)
         #expect(GitFileStatus.untracked.badge == .untracked)
         #expect(GitFileStatus.untracked.badge.letter == "U")
+        #expect(GitFileStatus(code: ".A").badge == .added)
     }
 
     @Test("Discard is offered only when the working copy differs from the index")
@@ -184,6 +185,7 @@ struct GitFileStatusTests {
         #expect(!GitFileStatus(staged: .added, unstaged: .unmodified).hasCommittedHistory)
         #expect(!GitFileStatus(staged: .renamed, unstaged: .unmodified).hasCommittedHistory)
         #expect(!GitFileStatus.untracked.hasCommittedHistory)
+        #expect(!GitFileStatus(code: ".A").hasCommittedHistory)
         #expect(LinkedFileGitState.clean.hasCommittedHistory)
         #expect(!LinkedFileGitState.clean.canDiscardChanges)
     }
