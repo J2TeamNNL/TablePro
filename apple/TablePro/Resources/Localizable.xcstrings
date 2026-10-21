@@ -25412,6 +25412,15 @@
         }
       }
     },
+    "Apple Intelligence could not answer: %@" : {
+
+    },
+    "Apple Intelligence is not available on this Mac right now." : {
+
+    },
+    "Apple Intelligence needs macOS 26 or later." : {
+
+    },
     "AppleScript" : {
       "localizations" : {
         "fr" : {
@@ -45486,6 +45495,9 @@
           }
         }
       }
+    },
+    "Configure an active provider or turn on Apple Intelligence to enable inline suggestions." : {
+
     },
     "Configure an active provider to enable inline suggestions." : {
       "localizations" : {
@@ -92868,6 +92880,9 @@
           }
         }
       }
+    },
+    "Inline suggestions and Review, Explain, Optimize and Fix run on this Mac and send nothing over the network." : {
+
     },
     "Insert" : {
       "extractionState" : "manual",
@@ -159136,6 +159151,9 @@
         }
       }
     },
+    "Send to %@" : {
+
+    },
     "Sends the code to %@" : {
       "localizations" : {
         "fr" : {
@@ -181153,6 +181171,9 @@
         }
       }
     },
+    "The Apple Intelligence model is still downloading." : {
+
+    },
     "The assistant answers once the connection is up" : {
       "localizations" : {
         "fr" : {
@@ -181732,6 +181753,9 @@
       }
     },
     "The changes were edited while the save was checking other tables. Save again to include them." : {
+
+    },
+    "The chat and Agent mode keep the active provider." : {
 
     },
     "The ChatGPT account could not be identified." : {
@@ -195166,6 +195190,9 @@
         }
       }
     },
+    "This Mac does not support Apple Intelligence." : {
+
+    },
     "this Mac needs %@ free to open that database" : {
       "localizations" : {
         "fr" : {
@@ -195916,6 +195943,12 @@
           }
         }
       }
+    },
+    "This request is too large for Apple Intelligence, even with only the columns the statement uses. Select a smaller part of the statement." : {
+
+    },
+    "This request is too large for Apple Intelligence. Select a smaller part of the statement." : {
+
     },
     "This result has no column named %@" : {
       "localizations" : {
@@ -201122,6 +201155,9 @@
         }
       }
     },
+    "Turn on Apple Intelligence in System Settings > Apple Intelligence & Siri." : {
+
+    },
     "Turn on Set time automatically in System Settings > General > Date & Time, then reconnect." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -205337,6 +205373,9 @@
       }
     },
     "Use for Dark Appearance" : {
+
+    },
+    "Use for inline suggestions and query actions" : {
 
     },
     "Use for Light Appearance" : {
