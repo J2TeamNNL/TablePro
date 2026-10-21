@@ -51,13 +51,15 @@ pub(crate) fn encode(param: &BoundParam) -> Result<ColumnData<'static>, DriverEr
         }
         // SQL Server has no unsigned 64-bit type; decimal(20,0) holds
         // every value of one.
-        ParamType::UInt64 | ParamType::Decimal => numeric(param_type, value).map(|numeric| {
+        ParamType::UInt64 | ParamType::Decimal => numeric(param_type, value).and_then(|numeric| {
             // tiberius counts a digit before the point when the integer
             // part is 0, so a value at scale 38 goes out as precision 39,
             // which the server refuses. Its text converts exactly.
             match u32::from(numeric.precision()) > MAX_NUMERIC_DIGITS {
-                true => text_data(value_to_text(value).unwrap_or_default()),
-                false => ColumnData::Numeric(Some(numeric)),
+                true => value_to_text(value)
+                    .map(text_data)
+                    .ok_or_else(|| refused(param_type, value)),
+                false => Ok(ColumnData::Numeric(Some(numeric))),
             }
         }),
         ParamType::Float32 => match value {

@@ -351,7 +351,7 @@ fn chrono_year(input: &str) -> Option<Cow<'_, str>> {
     let year_digits = dated.bytes().take_while(u8::is_ascii_digit).count();
     let (year, rest) = dated.split_at(year_digits);
     if !before_christ {
-        return Some(match year_digits > 4 && rest.starts_with('-') {
+        return Some(match year_digits > 4 && !year.starts_with('0') && rest.starts_with('-') {
             true => Cow::Owned(format!("+{dated}")),
             false => Cow::Borrowed(input),
         });
@@ -381,7 +381,10 @@ fn far_temporal(
     let year_digits = input.bytes().take_while(u8::is_ascii_digit).count();
     let (year, rest) = input.split_at(year_digits);
     let last_year = u64::try_from(NaiveDate::MAX.year()).ok()?;
-    let year = year.parse::<u64>().ok().filter(|year| *year > last_year)?;
+    let year = year
+        .parse::<u64>()
+        .ok()
+        .filter(|parsed| *parsed > last_year && !year.starts_with('0'))?;
     let stand_in = parse(&format!("{}{rest}", 2000 + year % 400)).ok()?;
     if purpose == Purpose::Store
         && let Err(error) = check_declared_fraction(&stand_in, column.kind.fractional_digits())
@@ -1033,6 +1036,14 @@ mod tests {
             )))
         );
         assert_eq!(parse_literal_text("5874897-12-31", &date), Ok(kept("5874897-12-31")));
+        assert_eq!(
+            parse_literal_text("00001-01-01", &date),
+            Err(EditParseError::InvalidDate)
+        );
+        assert_eq!(
+            parse_literal_text("0005874897-12-31", &date),
+            Err(EditParseError::InvalidDate)
+        );
         let last = NaiveDate::MAX.year();
         assert_eq!(
             parse_literal_text(&format!("{last}-12-31"), &date),
