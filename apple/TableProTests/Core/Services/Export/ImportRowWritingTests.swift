@@ -79,14 +79,14 @@ struct ImportRowWritingTests {
         #expect(ImportRowWritingProblem.of(mode: .insert, key: nil, mappedColumns: ["a"]) == nil)
     }
 
-    @Test("A matching mode needs a key, mapped, and an update needs a column outside it")
+    @Test("A matching mode needs a key, mapped, and Update needs a column outside it")
     func matchingProblems() {
         let key = ImportMatchKey(indexName: nil, columns: ["tenant", "id"])
         #expect(ImportRowWritingProblem.of(mode: .update, key: nil, mappedColumns: ["a"]) == .noKey)
         #expect(ImportRowWritingProblem.of(mode: .upsert, key: key, mappedColumns: ["id", "name"])
             == .unmappedKeyColumns(["tenant"]))
         #expect(ImportRowWritingProblem.of(mode: .update, key: key, mappedColumns: ["id", "tenant"]) == .nothingToUpdate)
-        #expect(ImportRowWritingProblem.of(mode: .upsert, key: key, mappedColumns: ["id", "tenant"]) == .nothingToUpdate)
+        #expect(ImportRowWritingProblem.of(mode: .upsert, key: key, mappedColumns: ["id", "tenant"]) == nil)
         #expect(ImportRowWritingProblem.of(mode: .insertSkippingExisting, key: key, mappedColumns: ["id", "tenant"]) == nil)
         #expect(ImportRowWritingProblem.of(mode: .update, key: key, mappedColumns: ["id", "tenant", "name"]) == nil)
     }

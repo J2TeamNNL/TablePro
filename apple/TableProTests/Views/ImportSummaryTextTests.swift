@@ -22,6 +22,16 @@ struct ImportSummaryTextTests {
         #expect(lines == tally.summaryLines(failed: 1) + ["1.50 seconds"])
     }
 
+    @Test("A plain Insert keeps counting statements")
+    func insertSummary() {
+        var tally = ImportRowTally(mode: .insert)
+        tally.inserted = 900
+        let result = PluginImportResult(executedStatements: 10, executionTime: 0.25, skippedStatements: 1)
+
+        #expect(TransferResultAlert.importSummary(result, rowTally: tally)
+            == "10 statements executed, 1 failed\n0.25 seconds")
+    }
+
     @Test("A SQL file import still counts statements")
     func statementSummary() {
         let result = PluginImportResult(executedStatements: 12, executionTime: 0.25)

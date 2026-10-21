@@ -308,10 +308,10 @@ final class ImportDataSinkAdapter: PluginImportDataSink, @unchecked Sendable {
 
     // Not the engines' upsert forms: they refuse a NOT NULL column the file leaves out even when the row exists.
     private func writeMatching(_ rows: [MappedRow], generator: SQLStatementGenerator) async throws {
+        let keys = try rows.map(keyValues(of:))
         var run: [KeyedRow] = []
         var keysInRun = Set<[String]>()
-        for row in rows {
-            let key = try keyValues(of: row)
+        for (row, key) in zip(rows, keys) {
             // A repeated key has to see the write of its first occurrence, so the run ends before it.
             let folded = key.contains(where: \.isNull) ? nil : key.map(Self.foldedKeyValue)
             if let folded, keysInRun.contains(folded) {
@@ -335,6 +335,8 @@ final class ImportDataSinkAdapter: PluginImportDataSink, @unchecked Sendable {
         case .text(let text):
             let folded = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 .folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
+            let hex = folded.filter { $0 != "-" && $0 != "{" && $0 != "}" }
+            if hex.count == 32, hex.allSatisfy(\.isHexDigit) { return "uuid:" + hex }
             // A Double, not a Decimal: a REAL column holds 0.1 and 0.100000000000000001 as one value.
             guard folded.contains(where: { $0.isASCII && $0.isNumber }),
                   folded.allSatisfy({ numberCharacters.contains($0) }),

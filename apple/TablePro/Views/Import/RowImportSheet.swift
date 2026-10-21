@@ -53,6 +53,7 @@ struct RowImportSheet: View {
     @State private var destination: Destination = .existingTable
     @State private var writeMode: ImportWriteMode = .insert
     @State private var chosenMatchKey: ImportMatchKey?
+    @State private var indexesUnreadable = false
 
     /// The database and schema every read and write of this sheet goes to: where the connection was
     /// browsing when the sheet opened. The sheet is modal to its window, but another window on the
@@ -318,14 +319,23 @@ struct RowImportSheet: View {
                 if writeMode.matchesExistingRows {
                     GridRow {
                         Text("Match on:")
-                        Picker(String(localized: "Match on"), selection: matchKeyBinding) {
-                            ForEach(mapping.matchKeys) { key in
-                                Text(key.label).tag(ImportMatchKey?.some(key))
+                        HStack(spacing: 8) {
+                            Picker(String(localized: "Match on"), selection: matchKeyBinding) {
+                                ForEach(mapping.matchKeys) { key in
+                                    Text(key.label).tag(ImportMatchKey?.some(key))
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(maxWidth: 280, alignment: .leading)
+                            .disabled(mapping.matchKeys.isEmpty)
+                            if indexesUnreadable && mapping.matchKeys.isEmpty {
+                                Button(String(localized: "Try Again")) {
+                                    Task { await retryLoad() }
+                                }
+                                .buttonStyle(.link)
+                                .font(.caption)
                             }
                         }
-                        .labelsHidden()
-                        .frame(maxWidth: 280, alignment: .leading)
-                        .disabled(mapping.matchKeys.isEmpty)
                     }
                 }
             } else {
@@ -686,6 +696,9 @@ struct RowImportSheet: View {
                 return String(localized: "Each column can be mapped from only one field.")
             }
             guard selectedTargetTable != nil, currentReadHasLanded else { return nil }
+            if writeMode.matchesExistingRows, matchKey == nil, indexesUnreadable {
+                return String(localized: "Could not read this table's indexes, so rows cannot be matched. Try again.")
+            }
             return ImportRowWritingProblem.of(
                 mode: writeMode,
                 key: matchKey,
@@ -921,7 +934,8 @@ struct RowImportSheet: View {
                 (try await driver.fetchColumns(table: table), try? await driver.fetchIndexes(table: table))
             }
             guard !Task.isCancelled else { return }
-            if indexes == nil {
+            indexesUnreadable = indexes == nil
+            if indexesUnreadable {
                 Self.logger.warning("Could not read the target's indexes, so only its primary key can be matched on")
             }
             let fields = try await ImportFieldDetection.detectFields(plugin: plugin, at: fileURL, targetTable: table)

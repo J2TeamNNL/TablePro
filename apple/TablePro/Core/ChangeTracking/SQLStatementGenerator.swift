@@ -280,11 +280,9 @@ struct SQLStatementGenerator {
         var bindParameters: [Any?] = []
         let quotedKey = keyColumns.map(quoteIdentifierFn)
         let selects = keys.enumerated().map { position, values -> String in
-            let conditions = zip(quotedKey, values).map { column, value -> String in
-                bindParameters.append(value.asAny)
-                return "\(column) = \(placeholder(at: bindParameters.count - 1))"
-            }.joined(separator: " AND ")
-            return "SELECT \(position), COUNT(*) FROM \(qualifiedTableName) WHERE \(conditions)"
+            let terms = zip(quotedKey, values).map { RowMatchTerm(matched: $0, value: $1) }
+            let condition = conditions(terms, parameters: &bindParameters)
+            return "SELECT \(position), COUNT(*) FROM \(qualifiedTableName) WHERE \(condition)"
         }
 
         return ParameterizedStatement(sql: selects.joined(separator: " UNION ALL "), parameters: bindParameters)
@@ -300,15 +298,15 @@ struct SQLStatementGenerator {
               !keyColumns.isEmpty, keyColumns.count == keyValues.count else { return nil }
 
         var bindParameters: [Any?] = []
-        func bound(_ column: String, _ value: PluginCellValue) -> String {
+        let assignments = zip(setColumns, values).map { column, value -> String in
             bindParameters.append(value.asAny)
             return "\(quoteIdentifierFn(column)) = \(placeholder(at: bindParameters.count - 1))"
-        }
-        let assignments = zip(setColumns, values).map(bound).joined(separator: ", ")
-        let conditions = zip(keyColumns, keyValues).map(bound).joined(separator: " AND ")
+        }.joined(separator: ", ")
+        let terms = zip(keyColumns, keyValues).map { RowMatchTerm(matched: quoteIdentifierFn($0), value: $1) }
+        let condition = rowCondition(terms, parameters: &bindParameters)
 
         return ParameterizedStatement(
-            sql: "UPDATE \(qualifiedTableName) SET \(assignments) WHERE \(conditions)",
+            sql: "UPDATE \(qualifiedTableName) SET \(assignments) WHERE \(condition)",
             parameters: bindParameters
         )
     }

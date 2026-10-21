@@ -312,7 +312,7 @@ internal enum TransferResultAlert {
             format: String(localized: "%@ seconds"),
             String(format: "%.2f", result.executionTime)
         )
-        if let rowTally {
+        if let rowTally, rowTally.mode.matchesExistingRows {
             return (rowTally.summaryLines(failed: result.skippedStatements) + [seconds]).joined(separator: "\n")
         }
         let counts = result.skippedStatements > 0

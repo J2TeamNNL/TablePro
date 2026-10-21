@@ -96,7 +96,7 @@ internal enum ImportRowWritingProblem: Equatable {
         let mapped = Set(mappedColumns)
         let missing = key.columns.filter { !mapped.contains($0) }
         guard missing.isEmpty else { return .unmappedKeyColumns(missing) }
-        if mode.updatesMatchedRows, mapped.subtracting(key.columns).isEmpty {
+        if mode == .update, mapped.subtracting(key.columns).isEmpty {
             return .nothingToUpdate
         }
         return nil

@@ -230,6 +230,34 @@ struct ImportDataSinkAdapterRowWritingTests {
         #expect(folded("１") == folded("1"))
         #expect(folded("12abc") != folded("12"))
         #expect(folded("a") != folded("b"))
+        #expect(folded("6F9619FF-8B86-D011-B42D-00C04FC964FF") == folded("6f9619ff8b86d011b42d00c04fc964ff"))
+        #expect(folded("{6f9619ff-8b86-d011-b42d-00c04fc964ff}") == folded("6f9619ff8b86d011b42d00c04fc964ff"))
+    }
+
+    @Test("A text key matches the number SQLite stored in a column with no affinity")
+    func textKeyMatchesStoredNumber() async throws {
+        let driver = try InMemorySQLiteDriver("""
+            CREATE TABLE people (id, name TEXT NOT NULL, note TEXT NOT NULL DEFAULT 'none');
+            INSERT INTO people VALUES (5, 'a', 'n');
+            """)
+        let sink = sink(on: driver, mode: .upsert)
+
+        try await sink.insertRows([["id": .text("5"), "name": .text("z")]])
+
+        #expect(try driver.rows("SELECT COUNT(*), MIN(name) FROM people") == [["1", "z"]])
+        #expect(sink.rowTally.updated == 1)
+        #expect(sink.rowTally.inserted == 0)
+    }
+
+    @Test("A row with no value for the key stops the batch before any row is written")
+    func missingKeyWritesNothing() async throws {
+        let driver = try InMemorySQLiteDriver(Self.people)
+        let sink = sink(on: driver, mode: .upsert)
+
+        await #expect(throws: PluginImportError.self) {
+            try await sink.insertRows([["id": .text("4"), "name": .text("d")], ["name": .text("nobody")]])
+        }
+        #expect(try people(driver).count == 3)
     }
 
     @Test("Matches across several probe statements land on the right rows")
