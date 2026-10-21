@@ -113,7 +113,7 @@ internal enum DatabaseSearchColumnPlanner {
         case .blob:
             guard options.includesBinaryColumns, pattern, engine.patternReadsAnyColumn else { return nil }
             return textMatch
-        case .boolean, .spatial, .array:
+        case .boolean, .spatial, .vector, .array:
             return nil
         }
     }

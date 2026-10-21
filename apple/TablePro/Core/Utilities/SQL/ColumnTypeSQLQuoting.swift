@@ -20,7 +20,7 @@ internal enum ColumnTypeSQLQuoting {
             return RowValueCopyFormatter.isIntegerLiteral(value)
         case .decimal:
             return PluginNumericLiteral.isValid(value)
-        case .text, .date, .timestamp, .datetime, .boolean, .blob, .json, .enumType, .set, .spatial, .array:
+        case .text, .date, .timestamp, .datetime, .boolean, .blob, .json, .enumType, .set, .spatial, .vector, .array:
             return false
         }
     }
@@ -30,7 +30,7 @@ internal enum ColumnTypeSQLQuoting {
         switch type {
         case .text, .enumType, .set:
             return true
-        case .integer, .decimal, .date, .timestamp, .datetime, .boolean, .blob, .json, .spatial, .array:
+        case .integer, .decimal, .date, .timestamp, .datetime, .boolean, .blob, .json, .spatial, .vector, .array:
             return false
         }
     }
@@ -58,7 +58,7 @@ internal enum ColumnTypeSQLQuoting {
             // SQL Server's legacy TEXT is NTEXT's single-byte twin, also with no `=` (error 402).
             if family == .mssql, base == "TEXT" { return false }
             return !typesWithoutEquality.contains(base)
-        case .integer, .decimal, .date, .timestamp, .datetime, .boolean, .enumType, .set:
+        case .integer, .decimal, .date, .timestamp, .datetime, .boolean, .enumType, .set, .vector:
             return true
         case .blob, .json, .spatial, .array:
             return false

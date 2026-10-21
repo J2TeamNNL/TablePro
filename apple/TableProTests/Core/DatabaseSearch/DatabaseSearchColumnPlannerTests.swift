@@ -25,7 +25,8 @@ struct DatabaseSearchColumnPlannerTests {
         Column(name: "address", type: .text(rawType: "inet")),
         Column(name: "body", type: .text(rawType: "CLOB")),
         Column(name: "doc", type: .text(rawType: "xml")),
-        Column(name: "tags", type: .array(rawType: "text[]", element: .text(rawType: "text")))
+        Column(name: "tags", type: .array(rawType: "text[]", element: .text(rawType: "text"))),
+        Column(name: "embedding", type: .vector(rawType: "vector(3)"))
     ]
 
     private func searched(_ term: String, _ configure: (inout DatabaseSearchOptions) -> Void = { _ in }) -> [String: TableFilter] {
@@ -112,12 +113,13 @@ struct DatabaseSearchColumnPlannerTests {
         #expect(filters["email"]?.isCaseSensitive == true)
     }
 
-    @Test("Boolean, array and XML columns are never searched")
+    @Test("Boolean, array, vector and XML columns are never searched")
     func unsearchableTypesStayOut() {
         let filters = searched("true")
         #expect(filters["active"] == nil)
         #expect(filters["tags"] == nil)
         #expect(filters["doc"] == nil)
+        #expect(searched("[1,2,3]")["embedding"] == nil)
     }
 
     @Test("A blank term searches nothing, and surrounding whitespace is dropped")
