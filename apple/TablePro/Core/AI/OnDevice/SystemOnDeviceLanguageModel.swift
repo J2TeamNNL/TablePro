@@ -58,11 +58,10 @@ struct SystemOnDeviceLanguageModel: OnDeviceLanguageModel {
                     var emitted = ""
                     for try await snapshot in session.streamResponse(to: request.prompt, options: options) {
                         let content = snapshot.content
-                        guard content.hasPrefix(emitted) else {
+                        guard let delta = OnDeviceSnapshot.delta(from: emitted, to: content) else {
                             Self.logger.fault("On-device snapshot did not extend the text already shown")
                             continue
                         }
-                        let delta = String(content.dropFirst(emitted.count))
                         emitted = content
                         if !delta.isEmpty {
                             continuation.yield(delta)

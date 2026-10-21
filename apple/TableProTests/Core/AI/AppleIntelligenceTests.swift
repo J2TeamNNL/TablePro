@@ -47,6 +47,37 @@ struct OnDeviceFitTests {
         let request = OnDeviceRequest(instructions: "abc", prompt: "de")
         #expect(OnDeviceTokenBudget.estimatedTokens(in: request) == 3 + OnDeviceTokenBudget.estimateOverhead)
     }
+
+    @Test("Text outside ASCII counts a token a character, above what the model measures")
+    func estimateNonASCII() {
+        let request = OnDeviceRequest(instructions: "", prompt: "注文テーブル")
+        #expect(OnDeviceTokenBudget.estimatedTokens(in: request) == 6 + OnDeviceTokenBudget.estimateOverhead)
+    }
+}
+
+struct OnDeviceSnapshotTests {
+    @Test("A snapshot that extends the text yields only what is new")
+    func plainDelta() {
+        #expect(OnDeviceSnapshot.delta(from: "SELECT", to: "SELECT id") == " id")
+        #expect(OnDeviceSnapshot.delta(from: "", to: "SELECT") == "SELECT")
+        #expect(OnDeviceSnapshot.delta(from: "SELECT", to: "SELECT") == "")
+    }
+
+    @Test("A snapshot that grows the last grapheme still yields the new scalars, and they join back up")
+    func extendsLastGrapheme() throws {
+        let emitted = "Done \u{1F469}"
+        let content = "Done \u{1F469}\u{200D}\u{1F4BB} ok"
+        let delta = try #require(OnDeviceSnapshot.delta(from: emitted, to: content))
+        #expect(emitted + delta == content)
+
+        let accented = try #require(OnDeviceSnapshot.delta(from: "cafe", to: "cafe\u{301}!"))
+        #expect("cafe" + accented == "caf\u{E9}!")
+    }
+
+    @Test("A snapshot that rewrites earlier text is not a delta")
+    func rewriteIsRejected() {
+        #expect(OnDeviceSnapshot.delta(from: "SELECT id", to: "SELECT name") == nil)
+    }
 }
 
 struct AppleIntelligenceAvailabilityTests {
