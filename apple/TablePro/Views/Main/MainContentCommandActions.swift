@@ -13,6 +13,7 @@ import Foundation
 import os
 import SwiftUI
 import TableProPluginKit
+import TableProSQLGrammar
 import TableProUtilities
 import UniformTypeIdentifiers
 
@@ -1562,5 +1563,16 @@ final class MainContentCommandActions: ObservableObject {
                 }
             }
         }
+    }
+}
+
+extension MainContentCommandActions {
+    // Copy with the grid not focused: the grid's format when one is mounted, else Copy Rows.
+    func copySelectedRowsInCopyFormat() {
+        guard dataGridOwnsSelection, let grid = coordinator?.dataTabDelegate?.tableViewCoordinator else {
+            copySelectedRows()
+            return
+        }
+        grid.copyRowsInCopyFormat(at: resolvedRowSelection())
     }
 }
