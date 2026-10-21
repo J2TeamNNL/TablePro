@@ -36,70 +36,70 @@ struct DerivedTableParserTests {
           ON hs.country = ahs.country;
         """
         let ahs = table(parser.parse(query), alias: "ahs")
-        #expect(ahs?.columns == ["country", "avg_happiness_score"])
+        #expect(ahs?.projection.columns(expanding: { _ in nil }) == ["country", "avg_happiness_score"])
     }
 
     @Test("Derived table in FROM clause")
     func derivedTableInFrom() {
         let query = "SELECT * FROM (SELECT id, name FROM users) u"
-        #expect(table(parser.parse(query), alias: "u")?.columns == ["id", "name"])
+        #expect(table(parser.parse(query), alias: "u")?.projection.columns(expanding: { _ in nil }) == ["id", "name"])
     }
 
     @Test("Derived table with AS keyword before alias")
     func derivedTableWithAsAlias() {
         let query = "SELECT * FROM (SELECT id FROM users) AS u"
-        #expect(table(parser.parse(query), alias: "u")?.columns == ["id"])
+        #expect(table(parser.parse(query), alias: "u")?.projection.columns(expanding: { _ in nil }) == ["id"])
     }
 
     @Test("Derived table in a comma-separated FROM list")
     func derivedTableInFromList() {
         let query = "SELECT * FROM orders o, (SELECT total FROM payments) p"
-        #expect(table(parser.parse(query), alias: "p")?.columns == ["total"])
+        #expect(table(parser.parse(query), alias: "p")?.projection.columns(expanding: { _ in nil }) == ["total"])
     }
 
     @Test("Qualified column keeps only the trailing identifier")
     func qualifiedColumn() {
         let query = "SELECT * FROM (SELECT u.id, u.email FROM users u) d"
-        #expect(table(parser.parse(query), alias: "d")?.columns == ["id", "email"])
+        #expect(table(parser.parse(query), alias: "d")?.projection.columns(expanding: { _ in nil }) == ["id", "email"])
     }
 
     @Test("SELECT star names no columns itself and leaves its table to the catalog")
     func selectStarLeavesItsTableToTheCatalog() {
         let d = table(parser.parse("SELECT * FROM (SELECT * FROM users) d"), alias: "d")
-        #expect(d?.columns.isEmpty == true)
+        #expect(d?.projection.columns(expanding: { _ in nil }).isEmpty == true)
         #expect(starTables(d) == ["users"])
     }
 
     @Test("Qualified star is skipped")
     func qualifiedStarSkipped() {
         let query = "SELECT * FROM (SELECT u.*, u.id FROM users u) d"
-        #expect(table(parser.parse(query), alias: "d")?.columns == ["id"])
+        #expect(table(parser.parse(query), alias: "d")?.projection.columns(expanding: { _ in nil }) == ["id"])
     }
 
     @Test("Unaliased expressions are skipped")
     func unaliasedExpressionSkipped() {
         let query = "SELECT * FROM (SELECT name, COUNT(*) FROM users GROUP BY name) d"
-        #expect(table(parser.parse(query), alias: "d")?.columns == ["name"])
+        #expect(table(parser.parse(query), alias: "d")?.projection.columns(expanding: { _ in nil }) == ["name"])
     }
 
     @Test("Nested subquery exposes only the outer alias")
     func nestedSubquery() {
         let query = "SELECT * FROM (SELECT a FROM (SELECT id AS a FROM t) inner_q) outer_q"
         let tables = parser.parse(query)
-        #expect(table(tables, alias: "outer_q")?.columns == ["a"])
+        #expect(table(tables, alias: "outer_q")?.projection.columns(expanding: { _ in nil }) == ["a"])
         #expect(table(tables, alias: "inner_q") == nil)
     }
 
     @Test("CTE columns come from its SELECT list")
     func cteColumns() {
         let query = "WITH totals AS (SELECT country, SUM(score) AS total FROM s GROUP BY country) SELECT * FROM totals"
-        #expect(table(parser.parse(query), alias: "totals")?.columns == ["country", "total"])
+        #expect(table(parser.parse(query), alias: "totals")?.projection.columns(expanding: { _ in nil }) == ["country", "total"])
     }
 
     @Test("CTE explicit column list overrides the SELECT list")
     func cteExplicitColumnList() {
         let query = "WITH totals (region, amount) AS (SELECT country, SUM(score) FROM s GROUP BY country) SELECT * FROM totals"
-        #expect(table(parser.parse(query), alias: "totals")?.columns == ["region", "amount"])
+        #expect(table(parser.parse(query), alias: "totals")?.projection.columns(expanding: { _ in nil }) == ["region", "amount"])
     }
 
     @Test("Multiple CTEs are each resolved")
@@ -110,14 +110,14 @@ struct DerivedTableParserTests {
         SELECT * FROM a JOIN b ON a.x = b.y
         """
         let tables = parser.parse(query)
-        #expect(table(tables, alias: "a")?.columns == ["x"])
-        #expect(table(tables, alias: "b")?.columns == ["y", "z"])
+        #expect(table(tables, alias: "a")?.projection.columns(expanding: { _ in nil }) == ["x"])
+        #expect(table(tables, alias: "b")?.projection.columns(expanding: { _ in nil }) == ["y", "z"])
     }
 
     @Test("Quoted alias is unquoted")
     func quotedAlias() {
         let query = "SELECT * FROM (SELECT AVG(score) AS `avg_score` FROM s) d"
-        #expect(table(parser.parse(query), alias: "d")?.columns == ["avg_score"])
+        #expect(table(parser.parse(query), alias: "d")?.projection.columns(expanding: { _ in nil }) == ["avg_score"])
     }
 
     @Test("A subquery in WHERE IN and function call parentheses are not derived tables", arguments: [
@@ -131,13 +131,13 @@ struct DerivedTableParserTests {
     @Test("Distinct in a derived select list is ignored")
     func distinctIgnored() {
         let query = "SELECT * FROM (SELECT DISTINCT country FROM s) d"
-        #expect(table(parser.parse(query), alias: "d")?.columns == ["country"])
+        #expect(table(parser.parse(query), alias: "d")?.projection.columns(expanding: { _ in nil }) == ["country"])
     }
 
     @Test("Commas inside function arguments do not split columns")
     func commasInFunctionArgs() {
         let query = "SELECT * FROM (SELECT COALESCE(a, b) AS first_set, c FROM t) d"
-        #expect(table(parser.parse(query), alias: "d")?.columns == ["first_set", "c"])
+        #expect(table(parser.parse(query), alias: "d")?.projection.columns(expanding: { _ in nil }) == ["first_set", "c"])
     }
 
     // MARK: - CTE bodies
@@ -146,7 +146,7 @@ struct DerivedTableParserTests {
     func materializedCte(_ hint: String) {
         let query = "WITH recent AS \(hint) (SELECT id, total FROM orders) SELECT r.id FROM recent r"
         let recent = table(parser.parse(query), alias: "recent")
-        #expect(recent?.columns == ["id", "total"])
+        #expect(recent?.projection.columns(expanding: { _ in nil }) == ["id", "total"])
         #expect(recent?.isCommonTableExpression == true)
     }
 
@@ -158,13 +158,13 @@ struct DerivedTableParserTests {
     ])
     func dataModifyingCte(_ body: String) {
         let moved = table(parser.parse("WITH moved AS (\(body)) SELECT m.id FROM moved m"), alias: "moved")
-        #expect(moved?.columns == ["id", "payload"])
+        #expect(moved?.projection.columns(expanding: { _ in nil }) == ["id", "payload"])
     }
 
     @Test("A data-modifying CTE without RETURNING outputs nothing")
     func dataModifyingCteWithoutReturning() {
         let gone = table(parser.parse("WITH gone AS (DELETE FROM queue WHERE done) SELECT 1"), alias: "gone")
-        #expect(gone?.columns.isEmpty == true)
+        #expect(gone?.projection.columns(expanding: { _ in nil }).isEmpty == true)
         #expect(starTables(gone).isEmpty)
     }
 
@@ -184,7 +184,7 @@ struct DerivedTableParserTests {
         let query = "WITH m AS (DELETE FROM queue q USING owners o WHERE o.qid = q.id RETURNING q.*, o.owner) SELECT 1"
         let m = table(parser.parse(query), alias: "m")
         #expect(starTables(m) == ["queue"])
-        #expect(m?.columns == ["owner"])
+        #expect(m?.projection.columns(expanding: { _ in nil }) == ["owner"])
     }
 
     @Test("A RETURNING OLD or NEW star reads the written table")
@@ -192,46 +192,46 @@ struct DerivedTableParserTests {
         let query = "WITH m AS (UPDATE queue SET done = true RETURNING old.*, new.done AS now_done) SELECT 1"
         let m = table(parser.parse(query), alias: "m")
         #expect(starTables(m) == ["queue"])
-        #expect(m?.columns == ["now_done"])
+        #expect(m?.projection.columns(expanding: { _ in nil }) == ["now_done"])
     }
 
     @Test("A VALUES body takes the CTE's column list")
     func valuesBody() {
         let query = "WITH v (a, b) AS (VALUES (1, 'x'), (2, 'y')) SELECT * FROM v"
-        #expect(table(parser.parse(query), alias: "v")?.columns == ["a", "b"])
+        #expect(table(parser.parse(query), alias: "v")?.projection.columns(expanding: { _ in nil }) == ["a", "b"])
     }
 
     @Test("A shorter column list renames the leading columns and keeps the rest")
     func partialColumnList() {
         let query = "WITH m (a) AS (UPDATE queue SET done = true RETURNING id, payload) SELECT * FROM m"
-        #expect(table(parser.parse(query), alias: "m")?.columns == ["a", "payload"])
+        #expect(table(parser.parse(query), alias: "m")?.projection.columns(expanding: { _ in nil }) == ["a", "payload"])
     }
 
     @Test("An unnamed expression still holds its position for the column list")
     func columnListOverUnnamedExpression() {
         let query = "WITH c (n, label) AS (SELECT count(*), name FROM t GROUP BY name) SELECT * FROM c"
-        #expect(table(parser.parse(query), alias: "c")?.columns == ["n", "label"])
+        #expect(table(parser.parse(query), alias: "c")?.projection.columns(expanding: { _ in nil }) == ["n", "label"])
     }
 
     @Test("A nested WITH body outputs its main query")
     func nestedWithBody() {
         let query = "WITH a AS (WITH b AS (SELECT 1 AS x) SELECT x, x + 1 AS y FROM b) SELECT * FROM a"
         let tables = parser.parse(query)
-        #expect(table(tables, alias: "a")?.columns == ["x", "y"])
+        #expect(table(tables, alias: "a")?.projection.columns(expanding: { _ in nil }) == ["x", "y"])
         #expect(table(tables, alias: "b") == nil)
     }
 
     @Test("A star over a CTE of the same body reads that CTE")
     func starOverInnerCte() {
         let query = "WITH a AS (WITH b AS (SELECT 1 AS x, 2 AS y) SELECT * FROM b) SELECT * FROM a"
-        #expect(table(parser.parse(query), alias: "a")?.columns == ["x", "y"])
+        #expect(table(parser.parse(query), alias: "a")?.projection.columns(expanding: { _ in nil }) == ["x", "y"])
     }
 
     @Test("A star over an earlier CTE of the list reads that CTE")
     func starOverSiblingCte() {
         let query = "WITH a AS (SELECT x FROM t1), b AS (SELECT * FROM a) SELECT * FROM b"
         let b = table(parser.parse(query), alias: "b")
-        #expect(b?.columns == ["x"])
+        #expect(b?.projection.columns(expanding: { _ in nil }) == ["x"])
         #expect(starTables(b).isEmpty)
     }
 
@@ -250,13 +250,13 @@ struct DerivedTableParserTests {
         let tables = parser.parse(query)
         #expect(starTables(table(tables, alias: "c")) == ["queue", "owners"])
         #expect(starTables(table(tables, alias: "d")) == ["sales.owners"])
-        #expect(table(tables, alias: "d")?.columns == ["id"])
+        #expect(table(tables, alias: "d")?.projection.columns(expanding: { _ in nil }) == ["id"])
     }
 
     @Test("A star over a derived table reads that derived table's columns")
     func starOverDerivedTable() {
         let query = "WITH c AS (SELECT * FROM (SELECT id AS a, name AS b FROM t) s) SELECT * FROM c"
-        #expect(table(parser.parse(query), alias: "c")?.columns == ["a", "b"])
+        #expect(table(parser.parse(query), alias: "c")?.projection.columns(expanding: { _ in nil }) == ["a", "b"])
     }
 
     // MARK: - Derived tables
@@ -267,7 +267,7 @@ struct DerivedTableParserTests {
         ("SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS x(id, name)", ["id", "name"]),
     ])
     func derivedColumnList(_ query: String, _ columns: [String]) {
-        #expect(table(parser.parse(query), alias: "x")?.columns == columns)
+        #expect(table(parser.parse(query), alias: "x")?.projection.columns(expanding: { _ in nil }) == columns)
     }
 
     @Test("A LATERAL derived table is read", arguments: [
@@ -276,7 +276,7 @@ struct DerivedTableParserTests {
         "SELECT * FROM users u LEFT JOIN LATERAL (SELECT count(*) AS n FROM orders) l ON true",
     ])
     func lateralDerivedTable(_ query: String) {
-        #expect(table(parser.parse(query), alias: "l")?.columns == ["n"])
+        #expect(table(parser.parse(query), alias: "l")?.projection.columns(expanding: { _ in nil }) == ["n"])
     }
 
     @Test("A scalar subquery in the SELECT list is not a derived table")
@@ -289,7 +289,7 @@ struct DerivedTableParserTests {
         let query = "SELECT * FROM (SELECT s.a FROM (SELECT id AS a FROM t) s) outer_q"
         let cursor = (query as NSString).range(of: "s.a").location + 2
         let tables = parser.parse(query, cursor: cursor)
-        #expect(table(tables, alias: "s")?.columns == ["a"])
+        #expect(table(tables, alias: "s")?.projection.columns(expanding: { _ in nil }) == ["a"])
         #expect(table(tables, alias: "outer_q") != nil)
     }
 
@@ -301,13 +301,13 @@ struct DerivedTableParserTests {
           FROM t
         ) d
         """
-        #expect(table(parser.parse(query), alias: "d")?.columns == ["total", "status", "one", "Price"])
+        #expect(table(parser.parse(query), alias: "d")?.projection.columns(expanding: { _ in nil }) == ["total", "status", "one", "Price"])
     }
 
     @Test("SELECT TOP leaves the list's names intact")
     func selectTop() {
         let query = "WITH c AS (SELECT TOP 10 id, name FROM t ORDER BY id) SELECT * FROM c"
-        #expect(table(parser.parse(query, grammar: .engine("SQL Server")), alias: "c")?.columns == ["id", "name"])
+        #expect(table(parser.parse(query, grammar: .engine("SQL Server")), alias: "c")?.projection.columns(expanding: { _ in nil }) == ["id", "name"])
     }
 
     @Test("A quote or parenthesis inside a literal never ends the body", arguments: [
@@ -316,12 +316,12 @@ struct DerivedTableParserTests {
         ("SELECT * FROM (SELECT ') -- (' AS label, id /* ) */ FROM t) d", "PostgreSQL"),
     ])
     func literalsAreSkipped(_ query: String, _ engine: String) {
-        #expect(table(parser.parse(query, grammar: .engine(engine)), alias: "d")?.columns == ["label", "id"])
+        #expect(table(parser.parse(query, grammar: .engine(engine)), alias: "d")?.projection.columns(expanding: { _ in nil }) == ["label", "id"])
     }
 
     @Test("A column named top is not a TOP modifier")
     func columnNamedTop() {
-        #expect(table(parser.parse("WITH c AS (SELECT top, id FROM orders) SELECT * FROM c"), alias: "c")?.columns == ["top", "id"])
+        #expect(table(parser.parse("WITH c AS (SELECT top, id FROM orders) SELECT * FROM c"), alias: "c")?.projection.columns(expanding: { _ in nil }) == ["top", "id"])
     }
 
     @Test("A column list survives a star the catalog cannot read", arguments: [
@@ -329,7 +329,7 @@ struct DerivedTableParserTests {
         ("WITH c (a) AS (SELECT *, total * 2 AS doubled FROM orders) SELECT * FROM c", ["a", "doubled"]),
     ])
     func columnListOverUnreadStar(_ query: String, _ columns: [String]) {
-        #expect(table(parser.parse(query), alias: "c")?.columns == columns)
+        #expect(table(parser.parse(query), alias: "c")?.projection.columns(expanding: { _ in nil }) == columns)
     }
 
     @Test("A star reads a CTE only where that CTE is in scope")
@@ -340,7 +340,7 @@ struct DerivedTableParserTests {
         """
         let tables = parser.parse(query)
         #expect(starTables(table(tables, alias: "d")) == ["orders"])
-        #expect(table(tables, alias: "t")?.columns == ["n"])
+        #expect(table(tables, alias: "t")?.projection.columns(expanding: { _ in nil }) == ["n"])
     }
 
     @Test("A CTE never reads itself, so a same-named table stays the table")
@@ -352,12 +352,12 @@ struct DerivedTableParserTests {
     @Test("Quoted names differing only in case are two columns")
     func caseDistinctQuotedNames() {
         let query = "WITH c (\"value\", \"Value\") AS (SELECT 1, 2) SELECT * FROM c"
-        #expect(table(parser.parse(query), alias: "c")?.columns == ["value", "Value"])
+        #expect(table(parser.parse(query), alias: "c")?.projection.columns(expanding: { _ in nil }) == ["value", "Value"])
     }
 
     @Test("A quoted CTE name and alias keep their spelling")
     func quotedCteName() {
         let query = "WITH \"My CTE\" AS (SELECT 1 AS \"Odd Name\") SELECT * FROM \"My CTE\""
-        #expect(table(parser.parse(query), alias: "My CTE")?.columns == ["Odd Name"])
+        #expect(table(parser.parse(query), alias: "My CTE")?.projection.columns(expanding: { _ in nil }) == ["Odd Name"])
     }
 }

@@ -99,4 +99,44 @@ struct SQLContextAnalyzerStatementShapeTests {
         let context = context("WITH orders AS (SELECT 1 AS n) SELECT o.| FROM public.orders o")
         #expect(context.tableReferences.first { $0.identifier == "o" }?.isDerived == false)
     }
+
+    @Test("A CTE body sees the CTEs before it, and itself only under RECURSIVE")
+    func cteScopeInsideItsBody() {
+        let own = context("WITH orders AS (SELECT id FROM orders WHERE |) SELECT * FROM orders")
+        #expect(own.tableReferences.first { $0.identifier == "orders" }?.isDerived == false)
+
+        let later = context("WITH a AS (SELECT x FROM t WHERE |), b AS (SELECT y FROM u) SELECT * FROM a")
+        #expect(!later.tableReferences.contains { $0.identifier == "b" })
+
+        let earlier = context("WITH a AS (SELECT x FROM t), b AS (SELECT y FROM a WHERE |) SELECT * FROM b")
+        #expect(earlier.tableReferences.first { $0.identifier == "a" }?.isDerived == true)
+
+        let recursive = context("WITH RECURSIVE n AS (SELECT 1 AS i UNION ALL SELECT i + 1 FROM n WHERE |) SELECT * FROM n")
+        #expect(recursive.tableReferences.first { $0.identifier == "n" }?.isDerived == true)
+    }
+
+    @Test("An unread CTE stays resolvable and adds no unqualified column")
+    func unreadCte() {
+        let context = context("WITH a AS (SELECT x FROM t), b AS (SELECT y FROM u) SELECT | FROM a")
+        #expect(context.tableReferences.first { $0.identifier == "a" }?.isUnread == false)
+        #expect(context.tableReferences.first { $0.identifier == "b" }?.isUnread == true)
+    }
+
+    @Test("UPDATE modifiers do not hide the table", arguments: [
+        "UPDATE OR REPLACE orders SET |",
+        "UPDATE LOW_PRIORITY orders SET |",
+        "UPDATE LOW_PRIORITY IGNORE orders SET |",
+        "UPDATE TOP (10) orders SET |",
+        "UPDATE TOP 10 PERCENT orders SET |",
+    ])
+    func updateModifiers(_ marked: String) {
+        #expect(context(marked).targetTable?.tableName == "orders")
+    }
+
+    @Test("An INSERT column list that starts with a keyword-named column is not a statement")
+    func insertColumnListKeywordColumn() {
+        let context = context("INSERT INTO orders (values, |")
+        #expect(context.clauseType == .insertColumns)
+        #expect(context.targetTable?.tableName == "orders")
+    }
 }

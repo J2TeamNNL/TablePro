@@ -55,6 +55,8 @@ public struct TableReference: Hashable, Sendable {
     public let isIdentifierQuoted: Bool
     // Set while a `*` in the derived table still needs the catalog; the provider resolves it into `derivedColumns`.
     let derivedProjection: DerivedProjection?
+    // A CTE or derived table the statement defines but never reads: it resolves by name, yet adds no unqualified column.
+    private(set) var isUnread = false
 
     public init(
         tableName: String,
@@ -71,23 +73,33 @@ public struct TableReference: Hashable, Sendable {
         self.derivedProjection = nil
     }
 
-    init(tableName: String, alias: String?, schema: String?, projection: DerivedProjection, isIdentifierQuoted: Bool) {
+    init(
+        tableName: String,
+        alias: String?,
+        schema: String?,
+        projection: DerivedProjection,
+        isIdentifierQuoted: Bool,
+        isUnread: Bool = false
+    ) {
         self.tableName = tableName
         self.alias = alias
         self.schema = schema
         self.derivedColumns = projection.columns { _ in nil }
         self.isIdentifierQuoted = isIdentifierQuoted
         self.derivedProjection = projection.tables.isEmpty ? nil : projection
+        self.isUnread = isUnread
     }
 
     func resolvingDerivedColumns(_ columns: [String]) -> TableReference {
-        TableReference(
+        var resolved = TableReference(
             tableName: tableName,
             alias: alias,
             schema: schema,
             derivedColumns: columns,
             isIdentifierQuoted: isIdentifierQuoted
         )
+        resolved.isUnread = isUnread
+        return resolved
     }
 
     public var identifier: String {
@@ -260,10 +272,11 @@ public final class SQLContextAnalyzer {
     private static let tableRefRegexes: [NSRegularExpression] = {
         let path = "(\(quotedSegment)(?:\\.\(quotedSegment))*)"
         let alias = "(?:\\s+(?:AS\\s+)?(\(quotedSegment)))?"
+        let updateModifiers = "(?:(?:OR\\s+\\w+|LOW_PRIORITY|IGNORE|TOP\\s*(?:\\d+|\\([^)]*\\))(?:\\s+PERCENT)?)\\s+)*"
         let patterns = [
             // MySQL's STRAIGHT_JOIN has no word boundary before JOIN.
             "(?i)\\b(?:STRAIGHT_)?JOIN\\s+\(path)\(alias)",
-            "(?i)\\bUPDATE\\s+\(path)\(alias)",
+            "(?i)\\bUPDATE\\s+\(updateModifiers)\(path)\(alias)",
             "(?i)\\bINSERT\\s+INTO\\s+\(path)",
             "(?i)\\bCREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+\\w+\\s+ON\\s+\(path)"
         ]
@@ -944,7 +957,8 @@ public final class SQLContextAnalyzer {
                 alias: derived.alias,
                 schema: nil,
                 projection: derived.projection,
-                isIdentifierQuoted: false
+                isIdentifierQuoted: false,
+                isUnread: true
             ))
         }
     }

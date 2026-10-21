@@ -4,11 +4,6 @@ struct DerivedTable: Equatable, Sendable {
     let alias: String
     let projection: DerivedProjection
     let isCommonTableExpression: Bool
-
-    // What the statement text names, before the catalog expands a `*`.
-    var columns: [String] {
-        projection.columns { _ in nil }
-    }
 }
 
 // A `*` stays a table until the provider can ask the catalog for its columns.
@@ -127,8 +122,13 @@ struct SQLTokenStream {
         var partner: Int
     }
 
+    final class ProjectionCache {
+        var byOpen: [Int: DerivedProjection] = [:]
+    }
+
     let tokens: [Token]
     let original: NSString
+    let projectionCache = ProjectionCache()
 
     private static let space: unichar = 0x20
     private static let tab: unichar = 0x09
@@ -233,7 +233,6 @@ struct SQLTokenStream {
         Self.unquoted(text(index))
     }
 
-    // The index after an open parenthesis's partner, or the end when it never closes.
     func after(_ open: Int) -> Int {
         min(tokens[open].partner, tokens.count - 1) + 1
     }
@@ -242,7 +241,6 @@ struct SQLTokenStream {
         min(tokens[open].partner, tokens.count)
     }
 
-    // The open parentheses around `cursor`, outermost first.
     func enclosingParens(before cursor: Int) -> [Int] {
         var stack: [Int] = []
         for index in tokens.indices where tokens[index].range.location < cursor {
@@ -306,7 +304,6 @@ struct SQLTokenStream {
     }
 }
 
-// Reads the derived tables and CTEs a statement defines, what each outputs, and the query level around the cursor.
 struct DerivedTableParser {
     private struct Source {
         let exposedName: String
@@ -358,9 +355,12 @@ struct DerivedTableParser {
 
     private struct CommonTableExpression {
         let name: String
+        let declared: [String]
         let open: Int
-        let projection: DerivedProjection
+        var projection: DerivedProjection = .empty
     }
+
+    private typealias WithList = (ctes: [CommonTableExpression], next: Int, isRecursive: Bool)
 
     private typealias Found = [(table: DerivedTable, depth: Int)]
 
@@ -373,6 +373,7 @@ struct DerivedTableParser {
         "SELECT", "WHERE", "SET", "GROUP", "ORDER", "HAVING", "VALUES", "RETURNING", "INTO", "WINDOW", "LIMIT",
         "OFFSET", "BY", "UPDATE", "DELETE", "INSERT", "MERGE", "WITH", "WHEN", "THEN", "ELSE", "CASE", "QUALIFY"
     ]
+    private static let updateModifiers: Set<String> = ["LOW_PRIORITY", "IGNORE"]
     private static let joinWords: Set<String> = ["JOIN", "APPLY", "STRAIGHT_JOIN"]
     private static let selectListEnders: Set<String> = [
         "FROM", "INTO", "WHERE", "GROUP", "HAVING", "WINDOW", "ORDER", "LIMIT", "OFFSET", "FETCH", "FOR",
@@ -431,28 +432,30 @@ struct DerivedTableParser {
         }
     }
 
-    // The table an INSERT, UPDATE, DELETE or MERGE writes at the cursor's query level.
     func targetTable(in stream: SQLTokenStream, cursor: Int) -> TableReference? {
         var start = 0
         var end = stream.count
-        if let open = stream.enclosingParens(before: cursor).last(where: { isStatementBody($0, in: stream) }) {
+        let bodies = stream.enclosingParens(before: cursor).filter {
+            isStatementBody($0, in: stream) && !isInsertColumnList($0, in: stream)
+        }
+        if let open = bodies.last {
             start = open + 1
             end = stream.closeIndex(of: open)
         }
-        guard let statement = mainStatement(from: start, to: end, in: stream, scope: [:]),
-              let target = modifiedTable(of: statement.keyword, to: end, in: stream) else { return nil }
+        guard let keyword = statementKeyword(from: start, to: end, in: stream),
+              let target = modifiedTable(of: keyword, to: end, in: stream) else { return nil }
         return target.reference
     }
 
-    // MARK: - Definitions
-
-    // One query level. A CTE of its WITH list is in scope from the next definition on, and only a level that holds the
-    // cursor is read further, since what it defines is out of the cursor's reach otherwise.
+    // A CTE reads the ones before it in the list, and itself only under RECURSIVE, so the cursor sees no more than
+    // that. Only a level that holds the cursor is read further, since what it defines is out of reach otherwise.
     private func collect(
         from start: Int, to end: Int, depth: Int, scope: Scope, cursor: Int,
         in stream: SQLTokenStream, into found: inout Found
     ) {
-        let ctes = withList(from: start, to: end, in: stream, scope: scope)?.ctes ?? []
+        let list = withList(from: start, to: end, in: stream, scope: scope)
+        let ctes = list?.ctes ?? []
+        let cursorCTE = ctes.firstIndex { stream.contains(cursor, inside: $0.open) }
         var scope = scope
         var nextCTE = 0
         var index = start
@@ -463,7 +466,10 @@ struct DerivedTableParser {
             }
             if nextCTE < ctes.count, ctes[nextCTE].open == index {
                 let cte = ctes[nextCTE]
-                found.append((DerivedTable(alias: cte.name, projection: cte.projection, isCommonTableExpression: true), depth))
+                let sees = cursorCTE.map { nextCTE < $0 || (nextCTE == $0 && list?.isRecursive == true) } ?? true
+                if sees {
+                    found.append((DerivedTable(alias: cte.name, projection: cte.projection, isCommonTableExpression: true), depth))
+                }
             } else if let table = definition(at: index, in: stream, scope: scope) {
                 found.append((table, depth))
             }
@@ -507,7 +513,6 @@ struct DerivedTableParser {
         )
     }
 
-    // `AS (`, `AS MATERIALIZED (` or `AS NOT MATERIALIZED (`.
     private func cteKeyword(before open: Int, in stream: SQLTokenStream) -> Int? {
         var index = open - 1
         if stream.isWord(index, "MATERIALIZED") {
@@ -553,10 +558,24 @@ struct DerivedTableParser {
         isQueryBody(open, in: stream) || stream.isWord(open + 1, in: Self.modifyingBodyWords)
     }
 
-    // MARK: - Projections
+    // `INSERT INTO t (values, ` opens a column list, whatever its first column is named.
+    private func isInsertColumnList(_ open: Int, in stream: SQLTokenStream) -> Bool {
+        var index = open - 1
+        guard stream.isName(index) else { return false }
+        if stream.isWord(index - 1, "AS") { index -= 2 }
+        while stream.isName(index) {
+            index -= 1
+            guard stream.kind(index) == .dot else { break }
+            index -= 1
+        }
+        return stream.isWord(index, "INTO")
+    }
 
     private func projection(ofBodyAt open: Int, in stream: SQLTokenStream, scope: Scope) -> DerivedProjection {
-        projection(from: open + 1, to: stream.closeIndex(of: open), in: stream, scope: scope)
+        if let cached = stream.projectionCache.byOpen[open] { return cached }
+        let result = projection(from: open + 1, to: stream.closeIndex(of: open), in: stream, scope: scope)
+        stream.projectionCache.byOpen[open] = result
+        return result
     }
 
     private func projection(from start: Int, to end: Int, in stream: SQLTokenStream, scope: Scope) -> DerivedProjection {
@@ -583,15 +602,12 @@ struct DerivedTableParser {
         }
     }
 
-    // Each CTE reads the ones before it in the list.
-    private func withList(
-        from start: Int, to end: Int, in stream: SQLTokenStream, scope: Scope
-    ) -> (ctes: [CommonTableExpression], next: Int)? {
+    private func cteHeaders(from start: Int, to end: Int, in stream: SQLTokenStream) -> WithList? {
         guard stream.isWord(start, "WITH") else { return nil }
         var index = start + 1
-        if stream.isWord(index, "RECURSIVE") { index += 1 }
+        let isRecursive = stream.isWord(index, "RECURSIVE")
+        if isRecursive { index += 1 }
         var ctes: [CommonTableExpression] = []
-        var visible = scope
         while index < end, stream.isName(index) {
             let name = stream.name(index)
             index += 1
@@ -605,14 +621,25 @@ struct DerivedTableParser {
             if stream.isWord(index, "NOT") { index += 1 }
             if stream.isWord(index, "MATERIALIZED") { index += 1 }
             guard stream.kind(index) == .openParen else { break }
-            let projection = projection(ofBodyAt: index, in: stream, scope: visible).declaring(declared)
-            ctes.append(CommonTableExpression(name: name, open: index, projection: projection))
-            visible[name.lowercased()] = projection
+            ctes.append(CommonTableExpression(name: name, declared: declared, open: index))
             index = stream.after(index)
             guard stream.kind(index) == .comma else { break }
             index += 1
         }
-        return (ctes, index)
+        return (ctes, index, isRecursive)
+    }
+
+    // Each CTE reads the ones before it in the list.
+    private func withList(from start: Int, to end: Int, in stream: SQLTokenStream, scope: Scope) -> WithList? {
+        guard var list = cteHeaders(from: start, to: end, in: stream) else { return nil }
+        var visible = scope
+        for index in list.ctes.indices {
+            let cte = list.ctes[index]
+            let projection = projection(ofBodyAt: cte.open, in: stream, scope: visible).declaring(cte.declared)
+            list.ctes[index].projection = projection
+            visible[cte.name.lowercased()] = projection
+        }
+        return list
     }
 
     private func mainStatement(from start: Int, to end: Int, in stream: SQLTokenStream, scope: Scope) -> Statement? {
@@ -624,17 +651,21 @@ struct DerivedTableParser {
                 ctes[cte.name.lowercased()] = cte.projection
             }
         }
-        guard index < end else { return nil }
-        if stream.kind(index) == .openParen || stream.isWord(index, in: Self.queryBodyWords)
-            || stream.isWord(index, in: Self.modifyingBodyWords) {
-            return Statement(keyword: index, ctes: ctes)
-        }
-        return nil
+        return startsStatement(at: index, to: end, in: stream) ? Statement(keyword: index, ctes: ctes) : nil
+    }
+
+    private func statementKeyword(from start: Int, to end: Int, in stream: SQLTokenStream) -> Int? {
+        let index = cteHeaders(from: start, to: end, in: stream)?.next ?? start
+        return startsStatement(at: index, to: end, in: stream) ? index : nil
+    }
+
+    private func startsStatement(at index: Int, to end: Int, in stream: SQLTokenStream) -> Bool {
+        index < end && (stream.kind(index) == .openParen || stream.isWord(index, in: Self.queryBodyWords)
+            || stream.isWord(index, in: Self.modifyingBodyWords))
     }
 
     private func firstSelect(from start: Int, to end: Int, in stream: SQLTokenStream) -> Int? {
-        guard let statement = mainStatement(from: start, to: end, in: stream, scope: [:]) else { return nil }
-        let keyword = statement.keyword
+        guard let keyword = statementKeyword(from: start, to: end, in: stream) else { return nil }
         if stream.kind(keyword) == .openParen {
             return firstSelect(from: keyword + 1, to: stream.closeIndex(of: keyword), in: stream)
         }
@@ -663,16 +694,23 @@ struct DerivedTableParser {
                 index = stream.after(index + 2)
             } else if stream.isWord(index, in: Self.selectModifiers) {
                 index += 1
-            } else if stream.isWord(index, "TOP"), stream.kind(index + 1) == .number || stream.kind(index + 1) == .openParen {
-                index += 1
-                index = stream.kind(index) == .openParen ? stream.after(index) : index + 1
-                if stream.isWord(index, "PERCENT") { index += 1 }
-                if stream.isWord(index, "WITH"), stream.isWord(index + 1, "TIES") { index += 2 }
+            } else if var next = topClauseEnd(at: index, in: stream) {
+                if stream.isWord(next, "WITH"), stream.isWord(next + 1, "TIES") { next += 2 }
+                index = next
             } else {
                 break
             }
         }
         return index
+    }
+
+    private func topClauseEnd(at index: Int, in stream: SQLTokenStream) -> Int? {
+        guard stream.isWord(index, "TOP"), stream.kind(index + 1) == .number || stream.kind(index + 1) == .openParen else {
+            return nil
+        }
+        var next = stream.kind(index + 1) == .openParen ? stream.after(index + 1) : index + 2
+        if stream.isWord(next, "PERCENT") { next += 1 }
+        return next
     }
 
     // RETURNING `*` reads the written table and the tables the statement joins to it; MERGE lists its source first.
@@ -718,7 +756,7 @@ struct DerivedTableParser {
             guard stream.isWord(index, "FROM") else { return nil }
             index += 1
         case "UPDATE":
-            break
+            index = skipUpdateModifiers(from: index, in: stream)
         default:
             return nil
         }
@@ -742,6 +780,22 @@ struct DerivedTableParser {
             isIdentifierQuoted: alias?.isQuoted ?? path.isQuoted
         )
         return (reference, index)
+    }
+
+    // SQLite's `OR REPLACE`, MySQL's `LOW_PRIORITY` and `IGNORE` and T-SQL's `TOP (n)` sit between UPDATE and its table.
+    private func skipUpdateModifiers(from start: Int, in stream: SQLTokenStream) -> Int {
+        var index = start
+        while true {
+            if stream.isWord(index, "OR"), stream.isName(index + 1) {
+                index += 2
+            } else if stream.isWord(index, in: Self.updateModifiers) {
+                index += 1
+            } else if let next = topClauseEnd(at: index, in: stream) {
+                index = next
+            } else {
+                return index
+            }
+        }
     }
 
     // `*` reads the items in order, except that a USING join merges its join columns.
@@ -801,7 +855,6 @@ struct DerivedTableParser {
         return items
     }
 
-    // The next item starts after a comma or a join word; ON and USING conditions in between are skipped.
     private func nextFromItem(after start: Int, to end: Int, in stream: SQLTokenStream) -> (index: Int, isNatural: Bool) {
         var index = start
         var isNatural = false
@@ -864,8 +917,6 @@ struct DerivedTableParser {
         return DerivedProjection(entries: [.allColumns(DerivedProjection.Table(name: qualifier, schema: nil))])
     }
 
-    // MARK: - Items
-
     private func output(of item: Range<Int>, in stream: SQLTokenStream) -> ItemOutput {
         let start = item.lowerBound
         let end = item.upperBound
@@ -919,8 +970,6 @@ struct DerivedTableParser {
             return false
         }
     }
-
-    // MARK: - Scanning
 
     private func path(
         at start: Int, to end: Int, in stream: SQLTokenStream

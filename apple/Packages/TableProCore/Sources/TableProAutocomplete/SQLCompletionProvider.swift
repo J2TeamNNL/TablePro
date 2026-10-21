@@ -134,7 +134,7 @@ public final class SQLCompletionProvider {
             if let derived = context.tableReferences.first(where: {
                 $0.isDerived && $0.identifier.caseInsensitiveCompare(dotPrefix) == .orderedSame
             }) {
-                let columns = await derivedColumns(of: derived)
+                let columns = await derivedColumns(of: [derived])[0]
                 if !columns.isEmpty {
                     return columns.map { SQLCompletionItem.column($0, dataType: nil, tableName: derived.identifier) }
                 }
@@ -537,16 +537,13 @@ public final class SQLCompletionProvider {
     }
 
     private func columnItems(for references: [TableReference]) async -> [SQLCompletionItem] {
-        if references.isEmpty {
+        let read = references.filter { !$0.isUnread }
+        if read.isEmpty {
             return await catalog?.allColumnsFromCachedTables() ?? []
         }
-        var resolved: [TableReference] = []
-        for reference in references {
-            guard reference.derivedProjection != nil else {
-                resolved.append(reference)
-                continue
-            }
-            resolved.append(reference.resolvingDerivedColumns(await derivedColumns(of: reference)))
+        let columns = await derivedColumns(of: read)
+        let resolved = zip(read, columns).map { reference, columns in
+            reference.derivedProjection == nil ? reference : reference.resolvingDerivedColumns(columns)
         }
         return await catalog?.allColumnsInScope(for: resolved) ?? []
     }
@@ -585,14 +582,29 @@ public final class SQLCompletionProvider {
     }
 
     // CTEs were bound to their own scope by the parser, so what is left to expand is a table the catalog knows.
-    private func derivedColumns(of reference: TableReference) async -> [String] {
-        guard let projection = reference.derivedProjection else { return reference.derivedColumns ?? [] }
-        var expanded: [DerivedProjection.Table: [String]] = [:]
-        for table in projection.tables where expanded[table] == nil {
-            expanded[table] = await catalog?.columnCompletionItems(for: table.name, schema: table.schema).map(\.label) ?? []
+    private func derivedColumns(of references: [TableReference]) async -> [[String]] {
+        let expanded = await catalogColumns(of: references.flatMap { $0.derivedProjection?.tables ?? [] })
+        return references.map { reference in
+            guard let projection = reference.derivedProjection else { return reference.derivedColumns ?? [] }
+            // The catalog answers no columns for a table it does not know, which must not count as a zero-width `*`.
+            return projection.columns { table in expanded[table].flatMap { $0.isEmpty ? nil : $0 } }
         }
-        // The catalog answers no columns for a table it does not know, which must not count as a zero-width `*`.
-        return projection.columns { table in expanded[table].flatMap { $0.isEmpty ? nil : $0 } }
+    }
+
+    private func catalogColumns(of tables: [DerivedProjection.Table]) async -> [DerivedProjection.Table: [String]] {
+        guard let catalog, !tables.isEmpty else { return [:] }
+        return await withTaskGroup(of: (DerivedProjection.Table, [String]).self) { group in
+            for table in Set(tables) {
+                group.addTask {
+                    (table, await catalog.columnCompletionItems(for: table.name, schema: table.schema).map(\.label))
+                }
+            }
+            var columns: [DerivedProjection.Table: [String]] = [:]
+            for await (table, labels) in group {
+                columns[table] = labels
+            }
+            return columns
+        }
     }
 
     // A reference is spelled as the statement wrote it, and stays quoted when it was, or it would fold to another name.
