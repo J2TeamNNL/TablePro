@@ -622,6 +622,20 @@ public protocol PluginDatabaseDriver: AnyObject, Sendable {
         schema: String?
     ) async throws -> PluginConcurrentRefreshAvailability?
 
+    // Nil where the engine has no sequences, which keeps the sequence commands off the menu.
+    func fetchSequenceDetails(sequence: String, schema: String?) async throws -> PluginSequenceDetails?
+
+    func sequenceNextValueStatement(
+        for sequence: PluginSequenceDetails,
+        nextValue: PluginSequenceNextValue
+    ) -> String?
+
+    // Names only the settings that differ from `sequence`; nil when none do.
+    func alterSequenceStatement(
+        for sequence: PluginSequenceDetails,
+        settings: PluginSequenceSettings
+    ) -> String?
+
     // Maintenance operations (optional — return nil if not supported)
     func supportedMaintenanceOperations() -> [String]?
     func maintenanceStatements(operation: String, table: String?, schema: String?, options: [String: String]) -> [String]?
@@ -649,6 +663,7 @@ public protocol PluginDatabaseDriver: AnyObject, Sendable {
 
     func createViewTemplate() -> String?
     func editViewFallbackTemplate(viewName: String) -> String?
+    func createSequenceTemplate() -> String?
     func castColumnToText(_ column: String) -> String
 
     // Trigger editing (optional — return nil when unsupported)
@@ -1284,6 +1299,22 @@ public extension PluginDatabaseDriver {
         nil
     }
 
+    func fetchSequenceDetails(sequence: String, schema: String?) async throws -> PluginSequenceDetails? { nil }
+
+    func sequenceNextValueStatement(
+        for sequence: PluginSequenceDetails,
+        nextValue: PluginSequenceNextValue
+    ) -> String? {
+        nil
+    }
+
+    func alterSequenceStatement(
+        for sequence: PluginSequenceDetails,
+        settings: PluginSequenceSettings
+    ) -> String? {
+        nil
+    }
+
     func supportedMaintenanceOperations() -> [String]? { nil }
     func maintenanceStatements(operation: String, table: String?, schema: String?, options: [String: String]) -> [String]? { nil }
 
@@ -1304,6 +1335,7 @@ public extension PluginDatabaseDriver {
 
     func createViewTemplate() -> String? { nil }
     func editViewFallbackTemplate(viewName: String) -> String? { nil }
+    func createSequenceTemplate() -> String? { nil }
     func castColumnToText(_ column: String) -> String { column }
     func allTablesMetadataSQL(schema: String?) -> String? { nil }
     func defaultExportQuery(table: String) -> String? { nil }

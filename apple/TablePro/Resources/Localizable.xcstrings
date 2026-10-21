@@ -21645,6 +21645,9 @@
         }
       }
     },
+    "After the values already in %@" : {
+
+    },
     "Airplane" : {
       "extractionState" : "manual",
       "generatesSymbol" : false
@@ -32486,6 +32489,9 @@
     "Cable" : {
       "extractionState" : "manual",
       "generatesSymbol" : false
+    },
+    "Cache" : {
+
     },
     "Cache Hit Ratio" : {
       "localizations" : {
@@ -56081,6 +56087,9 @@
         }
       }
     },
+    "Currently" : {
+
+    },
     "Cursor" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -56599,6 +56608,9 @@
           }
         }
       }
+    },
+    "Cycle" : {
+
     },
     "Dameng cannot store a text value that contains a null character." : {
       "extractionState" : "manual",
@@ -57324,6 +57336,9 @@
           }
         }
       }
+    },
+    "Data type" : {
+
     },
     "data type negotiation" : {
       "extractionState" : "manual",
@@ -68943,6 +68958,12 @@
     "Edit Search" : {
 
     },
+    "Edit Sequence" : {
+
+    },
+    "Edit Sequence…" : {
+
+    },
     "Edit the connection and choose its database type." : {
       "localizations" : {
         "fr" : {
@@ -71650,6 +71671,9 @@
           }
         }
       }
+    },
+    "Enter whole numbers only." : {
+
     },
     "Enter your license key, or a team invite code to join a team." : {
       "localizations" : {
@@ -92347,6 +92371,9 @@
         }
       }
     },
+    "Increment" : {
+
+    },
     "Indent" : {
       "localizations" : {
         "fr" : {
@@ -98000,6 +98027,9 @@
         }
       }
     },
+    "This sequence's settings could not be read, so they cannot be changed here." : {
+
+    },
     "keyword: %@" : {
       "localizations" : {
         "fr" : {
@@ -99535,6 +99565,15 @@
     "Ledger" : {
       "extractionState" : "manual",
       "generatesSymbol" : false
+    },
+    "Set Next Value" : {
+
+    },
+    "Start" : {
+
+    },
+    "The increment cannot be zero." : {
+
     },
     "left curly bracket" : {
       "extractionState" : "manual",
@@ -112541,6 +112580,9 @@
         }
       }
     },
+    "New Sequence…" : {
+
+    },
     "New image" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -113555,6 +113597,9 @@
           }
         }
       }
+    },
+    "Next value" : {
+
     },
     "Nightly tables" : {
       "localizations" : {
@@ -119210,6 +119255,9 @@
           }
         }
       }
+    },
+    "No sequences" : {
+
     },
     "No valid rows found in clipboard data." : {
       "localizations" : {
@@ -128348,6 +128396,12 @@
           }
         }
       }
+    },
+    "Owned by" : {
+
+    },
+    "Owned by %@" : {
+
     },
     "output_path must end in .%@ for this format." : {
       "localizations" : {
@@ -159779,6 +159833,9 @@
         }
       }
     },
+    "Sequence Unavailable" : {
+
+    },
     "Sequences" : {
       "localizations" : {
         "fr" : {
@@ -161073,6 +161130,9 @@
           }
         }
       }
+    },
+    "Set Next Value…" : {
+
     },
     "Set as Active" : {
       "localizations" : {
@@ -182171,6 +182231,9 @@
         }
       }
     },
+    "The cache must be at least 1." : {
+
+    },
     "The chosen theme is not on this Mac, so %@ is used." : {
 
     },
@@ -187643,6 +187706,9 @@
           }
         }
       }
+    },
+    "The minimum must be less than the maximum." : {
+
     },
     "The save also truncated or dropped a table." : {
       "localizations" : {
