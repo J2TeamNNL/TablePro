@@ -121,6 +121,13 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
         return AppSettingsManager.shared.dataGrid.defaultSortDirection
     }
 
+    var appliesRowCopyFormat: Bool = false
+
+    var rowCopyFormat: RowCopyFormat {
+        guard appliesRowCopyFormat else { return .rows }
+        return AppSettingsManager.shared.dataGrid.rowCopyFormat
+    }
+
     private var columnIndexByDataIndex: [Int: Int] = [:]
     /// Display position to data index, rebuilt lazily. `presentedDataColumns` reads it; a drag and
     /// the cell-range fill both ask per event and per row, and deriving it walks every attached
@@ -277,6 +284,7 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
         primaryKeyColumns = configuration.primaryKeyColumns
         tabType = configuration.tabType
         appliesRowSortPreferences = configuration.appliesRowSortPreferences
+        appliesRowCopyFormat = configuration.appliesRowCopyFormat
         supportsColumnSort = configuration.supportsColumnSort
     }
 
@@ -631,6 +639,8 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
 
         if dataChanged {
             reformatDisplayedText()
+        } else if previous.showInvisibleCharacters != settings.showInvisibleCharacters {
+            redrawVisibleCells()
         }
     }
 
@@ -1081,12 +1091,13 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
                 let rawValue = row.values[column]
                 let columnType = column < columnTypes.count ? columnTypes[column] : nil
                 guard findSearches(rawValue, column: column, columnType: columnType) else { return nil }
-                return displayValue(
+                let shown = displayValue(
                     forID: row.id,
                     column: column,
                     rawValue: rawValue,
                     columnType: columnType
                 )
+                return cellRegistry.showsInvisibleCharacters ? shown : shown?.shownWithoutMarks
             }
         )
     }
@@ -1280,7 +1291,7 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
         for i in 0..<columns.count {
             let name = columns[i]
             let columnType = i < types.count ? types[i] : nil
-            if columnType?.supportsElementEditing == true {
+            if columnType?.supportsElementEditing == true || columnType?.isVectorType == true {
                 enumSet.insert(i)
             } else if let values = enumValues[name], !values.isEmpty {
                 let isExcluded = columnType?.isJsonType == true

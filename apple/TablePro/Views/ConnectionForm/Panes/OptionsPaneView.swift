@@ -5,6 +5,7 @@
 
 import AppKit
 import SwiftUI
+import TableProAutocomplete
 import TableProPluginKit
 
 /// What TablePro is allowed to do with this connection, and what it runs when it opens it.
@@ -24,8 +25,10 @@ struct OptionsPaneView: View {
             driverSection
             extensionsSection
             timeoutSection
+            completionSection
             startupSection
             preConnectSection
+            postDisconnectSection
             safetySection
             if aiIsEnabled {
                 aiRulesSection
@@ -131,6 +134,44 @@ struct OptionsPaneView: View {
         )
     }
 
+    // MARK: - Autocomplete
+
+    @ViewBuilder
+    private var completionSection: some View {
+        if databaseType.identifierRules != nil {
+            Section {
+                Picker(
+                    String(localized: "Identifier case"),
+                    selection: $coordinator.customization.completionIdentifierCase
+                ) {
+                    ForEach(SQLIdentifierCase.allCases, id: \.self) { identifierCase in
+                        Text(Self.title(for: identifierCase)).tag(identifierCase)
+                    }
+                }
+                .accessibilityIdentifier("connection-form-identifier-case")
+            } header: {
+                Text(String(localized: "Autocomplete"))
+            } footer: {
+                Text(String(localized: """
+                    Table, column and schema names take this case in autocomplete and in Copy as INSERT \
+                    and UPDATE when the server reads the new spelling as the same name. Other names are \
+                    quoted as stored.
+                    """))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private static func title(for identifierCase: SQLIdentifierCase) -> String {
+        switch identifierCase {
+        case .asStored: return String(localized: "As stored")
+        case .lower: return String(localized: "lowercase")
+        case .upper: return String(localized: "UPPERCASE")
+        case .matchTyped: return String(localized: "Match what I type")
+        }
+    }
+
     // MARK: - Driver options
 
     @ViewBuilder
@@ -197,13 +238,53 @@ struct OptionsPaneView: View {
         Section {
             StartupCommandsEditor(text: $coordinator.advanced.preConnectScript, style: .code)
                 .frame(height: 80)
+                .accessibilityIdentifier("connection-form-pre-connect-script")
+            LabeledContent(String(localized: "Timeout")) {
+                HStack(spacing: 4) {
+                    TextField(
+                        String(localized: "Timeout"),
+                        value: $coordinator.advanced.scriptTimeoutSeconds,
+                        format: .number.grouping(.never),
+                        prompt: Text(verbatim: scriptTimeoutPlaceholder)
+                    )
+                    .labelsHidden()
+                    .frame(width: 100)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityIdentifier("connection-form-script-timeout")
+                    Text(String(localized: "seconds"))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .help(String(localized: "How long each script may run, from 1 to 300 seconds."))
         } header: {
             Text(String(localized: "Pre-Connect Script"))
         } footer: {
-            Text("Shell script to run before connecting. Non-zero exit aborts connection.")
+            Text(String(localized: """
+                Runs in bash before connecting. A non-zero exit aborts the connection. \
+                TABLEPRO_CONNECTION_NAME, TABLEPRO_HOST, TABLEPRO_PORT, TABLEPRO_USER and \
+                TABLEPRO_DATABASE describe the connection.
+                """))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private var postDisconnectSection: some View {
+        Section {
+            StartupCommandsEditor(text: $coordinator.advanced.postDisconnectScript, style: .code)
+                .frame(height: 80)
+                .accessibilityIdentifier("connection-form-post-disconnect-script")
+        } header: {
+            Text(String(localized: "Post-Disconnect Script"))
+        } footer: {
+            Text("Runs in bash once the session ends, only after its pre-connect script ran. A failure is logged, not shown.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var scriptTimeoutPlaceholder: String {
+        String(format: String(localized: "Default (%d)"), ConnectionScriptRunner.defaultTimeoutSeconds)
     }
 
     // MARK: - Safety

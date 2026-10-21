@@ -155,7 +155,7 @@ public enum OracleSchemaQueries {
     public static let commitTransaction = "COMMIT"
     public static let rollbackTransaction = "ROLLBACK"
 
-    // `.literal` matches code units; the default skips a quote that a combining mark follows.
+    // By code unit: a grapheme match skips a quote followed by a combining mark.
     public static func escapeLiteral(_ value: String) -> String {
         value.replacingOccurrences(of: "'", with: "''", options: .literal)
     }

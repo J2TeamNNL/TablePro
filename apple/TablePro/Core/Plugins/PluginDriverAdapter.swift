@@ -36,7 +36,7 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
     private let connectionDeadline: ConnectionDeadline
     private let timeoutEndpoint: ConnectionTimeoutEndpoint
     private let requiresHostDeadline: Bool
-    private let classifier = ColumnTypeClassifier()
+    private let classifier: ColumnTypeClassifier
     private let state = OSAllocatedUnfairLock(initialState: State())
 
     var status: ConnectionStatus {
@@ -132,6 +132,7 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
     ) {
         self.connection = connection
         self.pluginDriver = pluginDriver
+        self.classifier = ColumnTypeClassifier(family: SQLTypeFamily.of(connection.type))
         self.connectionDeadline = deadline ?? ConnectionDeadline(configuredSeconds: connection.connectTimeoutSeconds)
         self.timeoutEndpoint = timeoutEndpoint ?? .database(connection.timeoutEndpointName)
         self.requiresHostDeadline = requiresHostDeadline
@@ -184,6 +185,8 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
                 let adopted = gate.resume(with: .success(()))
                 finishConnect(generation: generation, succeeded: true, adopted: adopted, error: nil)
             } catch {
+                // Every sign-in fails here, pooled and per-database ones included, so a rejected reused password goes.
+                PasswordCommandCache.shared.forget(connectionId: connection.id)
                 let adopted = gate.resume(with: .failure(error))
                 finishConnect(generation: generation, succeeded: false, adopted: adopted, error: error)
             }
@@ -683,6 +686,10 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         return TableMetadata(pluginMeta)
     }
 
+    func fetchObjectComment(tableName: String) async throws -> String? {
+        try await pluginDriver.fetchObjectComment(table: tableName, schema: pluginDriver.currentSchema)
+    }
+
     func fetchDatabases() async throws -> [String] {
         try await pluginDriver.fetchDatabases()
     }
@@ -742,6 +749,10 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
 
     func fetchUserDefinedType(_ type: UserDefinedTypeInfo) async throws -> UserDefinedTypeInfo {
         UserDefinedTypeInfo(try await pluginDriver.fetchUserDefinedType(type.pluginType))
+    }
+
+    func generateDropTypeSQL(type: UserDefinedTypeInfo) -> String? {
+        pluginDriver.generateDropTypeSQL(type: type.pluginType)
     }
 
     func fetchDatabaseMetadata(_ database: String) async throws -> DatabaseMetadata {
