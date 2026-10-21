@@ -24552,6 +24552,9 @@
         }
       }
     },
+    "Another program is already listening on local port %d. Choose another port for the Cloud SQL Auth Proxy, or leave it empty." : {
+
+    },
     "Another selected row adds the same query." : {
 
     },
@@ -27021,6 +27024,9 @@
         }
       }
     },
+    "As stored" : {
+
+    },
     "Ascending" : {
       "localizations" : {
         "fr" : {
@@ -28855,6 +28861,9 @@
           }
         }
       }
+    },
+    "Autocomplete" : {
+
     },
     "Autocomplete from your schema, editor tabs, and a searchable query history." : {
       "localizations" : {
@@ -51990,6 +51999,10 @@
         }
       }
     },
+    "Could not fetch foreign keys for: %@" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Could not fetch foreign keys, so foreign key constraints may be missing from the export." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -56597,6 +56610,10 @@
           }
         }
       }
+    },
+    "Data Dictionary" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Data File" : {
       "localizations" : {
@@ -72724,6 +72741,9 @@
         }
       }
     },
+    "Every column's type, key, default and comment, with indexes and foreign keys. Reads no rows." : {
+
+    },
     "Every connection using this profile asks for the password once each time TablePro runs." : {
       "localizations" : {
         "fr" : {
@@ -75873,6 +75893,9 @@
           }
         }
       }
+    },
+    "Export Data Dictionary…" : {
+
     },
     "EXPORT DATABASE writes the whole database. There is no table filter." : {
       "localizations" : {
@@ -104944,6 +104967,10 @@
         }
       }
     },
+    "Markdown has a table of contents for a README or a wiki. HTML is one file that opens in any browser and prints." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Markdown tables. Paste into a README, an issue or a wiki." : {
       "localizations" : {
         "fr" : {
@@ -105387,6 +105414,9 @@
           }
         }
       }
+    },
+    "Match what I type" : {
+
     },
     "Match what I type, otherwise UPPERCASE" : {
       "extractionState" : "manual",
@@ -176664,6 +176694,9 @@
         }
       }
     },
+    "Table, column and schema names take this case in autocomplete and in Copy as INSERT and UPDATE when the server reads the new spelling as the same name. Other names are quoted as stored." : {
+
+    },
     "Table-level CHECK constraints" : {
       "localizations" : {
         "fr" : {
@@ -187498,6 +187531,10 @@
       }
     },
     "The server answered with something other than HTTP." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "The server asked for the password in plain text, which TablePro sends only over TLS. Set SSL Mode to Required, or turn TLS on for the server." : {
       "extractionState" : "manual",
       "generatesSymbol" : false
     },
@@ -211573,6 +211610,10 @@
           }
         }
       }
+    },
+    "Write as" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Write capacity must be a whole number of at least 1" : {
       "extractionState" : "manual",
