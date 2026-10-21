@@ -299,11 +299,13 @@ final class AIChatViewModel: ObservableObject {
               let lastAssistantIndex = messages.lastIndex(where: { $0.role == .assistant })
         else { return }
 
-        AIProviderFactory.copilotDeleteLastTurn(sessionId: sessionId)
+        let answeredOnDevice = messages[lastAssistantIndex].providerId == AppleIntelligenceAvailability.providerID
+        if !answeredOnDevice {
+            AIProviderFactory.copilotDeleteLastTurn(sessionId: sessionId)
+        }
         let wasLast = lastAssistantIndex == messages.count - 1
-        let removed = messages.remove(at: lastAssistantIndex)
-        if wasLast, removed.providerId == AppleIntelligenceAvailability.providerID,
-           let asked = messages.last, asked.role == .user {
+        messages.remove(at: lastAssistantIndex)
+        if wasLast, answeredOnDevice, let asked = messages.last, asked.role == .user {
             onDeviceTurnID = asked.id
         }
         clearError()

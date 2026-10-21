@@ -5,6 +5,7 @@
 
 import Foundation
 @testable import TablePro
+import TableProSQLGrammar
 import Testing
 
 struct OnDeviceFitTests {
@@ -130,7 +131,10 @@ struct QueryContextUsedColumnsTests {
 
     @Test("Only the columns the statement names stay, matched without case, and the keys and indexes stay whole")
     func keepsUsedColumns() throws {
-        let trimmed = snapshot().keepingColumns(usedBy: "SELECT customer_id, total FROM orders WHERE customer_id = 7")
+        let trimmed = snapshot().keepingColumns(
+            usedBy: "SELECT customer_id, total FROM orders WHERE customer_id = 7",
+            grammar: .ansi
+        )
         guard case .described(let orders) = try #require(trimmed.tables.first).content else {
             Issue.record("orders lost its structure")
             return
@@ -145,20 +149,40 @@ struct QueryContextUsedColumnsTests {
 
     @Test("The trimmed table says columns were left out rather than that it has none")
     func rendersOmittedColumns() {
-        let some = QueryContextRenderer.render(snapshot().keepingColumns(usedBy: "SELECT total FROM orders"))
+        let some = QueryContextRenderer.render(snapshot().keepingColumns(usedBy: "SELECT total FROM orders", grammar: .ansi))
         #expect(some.contains("| Total |"))
         #expect(!some.contains("| notes |"))
         #expect(some.contains("… and 3 more columns not listed."))
 
-        let none = QueryContextRenderer.render(snapshot().keepingColumns(usedBy: "SELECT count(*) FROM orders"))
+        let none = QueryContextRenderer.render(snapshot().keepingColumns(usedBy: "SELECT count(*) FROM orders", grammar: .ansi))
         #expect(none.contains("None of its 4 columns are named in the statement"))
         #expect(!none.contains("No columns reported."))
+    }
+
+    @Test("A quoted name is matched whole in the connection's own quoting")
+    func quotedNamesMatchWhole() throws {
+        let structure = QueryContextTableStructure(columns: [
+            QueryContextColumn(name: "order-id", dataType: "int", isNullable: false, isPrimaryKey: true),
+            QueryContextColumn(name: "order", dataType: "int", isNullable: false, isPrimaryKey: false)
+        ])
+        let snapshot = QueryContextSnapshot(
+            engineName: "MySQL",
+            tables: [QueryContextTable(name: "orders", schema: nil, kind: .table, content: .described(structure))]
+        )
+
+        let trimmed = snapshot.keepingColumns(usedBy: "SELECT `order-id` FROM orders", grammar: TestGrammar.mysql)
+
+        guard case .described(let orders) = try #require(trimmed.tables.first).content else {
+            Issue.record("orders lost its structure")
+            return
+        }
+        #expect(orders.columns.map(\.name) == ["order-id"])
     }
 
     @Test("A statement that names every column keeps the snapshot as it was")
     func everyColumnUsed() {
         let full = snapshot()
-        let trimmed = full.keepingColumns(usedBy: "SELECT id, customer_id, total, notes FROM orders")
+        let trimmed = full.keepingColumns(usedBy: "SELECT id, customer_id, total, notes FROM orders", grammar: .ansi)
         #expect(trimmed == full)
     }
 }

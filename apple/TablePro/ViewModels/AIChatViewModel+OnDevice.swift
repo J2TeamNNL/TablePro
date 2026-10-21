@@ -6,6 +6,7 @@
 import Combine
 import Foundation
 import os
+import TableProSQLGrammar
 
 struct OnDeviceRefusal: Equatable {
     let turnID: UUID
@@ -36,6 +37,7 @@ extension AIChatViewModel {
             errorMessage = unavailable
             return
         }
+        AIProviderFactory.resetCopilotConversation(sessionId: sessionId)
         let assistant = ChatTurn(
             role: .assistant,
             blocks: [],
@@ -73,7 +75,10 @@ extension AIChatViewModel {
         var candidates: [OnDeviceRequest] = []
         if let pending {
             let full = await buildQueryContext(for: pending.attachment)
-            let trimmed = full.keepingColumns(usedBy: pending.attachment.statement)
+            let grammar = connection.map {
+                SQLLexicalResolver.executionGrammar(for: $0.type, connectionId: pending.attachment.connectionId)
+            } ?? .ansi
+            let trimmed = full.keepingColumns(usedBy: pending.attachment.statement, grammar: grammar)
             snapshots = trimmed == full ? [full] : [full, trimmed]
             candidates = snapshots.map { snapshot in
                 OnDeviceRequest(
