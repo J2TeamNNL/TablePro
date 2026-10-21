@@ -5538,7 +5538,6 @@
       }
     },
     "%@, pinned" : {
-      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -131214,6 +131213,9 @@
         }
       }
     },
+    "Pin Tab" : {
+
+    },
     "PING failed: %@" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -202873,6 +202875,9 @@
           }
         }
       }
+    },
+    "Unpin Tab" : {
+
     },
     "Unsaved changes will be lost." : {
       "localizations" : {
