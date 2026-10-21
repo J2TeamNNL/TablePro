@@ -45,8 +45,10 @@ struct CreateUserTypeSheet: View {
 
     private var kinds: [UserDefinedTypeInfo.Kind] { Self.creatableKinds(for: connection.id) }
 
+    /// Shown once the draft is complete, so the sheet never shows a statement the server would refuse.
     private var statements: [String] {
-        guard let definition = draft.definition,
+        guard draft.problems.isEmpty,
+              let definition = draft.definition,
               let driver = DatabaseManager.shared.driver(for: connection.id)
         else { return [] }
         return driver.createUserDefinedTypeStatements(definition) ?? []
