@@ -34,6 +34,16 @@ enum RedshiftExternalSchemaQueries {
         """
     }
 
+    static func listExternalTables(inSchemas schemas: [String], database: String) -> String {
+        """
+        SELECT tablename, tabletype, schemaname
+        FROM svv_external_tables
+        WHERE \(PostgreSQLObjectQueries.membership("schemaname", in: schemas))
+            AND redshift_database_name = \(PostgreSQLObjectQueries.quoteLiteral(database))
+        ORDER BY schemaname, tablename
+        """
+    }
+
     /// Column introspection for one external schema. Passing `table` restricts
     /// the result to a single table; passing `nil` returns every table's columns
     /// and prefixes each row with `tablename`.

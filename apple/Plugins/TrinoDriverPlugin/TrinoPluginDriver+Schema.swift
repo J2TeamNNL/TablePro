@@ -75,7 +75,7 @@ extension TrinoPluginDriver {
     func fetchTables(inSchemas schemas: [String]) async throws -> [PluginTableInfo]? {
         guard let catalog = currentCatalog, !schemas.isEmpty else { return [] }
         let result = try await execute(query: TrinoIntrospectionSQL.listTables(catalog: catalog, inSchemas: schemas))
-        let materialized = await materializedViews(catalog: catalog, schemas: schemas)
+        let materialized = try await materializedViews(catalog: catalog, schemas: schemas)
 
         var tables: [PluginTableInfo] = []
         var seen: Set<TrinoRelationKey> = []
@@ -207,17 +207,22 @@ extension TrinoPluginDriver {
         return Set(result.rows.compactMap { firstText($0) })
     }
 
-    private func materializedViews(catalog: String, schemas: [String]) async -> Set<TrinoRelationKey> {
+    private func materializedViews(catalog: String, schemas: [String]) async throws -> Set<TrinoRelationKey> {
         let sql = TrinoIntrospectionSQL.listMaterializedViews(catalog: catalog, inSchemas: schemas, flavor: flavor)
-        if let result = try? await execute(query: sql) {
+        do {
+            let result = try await execute(query: sql)
             return Set(result.rows.compactMap { row in
                 guard let name = firstText(row), let schema = text(row[safe: 1]) else { return nil }
                 return TrinoRelationKey(schema: schema, name: name)
             })
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            // One schema the connector cannot read fails the whole query; per schema, only that one is lost.
         }
-        // One schema the connector cannot read fails the whole query; per schema, only that one is lost.
         var views: Set<TrinoRelationKey> = []
         for schema in schemas {
+            try Task.checkCancellation()
             for name in await materializedViewNames(catalog: catalog, schema: schema) {
                 views.insert(TrinoRelationKey(schema: schema, name: name))
             }

@@ -22,12 +22,14 @@ extension DamengPluginDriver {
         }
     }
 
+    // Each owner is bound twice, so a statement carries twice this many parameters; DM8 follows
+    // Oracle's 1,000-expression IN limit.
+    private static let maxOwnersPerTableListing = 500
+
     func fetchTables(inSchemas schemas: [String]) async throws -> [PluginTableInfo]? {
-        // DM8 follows Oracle here, so each statement stays under Oracle's 1,000-expression IN limit.
-        let chunkSize = 1_000
         var tables: [PluginTableInfo] = []
-        for start in stride(from: 0, to: schemas.count, by: chunkSize) {
-            let owners = Array(schemas[start..<min(start + chunkSize, schemas.count)])
+        for start in stride(from: 0, to: schemas.count, by: Self.maxOwnersPerTableListing) {
+            let owners = Array(schemas[start..<min(start + Self.maxOwnersPerTableListing, schemas.count)])
             let placeholders = Array(repeating: "?", count: owners.count).joined(separator: ", ")
             let result = try await executeParameterized(
                 query: """

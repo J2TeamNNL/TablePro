@@ -36,9 +36,7 @@ public enum CockroachRelationSQL {
     }
 
     public static func table(fromRow row: [String?]) -> PluginTableInfo? {
-        guard let name = row[safe: 0] ?? nil else { return nil }
-        let listedType = ((row[safe: 1] ?? nil) ?? "BASE TABLE").uppercased()
-        return PluginTableInfo(name: name, type: listedType.contains("VIEW") ? "VIEW" : "TABLE", schema: row[safe: 2] ?? nil)
+        RedshiftTableCatalog.table(fromListingRow: row)
     }
 
     public static func showCreateTable(table: String, schema: String) -> String {

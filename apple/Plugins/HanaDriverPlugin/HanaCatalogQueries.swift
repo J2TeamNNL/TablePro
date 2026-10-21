@@ -23,7 +23,7 @@ enum HanaCatalogQueries {
     }
 
     static func tables(inSchemas schemas: [String]) -> String {
-        let owners = schemas.map(HanaSQL.quoteLiteral).joined(separator: ", ")
+        let owners = schemas.isEmpty ? "NULL" : schemas.map(HanaSQL.quoteLiteral).joined(separator: ", ")
         return """
             SELECT TABLE_NAME, 'TABLE' AS OBJECT_TYPE, COMMENTS, SCHEMA_NAME
             FROM SYS.TABLES

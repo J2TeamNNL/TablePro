@@ -496,7 +496,7 @@ final class OraclePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
             let result = try await rawQuery(query)
             tables += result.rows.compactMap(OracleSchemaQueries.parseTableRow).map(Self.tableInfo)
         }
-        return tables
+        return tables.sorted { ($0.schema ?? "", $0.name) < ($1.schema ?? "", $1.name) }
     }
 
     private static func tableInfo(_ row: OracleTableRow) -> PluginTableInfo {

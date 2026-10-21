@@ -94,25 +94,49 @@ final class RedshiftPluginDriver: LibPQBackedDriver, @unchecked Sendable {
     func fetchTables(inSchemas schemas: [String]) async throws -> [PluginTableInfo]? {
         guard !schemas.isEmpty else { return [] }
         let result = try await execute(query: RedshiftTableCatalog.listingQuery(inSchemas: schemas))
-        var tables = result.rows.compactMap { RedshiftTableCatalog.table(fromListingRow: $0.map(\.asText)) }
-        for schema in schemas where isExternalSchema(schema) {
-            let localNames = Set(tables.lazy.filter { $0.schema == schema }.map(\.name))
-            tables += await fetchExternalTables(schema: schema).filter { !localNames.contains($0.name) }
+        let localTables = result.rows.compactMap { RedshiftTableCatalog.table(fromListingRow: $0.map(\.asText)) }
+
+        let externalSchemas = schemas.filter(isExternalSchema)
+        guard !externalSchemas.isEmpty else { return localTables }
+
+        var localNames: [String: Set<String>] = [:]
+        for table in localTables {
+            localNames[table.schema ?? "", default: []].insert(table.name)
         }
-        return tables
+        let externalTables = await fetchExternalTables(inSchemas: externalSchemas).filter {
+            !(localNames[$0.schema ?? ""]?.contains($0.name) ?? false)
+        }
+        guard !externalTables.isEmpty else { return localTables }
+        return (localTables + externalTables).sorted(by: Self.schemaThenName)
+    }
+
+    private static func schemaThenName(_ lhs: PluginTableInfo, _ rhs: PluginTableInfo) -> Bool {
+        let schemaOrder = (lhs.schema ?? "").localizedStandardCompare(rhs.schema ?? "")
+        if schemaOrder != .orderedSame { return schemaOrder == .orderedAscending }
+        return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
     }
 
     private func fetchExternalTables(schema: String) async -> [PluginTableInfo] {
+        await externalTables(
+            query: RedshiftExternalSchemaQueries.listExternalTables(schema: schema, database: connectedDatabase),
+            fallbackSchema: schema
+        )
+    }
+
+    private func fetchExternalTables(inSchemas schemas: [String]) async -> [PluginTableInfo] {
+        await externalTables(
+            query: RedshiftExternalSchemaQueries.listExternalTables(inSchemas: schemas, database: connectedDatabase),
+            fallbackSchema: nil
+        )
+    }
+
+    private func externalTables(query: String, fallbackSchema: String?) async -> [PluginTableInfo] {
         do {
-            let result = try await execute(
-                query: RedshiftExternalSchemaQueries.listExternalTables(
-                    schema: schema,
-                    database: connectedDatabase
-                )
-            )
+            let result = try await execute(query: query)
             return result.rows.compactMap { row -> PluginTableInfo? in
                 guard let name = row[0].asText else { return nil }
                 let rawType = row.count > 1 ? row[1].asText : nil
+                let schema = fallbackSchema ?? (row.count > 2 ? row[2].asText : nil)
                 return PluginTableInfo(
                     name: name,
                     type: RedshiftExternalSchemaQueries.classifyTableType(rawTabletype: rawType),
@@ -121,7 +145,7 @@ final class RedshiftPluginDriver: LibPQBackedDriver, @unchecked Sendable {
             }
         } catch {
             Self.logger.warning(
-                "svv_external_tables failed for schema \(schema, privacy: .private(mask: .hash)); listing local tables only: \(LogRedaction.publicDescription(of: error), privacy: .public) \(error.localizedDescription, privacy: .private)"
+                "svv_external_tables failed; listing local tables only: \(LogRedaction.publicDescription(of: error), privacy: .public) \(error.localizedDescription, privacy: .private)"
             )
             return []
         }

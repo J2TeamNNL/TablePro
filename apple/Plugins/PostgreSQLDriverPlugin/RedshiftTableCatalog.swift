@@ -23,7 +23,7 @@ nonisolated enum RedshiftTableCatalog {
 
     static func table(fromListingRow row: [String?]) -> PluginTableInfo? {
         guard let name = row[safe: 0] ?? nil else { return nil }
-        let listedType = (row[safe: 1] ?? nil) ?? "BASE TABLE"
+        let listedType = ((row[safe: 1] ?? nil) ?? "BASE TABLE").uppercased()
         return PluginTableInfo(name: name, type: listedType.contains("VIEW") ? "VIEW" : "TABLE", schema: row[safe: 2] ?? nil)
     }
 
