@@ -36818,6 +36818,9 @@
         }
       }
     },
+    "Choose a location to save the diagram as %@." : {
+
+    },
     "Choose a location to save the diagram as PNG." : {
       "localizations" : {
         "fr" : {
@@ -49524,6 +49527,9 @@
       }
     },
     "Copy as Markdown" : {
+
+    },
+    "Copy as Mermaid" : {
 
     },
     "Copy as UPDATE Statements" : {
@@ -183274,6 +183280,9 @@
           }
         }
       }
+    },
+    "The diagram could not be rendered as %@." : {
+
     },
     "The disconnect was cancelled." : {
       "localizations" : {
