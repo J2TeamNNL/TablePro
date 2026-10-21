@@ -40,15 +40,7 @@ final class XLSXImportPlugin: ObservableObject, ImportFormatPlugin, SettablePlug
 
     var fieldDetectionSignature: String { settings.detectionSignature }
 
-    var rowImportConfiguration: RowImportRunner.Configuration? { runConfiguration }
-
-    private var runConfiguration: RowImportRunner.Configuration {
-        RowImportRunner.Configuration(
-            errorHandling: settings.errorHandling,
-            wrapInTransaction: settings.wrapInTransaction,
-            deleteExistingRows: settings.deleteExistingRows
-        )
-    }
+    var rowImportConfiguration: RowImportRunner.Configuration? { RowImportRunner.Configuration(settings) }
 
     @MainActor
     func settingsView() -> AnyView? {
@@ -88,7 +80,7 @@ final class XLSXImportPlugin: ObservableObject, ImportFormatPlugin, SettablePlug
         progress.setEstimatedTotal(max(1, sheet.rows.count))
         var cursor = 0
         let outcome = try await RowImportRunner.run(
-            configuration: runConfiguration,
+            configuration: RowImportRunner.Configuration(settings),
             sink: sink,
             progress: progress
         ) {

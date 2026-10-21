@@ -260,6 +260,9 @@ internal enum TransferResultAlert {
                 : String(localized: "%1$@ failed, so every file was rolled back. %2$@")
             return String(format: template, report.files[index].sourceName, failure)
         case .stopped(let index):
+            if report.rowsKept, !report.wroteRows {
+                return String(format: String(localized: "Stopped at %@. No rows were imported."), report.files[index].sourceName)
+            }
             let template = report.rowsKept
                 ? String(localized: "Stopped at %@. The files imported before it were kept.")
                 : String(localized: "Stopped at %@. Every file was rolled back.")

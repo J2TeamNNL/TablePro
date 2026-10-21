@@ -75,6 +75,16 @@ internal struct RowImportBatchReport {
         }
     }
 
+    internal var wroteRows: Bool {
+        outcomes.contains { outcome in
+            switch outcome {
+            case .imported(let result): return result.executedStatements > 0
+            case .failed(_, let rows), .stopped(let rows): return rows > 0
+            case .notRun: return false
+            }
+        }
+    }
+
     internal var failure: (any Error)? {
         guard case .failed(let index) = ending, case .failed(let error, _) = outcomes[index] else { return nil }
         return error

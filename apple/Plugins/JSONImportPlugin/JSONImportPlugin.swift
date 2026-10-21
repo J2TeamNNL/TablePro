@@ -27,15 +27,7 @@ final class JSONImportPlugin: ObservableObject, ImportFormatPlugin, SettablePlug
 
     required init() { loadSettings() }
 
-    var rowImportConfiguration: RowImportRunner.Configuration? { runConfiguration }
-
-    private var runConfiguration: RowImportRunner.Configuration {
-        RowImportRunner.Configuration(
-            errorHandling: settings.errorHandling,
-            wrapInTransaction: settings.wrapInTransaction,
-            deleteExistingRows: settings.deleteExistingRows
-        )
-    }
+    var rowImportConfiguration: RowImportRunner.Configuration? { RowImportRunner.Configuration(settings) }
 
     @MainActor
     func settingsView() -> AnyView? {
@@ -61,7 +53,7 @@ final class JSONImportPlugin: ObservableObject, ImportFormatPlugin, SettablePlug
     ) async throws -> PluginImportResult {
         let startTime = Date()
         let url = source.fileURL()
-        let configuration = runConfiguration
+        let configuration = RowImportRunner.Configuration(settings)
 
         let outcome: RowImportRunner.Outcome
         var unreadableLines: [PluginImportResult.ImportStatementError] = []

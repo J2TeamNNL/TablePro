@@ -8,8 +8,6 @@ import Foundation
 import os
 import TableProPluginKit
 
-/// Several files imported as rows in one run, each into its own table: what each file is read as, where it goes,
-/// and whether the run as a whole can start. Held apart from `RowImportBatchSheet` so its rules are testable.
 @MainActor
 internal final class RowImportBatch: ObservableObject {
     internal enum ReadState: Equatable {
@@ -19,8 +17,6 @@ internal final class RowImportBatch: ObservableObject {
         case failed(String)
     }
 
-    /// The identity of a read: the file's destination, its table and the format's options. A file reads again
-    /// when any of them changes.
     internal struct ReadKey: Hashable {
         let destination: RowImportDestination
         let table: String?
@@ -39,7 +35,6 @@ internal final class RowImportBatch: ObservableObject {
         internal var isIncluded = true
         internal var target: RowImportTarget
 
-        /// The target is still the run's own proposal, which a table list arriving later may replace.
         internal var targetIsProposed = true
         internal var read: ReadState = .pending
         internal var loadedRead: ReadKey?
@@ -49,7 +44,6 @@ internal final class RowImportBatch: ObservableObject {
         }
     }
 
-    /// What the sheet needs from the database and the plugins, so a test can stand in for both.
     internal struct Services {
         internal var fetchTables: @MainActor (DatabaseScope) async throws -> [TableInfo]
         internal var fetchColumns: @MainActor (String, DatabaseScope) async throws -> [String]
@@ -100,7 +94,6 @@ internal final class RowImportBatch: ObservableObject {
     @Published internal private(set) var files: [File]
     @Published internal private(set) var tables: [TableInfo] = []
 
-    /// Folded names of every object the database holds, nil while the list is unknown, as in the one-file sheet.
     @Published internal private(set) var catalogNameKeys: Set<String>?
     @Published internal private(set) var tableListError: String?
     @Published internal private(set) var isLoadingTables = false
@@ -145,7 +138,6 @@ internal final class RowImportBatch: ObservableObject {
 
     // MARK: - Formats
 
-    /// Every format the files are in, in the order the files first name them.
     internal var formatIds: [String] {
         var seen = Set<String>()
         return files.map(\.formatId).filter { seen.insert($0).inserted }
@@ -164,13 +156,18 @@ internal final class RowImportBatch: ObservableObject {
         configurations[formatId] = configuration
     }
 
-    private func configuration(for formatId: String) -> RowImportRunner.Configuration? {
-        configurations[formatId] ?? services.configuration(formatId)
+    private static let defaultConfiguration = RowImportRunner.Configuration(
+        errorHandling: .stopAndRollback,
+        wrapInTransaction: true,
+        deleteExistingRows: false
+    )
+
+    private func configuration(for formatId: String) -> RowImportRunner.Configuration {
+        configurations[formatId] ?? services.configuration(formatId) ?? Self.defaultConfiguration
     }
 
     // MARK: - Catalog
 
-    /// Tables alone, because they are the only objects a file's rows can be inserted into.
     internal var availableTables: [TableInfo] {
         tables.filter(\.type.acceptsImportedRows)
     }
@@ -205,9 +202,7 @@ internal final class RowImportBatch: ObservableObject {
         return (catalogNameKeys ?? []).subtracting(ours)
     }
 
-    /// A file goes to the table its name matches, as the one-file sheet would name it, or to a new table under that
-    /// name. Two files never get one new name. Only a target the user has not changed is replaced, and a table this
-    /// run created is not a match: the retry lands on it as the new table it was.
+    /// A table this run created is not a match: the retry lands on it as the new table it was.
     private func proposeTargets() {
         let ours = NewTableNaming.comparisonKeys(for: scope.map(planner.createdTableNames(in:)) ?? [])
         let tablesByKey = Dictionary(
@@ -239,7 +234,6 @@ internal final class RowImportBatch: ObservableObject {
 
     // MARK: - Choices
 
-    /// Files and folders dropped on the list join the run after the files already in it.
     internal func add(_ resolution: ImportBatchFiles.Resolution) {
         let known = Set(files.map { $0.url.standardizedFileURL })
         let added = resolution.files.filter { !known.contains($0.url.standardizedFileURL) }
@@ -291,7 +285,6 @@ internal final class RowImportBatch: ObservableObject {
         }
     }
 
-    /// What the sheet that edits one file handed back, which answers a read of the current options.
     internal func apply(_ target: RowImportTarget, to id: File.ID) {
         guard let index = index(of: id) else { return }
         files[index].target = target
@@ -311,7 +304,6 @@ internal final class RowImportBatch: ObservableObject {
         )
     }
 
-    /// Folded names of the new tables the other included files create.
     private func newTableKeys(excluding id: File.ID) -> Set<String> {
         Set(files.compactMap { file in
             guard file.id != id, file.isIncluded, file.target.destination == .newTable else { return nil }
@@ -404,7 +396,6 @@ internal final class RowImportBatch: ObservableObject {
         }
     }
 
-    /// The file's slot when the read still answers what the file asks for now.
     private func landing(_ id: File.ID, _ key: ReadKey) -> Int? {
         guard !Task.isCancelled, let index = index(of: id), readKey(for: files[index]) == key else { return nil }
         return index
@@ -417,8 +408,6 @@ internal final class RowImportBatch: ObservableObject {
         return columns
     }
 
-    /// The choices already made for this table first, then the mapping saved for it, then the name match: the order
-    /// the one-file sheet restores them in.
     private func mapping(
         fields: [PluginImportField],
         columns: [String],
@@ -445,7 +434,6 @@ internal final class RowImportBatch: ObservableObject {
         includedFiles.contains { $0.read == .reading || needsRead($0) }
     }
 
-    /// What stands between the run and Import, the first of it, naming the file it is about.
     internal var problem: String? {
         let included = includedFiles
         guard !included.isEmpty else {
@@ -535,7 +523,7 @@ internal final class RowImportBatch: ObservableObject {
             $0.target.tableName?.lowercased() ?? ""
         }
         for (_, group) in grouped.sorted(by: { $0.key < $1.key }) where group.count > 1 {
-            let clears = group.contains { configuration(for: $0.formatId)?.deleteExistingRows == true }
+            let clears = group.contains { configuration(for: $0.formatId).deleteExistingRows }
             if clears { return group.first?.target.tableName }
         }
         return nil
@@ -546,14 +534,8 @@ internal final class RowImportBatch: ObservableObject {
         for file in included where !formats.contains(file.formatId) {
             formats.append(file.formatId)
         }
-        let policies = formats.map { configuration(for: $0).map(RowImportBatchPolicy.init) }
-        if let index = policies.firstIndex(where: { $0 == nil }) {
-            return String(
-                format: String(localized: "%@ files cannot be imported together with other files."),
-                formatName(formats[index])
-            )
-        }
-        let distinct = Set(policies.compactMap { $0.map { "\($0.errorHandling.rawValue)|\($0.usesTransaction)" } })
+        let policies = formats.map { RowImportBatchPolicy(configuration(for: $0)) }
+        let distinct = Set(policies.map { "\($0.errorHandling.rawValue)|\($0.usesTransaction)" })
         guard distinct.count > 1 else { return nil }
         return String(
             format: String(localized: "Set On error and Wrap in transaction the same for %@."),
@@ -562,7 +544,7 @@ internal final class RowImportBatch: ObservableObject {
     }
 
     internal var policy: RowImportBatchPolicy? {
-        includedFiles.first.flatMap { configuration(for: $0.formatId) }.map(RowImportBatchPolicy.init)
+        includedFiles.first.map { RowImportBatchPolicy(configuration(for: $0.formatId)) }
     }
 
     internal var canImport: Bool {
@@ -584,7 +566,6 @@ internal final class RowImportBatch: ObservableObject {
         internal let mappings: [PlannedMapping]
     }
 
-    /// The run as the included files stand, or nil while any of them is not ready.
     internal func plan() -> Plan? {
         guard canImport else { return nil }
         var items: [RowImportRunItem] = []

@@ -39,6 +39,7 @@ final class ImportService: ObservableObject {
     /// A Stop pressed before a file's progress exists, while a table is created or between two files, which
     /// cancelling the progress alone would drop. A service runs one import, so it is never reset.
     private var isStopRequested = false
+    private var trackedProgress: Progress?
 
     init(
         connection: DatabaseConnection,
@@ -202,9 +203,10 @@ final class ImportService: ObservableObject {
     }
 
     private func track(_ nsProgress: Progress) -> [NSKeyValueObservation] {
+        trackedProgress = nsProgress
         let counts = nsProgress.observe(\.completedUnitCount) { [weak self] observed, _ in
             Task { @MainActor [weak self] in
-                guard let self else { return }
+                guard let self, self.trackedProgress === observed else { return }
                 let processed = Int(observed.completedUnitCount)
                 let total = Int(observed.totalUnitCount)
                 self.state.processedStatements = processed
@@ -217,7 +219,7 @@ final class ImportService: ObservableObject {
         let status = nsProgress.observe(\.localizedAdditionalDescription) { [weak self] observed, _ in
             let status = observed.localizedAdditionalDescription ?? ""
             Task { @MainActor [weak self] in
-                guard let self, !status.isEmpty else { return }
+                guard let self, self.trackedProgress === observed, !status.isEmpty else { return }
                 self.state.statusMessage = status
             }
         }
@@ -261,13 +263,24 @@ final class ImportService: ObservableObject {
 
         try await authorizeRun(named: Self.batchName(fileCount: files.count), given: authorization)
         let operationStart = ContinuousClock.Instant.now
-        let report = try await DatabaseManager.shared.withScopedDriver(
-            scope: scope,
-            route: route,
-            workload: .bulk,
-            cancellation: .protectedWrite
-        ) { driver in
-            try await self.runFiles(files, plugins: plugins, driver: driver, policy: policy)
+        let operationStartDate = Date()
+        let report: RowImportBatchReport
+        do {
+            report = try await DatabaseManager.shared.withScopedDriver(
+                scope: scope,
+                route: route,
+                workload: .bulk,
+                cancellation: .protectedWrite
+            ) { driver in
+                try await self.runFiles(files, plugins: plugins, driver: driver, policy: policy)
+            }
+        } catch {
+            state.errorMessage = error.localizedDescription
+            guard !(error is PluginImportCancellationError), !(error is CancellationError) else { throw error }
+            await recordImport(of: Self.batchName(fileCount: files.count), statements: 0,
+                               executionTime: Date().timeIntervalSince(operationStartDate), error: error, in: scope)
+            reportImportFinished(.failed(reason: error.localizedDescription), in: scope, startedAt: operationStart)
+            throw error
         }
         state.transactionOutcome = report.transaction
 
@@ -375,7 +388,10 @@ final class ImportService: ObservableObject {
         let progress = PluginImportProgress(progress: nsProgress)
         currentProgress = progress
         let observations = track(nsProgress)
-        defer { observations.forEach { $0.invalidate() } }
+        defer {
+            observations.forEach { $0.invalidate() }
+            trackedProgress = nil
+        }
 
         let source = PlainFileImportSource(url: file.url)
         defer { source.cleanup() }
@@ -440,6 +456,9 @@ final class ImportService: ObservableObject {
             case .failed(let error, let rows):
                 await recordImport(of: file.sourceName, statements: rows,
                                    executionTime: 0, error: error, in: scope)
+            case .stopped(let rows) where rows > 0 && report.rowsKept:
+                await recordImport(of: file.sourceName, statements: rows,
+                                   executionTime: report.executionTime, error: nil, in: scope)
             case .imported, .stopped, .notRun:
                 break
             }

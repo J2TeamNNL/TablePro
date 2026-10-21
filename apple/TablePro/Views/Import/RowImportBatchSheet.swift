@@ -9,9 +9,6 @@ import SwiftUI
 import TableProPluginKit
 import UniformTypeIdentifiers
 
-/// Several files, or a folder of them, imported as rows into a table each in one run. Every file starts on the table
-/// its name matches or a new table named after it, Edit… opens the one-file sheet on it, and the options of each
-/// format are set once for every file in that format.
 struct RowImportBatchSheet: View {
     private struct EditRequest: Identifiable {
         let id: RowImportBatch.File.ID
@@ -32,6 +29,7 @@ struct RowImportBatchSheet: View {
     @State private var importService: ImportService?
     @State private var showProgressDialog = false
     @State private var importTask: Task<Void, Never>?
+    @State private var isRunning = false
 
     /// The sheet's own window for its alerts, never `NSApp.keyWindow`, which is the progress sheet while it closes.
     @State private var hostWindow: NSWindow?
@@ -265,16 +263,17 @@ struct RowImportBatchSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// A dropped file or folder joins the run, read the same way as a folder chosen in the panel.
     private func accept(_ providers: [NSItemProvider]) -> Bool {
         let lookup = ImportFormatLookup.live
         let options = lookup.offeredFormats(connection.type)
+        guard !isRunning else { return false }
         let rowFormats = Set(options.map(\.id).filter { lookup.requiresTargetTable($0) == true })
         guard !rowFormats.isEmpty else { return false }
         for provider in providers where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
             provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { data, _ in
                 guard let data = data as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
                 Task { @MainActor in
+                    guard !isRunning else { return }
                     adopt(ImportBatchFiles.resolve([url], among: options) { rowFormats.contains($0) })
                 }
             }
@@ -380,7 +379,7 @@ struct RowImportBatchSheet: View {
                 .keyboardShortcut(.cancelAction)
             Button("Import") { performImport() }
                 .buttonStyle(.borderedProminent)
-                .disabled(!batch.canImport || importService?.state.isImporting == true)
+                .disabled(!batch.canImport || isRunning)
                 .keyboardShortcut(.defaultAction)
         }
     }
@@ -415,12 +414,14 @@ struct RowImportBatchSheet: View {
             TransferResultAlert.presentImportFailure(error: DatabaseError.notConnected, window: hostWindow) {}
             return
         }
-        guard let plan = batch.plan(), let policy = batch.policy else { return }
+        guard !isRunning, let plan = batch.plan(), let policy = batch.policy else { return }
         let service = ImportService(connection: connection)
         importService = service
+        isRunning = true
         showProgressDialog = true
 
         importTask = Task {
+            defer { isRunning = false }
             do {
                 var authorization: OperationReceipt?
                 if !plan.newTables.isEmpty {
@@ -484,8 +485,6 @@ struct RowImportBatchSheet: View {
     }
 }
 
-/// The options a format's own view edits, followed for every format of a run: the signature decides the reads, and
-/// the error handling and transaction options decide whether the files can run together.
 private struct RowImportOptionsObserver<Plugin: ImportFormatPlugin & ObservableObject>: View {
     @ObservedObject var plugin: Plugin
     let onChange: (String, RowImportRunner.Configuration?) -> Void

@@ -10,6 +10,12 @@
 import Foundation
 import os
 
+public protocol RowImportOptions {
+    var errorHandling: ImportErrorHandling { get }
+    var wrapInTransaction: Bool { get }
+    var deleteExistingRows: Bool { get }
+}
+
 public enum RowImportRunner {
     public typealias Entry = (line: Int, row: [String: PluginCellValue])
 
@@ -29,6 +35,14 @@ public enum RowImportRunner {
             self.wrapInTransaction = wrapInTransaction
             self.deleteExistingRows = deleteExistingRows
             self.maxRecordedErrors = maxRecordedErrors
+        }
+
+        public init(_ options: some RowImportOptions) {
+            self.init(
+                errorHandling: options.errorHandling,
+                wrapInTransaction: options.wrapInTransaction,
+                deleteExistingRows: options.deleteExistingRows
+            )
         }
     }
 

@@ -7,7 +7,7 @@ import Foundation
 import TableProPluginKit
 import TableProTabularIO
 
-struct CSVImportOptions: Equatable, Codable {
+struct CSVImportOptions: Equatable, Codable, RowImportOptions {
     enum Delimiter: String, Codable, CaseIterable, Identifiable {
         case auto
         case comma

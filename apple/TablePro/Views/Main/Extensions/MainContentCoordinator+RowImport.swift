@@ -64,6 +64,15 @@ internal extension MainContentCoordinator {
             )
             return
         }
+        for formatId in Set(resolution.files.map(\.formatId)).sorted() {
+            if let refusal = rowImportRefusal(formatId: formatId) {
+                if case .importNotSupported = refusal {
+                    revealWorkspace()
+                    reportImportRefusal(refusal)
+                }
+                return
+            }
+        }
         releaseImportFile()
         if resolution.files.count == 1, resolution.leftOut.isEmpty {
             importFile = ImportFileHandoff(url: first.url, ownsFile: false)
