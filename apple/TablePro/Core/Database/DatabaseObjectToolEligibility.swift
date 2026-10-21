@@ -4,9 +4,10 @@
 //
 
 import Foundation
+import TableProPluginKit
 
 /// Which of the per-object commands (Show DDL, Copy DDL, Refresh Materialized View, Edit Comment,
-/// Drop Type) apply to a row. The sidebar and the menu bar ask the same functions, so the two can
+/// New Type, Rename Type, Drop Type) apply to a row. The sidebar and the menu bar ask the same functions, so the two can
 /// never offer a command to a different set of objects; the sidebar omits what the menu bar disables.
 enum DatabaseObjectToolEligibility {
     /// What the connection's driver can do, read once per menu build rather than per item.
@@ -17,6 +18,9 @@ enum DatabaseObjectToolEligibility {
         var canRefreshMaterializedViews = false
         var commentableTypes: Set<TableInfo.TableType> = []
         var droppableTypeKinds: Set<UserDefinedTypeInfo.Kind> = []
+        var cascadingDropTypeKinds: Set<UserDefinedTypeInfo.Kind> = []
+        var renameableTypeKinds: Set<UserDefinedTypeInfo.Kind> = []
+        var creatableTypeKinds: Set<UserDefinedTypeInfo.Kind> = []
 
         static let none = Support()
 
@@ -26,15 +30,23 @@ enum DatabaseObjectToolEligibility {
             let commentable = TableInfo.TableType.allCases.filter { type in
                 driver.objectCommentStatement(name: "t", objectType: type.rawValue, schema: "s", comment: nil) != nil
             }
-            let droppable = UserDefinedTypeInfo.Kind.allCases.filter { kind in
-                driver.generateDropTypeSQL(type: UserDefinedTypeInfo(name: "t", kind: kind, schema: "s")) != nil
-            }
+            let kinds = UserDefinedTypeInfo.Kind.allCases
+            let probe = { (kind: UserDefinedTypeInfo.Kind) in UserDefinedTypeInfo(name: "t", kind: kind, schema: "s") }
             return Support(
                 canRefreshMaterializedViews: driver.refreshMaterializedViewStatement(
                     name: "t", schema: "s", concurrently: false
                 ) != nil,
                 commentableTypes: Set(commentable),
-                droppableTypeKinds: Set(droppable)
+                droppableTypeKinds: Set(kinds.filter { driver.generateDropTypeSQL(type: probe($0), cascade: false) != nil }),
+                cascadingDropTypeKinds: Set(kinds.filter { driver.generateDropTypeSQL(type: probe($0), cascade: true) != nil }),
+                renameableTypeKinds: Set(kinds.filter {
+                    driver.alterUserDefinedTypeStatements(type: probe($0), change: .rename(to: "u")) != nil
+                }),
+                creatableTypeKinds: Set(kinds.filter { kind in
+                    UserTypeCreationDraft.probeDefinition(kind: kind).flatMap {
+                        driver.createUserDefinedTypeStatements($0)
+                    } != nil
+                })
             )
         }
     }
@@ -58,5 +70,13 @@ enum DatabaseObjectToolEligibility {
 
     static func canDropType(_ kind: UserDefinedTypeInfo.Kind, support: Support, isReadOnly: Bool) -> Bool {
         !isReadOnly && support.droppableTypeKinds.contains(kind)
+    }
+
+    static func canRenameType(_ kind: UserDefinedTypeInfo.Kind, support: Support, isReadOnly: Bool) -> Bool {
+        !isReadOnly && support.renameableTypeKinds.contains(kind)
+    }
+
+    static func canCreateType(support: Support, isReadOnly: Bool) -> Bool {
+        !isReadOnly && !support.creatableTypeKinds.isEmpty
     }
 }

@@ -238,6 +238,15 @@ struct MainContentView: View {
             ObjectCommentSheet(target: target, connection: connection)
         case .documentEditor(let request):
             DocumentEditorSheet(request: request, databaseType: connection.type)
+        case .createUserType(let database, let schema):
+            CreateUserTypeSheet(
+                connection: connection,
+                database: database ?? coordinator.browseDatabaseName,
+                schema: schema,
+                onCreated: { definition in
+                    coordinator.openCreatedUserType(definition, database: database ?? coordinator.browseDatabaseName)
+                }
+            )
         case .exportDialog, .exportQueryResults, .importDialog, .rowImport,
              .transferTables, .backupDatabase, .restoreDatabase:
             transferSheetContent(for: sheet, dismiss: dismissBinding)
@@ -317,7 +326,8 @@ struct MainContentView: View {
             hasStructureChanges: toolbarState.hasStructureChanges,
             isFileDirty: tabManager.selectedTab?.content.isFileDirty ?? false,
             hasCreateTablePending: toolbarState.hasCreateTablePending,
-            hasPrincipalChanges: toolbarState.hasPrincipalChanges
+            hasPrincipalChanges: toolbarState.hasPrincipalChanges,
+            hasTypeChanges: toolbarState.hasTypeChanges
         )
     }
 

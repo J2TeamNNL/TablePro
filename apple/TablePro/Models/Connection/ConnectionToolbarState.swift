@@ -138,6 +138,10 @@ final class ConnectionToolbarState: ObservableObject {
 
     @Published var hasPrincipalChanges: Bool = false
 
+    /// Whether the selected type tab holds queued changes. Its own flag, so a Structure view going
+    /// away never clears it.
+    @Published var hasTypeChanges: Bool = false
+
     /// Whether the current editor has non-empty query text
     @Published var hasQueryText: Bool = false
 

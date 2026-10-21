@@ -747,8 +747,20 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         UserDefinedTypeInfo(try await pluginDriver.fetchUserDefinedType(type.pluginType))
     }
 
-    func generateDropTypeSQL(type: UserDefinedTypeInfo) -> String? {
-        pluginDriver.generateDropTypeSQL(type: type.pluginType)
+    func generateDropTypeSQL(type: UserDefinedTypeInfo, cascade: Bool) -> String? {
+        pluginDriver.generateDropTypeSQL(type: type.pluginType, cascade: cascade)
+    }
+
+    func createUserDefinedTypeStatements(_ definition: PluginUserDefinedTypeDefinition) -> [String]? {
+        pluginDriver.createUserDefinedTypeStatements(definition)
+    }
+
+    func alterUserDefinedTypeStatements(type: UserDefinedTypeInfo, change: PluginUserDefinedTypeChange) -> [String]? {
+        pluginDriver.alterUserDefinedTypeStatements(type: type.pluginType, change: change)
+    }
+
+    func userDefinedTypeChangeRunsOutsideTransaction(_ change: PluginUserDefinedTypeChange) -> Bool {
+        pluginDriver.userDefinedTypeChangeRunsOutsideTransaction(change)
     }
 
     func fetchDatabaseMetadata(_ database: String) async throws -> DatabaseMetadata {

@@ -876,6 +876,7 @@ final class MainContentCommandActions: ObservableObject {
                 return false
             }
         }
+        guard await applySelectedTypeChanges() else { return false }
 
         // Data grid changes or pending table operations take priority
         let hasDataChanges = coordinator.changeManager.hasChanges
@@ -924,15 +925,13 @@ final class MainContentCommandActions: ObservableObject {
         let victims = tabs.filter { tab in
             tab.id != selectedId && coordinator.structureSessions[tab.id]?.changeManager.hasChanges == true
         }
-        guard !victims.isEmpty else { return true }
-
         for tab in victims {
             guard let session = coordinator.structureSessions[tab.id] else { continue }
             guard await session.applyStagedChanges(coordinator: coordinator).allowsClose else {
                 return false
             }
         }
-        return true
+        return await applyBackgroundTypeChanges(in: tabs)
     }
 
 
@@ -1058,6 +1057,7 @@ final class MainContentCommandActions: ObservableObject {
             coordinator?.createTableActions?.createTable?()
             return
         }
+        if saveSelectedTypeChanges() { return }
         if coordinator?.tabManager.selectedTab?.display.resultsViewMode == .structure {
             applyStagedStructureChanges()
         } else if coordinator?.changeManager.hasChanges == true

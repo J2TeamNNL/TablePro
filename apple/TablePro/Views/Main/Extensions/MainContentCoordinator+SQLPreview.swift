@@ -17,7 +17,9 @@ extension MainContentCoordinator {
         pendingDeletes: Set<DatabaseTreeTableRef>,
         tableOperationOptions: [DatabaseTreeTableRef: TableOperationOptions]
     ) {
-        if tabManager.selectedTab?.display.resultsViewMode == .structure {
+        if let tabId = tabManager.selectedTabId, userTypeEditors[tabId]?.hasChanges == true {
+            previewUserTypeChanges(tabId: tabId)
+        } else if tabManager.selectedTab?.display.resultsViewMode == .structure {
             // Structure view handles its own preview via direct call
             structureActions?.previewSQL?()
         } else {

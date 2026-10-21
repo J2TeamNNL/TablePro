@@ -91,6 +91,8 @@ enum ActiveSheet: Identifiable {
     /// carries its scope: the document is written where it was read, not wherever the object
     /// browser points by the time Save is pressed.
     case documentEditor(DocumentEditorRequest)
+    /// The database and schema the Types section was right-clicked in travel with the request.
+    case createUserType(database: String?, schema: String?)
 
     var id: String {
         switch self {
@@ -114,6 +116,7 @@ enum ActiveSheet: Identifiable {
         case .rewind: "rewind"
         case .tableRebuildReview: "tableRebuildReview"
         case .documentEditor(let request): "documentEditor-\(request.id.uuidString)"
+        case .createUserType(let database, let schema): "createUserType-\(database ?? "")-\(schema ?? "")"
         }
     }
 }
@@ -215,6 +218,8 @@ final class MainContentCoordinator: ObservableObject {
     /// not currently looking at.
     @Published var structureSessions: [UUID: StructureEditingSession] = [:]
     @Published var createTableDrafts: [UUID: CreateTableDraft] = [:]
+    /// A type tab's queued changes, kept here for the same two reasons.
+    @Published var userTypeEditors: [UUID: UserTypeEditorModel] = [:]
 
     /// Tabs holding staged principal changes. `usersRolesActions` is nilled the moment the tab is
     /// deselected, but the view model behind it is cached per tab id and keeps the staged work, so
@@ -1012,6 +1017,7 @@ final class MainContentCoordinator: ObservableObject {
         for session in structureSessions.values { session.releaseViewWiring() }
         structureSessions.removeAll()
         createTableDrafts.removeAll()
+        userTypeEditors.removeAll()
         displayFormatsCache.removeAll()
         displayOrderCache.removeAll()
         displayStateCache.removeAll()

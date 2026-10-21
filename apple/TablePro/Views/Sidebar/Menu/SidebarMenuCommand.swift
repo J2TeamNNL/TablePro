@@ -73,6 +73,9 @@ internal enum SidebarMenuCommand: Equatable {
     case copyText(String)
     case showObjectSource(DatabaseObjectRef)
     case dropUserType(DatabaseTreeUserTypeRef)
+    case renameUserType(DatabaseTreeUserTypeRef)
+    /// Nil database and schema mean the ones the sidebar is browsing.
+    case newUserType(database: String?, schema: String?)
     case refreshRedisKeys
     case copyRedisNamespacePrefix(String)
     case copyRedisKey(String)

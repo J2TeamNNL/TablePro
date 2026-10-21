@@ -1022,14 +1022,52 @@ struct DatabaseTreeMenuSpecTests {
         }
     }
 
-    @Test("The Types sections offer Refresh and nothing that creates a type")
-    func typesSectionsOfferOnlyRefresh() {
+    @Test("The Types sections offer only Refresh where the driver cannot create a type")
+    func typesSectionsWithoutCreation() {
         let flat = commands(DatabaseTreeMenuSpec.sections(for: context(clicked: .objectKindSection(.type))))
         #expect(flat == [.refreshObjectKind(.type)])
 
         let group = DatabaseTreeObjectGroup(database: "warehouse", schema: "billing", kind: .type)
         let tree = commands(DatabaseTreeMenuSpec.sections(for: context(clicked: .containerObjectKindSection(group))))
         #expect(tree == [.refreshContainerObjectKind(group)])
+    }
+
+    @Test("New Type leads the Types sections, scoped to the section, and is withheld read-only")
+    func typesSectionsOfferNewType() {
+        let support = DatabaseObjectToolEligibility.Support(creatableTypeKinds: [.enumeration, .domain])
+        let flat = DatabaseTreeMenuSpec.sections(for: context(clicked: .objectKindSection(.type), objectToolSupport: support))
+        #expect(flat.first.map { commands([$0]) } == [.newUserType(database: nil, schema: nil)])
+        #expect(flat.first.map { titles([$0]) } == [String(localized: "New Type…")])
+
+        let group = DatabaseTreeObjectGroup(database: "warehouse", schema: "billing", kind: .type)
+        let tree = commands(DatabaseTreeMenuSpec.sections(
+            for: context(clicked: .containerObjectKindSection(group), objectToolSupport: support)
+        ))
+        #expect(tree.first == .newUserType(database: "warehouse", schema: "billing"))
+
+        let readOnly = commands(DatabaseTreeMenuSpec.sections(
+            for: context(clicked: .objectKindSection(.type), isReadOnly: true, objectToolSupport: support)
+        ))
+        #expect(!readOnly.contains(.newUserType(database: nil, schema: nil)))
+
+        let tables = commands(DatabaseTreeMenuSpec.sections(for: context(clicked: .objectKindSection(.table), objectToolSupport: support)))
+        #expect(!tables.contains(.newUserType(database: nil, schema: nil)))
+    }
+
+    @Test("A type row offers Rename beside Drop Type when the driver can rename its kind")
+    func typeRowOffersRename() {
+        let ref = userTypeRef("mood")
+        let support = DatabaseObjectToolEligibility.Support(
+            droppableTypeKinds: [.enumeration],
+            renameableTypeKinds: [.enumeration]
+        )
+        let sections = DatabaseTreeMenuSpec.sections(for: context(clicked: .userType(ref), objectToolSupport: support))
+        #expect(sections.last.map { commands([$0]) } == [.renameUserType(ref), .dropUserType(ref)])
+
+        let readOnly = commands(DatabaseTreeMenuSpec.sections(
+            for: context(clicked: .userType(ref), isReadOnly: true, objectToolSupport: support)
+        ))
+        #expect(!readOnly.contains(.renameUserType(ref)))
     }
 
     // MARK: - Copying

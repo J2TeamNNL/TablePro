@@ -262,4 +262,5 @@ struct PendingChangeTrigger: Equatable {
     /// `updateToolbarPendingState()` is never re-run and the commit control stays dim however many
     /// changes the Users & Roles tab holds.
     let hasPrincipalChanges: Bool
+    let hasTypeChanges: Bool
 }

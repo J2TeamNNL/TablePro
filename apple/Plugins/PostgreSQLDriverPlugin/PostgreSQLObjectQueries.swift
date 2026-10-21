@@ -248,7 +248,8 @@ nonisolated public enum PostgreSQLObjectQueries {
                 \(rangeOpclass) AS range_opclass,
                 \(rangeCollation) AS range_collation,
                 \(rangeMultirange) AS range_multirange,
-                pg_catalog.quote_ident(n.nspname) || '.' || pg_catalog.quote_ident(t.typname) AS spelling
+                pg_catalog.quote_ident(n.nspname) || '.' || pg_catalog.quote_ident(t.typname) AS spelling,
+                \(domainCheckArray("con.convalidated::text")) AS constraint_validated
             FROM pg_catalog.pg_type t
             JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
             LEFT JOIN pg_catalog.pg_class c ON c.oid = t.typrelid
