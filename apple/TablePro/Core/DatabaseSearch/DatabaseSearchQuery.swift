@@ -80,12 +80,19 @@ internal struct DatabaseSearchQuery: Equatable, Sendable {
         case .null:
             return false
         case .bytes(let data):
+            if let raw = String(data: data, encoding: .utf8), let flag = textFlag(raw) { return flag }
             return data.contains { $0 != 0 }
         case .text(let raw):
-            let text = raw.trimmingCharacters(in: .whitespaces).lowercased()
-            if let number = Double(text) { return number != 0 }
-            return text == "true" || text == "t"
+            return textFlag(raw) ?? false
         }
+    }
+
+    private static func textFlag(_ raw: String) -> Bool? {
+        let text = raw.trimmingCharacters(in: .whitespaces).lowercased()
+        if let number = Double(text) { return number != 0 }
+        if text == "true" || text == "t" { return true }
+        if text == "false" || text == "f" { return false }
+        return nil
     }
 }
 

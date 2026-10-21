@@ -35,17 +35,27 @@ internal final class DatabaseSearchLiveReader: DatabaseSearchReading {
         let namespaces = try await ObjectCopyCatalog(manager: manager).namespaces(of: endpoint, connection: connection)
         let systemSchemas = Set(PluginManager.shared.systemSchemaNames(for: connection.type))
         var found: [DatabaseSearchTarget] = []
+        var firstFailure: Error?
         for namespace in namespaces {
             if let namespace, systemSchemas.contains(namespace) { continue }
-            let tables = try await manager.withMetadataDriver(
-                scope: endpoint.withSchema(namespace).scope, workload: .bulk
-            ) { driver in
-                try await driver.fetchTables(schema: namespace)
+            let tables: [TableInfo]
+            do {
+                tables = try await manager.withMetadataDriver(
+                    scope: endpoint.withSchema(namespace).scope, workload: .bulk
+                ) { driver in
+                    try await driver.fetchTables(schema: namespace)
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                firstFailure = firstFailure ?? error
+                continue
             }
             found += tables
                 .filter { $0.type == .table || $0.type == .partitionedTable }
                 .map { DatabaseSearchTarget(name: $0.name, schema: $0.schema ?? namespace) }
         }
+        if found.isEmpty, let firstFailure { throw firstFailure }
         return found
     }
 

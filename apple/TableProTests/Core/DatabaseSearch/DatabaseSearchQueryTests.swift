@@ -111,6 +111,13 @@ struct DatabaseSearchQueryTests {
         #expect(match.matchedColumns == ["email", "id"])
     }
 
+    @Test("A flag a driver returns as ASCII bytes is read as text")
+    func asciiByteFlags() throws {
+        let query = try #require(build("42"))
+        let match = try #require(query.match(from: [[.bytes(Data("0".utf8)), .bytes(Data("1".utf8))]]))
+        #expect(match.matchedColumns == ["id"])
+    }
+
     @Test("The tab opens on the matched columns, or every searched one when the count was capped")
     func filterStateFollowsTheCap() throws {
         let query = try #require(build("42", rowCap: 5))
