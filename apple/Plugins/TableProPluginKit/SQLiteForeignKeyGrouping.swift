@@ -76,24 +76,13 @@ public enum SQLiteForeignKeyGrouping {
     /// jump to the parent row lands in the attached database and not in a same-named table of the main one.
     public static func foreignKeys(table: String, schema: String?, fromRows rows: [[PluginCellValue]]) -> [PluginForeignKeyInfo] {
         let listed = rows.filter { $0.count >= 9 }
-        let keys = infos(
+        return makeInfos(
             table: table,
             pragmaRows: listed.map { Array($0.prefix(8)) },
-            createTableSQL: listed.lazy.compactMap { $0[8].asText }.first
+            createTableSQL: listed.lazy.compactMap { $0[8].asText }.first,
+            primaryKeysByTable: [:],
+            referencedSchema: SQLiteMasterQueries.attachedSchema(schema)
         )
-        guard let attached = SQLiteMasterQueries.attachedSchema(schema) else { return keys }
-        return keys.map {
-            PluginForeignKeyInfo(
-                name: $0.name,
-                column: $0.column,
-                referencedTable: $0.referencedTable,
-                referencedColumn: $0.referencedColumn,
-                referencedDatabase: nil,
-                referencedSchema: attached,
-                onDelete: $0.onDelete,
-                onUpdate: $0.onUpdate
-            )
-        }
     }
 
     public static func foreignKeysByTable(fromRows rows: [[PluginCellValue]]) -> [String: [PluginForeignKeyInfo]] {
@@ -119,6 +108,22 @@ public enum SQLiteForeignKeyGrouping {
         createTableSQL: String?,
         primaryKeysByTable: [String: [String]] = [:]
     ) -> [PluginForeignKeyInfo] {
+        makeInfos(
+            table: table,
+            pragmaRows: pragmaRows,
+            createTableSQL: createTableSQL,
+            primaryKeysByTable: primaryKeysByTable,
+            referencedSchema: nil
+        )
+    }
+
+    private static func makeInfos(
+        table: String,
+        pragmaRows: [[PluginCellValue]],
+        createTableSQL: String?,
+        primaryKeysByTable: [String: [String]],
+        referencedSchema: String?
+    ) -> [PluginForeignKeyInfo] {
         let groups = groups(from: pragmaRows, primaryKeysByTable: primaryKeysByTable)
         let names = resolvedNames(for: groups, table: table, createTableSQL: createTableSQL)
 
@@ -129,6 +134,8 @@ public enum SQLiteForeignKeyGrouping {
                     column: column,
                     referencedTable: group.referencedTable,
                     referencedColumn: referencedColumn,
+                    referencedDatabase: nil,
+                    referencedSchema: referencedSchema,
                     onDelete: group.onDelete,
                     onUpdate: group.onUpdate
                 )

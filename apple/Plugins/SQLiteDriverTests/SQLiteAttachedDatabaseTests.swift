@@ -173,7 +173,7 @@ struct SQLiteAttachedDatabaseTests {
         #expect(SQLiteMaintenance.statements(operation: "VACUUM", table: nil, schema: "auth") == ["VACUUM `auth`"])
         #expect(SQLiteMaintenance.statements(operation: "Integrity Check", table: nil, schema: "auth")
             == ["PRAGMA `auth`.integrity_check"])
-        #expect(SQLiteMaintenance.statements(operation: "REINDEX", table: nil, schema: "auth") == ["REINDEX"])
+        #expect(SQLiteMaintenance.statements(operation: "REINDEX", table: nil, schema: "auth") == nil)
     }
 
     @Test("A trigger in an attached database is created and dropped by its qualified name")

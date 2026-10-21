@@ -28,9 +28,7 @@ struct StructureEditGate {
 
     private var canEditSchema: Bool { databaseType.supportsSchemaEditing && attachedRefusal == nil }
 
-    /// A table in a database attached beside the opened file. The engine writes its structure
-    /// statements without the database's name, so they would reach a same-named table in the opened
-    /// file, or fail; nothing is offered instead.
+    /// Structure statements carry no database name, so on an attached table they would hit the main one.
     private var attachedRefusal: String? {
         guard let schema, !schema.isEmpty, PluginManager.shared.listsAttachedDatabases(for: databaseType) else {
             return nil

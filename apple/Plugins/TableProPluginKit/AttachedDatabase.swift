@@ -1,8 +1,7 @@
 import Foundation
 
-/// A database file a connection attaches beside the one it opens, so a statement reaches its tables as
-/// `name.table`. An attachment lasts only as long as the handle, so a driver attaches the whole list
-/// again on every connect.
+/// A database file attached beside the opened one. It lasts only as long as the handle, so a driver
+/// attaches the list again on every connect.
 public struct AttachedDatabase: Codable, Hashable, Sendable {
     public let name: String
     public let path: String
@@ -147,9 +146,7 @@ public struct AttachedDatabaseFailure: Equatable, Sendable {
 }
 
 public enum AttachedDatabaseAttacher {
-    /// Attaches each database in order and answers the ones that did not attach. A file that is not
-    /// there is never handed to the engine: SQLite and DuckDB both create a new, empty database at a
-    /// path they do not find, which would read as an attachment with no tables.
+    /// A missing file is never handed to the engine: SQLite and DuckDB create an empty database there.
     public static func attach(
         _ databases: [AttachedDatabase],
         fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },

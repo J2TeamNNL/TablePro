@@ -305,11 +305,8 @@ enum DuckDBSchemaQueries {
     /// each is destroyed by a close. All five are summed because the gate only asks whether the
     /// session holds anything at all.
     ///
-    /// One catalog is the file itself, so a count above one means the user attached something,
-    /// and an `ATTACH` does not survive a reopen. A catalog the connection attached itself is left
-    /// out of the count only while it still holds the same file, under the same name and access,
-    /// and one that is gone counts as held: a reopen attaches every one of them again, which would
-    /// undo a `DETACH` or replace whatever the user attached under that name.
+    /// A catalog above the file itself is an `ATTACH` a reopen loses. The ones the connection attached
+    /// are excluded only while unchanged; a changed or detached one counts as held.
     static let sessionHeldState = sessionHeldState(excluding: [])
 
     static func sessionHeldState(excluding attachments: [AttachedDatabase], readOnly: Bool = false) -> String {

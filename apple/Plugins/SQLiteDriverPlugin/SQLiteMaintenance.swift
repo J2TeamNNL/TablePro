@@ -46,8 +46,9 @@ nonisolated internal enum SQLiteMaintenance {
         case analyze:
             return [(qualifiedTable ?? attached).map { "ANALYZE \($0)" } ?? "ANALYZE"]
         case reindex:
-            // A bare `REINDEX auth` reads `auth` as a collation or a table name, never as a database.
-            return [qualifiedTable.map { "REINDEX \($0)" } ?? "REINDEX"]
+            // `REINDEX auth` reads `auth` as a collation or table, and a bare `REINDEX` rebuilds every database.
+            if let qualifiedTable { return ["REINDEX \(qualifiedTable)"] }
+            return attached == nil ? ["REINDEX"] : nil
         case integrityCheck:
             return [attached.map { "PRAGMA \($0).integrity_check" } ?? "PRAGMA integrity_check"]
         default:
