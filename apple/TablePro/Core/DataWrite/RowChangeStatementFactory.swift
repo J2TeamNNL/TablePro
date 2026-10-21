@@ -13,6 +13,7 @@
 
 import Foundation
 import TableProPluginKit
+import TableProSQLGrammar
 
 /// The statements that put deleted rows back, with what has to run around them outside the transaction.
 struct RestoreStatements {
@@ -114,6 +115,7 @@ struct RowChangeStatementFactory {
         try refuseServerOwnedEdits(in: changes)
         try refuseDefaultOnUpdate(in: changes)
         try refuseUnwritableExpressions(in: changes, insertedRowData: insertedRowData)
+        try refuseMisdimensionedVectors(in: changes, insertedRowData: insertedRowData)
         let insertedRowData = insertedRowData.mapValues(leavingServerOwnedColumnsToTheServer)
         let changes = changes.map(droppingServerOwnedExpressions)
         if let driverStatements = try pluginRowWrites(
@@ -205,6 +207,42 @@ struct RowChangeStatementFactory {
                     first.columnName
                 )
             )
+        }
+    }
+
+    // The server refuses the whole save with `expected 3 dimensions, not 2`; this names the column first.
+    // Text the parser cannot read is left to the server, which owns the grammar.
+    private func refuseMisdimensionedVectors(
+        in changes: [RowChange],
+        insertedRowData: [RowID: [PluginCellValue]]
+    ) throws {
+        let classifier = ColumnTypeClassifier()
+        let expected = columnTypeNames.compactMapValues { classifier.classify(rawTypeName: $0).vectorDimensions }
+        guard !expected.isEmpty else { return }
+        for change in changes where change.type != .delete {
+            let kind: RowWriteKind = change.type == .insert ? .insert : .update
+            var written = change.cellChanges.filter { !$0.newIsExpression }.map { ($0.columnName, $0.newValue) }
+            if change.type == .insert, let stored = insertedRowData[change.rowID] {
+                written = zip(columns, stored).enumerated()
+                    .filter { !change.expressionColumns.contains($0.offset) }
+                    .map { ($0.element.0, $0.element.1) }
+            }
+            for (columnName, value) in written {
+                guard let dimensions = expected[columnName],
+                      case .text(let text) = value,
+                      let vector = VectorLiteral.parse(text),
+                      vector.dimensions != dimensions else { continue }
+                throw DataWriteError.changeRefused(
+                    table: tableName,
+                    kind: kind,
+                    reason: String(
+                        format: String(localized: "%1$@ takes %2$lld dimensions, and the value has %3$lld."),
+                        columnName,
+                        dimensions,
+                        vector.dimensions
+                    )
+                )
+            }
         }
     }
 
@@ -316,6 +354,7 @@ struct RowChangeStatementFactory {
                     Set(restorable.indices.filter { absent.contains(restorable[$0]) })
                 }
             ) {
+                try refuseUnfilteredWrites(restored.map { $0.statement })
                 return RestoreStatements(statements: restored.map {
                     ParameterizedStatement(sql: $0.statement, parameters: $0.parameters.map(\.asAny))
                 })
@@ -435,6 +474,7 @@ struct RowChangeStatementFactory {
             throw DataWriteError.changeRefused(table: tableName, kind: nil, reason: error.localizedDescription)
         }
 
+        try refuseUnfilteredWrites(writes.map(\.statement))
         let unwritten = RowWriteCoverage.unwrittenChanges(
             changes,
             deletedRowIDs: deletedRowIDs,
@@ -449,6 +489,18 @@ struct RowChangeStatementFactory {
                 statement: ParameterizedStatement(sql: $0.statement, parameters: $0.parameters.map(\.asAny)),
                 keylessRowCount: keylessRowCount(of: $0, keyed: keyed)
             )
+        }
+    }
+
+    // The host's own generator never writes one, so only a driver's statements are read.
+    private func refuseUnfilteredWrites(_ statements: [String]) throws {
+        guard PluginManager.shared.editorLanguage(for: databaseType) == .sql else { return }
+        let readings = databaseType.lexicalReadings
+        for sql in statements {
+            for grammar in readings.distinct(for: sql) {
+                guard let write = SQLUnfilteredWrite.writes(in: sql, grammar: grammar).first else { continue }
+                throw DataWriteError.changeRefused(table: tableName, kind: write.kind, reason: write.reason)
+            }
         }
     }
 
@@ -536,6 +588,24 @@ struct PluginKeyedChanges {
         case .insert: return .insert
         case .update: return .update
         case .delete: return .delete
+        }
+    }
+}
+
+private extension SQLUnfilteredWrite {
+    var kind: RowWriteKind {
+        switch self {
+        case .update: return .update
+        case .delete: return .delete
+        }
+    }
+
+    var reason: String {
+        switch self {
+        case .update:
+            return String(localized: "The driver wrote an UPDATE with no WHERE clause, which would change every row.")
+        case .delete:
+            return String(localized: "The driver wrote a DELETE with no WHERE clause, which would remove every row.")
         }
     }
 }

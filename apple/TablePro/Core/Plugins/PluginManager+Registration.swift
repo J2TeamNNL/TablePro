@@ -215,9 +215,11 @@ extension PluginManager {
 
     func driverPlugin(for databaseType: DatabaseType) -> (any DriverPlugin)? {
         let typeId = databaseType.pluginTypeId
-        if let driver = driverPlugins[typeId] { return driver }
-        activateDriver(databaseTypeId: typeId)
-        return driverPlugins[typeId]
+        if driverPlugins[typeId] == nil {
+            activateDriver(databaseTypeId: typeId)
+        }
+        // Keyed by the type itself: an installed plugin older than a variant serves only its primary.
+        return driverPlugins[databaseType.rawValue]
     }
 
     func exportPlugin(forFormat formatId: String) -> (any ExportFormatPlugin)? {
@@ -638,6 +640,10 @@ extension PluginManager {
     func supportsPrincipalConnectionLimit(for databaseType: DatabaseType) -> Bool {
         PluginMetadataRegistry.shared.snapshot(for: databaseType)?
             .capabilities.supportsPrincipalConnectionLimit ?? true
+    }
+
+    func supportsRoleLogin(for databaseType: DatabaseType) -> Bool {
+        PluginMetadataRegistry.shared.snapshot(for: databaseType)?.capabilities.supportsRoleLogin ?? true
     }
 
     func autoLimitStyle(for databaseType: DatabaseType) -> AutoLimitStyle {

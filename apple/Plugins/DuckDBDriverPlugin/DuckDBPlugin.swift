@@ -7,6 +7,7 @@ import CDuckDB
 import Foundation
 import os
 import TableProPluginKit
+import TableProSQLVocabulary
 
 final class DuckDBPlugin: NSObject, TableProPlugin, DriverPlugin {
     static let pluginName = "DuckDB Driver"
@@ -152,38 +153,36 @@ final class DuckDBPlugin: NSObject, TableProPlugin, DriverPlugin {
             "EXPLAIN", "ANALYZE",
             "WINDOW", "OVER", "PARTITION"
         ],
-        functions: [
-            "COUNT", "SUM", "AVG", "MAX", "MIN",
-            "LIST_AGG", "STRING_AGG", "ARRAY_AGG",
-            "CONCAT", "SUBSTRING", "LEFT", "RIGHT", "LENGTH", "LOWER", "UPPER",
-            "TRIM", "LTRIM", "RTRIM", "REPLACE", "SPLIT_PART",
-            "NOW", "CURRENT_DATE", "CURRENT_TIME", "CURRENT_TIMESTAMP",
-            "DATE_TRUNC", "EXTRACT", "AGE", "TO_CHAR", "TO_DATE",
-            "EPOCH_MS",
-            "ROUND", "CEIL", "CEILING", "FLOOR", "ABS", "MOD", "POW", "POWER", "SQRT",
-            "CAST",
-            "REGEXP_MATCHES", "READ_CSV", "READ_PARQUET", "READ_JSON",
-            "GLOB", "STRUCT_PACK", "LIST_VALUE", "MAP", "UNNEST",
-            "GENERATE_SERIES", "RANGE"
-        ],
-        dataTypes: [
-            "INTEGER", "BIGINT", "HUGEINT", "UHUGEINT",
-            "DOUBLE", "FLOAT", "DECIMAL",
-            "VARCHAR", "TEXT", "BLOB",
-            "BOOLEAN",
-            "DATE", "TIME", "TIMESTAMP", "TIMESTAMP WITH TIME ZONE", "INTERVAL",
-            "UUID", "JSON",
-            "LIST", "MAP", "STRUCT", "UNION", "ENUM", "BIT"
-        ],
+        functions: SQLEngineVocabulary.duckDB.functions,
+        dataTypes: SQLEngineVocabulary.duckDB.dataTypes,
+        tableOptions: SQLEngineVocabulary.duckDB.tableOptions,
         regexSyntax: .regexpMatches,
         booleanLiteralStyle: .truefalse,
         likeEscapeStyle: .explicit,
         paginationStyle: .limit,
-        caseSensitivityStyle: .ilikeOperator
+        caseSensitivityStyle: .ilikeOperator,
+        operators: SQLEngineVocabulary.duckDB.operators.compactMap(SQLOperatorDescriptor.init(vocabulary:)),
+        // DuckDB has no LIKE or lower() for INTEGER, UUID or DATE: `~~(INTEGER, STRING_LITERAL)` is a binder error.
+        textCastTypeName: "VARCHAR",
+        functionNamesAreCaseInsensitive: SQLEngineVocabulary.duckDB.functionNamesAreCaseInsensitive
     )
 
     func createDriver(config: DriverConnectionConfig) -> any PluginDatabaseDriver {
         DuckDBPluginDriver(config: config)
+    }
+}
+
+private extension SQLOperatorDescriptor {
+    init?(vocabulary entry: SQLEngineVocabulary.Operator) {
+        guard let category = Category(rawValue: entry.category),
+              let placement = Placement(rawValue: entry.placement) else { return nil }
+        self.init(
+            symbol: entry.symbol,
+            summary: entry.summary,
+            category: category,
+            placement: placement,
+            appliesToTypes: entry.appliesToTypes
+        )
     }
 }
 
@@ -954,7 +953,7 @@ final class DuckDBPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
             guard let row = countResult.rows.first, let firstCell = row.first else { return nil }
             return Int64(firstCell.asText ?? "0")
         }()
-        let comment = try await fetchObjectComment(table: table, schema: schemaName)
+        let comment = try await catalogComment(table: table, schema: schemaName)
 
         return PluginTableMetadata(
             tableName: table,
@@ -964,7 +963,12 @@ final class DuckDBPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         )
     }
 
-    private func fetchObjectComment(table: String, schema: String) async throws -> String? {
+    // fetchTableMetadata probes up to 100,001 rows; the comment alone is a catalog read.
+    func fetchObjectComment(table: String, schema: String?) async throws -> String? {
+        try await catalogComment(table: table, schema: resolveSchema(schema))
+    }
+
+    private func catalogComment(table: String, schema: String) async throws -> String? {
         let result = try await executeParameterized(
             query: DuckDBSchemaQueries.objectComment,
             parameters: [.text(try requireCatalog()), .text(schema), .text(table)]
