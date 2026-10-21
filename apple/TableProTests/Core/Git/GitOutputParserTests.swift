@@ -235,6 +235,9 @@ struct GitCommandHardeningTests {
             .fileHistory(of: file, limit: 10),
             .blob(revision: "HEAD", path: "a.sql", in: directory),
             .trackedFiles(in: directory),
+            .currentBranch(in: directory),
+            .upstreamDivergence(in: directory),
+            .changedPaths(from: "a", to: "b", in: directory),
         ]
         for command in commands {
             let arguments = command.processArguments
@@ -247,6 +250,58 @@ struct GitCommandHardeningTests {
             #expect(!arguments.contains("checkout-index"))
         }
         #expect(GitCommand.blob(revision: "HEAD", path: "a.sql", in: directory).arguments.contains("--end-of-options"))
+    }
+
+    @Test("A write command runs the repository's hooks as Terminal git does and keeps the rest of the hardening")
+    func writeCommandsRunHooks() {
+        let directory = URL(fileURLWithPath: "/tmp/repo")
+        let commands: [GitCommand] = [
+            .stage(["a.sql"], in: directory),
+            .commit(["a.sql"], message: "Fix", in: directory),
+            .pull(in: directory),
+            .push(in: directory),
+        ]
+        for command in commands {
+            let arguments = command.processArguments
+            #expect(arguments.starts(with: GitCommand.hardeningArguments))
+            #expect(!arguments.contains("core.hooksPath=/dev/null"))
+            #expect(!arguments.contains { $0.hasPrefix("--force") || $0 == "-f" || $0.hasPrefix("--rebase") })
+            #expect(command.access == .write)
+            #expect(command.timeout == GitCommand.writeTimeout)
+        }
+    }
+
+    @Test("A pull only fast-forwards, and stage and commit name only the paths they were given")
+    func writeArguments() {
+        let directory = URL(fileURLWithPath: "/tmp/repo")
+        #expect(GitCommand.pull(in: directory).arguments == ["pull", "--no-rebase", "--ff-only"])
+        #expect(GitCommand.push(in: directory).arguments == ["push"])
+        #expect(GitCommand.stage(["-n.sql"], in: directory).arguments == ["add", "--", "-n.sql"])
+        #expect(GitCommand.commit(["q/a.sql"], message: "--amend", in: directory).arguments == [
+            "commit", "--only", "--message=--amend", "--", "q/a.sql",
+        ])
+    }
+
+    @Test("A write command finds tools installed with Homebrew, and a read keeps the inherited PATH")
+    func writeEnvironment() {
+        let directory = URL(fileURLWithPath: "/tmp/repo")
+        let base = ["PATH": "/usr/bin:/bin", "GIT_DIR": "/elsewhere/.git"]
+        let write = GitCommand.push(in: directory).environment(base: base)
+        #expect(write["PATH"]?.split(separator: ":").contains("/opt/homebrew/bin") == true)
+        #expect(write["GIT_DIR"] == nil)
+        #expect(write["GIT_TERMINAL_PROMPT"] == "0")
+        #expect(GitCommand.status(in: directory).environment(base: base)["PATH"] == "/usr/bin:/bin")
+    }
+
+    @Test("A failed write reports what git printed on either stream")
+    func combinedOutput() {
+        let result = GitProcessResult(
+            exitCode: 1,
+            standardOutput: Data("nothing to commit, working tree clean\n".utf8),
+            standardError: Data("hint: something\n".utf8)
+        )
+        #expect(result.combinedOutput == "nothing to commit, working tree clean\nhint: something")
+        #expect(result.errorMessage == "hint: something")
     }
 
     @Test("A file history never asks git to verify signatures or colour its output")
