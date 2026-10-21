@@ -305,7 +305,7 @@ final class AIChatViewModel: ObservableObject {
         }
         let wasLast = lastAssistantIndex == messages.count - 1
         messages.remove(at: lastAssistantIndex)
-        if wasLast, answeredOnDevice, let asked = messages.last, asked.role == .user {
+        if wasLast, answeredOnDevice, services.appSettings.ai.useAppleIntelligence, let asked = messages.last, asked.role == .user {
             onDeviceTurnID = asked.id
         }
         clearError()

@@ -60,6 +60,7 @@ struct SystemOnDeviceLanguageModel: OnDeviceLanguageModel {
                         let content = snapshot.content
                         guard let delta = OnDeviceSnapshot.delta(from: emitted, to: content) else {
                             Self.logger.fault("On-device snapshot did not extend the text already shown")
+                            emitted = content
                             continue
                         }
                         emitted = content

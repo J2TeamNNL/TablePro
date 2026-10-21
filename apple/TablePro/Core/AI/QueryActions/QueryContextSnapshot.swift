@@ -250,6 +250,7 @@ struct QueryContextSnapshot: Equatable, Sendable {
 
 extension QueryContextSnapshot {
     func keepingColumns(usedBy statement: String, grammar: SQLLexicalGrammar) -> QueryContextSnapshot {
+        if statement.range(of: #"(?i)(\bselect|,|\.)\s*\*"#, options: .regularExpression) != nil { return self }
         let used = Set(QueryTableReferenceResolver.identifierTokens(in: statement, grammar: grammar).map { $0.lowercased() })
         let trimmed = tables.map { table -> QueryContextTable in
             guard case .described(let structure) = table.content else { return table }

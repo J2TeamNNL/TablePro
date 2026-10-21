@@ -204,6 +204,14 @@ internal struct InlineSuggestionSourceKindTests {
         #expect(InlineSuggestionSourceKind.resolve(settings: alone, accessAllowed: true) == .appleIntelligence)
     }
 
+    @Test("An unavailable on-device model falls back to the active provider")
+    func unavailableOnDeviceFallsBack() {
+        var claude = settings(providerType: .claude)
+        claude.useAppleIntelligence = true
+
+        #expect(InlineSuggestionSourceKind.resolve(settings: claude, accessAllowed: true, onDeviceAvailable: false) == .chatCompletion)
+    }
+
     @Test("Apple Intelligence follows the connection's AI policy too")
     func appleIntelligenceFollowsTheGate() {
         let alone = AISettings(enabled: true, inlineSuggestionsEnabled: true, useAppleIntelligence: true)

@@ -73,6 +73,10 @@ extension AIChatViewModel {
         model: any OnDeviceLanguageModel,
         instructions: String
     ) async {
+        if isOnDeviceBlockedByConnectionPolicy {
+            abandonOnDeviceTurn(assistantID: assistantID, message: Self.disabledForConnection)
+            return
+        }
         let pending = unresolvedQueryContext(in: userTurn)
         var snapshots: [QueryContextSnapshot] = []
         var candidates: [OnDeviceRequest] = []
@@ -97,8 +101,8 @@ extension AIChatViewModel {
 
         let fit = await model.fit(candidates, reservingForReply: Self.onDeviceReplyReserve)
         guard !Task.isCancelled else { return }
-        if connection != nil, resolveConnectionPolicy(settings: services.appSettings.ai) == .never {
-            abandonOnDeviceTurn(assistantID: assistantID, message: String(localized: "AI is disabled for this connection."))
+        if isOnDeviceBlockedByConnectionPolicy {
+            abandonOnDeviceTurn(assistantID: assistantID, message: Self.disabledForConnection)
             return
         }
         guard case .fits(let index, let allowance) = fit else {
@@ -134,7 +138,16 @@ extension AIChatViewModel {
                 messages.remove(at: index)
             }
             streamingTask = nil
+            persistCurrentConversation()
         }
+    }
+
+    private var isOnDeviceBlockedByConnectionPolicy: Bool {
+        connection != nil && resolveConnectionPolicy(settings: services.appSettings.ai) == .never
+    }
+
+    private static var disabledForConnection: String {
+        String(localized: "AI is disabled for this connection.")
     }
 
     private func abandonOnDeviceTurn(assistantID: UUID, message: String) {

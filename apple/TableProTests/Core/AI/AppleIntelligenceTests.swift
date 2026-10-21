@@ -147,6 +147,13 @@ struct QueryContextUsedColumnsTests {
         #expect(trimmed.tables.last?.content == .unavailable(reason: "denied"))
     }
 
+    @Test("A wildcard select keeps every column")
+    func wildcardKeepsAllColumns() {
+        let full = snapshot()
+        #expect(full.keepingColumns(usedBy: "SELECT * FROM orders", grammar: .ansi) == full)
+        #expect(full.keepingColumns(usedBy: "SELECT id, o.* FROM orders o", grammar: .ansi) == full)
+    }
+
     @Test("The trimmed table says columns were left out rather than that it has none")
     func rendersOmittedColumns() {
         let some = QueryContextRenderer.render(snapshot().keepingColumns(usedBy: "SELECT total FROM orders", grammar: .ansi))

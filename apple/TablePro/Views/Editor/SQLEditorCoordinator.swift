@@ -514,7 +514,8 @@ final class SQLEditorCoordinator: ObservableObject, TextViewCoordinator, TextVie
     private var resolvedInlineSourceKind: InlineSuggestionSourceKind {
         InlineSuggestionSourceKind.resolve(
             settings: AppSettingsManager.shared.ai,
-            accessAllowed: inlineAccessGate.allowsUnpromptedAccess(to: connectionId)
+            accessAllowed: inlineAccessGate.allowsUnpromptedAccess(to: connectionId),
+            onDeviceAvailable: SystemOnDeviceLanguageModel().availability.isAvailable
         )
     }
 
