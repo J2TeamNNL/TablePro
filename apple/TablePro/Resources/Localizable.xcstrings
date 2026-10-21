@@ -179308,6 +179308,12 @@
         }
       }
     },
+    "Temporary" : {
+
+    },
+    "Temporary Table" : {
+
+    },
     "Teradata Vantage data warehouse" : {
       "localizations" : {
         "fr" : {

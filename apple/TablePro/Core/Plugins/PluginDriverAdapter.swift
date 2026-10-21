@@ -482,6 +482,14 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         return pluginTables.map { mapPluginTable($0, schemaFallback: schemaFallback) }
     }
 
+    var listsTemporaryTables: Bool {
+        pluginDriver.capabilities.contains(.temporaryTables)
+    }
+
+    func fetchTemporaryTables() async throws -> [TableInfo] {
+        try await pluginDriver.fetchTemporaryTables().map { mapPluginTable($0, schemaFallback: nil, isTemporary: true) }
+    }
+
     func fetchPartitionDetails(table: String, schema: String?) async throws -> [PartitionInfo] {
         let resolvedSchema = schema ?? pluginDriver.currentSchema
         let partitions = try await pluginDriver.fetchPartitionDetails(table: table, schema: resolvedSchema)
@@ -506,7 +514,7 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         PluginTableKindDecoder.decode(declaredType).kind
     }
 
-    private func mapPluginTable(_ table: PluginTableInfo, schemaFallback: String?) -> TableInfo {
+    private func mapPluginTable(_ table: PluginTableInfo, schemaFallback: String?, isTemporary: Bool = false) -> TableInfo {
         let decoded = PluginTableKindDecoder.decode(table.type)
         let tableType: TableInfo.TableType
         if let mapped = decoded.kind {
@@ -522,7 +530,8 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
             schema: table.schema ?? schemaFallback,
             comment: table.comment,
             partitionCount: table.partitionCount,
-            isSystemVersioned: decoded.isSystemVersioned
+            isSystemVersioned: decoded.isSystemVersioned,
+            isTemporary: isTemporary
         )
     }
 
