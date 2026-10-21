@@ -48,6 +48,15 @@ struct MSSQLShowplanTests {
         #expect(try MSSQLShowplan.actual.planDocuments(in: readout) == ["<ShowPlanXML a/>"])
     }
 
+    @Test("An actual plan whose column carries another name is still found rather than lost")
+    func actualFallsBackToContent() throws {
+        let readout = Self.readout([
+            Self.resultSet("name", ["c1"]),
+            Self.resultSet("Showplan", ["<ShowPlanXML a/>"]),
+        ])
+        #expect(try MSSQLShowplan.actual.planDocuments(in: readout) == ["<ShowPlanXML a/>"])
+    }
+
     @Test("Under SHOWPLAN_XML nothing runs, so every plan document the batch returned is the plan")
     func estimatedKeepsEveryPlanDocument() throws {
         let readout = Self.readout([

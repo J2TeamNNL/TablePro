@@ -24,19 +24,19 @@ public enum MSSQLShowplan: String, Sendable, CaseIterable {
     public static let planColumnName = "Microsoft SQL Server 2005 XML Showplan"
     static let documentStart = "<ShowPlanXML"
 
-    // Under SHOWPLAN_XML nothing runs, so every result is a plan. An actual plan also carries the statement's own
-    // results, which can be plan XML read from the plan cache, so only the server's plan column counts.
-    private func isPlanColumn(_ name: String) -> Bool {
-        self == .estimated || name.caseInsensitiveCompare(Self.planColumnName) == .orderedSame
-    }
-
     // A statement error fails the plan: an actual plan of a failed run describes a run that did not finish.
     public func planDocuments(in readout: MSSQLBatchReadout) throws -> [String] {
         if let error = readout.errors.first {
             throw MSSQLCoreError.queryFailed(error.message.text)
         }
-        let documents = readout.resultSets
-            .filter { $0.columns.count == 1 && isPlanColumn($0.columns[0].name) }
+        let candidates = readout.resultSets.filter { result in
+            result.columns.count == 1 && result.rows.contains { $0.first?.stringValue?.hasPrefix(Self.documentStart) == true }
+        }
+        // An actual plan also carries the statement's own results, which can be plan XML read from the plan cache, so
+        // the server's plan column wins; a result set named otherwise counts only when none carries that name.
+        let named = candidates.filter { $0.columns[0].name.caseInsensitiveCompare(Self.planColumnName) == .orderedSame }
+        let planResults = self == .actual && !named.isEmpty ? named : candidates
+        let documents = planResults
             .flatMap { $0.rows.compactMap { $0.first?.stringValue } }
             .filter { $0.hasPrefix(Self.documentStart) }
         guard !documents.isEmpty else {
