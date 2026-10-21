@@ -20,6 +20,10 @@ fi
 case "$package" in
 *.deb)
     export DEBIAN_FRONTEND=noninteractive
+    # The Ubuntu image skips every .mo dpkg unpacks; a desktop install keeps them.
+    if [ -f /etc/dpkg/dpkg.cfg.d/excludes ]; then
+        sed -i '\|^path-exclude=/usr/share/locale/|d' /etc/dpkg/dpkg.cfg.d/excludes
+    fi
     apt-get update
     apt-get install -y --no-install-recommends "$package"
     tools="desktop-file-utils appstream libglib2.0-bin xvfb xauth dbus-daemon locales gettext-base"
@@ -30,6 +34,8 @@ case "$package" in
     }
     ;;
 *.rpm)
+    # The Fedora image installs en_US translations only; a desktop install takes all of them.
+    rm -f /etc/rpm/macros.image-language-conf
     dnf install -y --setopt=install_weak_deps=False "$package"
     tools="desktop-file-utils appstream xorg-x11-server-Xvfb xorg-x11-xauth dbus-daemon glibc-langpack-en gettext-runtime"
     install_tools() {
