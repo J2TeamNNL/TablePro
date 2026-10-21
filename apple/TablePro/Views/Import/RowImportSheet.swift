@@ -47,9 +47,12 @@ struct RowImportSheet: View {
         let columns: [String]
         let columnMapping: [String: String]
         let newTable: PluginCreateTableDefinition?
+        let rowWriting: ImportRowWriting
     }
 
     @State private var destination: Destination = .existingTable
+    @State private var writeMode: ImportWriteMode = .insert
+    @State private var chosenMatchKey: ImportMatchKey?
 
     /// The database and schema every read and write of this sheet goes to: where the connection was
     /// browsing when the sheet opened. The sheet is modal to its window, but another window on the
@@ -105,6 +108,7 @@ struct RowImportSheet: View {
 
     @State private var importService: ImportService?
     @State private var importResult: PluginImportResult?
+    @State private var importTally: ImportRowTally?
     @State private var importedRows: DatabaseObjectChange?
     @State private var importError: (any Error)?
     @State private var showProgressDialog = false
@@ -227,6 +231,7 @@ struct RowImportSheet: View {
             guard isShowing else { return }
             TransferResultAlert.presentImportSuccess(
                 result: importResult,
+                rowTally: importTally,
                 window: hostWindow,
                 sourceFileName: sourceName,
                 targetTable: selectedTargetTable
@@ -292,6 +297,36 @@ struct RowImportSheet: View {
                     }
                     .labelsHidden()
                     .frame(maxWidth: 280, alignment: .leading)
+                }
+
+                GridRow {
+                    Text("Import as:")
+                    Picker(String(localized: "Import as"), selection: $writeMode) {
+                        ForEach(ImportWriteMode.allCases) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    .help(String(localized: """
+                        Update changes the rows whose key is in the file. Insert or Update also adds the rest, and \
+                        Insert, Skip Existing adds only rows whose key is not in the table. Columns not mapped keep \
+                        their values.
+                        """))
+                }
+
+                if writeMode.matchesExistingRows {
+                    GridRow {
+                        Text("Match on:")
+                        Picker(String(localized: "Match on"), selection: matchKeyBinding) {
+                            ForEach(mapping.matchKeys) { key in
+                                Text(key.label).tag(ImportMatchKey?.some(key))
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(maxWidth: 280, alignment: .leading)
+                        .disabled(mapping.matchKeys.isEmpty)
+                    }
                 }
             } else {
                 GridRow {
@@ -621,6 +656,22 @@ struct RowImportSheet: View {
         )
     }
 
+    private var matchKey: ImportMatchKey? {
+        chosenMatchKey.flatMap { chosen in mapping.matchKeys.first { $0 == chosen } } ?? mapping.matchKeys.first
+    }
+
+    private var matchKeyBinding: Binding<ImportMatchKey?> {
+        Binding(
+            get: { matchKey },
+            set: { chosenMatchKey = $0 }
+        )
+    }
+
+    private var rowWriting: ImportRowWriting {
+        guard writeMode.matchesExistingRows, let matchKey else { return .insert }
+        return ImportRowWriting(mode: writeMode, keyColumns: matchKey.columns)
+    }
+
     private var allColumnsIncluded: Binding<Bool> {
         Binding(
             get: { newTable.includesEveryColumn },
@@ -634,7 +685,12 @@ struct RowImportSheet: View {
             if mapping.mapsOneColumnTwice {
                 return String(localized: "Each column can be mapped from only one field.")
             }
-            return nil
+            guard selectedTargetTable != nil, currentReadHasLanded else { return nil }
+            return ImportRowWritingProblem.of(
+                mode: writeMode,
+                key: matchKey,
+                mappedColumns: Array(mapping.columnMapping.values)
+            )?.message
         case .newTable:
             if let problem = newTableNameProblem {
                 switch problem {
@@ -861,13 +917,22 @@ struct RowImportSheet: View {
         isLoadingContext = true
         loadError = nil
         do {
-            let columns = try await DatabaseManager.shared.withMetadataDriver(scope: scope) { driver in
-                try await driver.fetchColumns(table: table)
-            }.map(\.name)
+            let (columns, indexes) = try await DatabaseManager.shared.withMetadataDriver(scope: scope) { driver in
+                (try await driver.fetchColumns(table: table), try? await driver.fetchIndexes(table: table))
+            }
             guard !Task.isCancelled else { return }
+            if indexes == nil {
+                Self.logger.warning("Could not read the target's indexes, so only its primary key can be matched on")
+            }
             let fields = try await ImportFieldDetection.detectFields(plugin: plugin, at: fileURL, targetTable: table)
             guard !Task.isCancelled else { return }
-            mapping.load(fields: fields, columns: columns, for: TableScope(table: table, in: scope), read: request)
+            mapping.load(
+                fields: fields,
+                columns: columns.map(\.name),
+                matchKeys: ImportMatchKey.options(columns: columns, indexes: indexes ?? []),
+                for: TableScope(table: table, in: scope),
+                read: request
+            )
         } catch {
             guard !Task.isCancelled else { return }
             loadError = error.localizedDescription
@@ -899,7 +964,8 @@ struct RowImportSheet: View {
                     fields: mapping.fields,
                     columns: mapping.columns,
                     columnMapping: mapping.columnMapping,
-                    newTable: nil
+                    newTable: nil,
+                    rowWriting: rowWriting
                 ),
                 scope: scope
             )
@@ -918,7 +984,8 @@ struct RowImportSheet: View {
                     fields: fields,
                     columns: fields.compactMap { columnMapping[$0] },
                     columnMapping: columnMapping,
-                    newTable: definition
+                    newTable: definition,
+                    rowWriting: .insert
                 ),
                 scope: scope
             )
@@ -959,12 +1026,14 @@ struct RowImportSheet: View {
                     targetTable: targetTable,
                     columnMapping: plan.columnMapping,
                     sourceFields: Set(plan.fields),
+                    rowWriting: plan.rowWriting,
                     authorization: authorization
                 )
                 await MainActor.run {
                     showProgressDialog = false
                     importSucceeded = true
                     importResult = result
+                    importTally = service.state.rowTally
                     importedRows = DatabaseObjectChange(
                         connectionId: connection.id,
                         scope: scope,
