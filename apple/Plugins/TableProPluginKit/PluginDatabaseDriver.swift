@@ -630,6 +630,9 @@ public protocol PluginDatabaseDriver: AnyObject, Sendable {
     // EXPLAIN query building (optional)
     func buildExplainQuery(_ sql: String) -> String?
 
+    // For a variant declared with ExplainStep.driver. The statement carries no prefix.
+    func explainPlan(statement: String, variantId: String) async throws -> PluginQueryResult
+
     func injectRowLimit(_ sql: String, limit: Int) -> String?
 
     func quoteIdentifier(_ name: String) -> String
@@ -1278,6 +1281,10 @@ public extension PluginDatabaseDriver {
     }
 
     func buildExplainQuery(_ sql: String) -> String? { nil }
+
+    func explainPlan(statement: String, variantId: String) async throws -> PluginQueryResult {
+        throw PluginDriverUnsupportedOperation.explainPlan
+    }
 
     func injectRowLimit(_ sql: String, limit: Int) -> String? { nil }
 

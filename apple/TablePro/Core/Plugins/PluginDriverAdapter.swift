@@ -451,6 +451,11 @@ final class PluginDriverAdapter: DatabaseDriver, SchemaSwitchable, DatabaseRepor
         )
     }
 
+    func explainPlan(statement: String, variantId: String) async throws -> QueryResult {
+        try StatementTextValidator.validate(statement)
+        return mapQueryResult(try await pluginDriver.explainPlan(statement: statement, variantId: variantId))
+    }
+
     // MARK: - Schema Operations
 
     func fetchTables() async throws -> [TableInfo] {
