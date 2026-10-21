@@ -97,11 +97,23 @@ public enum TrinoIntrospectionSQL {
         }
     }
 
-    public static func listMaterializedViews(catalog: String, inSchemas schemas: [String]) -> String {
-        """
-        SELECT name, schema_name FROM system.metadata.materialized_views \
-        WHERE catalog_name = \(quoteLiteral(catalog)) AND \(membership("schema_name", in: schemas))
-        """
+    public static func listMaterializedViews(
+        catalog: String,
+        inSchemas schemas: [String],
+        flavor: TrinoServerFlavor
+    ) -> String {
+        switch flavor {
+        case .trino:
+            return """
+                SELECT name, schema_name FROM system.metadata.materialized_views \
+                WHERE catalog_name = \(quoteLiteral(catalog)) AND \(membership("schema_name", in: schemas))
+                """
+        case .presto:
+            return """
+                SELECT table_name, table_schema FROM \(quoteIdentifier(catalog)).information_schema.materialized_views \
+                WHERE \(membership("table_schema", in: schemas))
+                """
+        }
     }
 
     /// One relation's `table_type`, which says `VIEW` for a view. A materialized view is not told

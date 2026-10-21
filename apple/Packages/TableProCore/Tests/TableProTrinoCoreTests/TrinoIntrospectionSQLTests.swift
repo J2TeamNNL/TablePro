@@ -13,9 +13,20 @@ struct TrinoIntrospectionSQLTests {
 
     @Test("A schema set's materialized views come from one query that projects the schema")
     func schemaSetMaterializedViews() {
-        let statement = TrinoIntrospectionSQL.listMaterializedViews(catalog: "iceberg", inSchemas: ["a", "b"])
+        let statement = TrinoIntrospectionSQL.listMaterializedViews(
+            catalog: "iceberg", inSchemas: ["a", "b"], flavor: .trino
+        )
         #expect(statement.contains("SELECT name, schema_name FROM system.metadata.materialized_views"))
         #expect(statement.contains("catalog_name = 'iceberg' AND schema_name IN ('a', 'b')"))
+    }
+
+    @Test("On Presto a schema set's materialized views come from information_schema in one query")
+    func prestoSchemaSetMaterializedViews() {
+        let statement = TrinoIntrospectionSQL.listMaterializedViews(
+            catalog: "hive", inSchemas: ["a", "o'brien"], flavor: .presto
+        )
+        #expect(statement.contains(#"SELECT table_name, table_schema FROM "hive".information_schema.materialized_views"#))
+        #expect(statement.contains("WHERE table_schema IN ('a', 'o''brien')"))
     }
 
     @Test("A quote that a combining mark follows is still doubled")

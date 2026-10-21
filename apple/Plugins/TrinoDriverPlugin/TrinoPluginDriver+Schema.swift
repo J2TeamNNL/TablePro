@@ -208,7 +208,7 @@ extension TrinoPluginDriver {
     }
 
     private func materializedViews(catalog: String, schemas: [String]) async -> Set<TrinoRelationKey> {
-        let sql = TrinoIntrospectionSQL.listMaterializedViews(catalog: catalog, inSchemas: schemas)
+        let sql = TrinoIntrospectionSQL.listMaterializedViews(catalog: catalog, inSchemas: schemas, flavor: flavor)
         if let result = try? await execute(query: sql) {
             return Set(result.rows.compactMap { row in
                 guard let name = firstText(row), let schema = text(row[safe: 1]) else { return nil }
