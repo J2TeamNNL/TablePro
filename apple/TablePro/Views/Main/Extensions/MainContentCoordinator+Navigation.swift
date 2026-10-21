@@ -73,7 +73,8 @@ extension MainContentCoordinator {
             currentDatabase = database?.nilIfEmpty ?? browseDatabaseName
         }
 
-        let resolvedSchema = DatabaseManager.shared.resolvedSchemaName(
+        // A temporary table's schema is the one its row named, or none: SQL Server rejects `[dbo].[#name]`.
+        let resolvedSchema = isTemporary ? schema : DatabaseManager.shared.resolvedSchemaName(
             schema, inDatabase: currentDatabase, for: connectionId
         )
         let createAsPreview = !forceNonPreview && !forceNewTab

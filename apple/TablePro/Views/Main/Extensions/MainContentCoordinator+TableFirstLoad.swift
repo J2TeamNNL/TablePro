@@ -76,6 +76,7 @@ extension MainContentCoordinator {
         guard let index = tabManager.tabs.firstIndex(where: { $0.id == tabId }),
               tabManager.tabs[index].tabType == .table,
               tabManager.tabs[index].tableContext.schemaName == nil,
+              !tabManager.tabs[index].tableContext.isTemporary,
               let resolvedSchema = DatabaseManager.shared.resolvedSchemaName(
                   nil,
                   inDatabase: tabManager.tabs[index].tableContext.resolvedDatabaseName(browsing: browseDatabaseName),

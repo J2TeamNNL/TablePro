@@ -27,6 +27,22 @@ enum MySQLTemporaryTableNames {
         return reader.accept("CREATE") && reader.accept("TEMPORARY")
     }
 
+    static func dropped(by statement: String) -> [String] {
+        var reader = Reader(statement)
+        guard reader.accept("DROP"), reader.accept("TEMPORARY"), reader.accept("TABLE") || reader.accept("TABLES") else {
+            return []
+        }
+        if reader.accept("IF") {
+            guard reader.accept("EXISTS") else { return [] }
+        }
+        var names: [String] = []
+        repeat {
+            guard let name = reader.tableName() else { return names }
+            names.append(name)
+        } while reader.acceptComma()
+        return names
+    }
+
     static func renames(in statement: String) -> [(from: String, to: String)] {
         var reader = Reader(statement)
         if reader.accept("RENAME") {

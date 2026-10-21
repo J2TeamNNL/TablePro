@@ -11,13 +11,27 @@ import TableProSQLGrammar
 @MainActor
 protocol TemporaryTableSessionReading: AnyObject {
     func browseScope(for connectionId: UUID) -> DatabaseScope?
-    func temporaryTableSession(for scope: DatabaseScope) -> ObjectIdentifier?
+    func temporaryTableSession(for scope: DatabaseScope) -> TemporaryTableSession?
     func readTemporaryTables(in scope: DatabaseScope) async throws -> TemporaryTableListing
+}
+
+// Holds the driver weakly: an address alone can be reused by the driver that replaces a freed one.
+struct TemporaryTableSession: @unchecked Sendable, Equatable {
+    private weak var driver: AnyObject?
+
+    init(_ driver: AnyObject) {
+        self.driver = driver
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        guard let lhsDriver = lhs.driver else { return false }
+        return lhsDriver === rhs.driver
+    }
 }
 
 struct TemporaryTableListing: Sendable, Equatable {
     let tables: [TableInfo]
-    let session: ObjectIdentifier
+    let session: TemporaryTableSession
 }
 
 @MainActor
@@ -50,14 +64,6 @@ final class TemporaryTableStore: ObservableObject, CatalogChangeTarget {
               isCurrent(listing, connectionId: connectionId, database: database)
         else { return [] }
         return listing.tables
-    }
-
-    // Asked on every read a tab makes, so the name is matched before the session is looked up.
-    func holds(table: String, in scope: DatabaseScope) -> Bool {
-        guard let listing = listings[Key(connectionId: scope.connectionId, database: scope.database)],
-              listing.tables.contains(where: { $0.name == table && ($0.schema == nil || $0.schema == scope.schema) })
-        else { return false }
-        return isCurrent(listing, connectionId: scope.connectionId, database: scope.database)
     }
 
     // A listing read on a connection that has since been replaced names tables that went with it.
@@ -131,14 +137,14 @@ final class TemporaryTableStore: ObservableObject, CatalogChangeTarget {
 }
 
 extension DatabaseManager: TemporaryTableSessionReading {
-    func temporaryTableSession(for scope: DatabaseScope) -> ObjectIdentifier? {
+    func temporaryTableSession(for scope: DatabaseScope) -> TemporaryTableSession? {
         guard let driver = sessionDriver(holding: scope), driver.listsTemporaryTables else { return nil }
-        return ObjectIdentifier(driver)
+        return TemporaryTableSession(driver)
     }
 
     func readTemporaryTables(in scope: DatabaseScope) async throws -> TemporaryTableListing {
         try await withMetadataDriver(scope: scope.sessionBound) { driver in
-            TemporaryTableListing(tables: try await driver.fetchTemporaryTables(), session: ObjectIdentifier(driver))
+            TemporaryTableListing(tables: try await driver.fetchTemporaryTables(), session: TemporaryTableSession(driver))
         }
     }
 }

@@ -434,8 +434,10 @@ final class QueryTabManager: ObservableObject {
     /// MariaDB sequence recorded as "not a table" came back as a view and was offered Drop View.
     private func notifyTableOpened(
         tableName: String, schemaName: String?, databaseName: String,
-        isView: Bool, objectType: TableInfo.TableType?, isPreview: Bool
+        isView: Bool, objectType: TableInfo.TableType?, isPreview: Bool, isTemporary: Bool
     ) {
+        // A temporary table goes with its session, and a Recent entry would outlive it.
+        guard !isTemporary else { return }
         onTableOpened?(tableName, schemaName, databaseName, isView, objectType, isPreview)
     }
 
@@ -491,7 +493,7 @@ final class QueryTabManager: ObservableObject {
             selectedTabId = existingTab.id
             notifyTableOpened(
                 tableName: tableName, schemaName: schemaName, databaseName: databaseName,
-                isView: isView, objectType: objectType, isPreview: isPreview
+                isView: isView, objectType: objectType, isPreview: isPreview, isTemporary: isTemporary
             )
             return false
         }
@@ -520,7 +522,7 @@ final class QueryTabManager: ObservableObject {
         selectedTabId = newTab.id
         notifyTableOpened(
             tableName: tableName, schemaName: schemaName, databaseName: databaseName,
-            isView: isView, objectType: objectType, isPreview: isPreview
+            isView: isView, objectType: objectType, isPreview: isPreview, isTemporary: isTemporary
         )
         return true
     }
@@ -758,7 +760,7 @@ final class QueryTabManager: ObservableObject {
         tabStructureVersion += 1
         notifyTableOpened(
             tableName: tableName, schemaName: schemaName, databaseName: databaseName,
-            isView: isView, objectType: objectType, isPreview: isPreview
+            isView: isView, objectType: objectType, isPreview: isPreview, isTemporary: isTemporary
         )
         return true
     }

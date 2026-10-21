@@ -27,13 +27,13 @@ private final class FakeSessionReader: TemporaryTableSessionReading {
         return DatabaseScope(connectionId: connectionId, database: browseDatabase, schema: browseSchema)
     }
 
-    func temporaryTableSession(for scope: DatabaseScope) -> ObjectIdentifier? {
-        session.map { ObjectIdentifier($0) }
+    func temporaryTableSession(for scope: DatabaseScope) -> TemporaryTableSession? {
+        session.map { TemporaryTableSession($0) }
     }
 
     func readTemporaryTables(in scope: DatabaseScope) async throws -> TemporaryTableListing {
         guard let session else { throw DatabaseError.notConnected }
-        let identity = ObjectIdentifier(session)
+        let identity = TemporaryTableSession(session)
         reads += 1
         let answer = answers.isEmpty ? .success([]) : answers.removeFirst()
         if let gate { await gate.wait() }
@@ -74,7 +74,6 @@ struct TemporaryTableStoreTests {
         reader.session = FakeSessionReader.Session()
 
         #expect(store.tables(connectionId: reader.connectionId, database: "shop").isEmpty)
-        #expect(!store.holds(table: "t", in: DatabaseScope(connectionId: reader.connectionId, database: "shop", schema: nil)))
     }
 
     @Test("A failed read keeps the list it had")
@@ -86,19 +85,6 @@ struct TemporaryTableStoreTests {
 
         #expect(reader.reads == 2)
         #expect(store.tables(connectionId: reader.connectionId, database: "shop").map { $0.name } == ["t"])
-    }
-
-    @Test("A table listed with a schema holds only scopes on that schema; one listed without holds the bare name")
-    func holdsMatchesTheSchemaTheListingNames() async {
-        let (store, reader) = await Self.loaded([.success([Self.table("t", schema: "pg_temp_3"), Self.table("#scratch")])])
-        func scope(_ schema: String?) -> DatabaseScope {
-            DatabaseScope(connectionId: reader.connectionId, database: "shop", schema: schema)
-        }
-
-        #expect(store.holds(table: "t", in: scope("pg_temp_3")))
-        #expect(!store.holds(table: "t", in: scope("public")))
-        #expect(store.holds(table: "#scratch", in: scope("dbo")))
-        #expect(!store.holds(table: "other", in: scope(nil)))
     }
 
     @Test("A refresh asked for during a read reads once more after it")

@@ -60,6 +60,13 @@ struct MySQLTemporaryTableNamesTests {
         #expect(names(after: "CREATE TEMPORARY TABLE t (a INT)", "DROP TEMPORARY TABLE t", "CREATE TEMPORARY TABLE t (a INT)") == ["t"])
     }
 
+    @Test("A dropped temporary table leaves the candidates")
+    func droppedNamesLeave() {
+        #expect(names(after: "CREATE TEMPORARY TABLE a (x INT)", "CREATE TEMPORARY TABLE b (x INT)", "DROP TEMPORARY TABLE a").elementsEqual(["b"]))
+        #expect(names(after: "CREATE TEMPORARY TABLE a (x INT)", "CREATE TEMPORARY TABLE b (x INT)", "drop temporary table if exists `A`, b").isEmpty)
+        #expect(names(after: "CREATE TEMPORARY TABLE a (x INT)", "DROP TABLE a") == ["a"])
+    }
+
     @Test("A reconnect forgets every name")
     func resetForgetsNames() {
         var footprint = MySQLSessionFootprint()

@@ -94,10 +94,11 @@ internal final class TabPersistenceCoordinator: ObservableObject {
     /// The one gate every save passes. Writing a partial list over a full saved set is how tabs
     /// that were never restored get erased, so a save is refused until a restore has run.
     private func writablePayload(
-        tabs: [QueryTab],
+        tabs allTabs: [QueryTab],
         selectedTabId: UUID?,
         path: String
     ) -> (tabs: [PersistedTab], selectedTabId: UUID?, database: String?, schema: String?)? {
+        let tabs = allTabs.filter { !$0.tableContext.isTemporary }
         guard !tabs.isEmpty else {
             Self.logger.debug(
                 "[persist] \(path, privacy: .private(mask: .hash)) skipped empty tab set connId=\(self.connectionId, privacy: .public)"

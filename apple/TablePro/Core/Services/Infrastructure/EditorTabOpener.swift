@@ -115,7 +115,7 @@ internal enum EditorTabOpener {
         browseDatabaseName: String
     ) {
         let databaseName = payload.databaseName ?? browseDatabaseName
-        let resolvedSchemaName = DatabaseManager.shared.resolvedSchemaName(
+        let resolvedSchemaName = payload.isTemporary ? payload.schemaName : DatabaseManager.shared.resolvedSchemaName(
             payload.schemaName, inDatabase: databaseName, for: connection.id
         )
 

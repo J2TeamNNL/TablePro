@@ -55,6 +55,21 @@ struct TabPersistenceWriteGateTests {
         #expect(loaded?.tabs.count == 1)
     }
 
+    @Test("A temporary table tab is not saved, since its table does not outlive the session")
+    func temporaryTableTabIsNotSaved() async {
+        let connectionId = UUID()
+        let coordinator = TabPersistenceCoordinator(connectionId: connectionId)
+        defer { TabDiskActor.clearSync(connectionId: connectionId) }
+        var temporary = makeTab("t")
+        temporary.tableContext.isTemporary = true
+
+        _ = await coordinator.restoreFromDisk()
+        coordinator.saveNowSync(tabs: [makeTab("Query 1"), temporary], selectedTabId: temporary.id)
+
+        let loaded = await TabDiskActor.shared.load(connectionId: connectionId)
+        #expect(loaded?.tabs.map(\.title) == ["Query 1"])
+    }
+
     /// Only the user closing every tab discards saved state.
     @Test("The explicit clear removes saved state")
     func explicitClearRemovesState() async {

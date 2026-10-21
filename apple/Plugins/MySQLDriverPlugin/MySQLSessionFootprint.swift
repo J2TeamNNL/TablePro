@@ -168,7 +168,10 @@ struct MySQLSessionFootprint: Equatable {
 
     private mutating func observeTemporaryTableNames(_ statement: String) {
         let head = Self.collapsedHead(of: statement.prefix(Self.headLength).uppercased())
-        guard head.hasPrefix("CREATE") || head.hasPrefix("RENAME") || head.hasPrefix("ALTER") else { return }
+        guard ["CREATE", "RENAME", "ALTER", "DROP"].contains(where: head.hasPrefix) else { return }
+        for dropped in MySQLTemporaryTableNames.dropped(by: statement) {
+            temporaryTableNames.removeAll { $0.caseInsensitiveCompare(dropped) == .orderedSame }
+        }
         if let created = MySQLTemporaryTableNames.created(by: statement) {
             // `observeStatement` reads only the head, which misses `CREATE /*!32312 TEMPORARY */ TABLE`.
             hasTemporaryTables = true
