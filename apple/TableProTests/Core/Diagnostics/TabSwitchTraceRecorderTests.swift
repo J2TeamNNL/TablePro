@@ -47,7 +47,8 @@ struct TabSwitchTraceRecorderTests {
         #expect(previous == nil)
         let sequence = try started(recorder.applySelection(tabId: tabId, rows: .resident, at: instant(12)))
         #expect(sequence == requested)
-        let timing = try #require(recorder.framePresented(sequence: sequence, at: instant(40)))
+        let presented = recorder.framePresented(sequence: sequence, at: instant(40))
+        let timing = try #require(presented)
 
         #expect(timing.trigger == .adjacentTab)
         #expect(timing.rows == .resident)
@@ -66,7 +67,8 @@ struct TabSwitchTraceRecorderTests {
 
         #expect(recorder.framePresented(sequence: sequence, at: instant(20)) == nil)
         #expect(recorder.rowsLoaded(tabId: tabId, completed: true, at: instant(90)) == .awaitFrame(sequence: sequence))
-        let timing = try #require(recorder.framePresented(sequence: sequence, at: instant(105)))
+        let presented = recorder.framePresented(sequence: sequence, at: instant(105))
+        let timing = try #require(presented)
 
         #expect(timing.rows == .requery)
         #expect(timing.outcome == .presented)
