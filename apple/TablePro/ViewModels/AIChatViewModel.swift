@@ -101,6 +101,9 @@ final class AIChatViewModel: ObservableObject {
 
     var pendingWalkthroughBeforeSQL: String?
     var pendingWalkthroughSource: QueryEditorAnchor?
+    var onDeviceModel: any OnDeviceLanguageModel = SystemOnDeviceLanguageModel()
+    var onDeviceTurnID: UUID?
+    @Published var onDeviceRefusal: OnDeviceRefusal?
     var queryContextMetadata: any ScopedMetadataProviding
     var inFlightColumnFetches: [String: Task<Void, Never>] = [:]
     var inFlightSchemaLoad: Task<Void, Never>?
@@ -297,13 +300,19 @@ final class AIChatViewModel: ObservableObject {
         else { return }
 
         AIProviderFactory.copilotDeleteLastTurn(sessionId: sessionId)
-        messages.remove(at: lastAssistantIndex)
+        let wasLast = lastAssistantIndex == messages.count - 1
+        let removed = messages.remove(at: lastAssistantIndex)
+        if wasLast, removed.providerId == AppleIntelligenceAvailability.providerID,
+           let asked = messages.last, asked.role == .user {
+            onDeviceTurnID = asked.id
+        }
         clearError()
         startStreaming()
     }
 
     func clearError() {
         errorMessage = nil
+        onDeviceRefusal = nil
         if case .failed = streamingState {
             streamingState = .idle
         }

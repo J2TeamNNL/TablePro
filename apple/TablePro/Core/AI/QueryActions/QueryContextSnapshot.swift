@@ -146,6 +146,7 @@ struct QueryContextTableStructure: Equatable, Sendable {
     let foreignKeys: [QueryContextForeignKey]
     let foreignKeysUnavailableReason: String?
     let approximateRowCount: Int?
+    let omittedColumnCount: Int
 
     init(
         columns: [QueryContextColumn],
@@ -153,7 +154,8 @@ struct QueryContextTableStructure: Equatable, Sendable {
         indexesUnavailableReason: String? = nil,
         foreignKeys: [QueryContextForeignKey] = [],
         foreignKeysUnavailableReason: String? = nil,
-        approximateRowCount: Int? = nil
+        approximateRowCount: Int? = nil,
+        omittedColumnCount: Int = 0
     ) {
         self.columns = columns
         self.indexes = indexes
@@ -161,6 +163,20 @@ struct QueryContextTableStructure: Equatable, Sendable {
         self.foreignKeys = foreignKeys
         self.foreignKeysUnavailableReason = foreignKeysUnavailableReason
         self.approximateRowCount = approximateRowCount
+        self.omittedColumnCount = omittedColumnCount
+    }
+
+    func keepingColumns(named used: Set<String>) -> QueryContextTableStructure {
+        let kept = columns.filter { used.contains($0.name.lowercased()) }
+        return QueryContextTableStructure(
+            columns: kept,
+            indexes: indexes,
+            indexesUnavailableReason: indexesUnavailableReason,
+            foreignKeys: foreignKeys,
+            foreignKeysUnavailableReason: foreignKeysUnavailableReason,
+            approximateRowCount: approximateRowCount,
+            omittedColumnCount: omittedColumnCount + columns.count - kept.count
+        )
     }
 }
 
@@ -228,5 +244,32 @@ struct QueryContextSnapshot: Equatable, Sendable {
 
     var unavailableTableNames: [String] {
         tables.filter(\.isUnavailable).map(\.name)
+    }
+}
+
+extension QueryContextSnapshot {
+    func keepingColumns(usedBy statement: String) -> QueryContextSnapshot {
+        let used = Set(QueryTableReferenceResolver.identifierTokens(in: statement).map { $0.lowercased() })
+        let trimmed = tables.map { table -> QueryContextTable in
+            guard case .described(let structure) = table.content else { return table }
+            return QueryContextTable(
+                name: table.name,
+                schema: table.schema,
+                kind: table.kind,
+                content: .described(structure.keepingColumns(named: used))
+            )
+        }
+        return QueryContextSnapshot(
+            engineName: engineName,
+            languageTag: languageTag,
+            serverVersion: serverVersion,
+            databaseName: databaseName,
+            schemaName: schemaName,
+            tables: trimmed,
+            notFound: notFound,
+            outsideScope: outsideScope,
+            notDescribed: notDescribed,
+            explainPlan: explainPlan
+        )
     }
 }
