@@ -20628,7 +20628,7 @@
         }
       }
     },
-    "After the values already in %@" : {
+    "After keyword expansion, Tab moves through fields such as %1$@, and %2$@ marks where the cursor ends up." : {
 
     },
     "Agent" : {
@@ -21414,6 +21414,9 @@
           }
         }
       }
+    },
+    "After the values already in %@" : {
+
     },
     "Airplane" : {
       "extractionState" : "manual",
@@ -36824,6 +36827,9 @@
         }
       }
     },
+    "Choose a location to save the diagram as %@." : {
+
+    },
     "Choose a location to save the diagram as PNG." : {
       "localizations" : {
         "fr" : {
@@ -49532,6 +49538,9 @@
     "Copy as Markdown" : {
 
     },
+    "Copy as Mermaid" : {
+
+    },
     "Copy as UPDATE Statements" : {
 
     },
@@ -56271,6 +56280,9 @@
         }
       }
     },
+    "Cycle" : {
+
+    },
     "Dameng cannot store a text value that contains a null character." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -56996,6 +57008,9 @@
         }
       }
     },
+    "Data type" : {
+
+    },
     "data type negotiation" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -57007,9 +57022,6 @@
           }
         }
       }
-    },
-    "Data type" : {
-
     },
     "Database" : {
       "extractionState" : "manual",
@@ -59058,9 +59070,6 @@
           }
         }
       }
-    },
-    "Cycle" : {
-
     },
     "DB needs a database index and a command" : {
       "extractionState" : "manual",
@@ -68605,6 +68614,12 @@
         }
       }
     },
+    "Edit Sequence" : {
+
+    },
+    "Edit Sequence…" : {
+
+    },
     "Edit the connection and choose its database type." : {
       "localizations" : {
         "fr" : {
@@ -68614,12 +68629,6 @@
           }
         }
       }
-    },
-    "Edit Sequence" : {
-
-    },
-    "Edit Sequence…" : {
-
     },
     "Edit Trigger" : {
       "localizations" : {
@@ -111604,6 +111613,9 @@
         }
       }
     },
+    "New Sequence…" : {
+
+    },
     "New and old images" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -112260,9 +112272,6 @@
           }
         }
       }
-    },
-    "New Sequence…" : {
-
     },
     "New Session" : {
       "localizations" : {
@@ -117953,9 +117962,6 @@
         }
       }
     },
-    "No sequences" : {
-
-    },
     "No servers yet." : {
       "localizations" : {
         "fr" : {
@@ -118745,6 +118751,9 @@
           }
         }
       }
+    },
+    "No sequences" : {
+
     },
     "No valid rows found in clipboard data." : {
       "localizations" : {
@@ -127856,6 +127865,12 @@
         }
       }
     },
+    "Owned by" : {
+
+    },
+    "Owned by %@" : {
+
+    },
     "output_path must end in .%@ for this format." : {
       "localizations" : {
         "fr" : {
@@ -127995,12 +128010,6 @@
           }
         }
       }
-    },
-    "Owned by" : {
-
-    },
-    "Owned by %@" : {
-
     },
     "Owned objects" : {
       "localizations" : {
@@ -159211,9 +159220,6 @@
         }
       }
     },
-    "Sequence Unavailable" : {
-
-    },
     "Sequences" : {
       "localizations" : {
         "fr" : {
@@ -160701,6 +160707,9 @@
         }
       }
     },
+    "Set Next Value…" : {
+
+    },
     "Set in connections.json." : {
 
     },
@@ -160745,9 +160754,6 @@
       }
     },
     "Set Next Value" : {
-
-    },
-    "Set Next Value…" : {
 
     },
     "Set Password" : {
@@ -169591,6 +169597,9 @@
           }
         }
       }
+    },
+    "Sequence Unavailable" : {
+
     },
     "Stack" : {
       "extractionState" : "manual",
@@ -181401,9 +181410,6 @@
         }
       }
     },
-    "The cache must be at least 1." : {
-
-    },
     "The catalog location is not a folder: %@" : {
       "localizations" : {
         "fr" : {
@@ -183332,6 +183338,9 @@
         }
       }
     },
+    "The diagram could not be rendered as %@." : {
+
+    },
     "The disconnect was cancelled." : {
       "localizations" : {
         "fr" : {
@@ -184246,9 +184255,6 @@
           }
         }
       }
-    },
-    "The increment cannot be zero." : {
-
     },
     "The index %@ is left out" : {
       "localizations" : {
@@ -185185,9 +185191,6 @@
           }
         }
       }
-    },
-    "The minimum must be less than the maximum." : {
-
     },
     "The name of a DIRECTORY object, not a path. The DBA who created it chose where it points." : {
       "extractionState" : "stale",
@@ -188808,6 +188811,15 @@
           }
         }
       }
+    },
+    "The cache must be at least 1." : {
+
+    },
+    "The increment cannot be zero." : {
+
+    },
+    "The minimum must be less than the maximum." : {
+
     },
     "The ssh-agent macOS runs, from SSH_AUTH_SOCK. 1Password and Secretive listen elsewhere." : {
       "extractionState" : "manual",
