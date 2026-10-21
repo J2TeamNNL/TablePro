@@ -145,10 +145,15 @@ internal final class LinkedFolderGitActions: ObservableObject {
         try await perform(.pull, in: repository) { client in
             let before = try await client.headCommit(in: repository.topLevel)
             try await client.pull(in: repository.topLevel)
-            guard let before, let after = try await client.headCommit(in: repository.topLevel), after != before else {
+            guard let before else { return }
+            let changed: [String]
+            do {
+                guard let after = try await client.headCommit(in: repository.topLevel), after != before else { return }
+                changed = try await client.changedPaths(from: before, to: after, in: repository.topLevel)
+            } catch {
+                Self.logger.error("Listing the pulled files failed: \(error.publicLogShape, privacy: .public)")
                 return
             }
-            let changed = try await client.changedPaths(from: before, to: after, in: repository.topLevel)
             await MainActor.run {
                 for path in changed {
                     MainContentCoordinator.reloadUnmodifiedFileTabs(at: repository.topLevel.appendingPathComponent(path))

@@ -134,6 +134,15 @@ internal struct GitCommand: Equatable, Sendable {
         )
     }
 
+    static func unstage(_ paths: [String], in directory: URL) -> GitCommand {
+        GitCommand(
+            arguments: ["reset", "--quiet", "--"] + paths,
+            workingDirectory: directory,
+            access: .write,
+            timeout: writeTimeout
+        )
+    }
+
     static func commit(_ paths: [String], message: String, in directory: URL) -> GitCommand {
         GitCommand(
             arguments: ["commit", "--only", "--message=\(message)", "--"] + paths,

@@ -109,15 +109,25 @@ internal struct GitClient: Sendable {
             let staged = try await runner.run(.stage(untrackedPaths, in: directory))
             guard staged.succeeded else { throw writeFailure(staged) }
         }
-        let committed = try await runner.run(.commit(paths, message: message, in: directory))
-        guard committed.succeeded else { throw writeFailure(committed) }
+        let committed: GitProcessResult
+        do {
+            committed = try await runner.run(.commit(paths, message: message, in: directory))
+        } catch {
+            await unstage(untrackedPaths, in: directory)
+            throw error
+        }
+        guard committed.succeeded else {
+            await unstage(untrackedPaths, in: directory)
+            throw writeFailure(committed)
+        }
     }
 
     func pull(in directory: URL) async throws {
         let result = try await runner.run(.pull(in: directory))
         guard !result.succeeded else { return }
         let failure = writeFailure(result)
-        if let divergence = try? await upstreamDivergence(in: directory), divergence.hasDiverged {
+        if Self.isNonFastForward(failure.message),
+           let divergence = try? await upstreamDivergence(in: directory), divergence.hasDiverged {
             throw GitPullDiverged(output: failure.message)
         }
         throw failure
@@ -126,6 +136,16 @@ internal struct GitClient: Sendable {
     func push(in directory: URL) async throws {
         let result = try await runner.run(.push(in: directory))
         guard result.succeeded else { throw writeFailure(result) }
+    }
+
+    private func unstage(_ paths: [String], in directory: URL) async {
+        guard !paths.isEmpty else { return }
+        let runner = runner
+        await Task.detached { _ = try? await runner.run(.unstage(paths, in: directory)) }.value
+    }
+
+    private static func isNonFastForward(_ output: String) -> Bool {
+        output.localizedCaseInsensitiveContains("fast-forward") || output.localizedCaseInsensitiveContains("diverging")
     }
 
     private func failure(_ result: GitProcessResult) -> GitCommandFailure {
