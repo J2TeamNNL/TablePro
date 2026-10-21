@@ -189,6 +189,9 @@ nonisolated public enum PostgreSQLObjectQueries {
                     THEN \(collationName("a.attcollation")) END
             """
         let rangeJoin = capabilities.hasRangeTypes ? "LEFT JOIN pg_catalog.pg_range r ON r.rngtypid = t.oid" : ""
+        let constraintValidated = capabilities.hasDomainConstraintValidation
+            ? domainCheckArray("con.convalidated::text")
+            : "NULL::text"
         let rangeSubtype = capabilities.hasRangeTypes
             ? "CASE WHEN t.typtype = 'r' THEN pg_catalog.format_type(r.rngsubtype, NULL) END"
             : "NULL::text"
@@ -249,7 +252,7 @@ nonisolated public enum PostgreSQLObjectQueries {
                 \(rangeCollation) AS range_collation,
                 \(rangeMultirange) AS range_multirange,
                 pg_catalog.quote_ident(n.nspname) || '.' || pg_catalog.quote_ident(t.typname) AS spelling,
-                \(domainCheckArray("con.convalidated::text")) AS constraint_validated
+                \(constraintValidated) AS constraint_validated
             FROM pg_catalog.pg_type t
             JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
             LEFT JOIN pg_catalog.pg_class c ON c.oid = t.typrelid

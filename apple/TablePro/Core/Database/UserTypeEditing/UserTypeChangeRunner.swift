@@ -33,14 +33,14 @@ struct UserTypeChangePlan: Equatable, Sendable {
         }
     }
 
-    /// Every change is addressed by the type's server name, so a rename has to be the last step:
-    /// the editor keeps it at the end of the queue for that reason.
+    /// Every change is addressed by the type's server name, so a rename runs last.
     static func build(
         type: UserDefinedTypeInfo,
         changes: [StagedTypeChange],
         driver: DatabaseDriver
     ) throws -> UserTypeChangePlan {
-        let steps = try changes.map { staged -> Step in
+        let ordered = changes.filter { $0.property != .name } + changes.filter { $0.property == .name }
+        let steps = try ordered.map { staged -> Step in
             guard let statements = driver.alterUserDefinedTypeStatements(type: type, change: staged.change),
                   !statements.isEmpty
             else { throw BuildError.unsupported(staged.summary) }

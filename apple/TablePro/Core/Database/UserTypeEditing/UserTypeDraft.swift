@@ -114,6 +114,9 @@ struct UserTypeDraft: Equatable {
         switch staged.change {
         case .rename(let newName):
             guard let newName = Self.nonEmpty(newName) else { return Self.emptyName }
+            guard newName == newName.trimmingCharacters(in: .whitespacesAndNewlines) else {
+                return String(localized: "A name cannot start or end with a space.")
+            }
             name = newName
         case .setComment(let value):
             comment = Self.nonEmpty(value)

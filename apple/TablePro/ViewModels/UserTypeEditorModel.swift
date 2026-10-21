@@ -189,6 +189,7 @@ final class UserTypeEditorModel: ObservableObject {
             next.removeAll { $0.property == property }
             guard !restoresServerValue(change) else {
                 changes = next
+                saveSummary = nil
                 return
             }
         }
