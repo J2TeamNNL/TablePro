@@ -51,6 +51,15 @@ struct SchemaRelevanceRankerTests {
         #expect(SchemaRelevanceRanker.rank([], for: "orders").isEmpty)
     }
 
+    @Test("A table name inside a longer word gets no name boost")
+    func nameInsideLongerWordIsNotBoosted() {
+        let documents = [
+            SchemaRelevanceDocument(name: "data"),
+            SchemaRelevanceDocument(name: "events", details: ["metadata"])
+        ]
+        #expect(SchemaRelevanceRanker.rank(documents, for: "show the metadata").first == 1)
+    }
+
     @Test("Equal scores keep the listed order")
     func tiesKeepListedOrder() {
         let twins = [

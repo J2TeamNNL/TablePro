@@ -122,12 +122,10 @@ extension AIChatViewModel {
         let assistantID = assistantMessage.id
         streamingState = .streaming(assistantID: assistantID)
 
+        let question = messages.last { $0.role == .user }?.plainText
         prepTask = Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             if settings.includeSchema {
-                let question = await MainActor.run {
-                    self.messages.last { $0.role == .user }?.plainText
-                }
                 await self.ensureSchemaLoaded(relevantTo: question)
             }
             if Task.isCancelled { return }

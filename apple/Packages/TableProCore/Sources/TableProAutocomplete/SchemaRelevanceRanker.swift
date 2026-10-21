@@ -26,7 +26,7 @@ public enum SchemaRelevanceRanker {
 
         let index = Index(documents: documents)
         let matches = queryWords.flatMap { index.matches(for: $0) }
-        let compactQuery = words(in: query).joined()
+        let orderedQueryWords = words(in: query)
 
         var scored: [(offset: Int, score: Double)] = []
         for (offset, terms) in index.termCounts.enumerated() {
@@ -35,8 +35,8 @@ public enum SchemaRelevanceRanker {
                 guard let frequency = terms[match.term] else { continue }
                 score += match.weight * index.bm25(frequency: frequency, idfTerm: match.term, length: index.lengths[offset])
             }
-            let compactName = index.nameWords[offset].joined()
-            if compactName.count >= fuzzyMinLength, compactQuery.contains(compactName) {
+            let nameWords = index.nameWords[offset]
+            if nameWords.joined().count >= fuzzyMinLength, containsSequence(orderedQueryWords, nameWords) {
                 score += fullNameBoost
             }
             if score > 0 {
@@ -47,6 +47,13 @@ public enum SchemaRelevanceRanker {
         return scored
             .sorted { $0.score != $1.score ? $0.score > $1.score : $0.offset < $1.offset }
             .map(\.offset)
+    }
+
+    private static func containsSequence(_ words: [String], _ sequence: [String]) -> Bool {
+        guard !sequence.isEmpty, words.count >= sequence.count else { return false }
+        return (0...(words.count - sequence.count)).contains { start in
+            Array(words[start..<(start + sequence.count)]) == sequence
+        }
     }
 
     static func words(in text: String) -> [String] {
@@ -103,8 +110,10 @@ public enum SchemaRelevanceRanker {
     }
 
     static func trigramSimilarity(_ lhs: String, _ rhs: String) -> Double {
-        let left = trigrams(lhs)
-        let right = trigrams(rhs)
+        trigramSimilarity(trigrams(lhs), trigrams(rhs))
+    }
+
+    private static func trigramSimilarity(_ left: Set<String>, _ right: Set<String>) -> Double {
         guard !left.isEmpty, !right.isEmpty else { return 0 }
         return Double(left.intersection(right).count) / Double(left.union(right).count)
     }
@@ -125,6 +134,7 @@ public enum SchemaRelevanceRanker {
         let nameWords: [[String]]
         let lengths: [Int]
         let documentFrequency: [String: Int]
+        let fuzzyTerms: [(term: String, trigrams: Set<String>)]
         let averageLength: Double
 
         init(documents: [SchemaRelevanceDocument]) {
@@ -157,6 +167,9 @@ public enum SchemaRelevanceRanker {
             self.nameWords = nameWords
             self.lengths = lengths
             self.documentFrequency = documentFrequency
+            self.fuzzyTerms = documentFrequency.keys
+                .filter { $0.count >= SchemaRelevanceRanker.fuzzyMinLength }
+                .map { ($0, SchemaRelevanceRanker.trigrams($0)) }
             let total = lengths.reduce(0, +)
             self.averageLength = documents.isEmpty ? 0 : max(Double(total) / Double(documents.count), 1)
         }
@@ -166,10 +179,10 @@ public enum SchemaRelevanceRanker {
                 return [Match(term: word, weight: 1)]
             }
             guard word.count >= SchemaRelevanceRanker.fuzzyMinLength else { return [] }
-            return documentFrequency.keys.compactMap { term in
-                guard term.count >= SchemaRelevanceRanker.fuzzyMinLength else { return nil }
-                let similarity = SchemaRelevanceRanker.trigramSimilarity(word, term)
-                return similarity >= SchemaRelevanceRanker.fuzzyThreshold ? Match(term: term, weight: similarity) : nil
+            let wordTrigrams = SchemaRelevanceRanker.trigrams(word)
+            return fuzzyTerms.compactMap { entry in
+                let similarity = SchemaRelevanceRanker.trigramSimilarity(wordTrigrams, entry.trigrams)
+                return similarity >= SchemaRelevanceRanker.fuzzyThreshold ? Match(term: entry.term, weight: similarity) : nil
             }
         }
 

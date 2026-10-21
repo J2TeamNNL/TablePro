@@ -76,7 +76,9 @@ extension AIChatViewModel {
         }
         inFlightSchemaLoad = task
         await task.value
-        inFlightSchemaLoad = nil
+        if inFlightSchemaLoad == task {
+            inFlightSchemaLoad = nil
+        }
     }
 
     func ensureSavedQueryLoaded(id: UUID) async {
@@ -210,12 +212,15 @@ extension AIChatViewModel {
     private func prioritizeSchema(for question: String) {
         let text = [question, currentQuery ?? ""].joined(separator: "\n")
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        relevantTableNames = AISchemaContext.relevantTableNames(
+        let ranked = AISchemaContext.relevantTableNames(
             in: tables,
             columnsByTable: columnsByTable,
             question: text,
             maxTables: services.appSettings.ai.maxSchemaTables
         )
+        if !ranked.isEmpty {
+            relevantTableNames = ranked
+        }
     }
 
     private func orderedTables() -> [TableInfo] {
