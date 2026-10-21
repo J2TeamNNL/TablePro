@@ -12,8 +12,10 @@ import Foundation
 /// query would be three chances for the per-table list and the schema-wide list to drift apart.
 public enum SQLiteMasterQueries {
 // swiftlint:enable inclusive_language
+    // `.literal` compares code units: the default compares grapheme clusters and skips a quote a
+    // combining mark follows, which then ends the literal early.
     public static func escapeLiteral(_ value: String) -> String {
-        value.replacingOccurrences(of: "'", with: "''")
+        value.replacingOccurrences(of: "'", with: "''", options: .literal)
     }
 
     public static let attachedDatabasesQuery = """
@@ -29,7 +31,7 @@ public enum SQLiteMasterQueries {
     }
 
     public static func quoteIdentifier(_ name: String) -> String {
-        "\"\(name.replacingOccurrences(of: "\"", with: "\"\""))\""
+        "\"\(name.replacingOccurrences(of: "\"", with: "\"\"", options: .literal))\""
     }
 
     public static func catalogTable(schema: String?) -> String {

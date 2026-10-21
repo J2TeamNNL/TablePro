@@ -46,6 +46,7 @@ actor DuckDBConnectionActor {
     /// The databases the connection attaches itself, which a reopen attaches again, so holding them
     /// is no reason to keep the file.
     private var configuredAttachments: [AttachedDatabase] = []
+    private var attachmentsReadOnly = false
 
     /// `duckdb_settings()` reports no default, so a setting the user changed is visible only
     /// against what the connection opened with.
@@ -80,8 +81,9 @@ actor DuckDBConnectionActor {
         sessionSetup = statements
     }
 
-    func setConfiguredAttachments(_ attachments: [AttachedDatabase]) {
+    func setConfiguredAttachments(_ attachments: [AttachedDatabase], readOnly: Bool) {
         configuredAttachments = attachments
+        attachmentsReadOnly = readOnly
     }
 
     func captureSettingsBaseline() {
@@ -93,6 +95,7 @@ actor DuckDBConnectionActor {
         openSpec = nil
         sessionSetup = []
         configuredAttachments = []
+        attachmentsReadOnly = false
         baselineSettings = [:]
         hasOpenTransaction = false
         isReleased = false
@@ -353,7 +356,7 @@ actor DuckDBConnectionActor {
     private func readHeldStateCounts() throws -> (catalogs: Int, sessionObjects: Int) {
         let result = try runInternalQuery(DuckDBSchemaQueries.sessionHeldState(
             excluding: configuredAttachments,
-            readOnly: openSpec?.accessMode == .readOnly
+            readOnly: attachmentsReadOnly
         ))
         guard let row = result.rows.first, row.count >= 2 else {
             throw DuckDBPluginError.queryFailed("DuckDB reported no session state")

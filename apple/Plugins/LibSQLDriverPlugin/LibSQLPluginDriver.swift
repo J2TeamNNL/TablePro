@@ -548,15 +548,14 @@ final class LibSQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     // MARK: - Identifier Quoting
 
     func quoteIdentifier(_ name: String) -> String {
-        let escaped = name.replacingOccurrences(of: "\"", with: "\"\"")
+        let escaped = name.replacingOccurrences(of: "\"", with: "\"\"", options: .literal)
         return "\"\(escaped)\""
     }
 
     func escapeStringLiteral(_ value: String) -> String {
-        var result = value
-        result = result.replacingOccurrences(of: "'", with: "''")
-        result = result.replacingOccurrences(of: "\0", with: "")
-        return result
+        value
+            .replacingOccurrences(of: "\0", with: "", options: .literal)
+            .replacingOccurrences(of: "'", with: "''", options: .literal)
     }
 
     func castColumnToText(_ column: String) -> String {

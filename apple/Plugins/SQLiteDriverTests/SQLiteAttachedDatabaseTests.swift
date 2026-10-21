@@ -124,6 +124,19 @@ struct SQLiteAttachedDatabaseTests {
         #expect(try await driver.fetchTableMetadata(table: "users", schema: "auth").rowCount == 1)
     }
 
+    @Test("A schema name carrying a combining mark after a quote reads nothing it smuggled in")
+    func schemaNameCannotInject() async throws {
+        try await prepareFiles()
+        let driver = try await connect(attaching: [AttachedDatabase(name: "auth", path: path("auth.db"))])
+        defer { driver.disconnect() }
+
+        let smuggled = "sqlite_master\"\u{301} WHERE 0 UNION ALL SELECT 'smuggled', 'table' /*"
+        let tables = try? await driver.fetchTables(schema: smuggled)
+        #expect(tables?.contains { $0.name == "smuggled" } != true)
+        let columns = try? await driver.fetchColumns(table: "users", schema: "x'\u{301}) UNION SELECT 1,2,3,4,5,6,7 --")
+        #expect(columns?.isEmpty ?? true)
+    }
+
     @Test("Renaming a table in an attached database leaves the main table of that name alone")
     func renameStaysInTheAttachedDatabase() async throws {
         try await prepareFiles()

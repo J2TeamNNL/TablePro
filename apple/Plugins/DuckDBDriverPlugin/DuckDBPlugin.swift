@@ -326,7 +326,9 @@ final class DuckDBPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         }
         // After the position is read: with more than one catalog open and nothing `USE`d yet, the
         // opened file's catalog can no longer be told from the attached ones.
-        await attachConfiguredDatabases(readOnly: spec.accessMode == .readOnly)
+        // A CSV, Parquet or in-memory main file opens read-write whatever the setting says, but an
+        // attached database file can still be written, so it follows the setting itself.
+        await attachConfiguredDatabases(readOnly: config.additionalFields[DuckDBAccessMode.fieldId] == "true")
         await connectionActor.captureSettingsBaseline()
         await startIdleReleaseIfRequested()
     }
@@ -469,7 +471,7 @@ final class DuckDBPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
             _ = try await actor.executeQuery(DuckDBSchemaQueries.attach(database, readOnly: readOnly))
             attached.append(database)
         }
-        await actor.setConfiguredAttachments(attached)
+        await actor.setConfiguredAttachments(attached, readOnly: readOnly)
         stateLock.withLock {
             _attachSetup = attached.map { DuckDBSchemaQueries.attach($0, readOnly: readOnly) }
             _connectionWarning = AttachedDatabaseAttacher.warning(for: failures)

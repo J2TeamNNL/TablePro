@@ -28,6 +28,13 @@ struct SQLiteAttachedSchemaQueryTests {
             == #""users""#)
     }
 
+    @Test("A quote followed by a combining mark is still doubled, so a name cannot end its quoting early")
+    func quotingCountsCodeUnits() {
+        let name = "a\"\u{301}b'\u{301}c"
+        #expect(SQLiteMasterQueries.quoteIdentifier(name).unicodeScalars.filter { $0 == "\"" }.count == 4)
+        #expect(SQLiteMasterQueries.escapeLiteral(name).unicodeScalars.filter { $0 == "'" }.count == 2)
+    }
+
     @Test("The main database's queries are the ones the schema-less overloads always produced")
     func mainQueriesUnchanged() {
         #expect(SQLiteIndexCatalog.indexesQuery(table: "t") == SQLiteIndexCatalog.indexesQuery(table: "t", schema: nil))
