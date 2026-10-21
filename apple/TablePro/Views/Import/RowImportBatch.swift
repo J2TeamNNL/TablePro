@@ -528,14 +528,15 @@ internal final class RowImportBatch: ObservableObject {
         return nil
     }
 
-    /// The first file into a table clears it, and the second clears it again, taking the first file's rows.
+    /// The first file into a table clears it, and the second clears it again, taking the first file's rows. Grouped by
+    /// the table each file ends in, new or existing, since a table a failed run created is offered as existing too.
     private func clearedTwice(in included: [File]) -> String? {
-        let grouped = Dictionary(grouping: included.filter { $0.target.destination == .existingTable }) {
-            $0.target.existingTable?.lowercased() ?? ""
+        let grouped = Dictionary(grouping: included.filter { $0.target.tableName != nil }) {
+            $0.target.tableName?.lowercased() ?? ""
         }
         for (_, group) in grouped.sorted(by: { $0.key < $1.key }) where group.count > 1 {
             let clears = group.contains { configuration(for: $0.formatId)?.deleteExistingRows == true }
-            if clears { return group.first?.target.existingTable }
+            if clears { return group.first?.target.tableName }
         }
         return nil
     }

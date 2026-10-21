@@ -180,6 +180,21 @@ struct RowImportBatchTests {
         #expect(batch.problem?.hasPrefix("orders takes rows from two files") == true)
     }
 
+    @Test("Delete existing rows refuses a table one file creates and another fills")
+    func clearingANewTableTwiceIsAProblem() async {
+        let catalog = Catalog()
+        catalog.configurations["csv"] = Self.configuration(deleteExisting: true)
+        let batch = await makeBatch(["orders.csv", "march.csv"], catalog: catalog)
+        batch.planner.recordCreated(TableScope(table: "orders", in: scope), createTableSQL: "CREATE TABLE orders (id TEXT)")
+        catalog.tables = ["orders"]
+        catalog.columns["orders"] = ["id", "name"]
+        await batch.loadTables()
+        batch.choose(.existingTable("orders"), for: batch.files[1].id)
+        await batch.readFiles()
+
+        #expect(batch.problem?.hasPrefix("orders takes rows from two files") == true)
+    }
+
     @Test("A file that cannot be read names itself, and leaving it out lets the rest import")
     func unreadableFileCanBeLeftOut() async {
         let catalog = Catalog()
