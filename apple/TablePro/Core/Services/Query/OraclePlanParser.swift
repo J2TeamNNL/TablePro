@@ -83,7 +83,7 @@ struct OraclePlanParser: QueryPlanParser {
             var actualRows: Int?
             var actualTime: Double?
             if let starts, starts > 0 {
-                actualRows = Self.double(row["LAST_OUTPUT_ROWS"]).flatMap { Self.bounded($0 / Double(starts)) }
+                actualRows = Self.double(row["LAST_OUTPUT_ROWS"]).flatMap { QueryPlanTreeBuilder.boundedInt($0 / Double(starts)) }
                 actualTime = lastElapsedMicroseconds.map { $0 / 1_000 / Double(starts) }
             } else if starts == 0 {
                 properties["Execution"] = String(localized: "Never executed")
@@ -124,13 +124,7 @@ struct OraclePlanParser: QueryPlanParser {
         }
 
         static func int(_ value: Any?) -> Int? {
-            double(value).flatMap(bounded)
-        }
-
-        static func bounded(_ value: Double) -> Int? {
-            let rounded = value.rounded()
-            guard rounded.isFinite, rounded >= Double(Int.min), rounded < Double(Int.max) else { return nil }
-            return Int(rounded)
+            double(value).flatMap(QueryPlanTreeBuilder.boundedInt)
         }
     }
 }

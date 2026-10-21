@@ -63,6 +63,10 @@ struct ExplainRequest: Equatable {
         driverStep == nil ? sql : nil
     }
 
+    var historySQL: String {
+        driverStep == nil ? sql : "EXPLAIN \(subjectSQL)"
+    }
+
     // What the execution gate classifies, which reads the text as well as the kind.
     var gatedSQL: String {
         driverStep.map { Self.gatedSQL(subject: subjectSQL, runsStatement: $0.runsStatement) } ?? sql

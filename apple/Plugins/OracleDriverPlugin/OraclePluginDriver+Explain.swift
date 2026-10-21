@@ -43,11 +43,17 @@ extension OraclePluginDriver {
         do {
             rows = try await core.executeQuery(OracleExplainPlan.planRowsQuery(statementId: statementId))
         } catch {
-            _ = try? await core.executeQuery(OracleExplainPlan.deleteStatement(statementId: statementId))
+            await discardPlanRows(statementId: statementId, on: core)
             throw error
         }
-        _ = try? await core.executeQuery(OracleExplainPlan.deleteStatement(statementId: statementId))
+        await discardPlanRows(statementId: statementId, on: core)
         return rows
+    }
+
+    private func discardPlanRows(statementId: String, on core: OracleCoreConnection) async {
+        // Detached from the caller's cancellation, so a stopped plan still removes its PLAN_TABLE rows.
+        let delete = OracleExplainPlan.deleteStatement(statementId: statementId)
+        _ = try? await Task { try await core.executeQuery(delete) }.value
     }
 
     private func actualPlan(of statement: String, on core: OracleCoreConnection) async throws -> OracleRawResult {
@@ -60,7 +66,8 @@ extension OraclePluginDriver {
         let sessionLevel = probe.rows.first?.first?.stringValue ?? ""
         let restore = OracleExplainPlan.setStatisticsLevel(sessionLevel)
         let gathers = sessionLevel.uppercased() == OracleExplainPlan.gatheringLevel
-        if !gathers, let gather = OracleExplainPlan.setStatisticsLevel(OracleExplainPlan.gatheringLevel) {
+        let raises = !gathers && restore != nil
+        if raises, let gather = OracleExplainPlan.setStatisticsLevel(OracleExplainPlan.gatheringLevel) {
             _ = try await core.executeQuery(gather)
         }
         let answer: Result<OracleRawResult, Error>
@@ -74,7 +81,7 @@ extension OraclePluginDriver {
         } catch {
             answer = .failure(error)
         }
-        if !gathers, let restore {
+        if raises, let restore {
             // Detached from the caller's cancellation, so a stopped statement still leaves the session as it was.
             _ = try? await Task { try await core.executeQuery(restore) }.value
         }

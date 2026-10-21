@@ -109,13 +109,16 @@ extension MainContentCoordinator {
 
         // EXPLAIN ANALYZE and an actual plan run the statement, and a CREATE TABLE AS among them changes the catalog.
         let ranWrite = request.operationKind(databaseType: conn.type).declaresWrite
+        let policy: DriverCancellationPolicy = ranWrite && request.driverStep != nil
+            ? .protectedWrite
+            : .cancellableRead(lease)
         let explainTask = Task { [weak self] in
             guard let self else { return }
             do {
                 let fetchResult = try await services.databaseManager.withScopedDriver(
                     scope: scope,
                     route: services.databaseManager.executionRoute(for: scope),
-                    cancellation: .cancellableRead(lease)
+                    cancellation: policy
                 ) { [queryExecutor] driver in
                     if let step = request.driverStep {
                         return try await QueryExecutor.fetchExplainPlan(
@@ -198,7 +201,7 @@ extension MainContentCoordinator {
                     recordHistory(
                         QueryHistoryRecordRequest(
                             id: historyId,
-                            query: request.sql,
+                            query: request.historySQL,
                             connectionId: conn.id,
                             databaseName: captured.context.identity.scope.databaseName,
                             databaseType: conn.type,
@@ -248,7 +251,7 @@ extension MainContentCoordinator {
 
                     recordHistory(
                         QueryHistoryRecordRequest(
-                            query: request.sql,
+                            query: request.historySQL,
                             connectionId: conn.id,
                             databaseName: queryExecutionCoordinator.historyDatabaseName(tabId: tabId),
                             databaseType: conn.type,

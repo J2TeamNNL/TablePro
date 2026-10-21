@@ -8,6 +8,13 @@
 import Foundation
 
 enum QueryPlanTreeBuilder {
+    // A count past Int.max, which a large cross join can reach, is left out rather than trapping.
+    static func boundedInt(_ value: Double) -> Int? {
+        let rounded = value.rounded()
+        guard rounded.isFinite, rounded >= Double(Int.min), rounded < Double(Int.max) else { return nil }
+        return Int(rounded)
+    }
+
     /// Builds a forest from a pre-order list where each element carries its own depth.
     /// An element belongs to the closest preceding element with a smaller depth.
     static func forest<Element>(

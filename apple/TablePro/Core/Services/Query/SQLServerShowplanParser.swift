@@ -211,6 +211,10 @@ final class SQLServerShowplanReader: NSObject, XMLParserDelegate {
             return "Spill to tempdb\(level)"
         case "ColumnsWithNoStatistics":
             return "Columns with no statistics"
+        case "Wait":
+            let type = attributes["WaitType"] ?? "Wait"
+            let time = attributes["WaitTime"].map { " (\($0) ms)" } ?? ""
+            return type + time
         default:
             return words(elementName)
         }
@@ -261,14 +265,14 @@ final class SQLServerShowplanReader: NSObject, XMLParserDelegate {
         var actualTime: Double?
         var actualLoops: Int?
         if let counters = source.counters {
-            actualLoops = boundedInt(counters.executions)
+            actualLoops = QueryPlanTreeBuilder.boundedInt(counters.executions)
             if counters.executions > 0 {
-                actualRows = boundedInt(counters.rows / counters.executions)
+                actualRows = QueryPlanTreeBuilder.boundedInt(counters.rows / counters.executions)
                 actualTime = counters.elapsedMilliseconds.map { $0 / counters.executions }
             } else {
                 properties["Execution"] = String(localized: "Never executed")
             }
-            properties["Logical Reads"] = counters.logicalReads.flatMap(boundedInt).map(String.init)
+            properties["Logical Reads"] = counters.logicalReads.flatMap(QueryPlanTreeBuilder.boundedInt).map(String.init)
         }
 
         var node = QueryPlanNode(
@@ -278,7 +282,7 @@ final class SQLServerShowplanReader: NSObject, XMLParserDelegate {
             alias: source.object?["Alias"].map(unbracketed),
             estimatedStartupCost: nil,
             estimatedTotalCost: attributes["EstimatedTotalSubtreeCost"].flatMap(Double.init),
-            estimatedRows: attributes["EstimateRows"].flatMap(Double.init).flatMap(boundedInt),
+            estimatedRows: attributes["EstimateRows"].flatMap(Double.init).flatMap(QueryPlanTreeBuilder.boundedInt),
             estimatedWidth: attributes["AvgRowSize"].flatMap(Int.init),
             actualStartupTime: nil,
             actualTotalTime: actualTime,
@@ -288,7 +292,7 @@ final class SQLServerShowplanReader: NSObject, XMLParserDelegate {
             children: source.children
         )
         node.warnings = source.warnings
-        node.reportedTotalActualRows = source.counters.flatMap { boundedInt($0.rows) }
+        node.reportedTotalActualRows = source.counters.flatMap { QueryPlanTreeBuilder.boundedInt($0.rows) }
         return node
     }
 
@@ -304,13 +308,6 @@ final class SQLServerShowplanReader: NSObject, XMLParserDelegate {
             statement += " INCLUDE (\(included.joined(separator: ", ")))"
         }
         return QueryPlanMissingIndex(impact: pending.impact, createStatement: statement + ";")
-    }
-
-    // An estimate past Int.max, which a large cross join can reach, is left out rather than trapping.
-    private static func boundedInt(_ value: Double) -> Int? {
-        let rounded = value.rounded()
-        guard rounded.isFinite, rounded >= Double(Int.min), rounded < Double(Int.max) else { return nil }
-        return Int(rounded)
     }
 
     private static func unbracketed(_ name: String) -> String {
