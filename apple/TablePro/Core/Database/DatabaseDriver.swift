@@ -114,6 +114,8 @@ protocol DatabaseDriver: AnyObject, Sendable {
     /// text statement by statement instead. A server error inside the batch is part of the answer, not a throw.
     func executeBatch(query: String, rowCap: Int?, parameters: [Any?]?) async throws -> QueryBatchResult?
 
+    func explainPlan(statement: String, variantId: String) async throws -> QueryResult
+
     // MARK: - Schema Operations
 
     /// Fetch all tables in the database
@@ -490,6 +492,10 @@ extension DatabaseDriver {
     var supportsResultSetBatches: Bool { false }
 
     func executeBatch(query: String, rowCap: Int?, parameters: [Any?]?) async throws -> QueryBatchResult? { nil }
+
+    func explainPlan(statement: String, variantId: String) async throws -> QueryResult {
+        throw PluginDriverUnsupportedOperation.explainPlan
+    }
 
     func fetchIndexDDL(table: String) async throws -> [String] { [] }
 
