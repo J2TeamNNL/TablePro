@@ -120,6 +120,16 @@ struct AISchemaContextRelevanceTests {
         #expect(AISchemaContext.indices(of: references, in: tables, defaultSchema: "public") == [1])
     }
 
+    @Test("Two tables that differ only by case resolve to the exact spelling")
+    func exactSpellingWins() {
+        let tables = [
+            TestFixtures.makeTableInfo(name: "Orders", schema: "public"),
+            TestFixtures.makeTableInfo(name: "orders", schema: "public")
+        ]
+        let references = AISchemaContext.referencedTables(in: "SELECT * FROM \"orders\"", grammar: Self.grammar)
+        #expect(AISchemaContext.indices(of: references, in: tables, defaultSchema: "public") == [1])
+    }
+
     @Test("A query that ends in a comment still puts its tables first")
     func queryEndingInCommentCounts() {
         #expect(Self.names(question: "", query: "SELECT * FROM invoices -- unpaid ones") == ["invoices"])

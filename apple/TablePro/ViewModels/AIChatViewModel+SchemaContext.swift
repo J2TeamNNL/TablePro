@@ -275,8 +275,12 @@ extension AIChatViewModel {
             uniquingKeysWith: { first, _ in first }
         )
         var merged = columnsByTable
+        // A table the read left out, such as a SQLite view, stays unknown, so the ranker never
+        // takes this read for a complete one.
         for table in tables where (merged[table.name] ?? []).isEmpty {
-            merged[table.name] = allColumns[table.name] ?? byFoldedName[table.name.lowercased()] ?? []
+            if let columns = allColumns[table.name] ?? byFoldedName[table.name.lowercased()] {
+                merged[table.name] = columns
+            }
         }
         columnsByTable = merged
     }

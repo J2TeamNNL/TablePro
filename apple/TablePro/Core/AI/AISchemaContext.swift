@@ -212,13 +212,18 @@ struct AISchemaContext {
             let named = tables.indices.filter {
                 tables[$0].name.caseInsensitiveCompare(reference.tableName) == .orderedSame
             }
+            // Two tables can differ only by case, so the exact spelling wins.
+            let candidates = named.filter { tables[$0].name == reference.tableName }
+                + named.filter { tables[$0].name != reference.tableName }
             let schema = reference.schema ?? defaultSchema
-            let inSchema = named.first { offset in
-                guard let schema, let tableSchema = tables[offset].schema else { return false }
-                return tableSchema.caseInsensitiveCompare(schema) == .orderedSame
+            func inSchema(_ matches: (String, String) -> Bool) -> Int? {
+                guard let schema else { return nil }
+                return candidates.first { tables[$0].schema.map { matches($0, schema) } ?? false }
             }
-            let unscoped = named.first { tables[$0].schema == nil }
-            let match = inSchema ?? unscoped ?? (reference.schema == nil ? named.first : nil)
+            let match = inSchema(==)
+                ?? inSchema { $0.caseInsensitiveCompare($1) == .orderedSame }
+                ?? candidates.first { tables[$0].schema == nil }
+                ?? (reference.schema == nil ? candidates.first : nil)
             if let match, !result.contains(match) {
                 result.append(match)
             }
