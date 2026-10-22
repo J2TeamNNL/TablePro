@@ -7984,6 +7984,8 @@
       }
     },
     "Disabled" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "ko" : {
           "stringUnit" : {
@@ -10857,6 +10859,10 @@
         }
       }
     },
+    "GSS Encryption" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Half Shield" : {
       "extractionState" : "manual",
       "generatesSymbol" : false
@@ -12516,6 +12522,10 @@
     "Keep your connections, groups, tags, and saved queries the same on your iPhone, iPad, and Mac." : {
 
     },
+    "Kerberos (GSSAPI)" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Kerberos authentication failed: %@" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -12545,6 +12555,13 @@
           }
         }
       }
+    },
+    "Kerberos Principal" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "Kerberos Unavailable" : {
+
     },
     "Key" : {
       "extractionState" : "manual",
@@ -15848,6 +15865,9 @@
     "Open it on the Mac, or change it there to connect by host and port." : {
 
     },
+    "Open it on the Mac, or change it there to sign in with a password." : {
+
+    },
     "Open Sample Database" : {
       "localizations" : {
         "ko" : {
@@ -16955,7 +16975,8 @@
       }
     },
     "Preferred" : {
-
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "Previous Page" : {
       "localizations" : {
@@ -18698,6 +18719,8 @@
       }
     },
     "Required" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
       "localizations" : {
         "ko" : {
           "stringUnit" : {
@@ -25771,6 +25794,10 @@
     "These settings stay on this device. The Mac reads them from its AWS profile." : {
 
     },
+    "This account signs in with Kerberos. Set Authentication to Kerberos (GSSAPI), then reconnect." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "This account uses a password verifier the database driver does not support." : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -26070,6 +26097,10 @@
     },
     "This connection signs in with IAM, not a password. Check that the database user is set up for IAM sign-in." : {
 
+    },
+    "This connection signs in with Kerberos, which TablePro on iPhone and iPad can't do." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "This connection signs in with the AWS profile \"%@\", which is read from files on the Mac." : {
 

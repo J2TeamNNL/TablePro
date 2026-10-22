@@ -155,7 +155,7 @@ targetTemplates:
   MySQLLinkage:
     dependencies:
       - package: TableProCore
-        products: [TableProGeometry, TableProLogRedaction, TableProMySQLCore, TableProSQLVocabulary]
+        products: [TableProCoreTypes, TableProGeometry, TableProKerberos, TableProLogRedaction, TableProMySQLCore, TableProSQLVocabulary]
     settings:
       base:
         HEADER_SEARCH_PATHS:
@@ -184,7 +184,7 @@ targetTemplates:
   PostgreSQLLinkage:
     dependencies:
       - package: TableProCore
-        products: [TableProLogRedaction, TableProPostgreSQLCore, TableProSQLVocabulary]
+        products: [TableProCoreTypes, TableProKerberos, TableProLogRedaction, TableProPostgreSQLCore, TableProSQLVocabulary]
     settings:
       base:
         HEADER_SEARCH_PATHS:
@@ -1089,7 +1089,7 @@ targets:
       principalClass: MSSQLPlugin
     dependencies:
       - package: TableProCore
-        products: [TableProCoreTypes, TableProLogRedaction, TableProMSSQLCore, TableProSQLVocabulary]
+        products: [TableProCoreTypes, TableProKerberos, TableProLogRedaction, TableProMSSQLCore, TableProSQLVocabulary]
     settings:
       base:
         HEADER_SEARCH_PATHS:
