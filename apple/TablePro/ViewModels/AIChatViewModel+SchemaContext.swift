@@ -5,6 +5,7 @@
 
 import Foundation
 import os
+import TableProAutocomplete
 import TableProPluginKit
 
 extension AIChatViewModel {
@@ -60,11 +61,7 @@ extension AIChatViewModel {
         await task.value
     }
 
-    /// With a `question`, the tables that match it get their columns loaded and listed first.
     func ensureSchemaLoaded(relevantTo question: String? = nil) async {
-        if let question {
-            prioritizeSchema(for: question)
-        }
         if let inFlight = inFlightSchemaLoad {
             await inFlight.value
             // The load in flight fetched for the previous order; a new order may need other tables.
@@ -72,6 +69,11 @@ extension AIChatViewModel {
         }
         let task: Task<Void, Never> = Task { [weak self] in
             guard let self else { return }
+            if let question {
+                await self.loadEveryColumnForRanking()
+                guard !Task.isCancelled else { return }
+                self.prioritizeSchema(for: question)
+            }
             await self.runSchemaLoad()
         }
         inFlightSchemaLoad = task
@@ -123,7 +125,8 @@ extension AIChatViewModel {
                     }
                 }
             }
-            for await (name, cols) in group {
+            // A load cancelled by a session reset still finishes its reads; they belong to the old session.
+            for await (name, cols) in group where !Task.isCancelled {
                 columnsByTable[name] = cols
             }
         }
@@ -210,17 +213,60 @@ extension AIChatViewModel {
     }
 
     private func prioritizeSchema(for question: String) {
-        let text = [question, currentQuery ?? ""].joined(separator: "\n")
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let ranked = AISchemaContext.relevantTableNames(
             in: tables,
             columnsByTable: columnsByTable,
-            question: text,
+            question: question,
+            queryReferences: editorQueryReferences(),
             maxTables: services.appSettings.ai.maxSchemaTables
         )
         if !ranked.isEmpty {
             relevantTableNames = ranked
         }
+    }
+
+    // The editor steers the order only while the model is shown the editor's query.
+    private func editorQueryReferences() -> [TableReference] {
+        guard services.appSettings.ai.includeCurrentQuery,
+              let connection,
+              let query = currentQuery, !query.isEmpty,
+              services.pluginManager.editorLanguage(for: connection.type) == .sql
+        else { return [] }
+        return AISchemaContext.referencedTables(in: query, grammar: connection.type.lexicalGrammar)
+    }
+
+    private func loadEveryColumnForRanking() async {
+        guard let connection else { return }
+        let tableCount = tables.count
+        guard tableCount > services.appSettings.ai.maxSchemaTables,
+              tableCount <= SQLSchemaProvider.maxCachedTables,
+              bulkColumnReadTableCount != tableCount
+        else { return }
+        bulkColumnReadTableCount = tableCount
+        let allColumns: [String: [ColumnInfo]]?
+        do {
+            allColumns = try await DatabaseManager.shared.withBrowseMetadataDriver(
+                connectionId: connection.id,
+                workload: .bulk
+            ) { driver in
+                // A driver without a bulk read would fall back to one query per table.
+                guard driver.providesBulkColumnFetch else { return nil }
+                return try await driver.fetchAllColumns()
+            }
+        } catch {
+            Self.logger.warning("Bulk column fetch failed: \(error.publicLogShape, privacy: .public)")
+            return
+        }
+        guard let allColumns, !Task.isCancelled else { return }
+        let byFoldedName = Dictionary(
+            allColumns.map { ($0.key.lowercased(), $0.value) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var merged = columnsByTable
+        for table in tables where (merged[table.name] ?? []).isEmpty {
+            merged[table.name] = allColumns[table.name] ?? byFoldedName[table.name.lowercased()] ?? []
+        }
+        columnsByTable = merged
     }
 
     private func orderedTables() -> [TableInfo] {

@@ -8,6 +8,7 @@
 import Foundation
 import TableProAutocomplete
 import TableProPluginKit
+import TableProSQLGrammar
 
 /// One table as the schema context describes it. The producer joins each table to its own columns
 /// and foreign keys, because a lookup by name cannot tell two schemas' tables of the same name apart.
@@ -23,11 +24,11 @@ struct AISchemaTable: Sendable {
     }
 }
 
-/// Builds schema context for AI system prompts
 struct AISchemaContext {
+    static let maxQueryLength = 2_000
+
     // MARK: - Public
 
-    /// Build a system prompt including database context
     static func buildSystemPrompt(
         databaseType: DatabaseType,
         databaseName: String,
@@ -67,7 +68,6 @@ struct AISchemaContext {
            let query = currentQuery,
            !query.isEmpty {
             let lang = editorLanguage.codeBlockTag
-            let maxQueryLength = 2_000
             let nsQuery = query as NSString
             let truncated = nsQuery.length > maxQueryLength
                 ? nsQuery.substring(to: maxQueryLength) + "\n-- ... truncated"
@@ -157,42 +157,68 @@ struct AISchemaContext {
             }
         }
 
-        let hiddenTables = tables.dropFirst(maxTables)
-        if !hiddenTables.isEmpty {
-            let listed = hiddenTables.prefix(maxListedHiddenTables).map { entry in
-                SchemaQualifiedName.render(
-                    name: entry.table.name,
-                    schema: entry.table.schema,
-                    implicitSchemaName: defaultSchema,
-                    quote: { "\(q)\($0)\(q)" }
-                )
-            }
-            var line = "\nOther tables (columns not shown): " + listed.joined(separator: ", ")
-            if hiddenTables.count > listed.count {
-                line += ", … and \(hiddenTables.count - listed.count) more"
-            }
-            lines.append(line)
+        if tables.count > maxTables {
+            lines.append(
+                "\n… and \(tables.count - maxTables) more tables (not shown)"
+            )
         }
 
         return lines.joined(separator: "\n")
     }
 
-    static let maxListedHiddenTables = 200
-
-    /// Names of the tables that match `question`, best first, so the prompt spends its column budget
-    /// on them. Empty when every table already fits, or when nothing matches.
+    // The editor's tables come first, since the model is reading that query; the question's matches
+    // follow, best first.
     static func relevantTableNames(
         in tables: [TableInfo],
         columnsByTable: [String: [ColumnInfo]],
         question: String,
+        queryReferences: [TableReference] = [],
         maxTables: Int
     ) -> [String] {
         guard tables.count > maxTables else { return [] }
+        var names = indices(of: queryReferences, in: tables).map { tables[$0].name }
+        // Columns count only once every table has them, or a table loaded on an earlier turn would
+        // outrank a better match whose columns were never read.
+        let columns = tables.allSatisfy { columnsByTable[$0.name] != nil } ? columnsByTable : [:]
         let documents = tables.map { table in
-            var details = (columnsByTable[table.name] ?? []).flatMap { [$0.name, $0.comment ?? ""] }
+            var details = (columns[table.name] ?? []).flatMap { [$0.name, $0.comment ?? ""] }
             if let comment = table.comment { details.append(comment) }
             return SchemaRelevanceDocument(name: table.name, details: details)
         }
-        return SchemaRelevanceRanker.rank(documents, for: question).map { tables[$0].name }
+        var seen = Set(names)
+        for offset in SchemaRelevanceRanker.rank(documents, for: question) where seen.insert(tables[offset].name).inserted {
+            names.append(tables[offset].name)
+        }
+        return names
+    }
+
+    // Only the part of the query the prompt carries, and never a CTE or subquery, which has no
+    // table of its own.
+    static func referencedTables(in query: String, grammar: SQLLexicalGrammar) -> [TableReference] {
+        let nsQuery = query as NSString
+        let text = nsQuery.length > maxQueryLength ? nsQuery.substring(to: maxQueryLength) : query
+        let analyzer = SQLContextAnalyzer()
+        return SQLStatementScanner.allStatements(in: text, grammar: grammar).flatMap { statement in
+            analyzer.analyze(query: statement, cursorPosition: (statement as NSString).length, grammar: grammar)
+                .tableReferences
+                .filter { $0.derivedColumns == nil }
+        }
+    }
+
+    // In the order the query names them, each table once.
+    static func indices(of references: [TableReference], in tables: [TableInfo]) -> [Int] {
+        var result: [Int] = []
+        for reference in references {
+            let match = tables.indices.first { offset in
+                let table = tables[offset]
+                guard table.name.caseInsensitiveCompare(reference.tableName) == .orderedSame else { return false }
+                guard let schema = reference.schema, let tableSchema = table.schema else { return true }
+                return schema.caseInsensitiveCompare(tableSchema) == .orderedSame
+            }
+            if let match, !result.contains(match) {
+                result.append(match)
+            }
+        }
+        return result
     }
 }

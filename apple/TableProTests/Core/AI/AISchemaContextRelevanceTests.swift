@@ -3,12 +3,13 @@
 //  TableProTests
 //
 //  A schema with more tables than the prompt's column budget spends that budget on the tables
-//  the question names, and still tells the model what the other tables are called.
+//  the editor's query reads and the question names.
 //
 
 import Foundation
 @testable import TablePro
 import TableProPluginKit
+import TableProSQLGrammar
 import Testing
 
 struct AISchemaContextRelevanceTests {
@@ -20,63 +21,104 @@ struct AISchemaContextRelevanceTests {
         TestFixtures.makeTableInfo(name: "orders")
     ]
 
+    private static let grammar = DatabaseType.postgresql.lexicalGrammar
+
+    private static func names(
+        question: String,
+        query: String = "",
+        columns: [String: [ColumnInfo]] = [:],
+        maxTables: Int = 2
+    ) -> [String] {
+        AISchemaContext.relevantTableNames(
+            in: tables,
+            columnsByTable: columns,
+            question: question,
+            queryReferences: AISchemaContext.referencedTables(in: query, grammar: grammar),
+            maxTables: maxTables
+        )
+    }
+
+    private static func everyTableColumns(_ extra: [String: [ColumnInfo]]) -> [String: [ColumnInfo]] {
+        var columns = Dictionary(uniqueKeysWithValues: tables.map { ($0.name, [TestFixtures.makeColumnInfo(name: "id")]) })
+        columns.merge(extra) { _, new in new }
+        return columns
+    }
+
     @Test("Tables that match the question come first, best first")
     func matchingTablesComeFirst() {
-        let names = AISchemaContext.relevantTableNames(
-            in: Self.tables,
-            columnsByTable: [:],
-            question: "How many orders did each customer place?",
-            maxTables: 2
-        )
+        let names = Self.names(question: "How many orders did each customer place?")
         #expect(Array(names.prefix(2)).sorted() == ["customers", "orders"])
     }
 
-    @Test("A table comment and loaded columns count as matches")
-    func commentAndColumnsMatch() {
-        let columns = ["invoices": [TestFixtures.makeColumnInfo(name: "due_date")]]
-        #expect(AISchemaContext.relevantTableNames(
-            in: Self.tables, columnsByTable: columns, question: "revenue by month", maxTables: 2
-        ).first == "tbl_x")
-        #expect(AISchemaContext.relevantTableNames(
-            in: Self.tables, columnsByTable: columns, question: "unpaid past the due date", maxTables: 2
-        ).first == "invoices")
+    @Test("A table comment counts as a match")
+    func commentMatches() {
+        #expect(Self.names(question: "revenue by month").first == "tbl_x")
+    }
+
+    @Test("Columns count once every table has them")
+    func columnsMatchWhenEveryTableHasThem() {
+        let columns = Self.everyTableColumns(["invoices": [TestFixtures.makeColumnInfo(name: "due_date")]])
+        #expect(Self.names(question: "unpaid past the due date", columns: columns).first == "invoices")
+    }
+
+    @Test("Columns loaded for some tables only do not count")
+    func partialColumnsAreIgnored() {
+        let columns = ["audit_log": [TestFixtures.makeColumnInfo(name: "customer_note")]]
+        #expect(Self.names(question: "customer", columns: columns).first == "customers")
+        #expect(!Self.names(question: "note", columns: columns).contains("audit_log"))
     }
 
     @Test("Nothing is reordered when every table fits")
     func everyTableFits() {
-        let names = AISchemaContext.relevantTableNames(
-            in: Self.tables,
-            columnsByTable: [:],
-            question: "orders",
-            maxTables: Self.tables.count
-        )
-        #expect(names.isEmpty)
+        #expect(Self.names(question: "orders", maxTables: Self.tables.count).isEmpty)
     }
 
-    @Test("Tables past the budget are named without their columns")
-    func hiddenTablesAreNamed() {
-        let entries = Self.tables.map { AISchemaTable(table: $0) }
+    @Test("Tables the editor's query reads come before the question's matches")
+    func queryTablesComeFirst() {
+        let names = Self.names(
+            question: "why is this slow for customers",
+            query: "SELECT * FROM invoices i JOIN audit_log a ON a.id = i.id"
+        )
+        #expect(Array(names.prefix(3)) == ["invoices", "audit_log", "customers"])
+    }
+
+    @Test("SQL keywords in the editor's query match no table")
+    func queryKeywordsMatchNothing() {
+        let names = Self.names(
+            question: "",
+            query: "SELECT id FROM customers GROUP BY id ORDER BY id"
+        )
+        #expect(names == ["customers"])
+    }
+
+    @Test("Every statement in the editor counts, and a CTE is not a table")
+    func everyStatementCounts() {
+        let query = """
+        WITH recent AS (SELECT * FROM orders) SELECT * FROM recent;
+        UPDATE customers SET name = 'x';
+        """
+        #expect(Self.names(question: "", query: query) == ["orders", "customers"])
+    }
+
+    @Test("A schema-qualified reference matches only a table in that schema")
+    func schemaQualifiedReference() {
+        let tables = [
+            TestFixtures.makeTableInfo(name: "orders", schema: "archive"),
+            TestFixtures.makeTableInfo(name: "orders", schema: "public")
+        ]
+        let references = AISchemaContext.referencedTables(in: "SELECT * FROM public.orders", grammar: Self.grammar)
+        #expect(AISchemaContext.indices(of: references, in: tables) == [1])
+    }
+
+    @Test("Tables past the budget are counted, not named")
+    func hiddenTablesAreCounted() {
         let section = AISchemaContext.buildSchemaSection(
-            tables: entries,
+            tables: Self.tables.map { AISchemaTable(table: $0) },
             defaultSchema: nil,
             maxTables: 2,
             identifierQuote: "\""
         )
-        #expect(section.contains("Other tables (columns not shown): \"invoices\", \"tbl_x\", \"orders\""))
-        #expect(!section.contains("more tables (not shown)"))
-    }
-
-    @Test("A long tail of hidden tables is cut with a count")
-    func longTailIsCounted() {
-        let many = (0..<(AISchemaContext.maxListedHiddenTables + 3)).map {
-            AISchemaTable(table: TestFixtures.makeTableInfo(name: "t\($0)"))
-        }
-        let section = AISchemaContext.buildSchemaSection(
-            tables: many,
-            defaultSchema: nil,
-            maxTables: 1,
-            identifierQuote: "\""
-        )
-        #expect(section.hasSuffix(", … and 2 more"))
+        #expect(section.hasSuffix("… and 3 more tables (not shown)"))
+        #expect(!section.contains("\"invoices\""))
     }
 }
