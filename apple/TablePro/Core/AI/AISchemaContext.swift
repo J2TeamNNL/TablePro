@@ -204,28 +204,24 @@ struct AISchemaContext {
         }
     }
 
-    // In the order the query names them, each table once. A bare name means the default schema's
-    // table, as it does when the query runs.
+    // Every table a name could mean, in the order the query names them. How an engine folds an
+    // unquoted name differs, so a name that matches two tables by case or schema puts both first:
+    // a spare slot is cheaper than missing the table the query reads. The default schema's comes
+    // first for a bare name, as it does when the query runs.
     static func indices(of references: [TableReference], in tables: [TableInfo], defaultSchema: String? = nil) -> [Int] {
+        func sameName(_ lhs: String?, _ rhs: String?) -> Bool {
+            guard let lhs, let rhs else { return false }
+            return lhs.caseInsensitiveCompare(rhs) == .orderedSame
+        }
         var result: [Int] = []
         for reference in references {
-            let named = tables.indices.filter {
-                tables[$0].name.caseInsensitiveCompare(reference.tableName) == .orderedSame
-            }
-            // Two tables can differ only by case, so the exact spelling wins.
-            let candidates = named.filter { tables[$0].name == reference.tableName }
-                + named.filter { tables[$0].name != reference.tableName }
+            let named = tables.indices.filter { sameName(tables[$0].name, reference.tableName) }
             let schema = reference.schema ?? defaultSchema
-            func inSchema(_ matches: (String, String) -> Bool) -> Int? {
-                guard let schema else { return nil }
-                return candidates.first { tables[$0].schema.map { matches($0, schema) } ?? false }
-            }
-            let match = inSchema(==)
-                ?? inSchema { $0.caseInsensitiveCompare($1) == .orderedSame }
-                ?? candidates.first { tables[$0].schema == nil }
-                ?? (reference.schema == nil ? candidates.first : nil)
-            if let match, !result.contains(match) {
-                result.append(match)
+            let inSchema = named.filter { sameName(tables[$0].schema, schema) }
+            let unscoped = named.filter { tables[$0].schema == nil }
+            let elsewhere = reference.schema == nil ? named : []
+            for offset in inSchema + unscoped + elsewhere where !result.contains(offset) {
+                result.append(offset)
             }
         }
         return result

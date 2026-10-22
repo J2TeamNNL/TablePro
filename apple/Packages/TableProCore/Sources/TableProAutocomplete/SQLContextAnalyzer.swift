@@ -278,7 +278,9 @@ public final class SQLContextAnalyzer {
         "|WINDOW|FETCH|FOR)\\b|[;()]|$)"
     )
 
-    private static let alterTableRegex = compileRegex("(?i)\\bALTER\\s+TABLE\\s+(\(quotedSegment))")
+    private static let alterTableRegex = compileRegex(
+        "(?i)\\bALTER\\s+TABLE\\s+(\(quotedSegment)(?:\\.\(quotedSegment))*)"
+    )
 
     private static let derivedTableParser = DerivedTableParser()
 
@@ -295,9 +297,8 @@ public final class SQLContextAnalyzer {
         let nsStatement = statement as NSString
         let text = Self.lex(nsStatement, cursor: nsStatement.length, grammar: grammar)
         var references = extractTableReferences(from: text.forReferences)
-        if let alterTableName = extractAlterTableName(from: text.forReferences),
-           !references.contains(where: { $0.tableName == alterTableName }) {
-            references.append(TableReference(tableName: alterTableName, alias: nil))
+        if let alterRef = extractAlterTableReference(from: text.forReferences), !references.contains(alterRef) {
+            references.append(alterRef)
         }
         return references
     }
@@ -342,8 +343,7 @@ public final class SQLContextAnalyzer {
 
         var seenReferences = Set<TableReference>(tableReferences)
 
-        if let alterTableName = extractAlterTableName(from: text.forReferences) {
-            let alterRef = TableReference(tableName: alterTableName, alias: nil)
+        if let alterRef = extractAlterTableReference(from: text.forReferences) {
             if seenReferences.insert(alterRef).inserted {
                 tableReferences.append(alterRef)
             }
@@ -1017,12 +1017,19 @@ public final class SQLContextAnalyzer {
         )
     }
 
-    private func extractAlterTableName(from text: LexedStatement) -> String? {
+    private func extractAlterTableReference(from text: LexedStatement) -> TableReference? {
         let nsRange = NSRange(location: 0, length: text.code.length)
         guard let match = Self.alterTableRegex.firstMatch(in: text.codeString, range: nsRange) else { return nil }
-        let tableNSRange = match.range(at: 1)
-        guard tableNSRange.location != NSNotFound else { return nil }
-        return Self.unquoted(text.original.substring(with: tableNSRange))
+        let pathRange = match.range(at: 1)
+        guard pathRange.location != NSNotFound else { return nil }
+        let segments = Self.pathSegments(pathRange, in: text)
+        guard let table = segments.last, !table.name.isEmpty else { return nil }
+        return TableReference(
+            tableName: table.name,
+            alias: nil,
+            schema: segments.count >= 2 ? segments[segments.count - 2].name : nil,
+            isIdentifierQuoted: table.isQuoted
+        )
     }
 
     // MARK: - Clause Detection

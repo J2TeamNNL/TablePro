@@ -116,24 +116,37 @@ struct AISchemaContextRelevanceTests {
         #expect(AISchemaContext.indices(of: references, in: tables) == [1])
     }
 
-    @Test("A bare name means the default schema's table")
+    @Test("A bare name puts the default schema's table first")
     func bareNameMeansDefaultSchema() {
         let tables = [
             TestFixtures.makeTableInfo(name: "orders", schema: "archive"),
             TestFixtures.makeTableInfo(name: "orders", schema: "public")
         ]
         let references = AISchemaContext.referencedTables(in: "SELECT * FROM orders", grammar: Self.grammar)
-        #expect(AISchemaContext.indices(of: references, in: tables, defaultSchema: "public") == [1])
+        #expect(AISchemaContext.indices(of: references, in: tables, defaultSchema: "public") == [1, 0])
     }
 
-    @Test("Two tables that differ only by case resolve to the exact spelling")
-    func exactSpellingWins() {
+    @Test("A name that matches two tables by case puts both first")
+    func caseCollisionKeepsBoth() {
         let tables = [
+            TestFixtures.makeTableInfo(name: "audit_log", schema: "public"),
             TestFixtures.makeTableInfo(name: "Orders", schema: "public"),
             TestFixtures.makeTableInfo(name: "orders", schema: "public")
         ]
-        let references = AISchemaContext.referencedTables(in: "SELECT * FROM \"orders\"", grammar: Self.grammar)
-        #expect(AISchemaContext.indices(of: references, in: tables, defaultSchema: "public") == [1])
+        for query in ["SELECT * FROM Orders", "SELECT * FROM \"orders\""] {
+            let references = AISchemaContext.referencedTables(in: query, grammar: Self.grammar)
+            #expect(Set(AISchemaContext.indices(of: references, in: tables, defaultSchema: "public")) == [1, 2])
+        }
+    }
+
+    @Test("A qualified name leaves another schema's table out")
+    func qualifiedNameStaysInItsSchema() {
+        let tables = [
+            TestFixtures.makeTableInfo(name: "orders", schema: "archive"),
+            TestFixtures.makeTableInfo(name: "orders", schema: "public")
+        ]
+        let references = AISchemaContext.referencedTables(in: "ALTER TABLE archive.orders ADD due DATE", grammar: Self.grammar)
+        #expect(AISchemaContext.indices(of: references, in: tables, defaultSchema: "public") == [0])
     }
 
     @Test("A query that ends in a comment still puts its tables first")

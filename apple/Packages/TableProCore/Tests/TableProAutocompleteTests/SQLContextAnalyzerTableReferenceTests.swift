@@ -37,4 +37,13 @@ struct SQLContextAnalyzerTableReferenceTests {
         #expect(tables("UPDATE customers SET name = 'x'").contains("customers"))
         #expect(tables("ALTER TABLE invoices ADD COLUMN due DATE") == ["invoices"])
     }
+
+    @Test("A schema-qualified ALTER target keeps its schema")
+    func qualifiedAlterTarget() {
+        let references = analyzer.tableReferences(in: "ALTER TABLE archive.orders ADD COLUMN due DATE", grammar: .ansi)
+        #expect(references.map(\.tableName) == ["orders"])
+        #expect(references.first?.schema == "archive")
+        let context = analyzer.analyze(query: "ALTER TABLE archive.orders DROP COLUMN ", cursorPosition: 39)
+        #expect(context.tableReferences.contains { $0.tableName == "orders" && $0.schema == "archive" })
+    }
 }
