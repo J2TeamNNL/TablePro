@@ -276,15 +276,17 @@ extension AIChatViewModel {
             return
         }
         guard let allColumns, !Task.isCancelled, schemaCacheScope == scope else { return }
-        let byFoldedName = Dictionary(
-            allColumns.map { ($0.key.lowercased(), $0.value) },
-            uniquingKeysWith: { first, _ in first }
-        )
+        // A name that differs only by case is trusted only when it can mean one table, or a
+        // zero-column `orders` would take a quoted `"Orders"`'s columns.
+        let foldedTableCounts = Dictionary(tables.map { ($0.name.lowercased(), 1) }, uniquingKeysWith: +)
+        let byFoldedName = Dictionary(grouping: allColumns, by: { $0.key.lowercased() })
+            .compactMapValues { $0.count == 1 ? $0[0].value : nil }
         var merged = columnsByTable
         // A table the read left out, such as a SQLite view, stays unknown, so the ranker never
         // takes this read for a complete one.
         for table in tables where (merged[table.name] ?? []).isEmpty {
-            if let columns = allColumns[table.name] ?? byFoldedName[table.name.lowercased()] {
+            let folded = table.name.lowercased()
+            if let columns = allColumns[table.name] ?? (foldedTableCounts[folded] == 1 ? byFoldedName[folded] : nil) {
                 merged[table.name] = columns
             }
         }

@@ -127,7 +127,7 @@ extension AIChatViewModel {
         let assistantID = assistantMessage.id
         streamingState = .streaming(assistantID: assistantID)
 
-        let question = messages.last { $0.role == .user }?.plainText
+        let question = Self.schemaQuestion(in: messages, override: schemaQuestionOverride)
         prepTask = Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             if settings.includeSchema {
@@ -512,6 +512,14 @@ extension AIChatViewModel {
             toolUseMetadata: toolUseMetadata,
             cancelled: Task.isCancelled
         )
+    }
+
+    static func schemaQuestion(in messages: [ChatTurn], override: (turnID: UUID, text: String)?) -> String? {
+        let lastUserTurn = messages.last { $0.role == .user }
+        if let override, override.turnID == lastUserTurn?.id {
+            return override.text
+        }
+        return lastUserTurn?.plainText
     }
 
     nonisolated static func buildSystemPrompt(

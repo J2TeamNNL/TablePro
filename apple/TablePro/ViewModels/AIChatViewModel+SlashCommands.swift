@@ -58,7 +58,7 @@ extension AIChatViewModel {
         )
         let prompt = CustomSlashCommandRenderer.render(command, context: renderingContext)
         messages.append(ChatTurn(role: .user, blocks: [.text(invocationText)]))
-        sendWithContext(prompt: prompt)
+        sendWithContext(prompt: prompt, schemaQuestion: needsSchema ? body : nil)
     }
 
     private func showHelp(invocationText: String) {
