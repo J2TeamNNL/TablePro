@@ -114,4 +114,17 @@ struct AIChatViewModelSlashTests {
 
         #expect(AIChatViewModel.schemaQuestion(in: [earlier, later], override: (earlier.id, "logs")) == "how many orders")
     }
+
+    @Test("A tool result turn does not replace the user's question")
+    func toolResultTurnIsSkipped() {
+        let question = ChatTurn(role: .user, blocks: [.text("how many orders")])
+        let toolResult = ChatTurn(
+            role: .user,
+            blocks: [.toolResult(ToolResultBlock(toolUseId: "call_1", content: "rows", isError: false))]
+        )
+        let messages = [question, ChatTurn(role: .assistant, blocks: []), toolResult]
+
+        #expect(AIChatViewModel.schemaQuestion(in: messages, override: nil) == "how many orders")
+        #expect(AIChatViewModel.schemaQuestion(in: messages, override: (question.id, "orders")) == "orders")
+    }
 }

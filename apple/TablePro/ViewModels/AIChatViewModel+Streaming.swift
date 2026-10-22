@@ -515,7 +515,13 @@ extension AIChatViewModel {
     }
 
     static func schemaQuestion(in messages: [ChatTurn], override: (turnID: UUID, text: String)?) -> String? {
-        let lastUserTurn = messages.last { $0.role == .user }
+        // A turn that only returns tool results is the app's, not the user's.
+        let lastUserTurn = messages.last { turn in
+            turn.role == .user && !turn.blocks.allSatisfy { block in
+                if case .toolResult = block.kind { return true }
+                return false
+            }
+        }
         if let override, override.turnID == lastUserTurn?.id {
             return override.text
         }
