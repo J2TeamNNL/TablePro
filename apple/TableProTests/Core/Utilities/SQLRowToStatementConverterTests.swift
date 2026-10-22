@@ -146,6 +146,34 @@ struct SQLRowToStatementConverterTests {
         #expect(result == "INSERT INTO `users` (`id`, `name`, `email`) VALUES ('1', 'O''Brien', 'o''brien@example.com');")
     }
 
+    // MARK: - INSERT script
+
+    @Test("A script writes one tuple a line, closing each statement at its row limit")
+    func insertScriptBatchesRows() throws {
+        let converter = try makeConverter(columns: ["id", "name"], dialect: Self.postgresDialect)
+        let rows: [[PluginCellValue]] = [["1", "Ada"], ["2", .null], ["3", "O'Neil"]]
+
+        let script = converter.insertScript(rows: rows, rowsPerStatement: 2)
+
+        #expect(script == """
+            INSERT INTO "users" ("id", "name") VALUES
+              ('1', 'Ada'),
+              ('2', NULL);
+            INSERT INTO "users" ("id", "name") VALUES
+              ('3', 'O''Neil');
+            """)
+    }
+
+    @Test("An engine that takes one row a statement gets one INSERT a row")
+    func insertScriptOneRowEach() throws {
+        let converter = try makeConverter(columns: ["id"], dialect: Self.postgresDialect)
+
+        #expect(converter.insertScript(rows: [["1"], ["2"]], rowsPerStatement: 1) == """
+            INSERT INTO "users" ("id") VALUES ('1');
+            INSERT INTO "users" ("id") VALUES ('2');
+            """)
+    }
+
     // MARK: - UPDATE Generation
 
     @Test("UPDATE with primary key excludes PK from SET and uses PK in WHERE")
@@ -178,11 +206,30 @@ struct SQLRowToStatementConverterTests {
 
     // MARK: - Database-Specific Quoting
 
-    @Test("ClickHouse fallback uses standard UPDATE syntax (plugin handles ALTER TABLE at runtime)")
+    @Test("Without a driver's own form, the standard UPDATE is written")
     func clickhouseFallbackUsesStandardUpdate() throws {
         let converter = try makeConverter(databaseType: .clickhouse, dialect: Self.clickhouseDialect)
         let result = converter.generateUpdates(rows: plain([["1", "Alice", "alice@example.com"]]))
         #expect(result == "UPDATE `users` SET `name` = 'Alice', `email` = 'alice@example.com' WHERE `id` = '1';")
+    }
+
+    @Test("A driver's own UPDATE form is used, as ClickHouse's mutation")
+    func driverUpdateFormIsUsed() throws {
+        let converter = try SQLRowToStatementConverter(
+            tableName: "users",
+            columns: ["id", "name"],
+            primaryKeyColumns: ["id"],
+            databaseType: .clickhouse,
+            dialect: Self.clickhouseDialect,
+            rowUpdateStatement: { table, assignments, predicate in
+                "ALTER TABLE \(table) UPDATE \(assignments) WHERE \(predicate) SETTINGS mutations_sync = 1"
+            }
+        )
+        let result = converter.generateUpdates(rows: plain([["1", "Alice"], ["2", "Bob"]]))
+        #expect(result == """
+            ALTER TABLE `users` UPDATE `name` = 'Alice' WHERE `id` = '1' SETTINGS mutations_sync = 1;
+            ALTER TABLE `users` UPDATE `name` = 'Bob' WHERE `id` = '2' SETTINGS mutations_sync = 1;
+            """)
     }
 
     /// The `N` is not decoration: a plain `'…'` is a `varchar` literal, so pasting these

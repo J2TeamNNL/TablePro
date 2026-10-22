@@ -176,7 +176,8 @@ extension PluginMetadataRegistry {
             section: .advanced
         )
 
-        let awsIAMFields = AWSAuthFields.standard() + [AWSAuthFields.rdsEndpointField()]
+        // Connector/C's GSSAPI plugin signs in to MariaDB only, so MySQL gets no Kerberos.
+        let mariadbAuthFields = KerberosAuthFields.standardWithAWS() + [AWSAuthFields.rdsEndpointField()]
 
         let redshiftIAMFields = AWSAuthFields.standard() + [
             ConnectionField(
@@ -191,6 +192,11 @@ extension PluginMetadataRegistry {
         /// Cloud SQL signs IAM principals in to MySQL and PostgreSQL only, so SQL Server and the
         /// MySQL and PostgreSQL forks keep the AWS-only picker.
         let cloudIAMFields = GoogleCloudSQLAuthFields.standardWithAWS() + [AWSAuthFields.rdsEndpointField()]
+
+        let postgresqlAuthFields = KerberosAuthFields.standardWithAWSAndGoogleCloud() + [
+            KerberosAuthFields.gssEncryptionField(),
+            AWSAuthFields.rdsEndpointField()
+        ]
 
         /// The MySQL plugin's types only. PostgreSQL shares the IAM fields and must not pick this up:
         /// its driver holds no releasable resource, so the setting would do nothing.
@@ -248,7 +254,8 @@ extension PluginMetadataRegistry {
                     supportsRoutines: true,
                     supportsDatabaseTriggerBrowse: true,
                     defaultSSLMode: .preferred,
-                    browsingRequiresSelectedDatabase: true
+                    browsingRequiresSelectedDatabase: true,
+                    binaryLengthFunction: "OCTET_LENGTH"
                 ),
                 schema: PluginMetadataSnapshot.SchemaInfo(
                     defaultSchemaName: "public",
@@ -318,7 +325,8 @@ extension PluginMetadataRegistry {
                     supportsRoutines: true,
                     supportsDatabaseTriggerBrowse: true,
                     defaultSSLMode: .preferred,
-                    browsingRequiresSelectedDatabase: true
+                    browsingRequiresSelectedDatabase: true,
+                    binaryLengthFunction: "OCTET_LENGTH"
                 ),
                 schema: PluginMetadataSnapshot.SchemaInfo(
                     defaultSchemaName: "public",
@@ -346,7 +354,7 @@ extension PluginMetadataRegistry {
                     columnTypesByCategory: mysqlColumnTypes
                 ),
                 connection: PluginMetadataSnapshot.ConnectionConfig(
-                    additionalConnectionFields: awsIAMFields + [mysqlIdleReleaseField, mysqlEncodingField],
+                    additionalConnectionFields: mariadbAuthFields + [mysqlIdleReleaseField, mysqlEncodingField],
                     category: .relational,
                     tagline: String(localized: "Open-source fork of MySQL"),
                     defaultUnixSocketPath: "/var/run/mysqld/mysqld.sock",
@@ -420,7 +428,7 @@ extension PluginMetadataRegistry {
                     columnTypesByCategory: postgresqlColumnTypes
                 ),
                 connection: PluginMetadataSnapshot.ConnectionConfig(
-                    additionalConnectionFields: [pgpassField, connectionOptionsField] + cloudIAMFields,
+                    additionalConnectionFields: [pgpassField, connectionOptionsField] + postgresqlAuthFields,
                     category: .relational,
                     tagline: String(localized: "Advanced object-relational SQL"),
                     defaultUnixSocketPath: "/var/run/postgresql/.s.PGSQL.5432",
@@ -697,7 +705,7 @@ extension PluginMetadataRegistry {
                     columnTypesByCategory: sqliteColumnTypes
                 ),
                 connection: PluginMetadataSnapshot.ConnectionConfig(
-                    additionalConnectionFields: [.loadableExtensions()],
+                    additionalConnectionFields: [.attachedDatabases(), .loadableExtensions()],
                     category: .relational,
                     tagline: String(localized: "Embedded zero-config SQL database")
                 )

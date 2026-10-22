@@ -305,7 +305,8 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
             }
             guard !layout.columnWidths.isEmpty
                 || layout.columnContentWidths?.isEmpty == false
-                || layout.columnOrder?.isEmpty == false else { return nil }
+                || layout.columnOrder?.isEmpty == false
+                || layout.frozenColumnCount > 0 else { return nil }
             return layout
         }
 
@@ -314,7 +315,8 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
         }
         if binding.columnWidths.isEmpty,
            binding.columnContentWidths?.isEmpty != false,
-           binding.columnOrder == nil {
+           binding.columnOrder == nil,
+           binding.frozenColumnCount == 0 {
             return nil
         }
         return binding
@@ -399,6 +401,12 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
         return true
     }
 
+    // A table tab's binding may never have carried the frozen count restored from disk.
+    func resetColumnGeometry() {
+        resetColumnWidthOwnership()
+        frozenColumnCount = 0
+    }
+
     func resetColumnWidthOwnership() {
         userSizedColumnNames.removeAll()
         shouldRecalculateAutomaticColumnWidths = true
@@ -442,6 +450,7 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
         layout.columnWidths = legacyWidths
         layout.columnContentWidths = contentWidths.isEmpty ? nil : contentWidths
         layout.columnOrder = order
+        layout.frozenColumnCount = frozenColumnCount
         return layout
     }
 
@@ -559,6 +568,14 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
     /// after it, the reader's own gestures are the only thing that moves the selection.
     var hasRestoredSelection = false
     weak var rowGutter: DataGridRowGutterView?
+    var frozenColumnCount = 0 {
+        didSet {
+            guard frozenColumnCount != oldValue else { return }
+            frozenColumnsDidChange()
+        }
+    }
+    // What the owner's binding last said, so only an owner-side change (Reset Columns) is adopted.
+    var lastBoundFrozenColumnCount = 0
     /// The last value `publishRowSelection()` wrote, or nil before it has written one. `nil` has to
     /// mean "nothing published yet" rather than "empty", or a tab restoring an empty selection would
     /// be mistaken for one this coordinator produced and never reach the table view.
@@ -625,13 +642,8 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
     }
 
     func applyDataGridSettingsChange(from previous: DataGridSettings, to settings: DataGridSettings) {
-        guard let tableView else { return }
-        let newRowHeight = CGFloat(settings.rowHeight.rawValue)
-        if tableView.rowHeight != newRowHeight {
-            tableView.rowHeight = newRowHeight
-            tableView.tile()
-            repaintRowGutter()
-        }
+        guard tableView != nil else { return }
+        applyRowHeight(DataGridMetrics.rowHeight(settings.rowHeight, font: ThemeEngine.shared.dataGridFonts.regular))
 
         let dataChanged = previous.dateFormat != settings.dateFormat
             || previous.nullDisplay != settings.nullDisplay
@@ -642,6 +654,15 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
         } else if previous.showInvisibleCharacters != settings.showInvisibleCharacters {
             redrawVisibleCells()
         }
+    }
+
+    func applyRowHeight(_ rowHeight: CGFloat) {
+        guard let tableView, tableView.rowHeight != rowHeight else { return }
+        keepingFirstVisibleRow {
+            tableView.rowHeight = rowHeight
+            tableView.tile()
+        }
+        repaintRowGutter()
     }
 
     func observeThemeChanges() {
@@ -661,8 +682,7 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
         themeDidChange()
     }
 
-    /// `themeChanged` also fires for an Accent, Highlight or Increase Contrast change, and none of
-    /// them moves a value, so this repaints what is on screen and never reloads or refetches.
+    // Also fires for Accent, Highlight and Increase Contrast, none of which moves a value: repaint, never reload.
     func themeDidChange() {
         guard let tableView else { return }
         cellRegistry.preparePalette(in: tableView.effectiveAppearance)
@@ -674,8 +694,19 @@ final class TableViewCoordinator: NSObject, NSTableViewDelegate, NSTableViewData
             rowView.needsDisplay = true
             (rowView as? DataGridRowView)?.redrawCells()
         }
-        // The row-number font decides the column's width, which the pinned gutter mirrors.
-        resizeRowNumberColumnForCurrentRange()
+        let resize = {
+            // The row-number font decides the column's width, which the pinned gutter mirrors.
+            self.resizeRowNumberColumnForCurrentRange()
+            self.applyRowHeight(DataGridMetrics.rowHeight(
+                AppSettingsManager.shared.dataGrid.rowHeight,
+                font: ThemeEngine.shared.dataGridFonts.regular
+            ))
+        }
+        if let openOverlay = [overlayEditor as CellOverlayBase?, overlayViewer].compactMap({ $0 }).first(where: { $0.isActive }) {
+            openOverlay.followGrid(through: resize)
+        } else {
+            resize()
+        }
         repaintRowGutter()
         selectionController.overlay?.needsDisplay = true
     }

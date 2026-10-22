@@ -7,6 +7,7 @@ import AppKit
 import Combine
 import os
 import SwiftUI
+import TableProConnectionLibrary
 import TableProPluginKit
 import TableProRedisCore
 import TableProSSHConfig
@@ -361,6 +362,7 @@ final class ConnectionFormCoordinator: ObservableObject {
             externalAccess: advanced.externalAccess,
             connectTimeoutSeconds: customization.connectTimeoutSeconds,
             queryTimeoutSeconds: customization.queryTimeoutSeconds,
+            binaryInlineLimitKilobytes: customization.binaryInlineLimitKilobytes,
             completionIdentifierCase: customization.completionIdentifierCase,
             redisDatabase: advanced.additionalFieldValues[RedisDatabaseIndex.fieldName].map {
                 RedisDatabaseIndex.parse($0) ?? 0
@@ -718,7 +720,7 @@ final class ConnectionFormCoordinator: ObservableObject {
             } catch {
                 let fields = self?.auth.additionalFieldValues ?? [:]
                 if let provider = ConnectionSignInRegistry.provider(for: error, fields: fields) {
-                    await self?.offerSignIn(provider, fields: fields, testId: testConn.id, window: window)
+                    await self?.offerSignIn(provider, for: error, fields: fields, testId: testConn.id, window: window)
                     return
                 }
                 await MainActor.run {
@@ -751,6 +753,7 @@ final class ConnectionFormCoordinator: ObservableObject {
     /// alone rather than marked failed: the credential was the problem, not the settings.
     private func offerSignIn(
         _ provider: ConnectionSignInProvider,
+        for error: Error,
         fields: [String: String],
         testId: UUID,
         window: NSWindow?
@@ -758,7 +761,7 @@ final class ConnectionFormCoordinator: ObservableObject {
         cleanupTestSecrets(for: testId)
         isTesting = false
         testTask = nil
-        guard await ConnectionSignInPrompt.offer(provider, fields: fields, window: window) else { return }
+        guard await ConnectionSignInPrompt.offer(provider, for: error, fields: fields, window: window) else { return }
         AlertHelper.showInfoSheet(
             title: String(localized: "Signed In"),
             message: provider.signedInMessage,

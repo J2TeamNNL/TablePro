@@ -2,6 +2,7 @@ import Foundation
 import TableProDatabase
 @testable import TableProMobile
 import TableProModels
+import TableProPluginKit
 import Testing
 
 struct IOSDriverFactoryRefusalTests {
@@ -20,14 +21,14 @@ struct IOSDriverFactoryRefusalTests {
         "Every type with a driver on iPhone and iPad opens here",
         arguments: [
             DatabaseType.sqlite, .duckdb, .mysql, .mariadb, .tidb, .oceanbase, .postgresql, .redshift, .redis, .mssql, .oracle,
-            .clickhouse
+            .clickhouse, .mongodb
         ]
     )
     func supportedTypeOpens(type: DatabaseType) {
         #expect(IOSDriverFactory.refusal(for: DatabaseConnection(type: type, host: "db.acme.io")) == nil)
     }
 
-    @Test("A type with no driver here is refused by its engine name", arguments: ["MongoDB", "Cassandra", "Elasticsearch"])
+    @Test("A type with no driver here is refused by its engine name", arguments: ["Cassandra", "Elasticsearch", "Snowflake"])
     func typeWithoutDriverIsRefused(engine: String) {
         let connection = DatabaseConnection(type: DatabaseType(rawValue: engine), host: "db.acme.io")
 
@@ -54,12 +55,24 @@ struct IOSDriverFactoryRefusalTests {
         }
     }
 
+    @Test("A Kerberos sign-in from the Mac is refused before it dials", arguments: [DatabaseType.postgresql, .mariadb])
+    func kerberosIsRefused(type: DatabaseType) {
+        let connection = DatabaseConnection(
+            type: type,
+            host: "db.corp.example.com",
+            additionalFields: ["awsAuth": KerberosAuthFields.method]
+        )
+
+        #expect(IOSDriverFactory.refusal(for: connection) == .kerberosNotSupported)
+        #expect(MacOnlyConnection.isMacOnly(connection))
+    }
+
     @Test("The connect path gets the device's answer, socket included, not the protocol default")
     func connectPathUsesTheDeviceRule() {
         let factory: any DriverFactory = IOSDriverFactory()
 
         #expect(factory.refusal(for: socketConnection()) == .localSocketNotSupported)
-        #expect(factory.refusal(for: DatabaseConnection(type: .mongodb)) == .driverNotFound("MongoDB"))
+        #expect(factory.refusal(for: DatabaseConnection(type: .cassandra)) == .driverNotFound("Cassandra"))
         #expect(factory.supportedTypes() == IOSDriverFactory.supportedTypeList)
     }
 }

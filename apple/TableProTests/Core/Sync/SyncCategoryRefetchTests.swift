@@ -26,6 +26,7 @@ struct SyncCategoryRefetchTests {
         #expect(!content.contains(SyncRecordType.favoriteFolder.rawValue))
         #expect(!content.contains(SyncRecordType.settings.rawValue))
         #expect(!content.contains(SyncCoordinator.themeContentKind))
+        #expect(!content.contains(SyncCoordinator.formatterContentKind))
         #expect(content.contains(SyncRecordType.connection.rawValue))
     }
 
@@ -189,6 +190,10 @@ private actor ZoneServer: SyncTransport {
             outcome.recordDeletion(recordID)
         }
         return outcome
+    }
+
+    func fetch(recordIDs: [CKRecord.ID]) async throws -> [CKRecord.ID: CKRecord] {
+        [:]
     }
 
     func pull(since token: CKServerChangeToken?) async throws -> PullResult {
