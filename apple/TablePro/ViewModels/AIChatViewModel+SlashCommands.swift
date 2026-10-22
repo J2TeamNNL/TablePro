@@ -39,7 +39,16 @@ extension AIChatViewModel {
         let invocationText = body.isEmpty ? "/\(command.name)" : "/\(command.name) \(body)"
         let needsSchema = command.promptTemplate.contains(CustomSlashCommandVariable.schema.placeholder)
         if needsSchema {
-            await ensureSchemaLoaded(relevantTo: body)
+            // The policy check comes later, when the turn is sent, so a read the user has not
+            // allowed stays as small as it was: no ranking, no bulk column read.
+            switch connection == nil ? nil : resolveConnectionPolicy(settings: services.appSettings.ai) {
+            case .never?:
+                break
+            case .askEachTime?:
+                await ensureSchemaLoaded()
+            case .alwaysAllow?, nil:
+                await ensureSchemaLoaded(relevantTo: body)
+            }
         }
         let renderingContext = CustomSlashCommandRenderer.Context(
             query: currentQuery,

@@ -109,6 +109,7 @@ final class AIChatViewModel: ObservableObject {
     var inFlightSchemaLoad: Task<Void, Never>?
     var relevantTableNames: [String] = []
     var bulkColumnReadTableCount: Int?
+    var schemaCacheScope: String?
     nonisolated(unsafe) var streamingTask: Task<Void, Never>?
     var prepTask: Task<Void, Never>?
 
@@ -369,6 +370,7 @@ final class AIChatViewModel: ObservableObject {
         inFlightSchemaLoad = nil
         relevantTableNames = []
         bulkColumnReadTableCount = nil
+        schemaCacheScope = nil
         currentQuery = nil
         queryResults = nil
         editorTarget = nil

@@ -458,7 +458,8 @@ actor SQLSchemaProvider {
             )
             let first = AISchemaContext.indices(
                 of: AISchemaContext.referencedTables(in: statement, grammar: grammar),
-                in: listedTables
+                in: listedTables,
+                defaultSchema: defaultSchema
             )
             let picked = Set(first)
             listedTables = first.map { listedTables[$0] }

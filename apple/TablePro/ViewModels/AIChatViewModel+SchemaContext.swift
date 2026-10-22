@@ -24,6 +24,7 @@ extension AIChatViewModel {
     }
 
     func ensureColumnsLoaded(forTable tableName: String) async {
+        dropSchemaCacheIfScopeChanged()
         if let existing = columnsByTable[tableName], !existing.isEmpty { return }
         if let inFlight = inFlightColumnFetches[tableName] {
             await inFlight.value
@@ -31,6 +32,7 @@ extension AIChatViewModel {
         }
         guard let connection else { return }
         let connId = connection.id
+        let scope = schemaCacheScope
         let task: Task<Void, Never> = Task { [weak self] in
             let columns: [ColumnInfo]
             do {
@@ -50,7 +52,7 @@ extension AIChatViewModel {
                 Self.logger.warning("Foreign key fetch failed for \(tableName, privacy: .private(mask: .hash)): \(error.publicLogShape, privacy: .public)")
                 fkMap = [:]
             }
-            guard !Task.isCancelled, let self else { return }
+            guard !Task.isCancelled, let self, self.schemaCacheScope == scope else { return }
             self.columnsByTable[tableName] = columns
             if let fks = fkMap[tableName] {
                 self.foreignKeysByTable[tableName] = fks
@@ -62,6 +64,7 @@ extension AIChatViewModel {
     }
 
     func ensureSchemaLoaded(relevantTo question: String? = nil) async {
+        dropSchemaCacheIfScopeChanged()
         if let inFlight = inFlightSchemaLoad {
             await inFlight.value
             // The load in flight fetched for the previous order; a new order may need other tables.
@@ -106,6 +109,7 @@ extension AIChatViewModel {
     private func runSchemaLoad() async {
         guard let connection else { return }
         let connId = connection.id
+        let scope = schemaCacheScope
         let settings = services.appSettings.ai
         let tablesToFetch = Array(orderedTables().prefix(settings.maxSchemaTables))
         guard !tablesToFetch.isEmpty else { return }
@@ -125,13 +129,12 @@ extension AIChatViewModel {
                     }
                 }
             }
-            // A load cancelled by a session reset still finishes its reads; they belong to the old session.
-            for await (name, cols) in group where !Task.isCancelled {
+            for await (name, cols) in group where schemaCacheScope == scope {
                 columnsByTable[name] = cols
             }
         }
 
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled, schemaCacheScope == scope else { return }
 
         let needsFKFetch = tablesToFetch.contains { foreignKeysByTable[$0.name] == nil }
         guard needsFKFetch else { return }
@@ -139,6 +142,7 @@ extension AIChatViewModel {
             let fkMap = try await DatabaseManager.shared.withBrowseMetadataDriver(connectionId: connId, workload: .bulk) { driver in
                 try await driver.fetchForeignKeys(forTables: tablesToFetch.map(\.name))
             }
+            guard schemaCacheScope == scope else { return }
             for (name, fks) in fkMap {
                 foreignKeysByTable[name] = fks
             }
@@ -218,6 +222,7 @@ extension AIChatViewModel {
             columnsByTable: columnsByTable,
             question: question,
             queryReferences: editorQueryReferences(),
+            defaultSchema: connection.flatMap { defaultSchema(for: $0) },
             maxTables: services.appSettings.ai.maxSchemaTables
         )
         if !ranked.isEmpty {
@@ -232,7 +237,10 @@ extension AIChatViewModel {
               let query = currentQuery, !query.isEmpty,
               services.pluginManager.editorLanguage(for: connection.type) == .sql
         else { return [] }
-        return AISchemaContext.referencedTables(in: query, grammar: connection.type.lexicalGrammar)
+        return AISchemaContext.referencedTables(
+            in: AISchemaContext.carriedQuery(query),
+            grammar: connection.type.lexicalGrammar
+        )
     }
 
     private func loadEveryColumnForRanking() async {
@@ -243,6 +251,7 @@ extension AIChatViewModel {
               bulkColumnReadTableCount != tableCount
         else { return }
         bulkColumnReadTableCount = tableCount
+        let scope = schemaCacheScope
         let allColumns: [String: [ColumnInfo]]?
         do {
             allColumns = try await DatabaseManager.shared.withBrowseMetadataDriver(
@@ -255,9 +264,12 @@ extension AIChatViewModel {
             }
         } catch {
             Self.logger.warning("Bulk column fetch failed: \(error.publicLogShape, privacy: .public)")
+            if schemaCacheScope == scope {
+                bulkColumnReadTableCount = nil
+            }
             return
         }
-        guard let allColumns, !Task.isCancelled else { return }
+        guard let allColumns, !Task.isCancelled, schemaCacheScope == scope else { return }
         let byFoldedName = Dictionary(
             allColumns.map { ($0.key.lowercased(), $0.value) },
             uniquingKeysWith: { first, _ in first }
@@ -267,6 +279,27 @@ extension AIChatViewModel {
             merged[table.name] = allColumns[table.name] ?? byFoldedName[table.name.lowercased()] ?? []
         }
         columnsByTable = merged
+    }
+
+    // A session outlives a database or schema switch, so its column cache belongs to the scope it
+    // was read in.
+    private func dropSchemaCacheIfScopeChanged() {
+        let scope = connection.map { connection in
+            [
+                connection.id.uuidString,
+                services.databaseManager.browseDatabaseName(for: connection),
+                defaultSchema(for: connection) ?? ""
+            ].joined(separator: "\u{1F}")
+        }
+        guard scope != schemaCacheScope else { return }
+        schemaCacheScope = scope
+        columnsByTable = [:]
+        foreignKeysByTable = [:]
+        relevantTableNames = []
+        bulkColumnReadTableCount = nil
+        inFlightColumnFetches.removeAll()
+        inFlightSchemaLoad?.cancel()
+        inFlightSchemaLoad = nil
     }
 
     private func orderedTables() -> [TableInfo] {

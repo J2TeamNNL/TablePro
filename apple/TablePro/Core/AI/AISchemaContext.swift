@@ -68,10 +68,8 @@ struct AISchemaContext {
            let query = currentQuery,
            !query.isEmpty {
             let lang = editorLanguage.codeBlockTag
-            let nsQuery = query as NSString
-            let truncated = nsQuery.length > maxQueryLength
-                ? nsQuery.substring(to: maxQueryLength) + "\n-- ... truncated"
-                : query
+            let carried = carriedQuery(query)
+            let truncated = carried.utf16.count < query.utf16.count ? carried + "\n-- ... truncated" : query
             parts.append("\n## Current Query\n```\(lang)\n\(truncated)\n```")
         }
 
@@ -173,10 +171,11 @@ struct AISchemaContext {
         columnsByTable: [String: [ColumnInfo]],
         question: String,
         queryReferences: [TableReference] = [],
+        defaultSchema: String? = nil,
         maxTables: Int
     ) -> [String] {
         guard tables.count > maxTables else { return [] }
-        var names = indices(of: queryReferences, in: tables).map { tables[$0].name }
+        var names = indices(of: queryReferences, in: tables, defaultSchema: defaultSchema).map { tables[$0].name }
         // Columns count only once every table has them, or a table loaded on an earlier turn would
         // outrank a better match whose columns were never read.
         let columns = tables.allSatisfy { columnsByTable[$0.name] != nil } ? columnsByTable : [:]
@@ -192,29 +191,34 @@ struct AISchemaContext {
         return names
     }
 
-    // Only the part of the query the prompt carries, and never a CTE or subquery, which has no
-    // table of its own.
-    static func referencedTables(in query: String, grammar: SQLLexicalGrammar) -> [TableReference] {
+    static func carriedQuery(_ query: String) -> String {
         let nsQuery = query as NSString
-        let text = nsQuery.length > maxQueryLength ? nsQuery.substring(to: maxQueryLength) : query
+        return nsQuery.length > maxQueryLength ? nsQuery.substring(to: maxQueryLength) : query
+    }
+
+    // A CTE or subquery has no table of its own, so it is left out.
+    static func referencedTables(in query: String, grammar: SQLLexicalGrammar) -> [TableReference] {
         let analyzer = SQLContextAnalyzer()
-        return SQLStatementScanner.allStatements(in: text, grammar: grammar).flatMap { statement in
-            analyzer.analyze(query: statement, cursorPosition: (statement as NSString).length, grammar: grammar)
-                .tableReferences
-                .filter { $0.derivedColumns == nil }
+        return SQLStatementScanner.allStatements(in: query, grammar: grammar).flatMap { statement in
+            analyzer.tableReferences(in: statement, grammar: grammar).filter { $0.derivedColumns == nil }
         }
     }
 
-    // In the order the query names them, each table once.
-    static func indices(of references: [TableReference], in tables: [TableInfo]) -> [Int] {
+    // In the order the query names them, each table once. A bare name means the default schema's
+    // table, as it does when the query runs.
+    static func indices(of references: [TableReference], in tables: [TableInfo], defaultSchema: String? = nil) -> [Int] {
         var result: [Int] = []
         for reference in references {
-            let match = tables.indices.first { offset in
-                let table = tables[offset]
-                guard table.name.caseInsensitiveCompare(reference.tableName) == .orderedSame else { return false }
-                guard let schema = reference.schema, let tableSchema = table.schema else { return true }
-                return schema.caseInsensitiveCompare(tableSchema) == .orderedSame
+            let named = tables.indices.filter {
+                tables[$0].name.caseInsensitiveCompare(reference.tableName) == .orderedSame
             }
+            let schema = reference.schema ?? defaultSchema
+            let inSchema = named.first { offset in
+                guard let schema, let tableSchema = tables[offset].schema else { return false }
+                return tableSchema.caseInsensitiveCompare(schema) == .orderedSame
+            }
+            let unscoped = named.first { tables[$0].schema == nil }
+            let match = inSchema ?? unscoped ?? (reference.schema == nil ? named.first : nil)
             if let match, !result.contains(match) {
                 result.append(match)
             }

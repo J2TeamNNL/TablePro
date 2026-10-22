@@ -196,6 +196,39 @@ struct SchemaContextForAITests {
         #expect(listed["audit_log"] == nil)
     }
 
+    @Test("a table named past the first 2,000 characters of a long statement still takes the budget")
+    func longStatementTableTakesTheBudget() async throws {
+        let tables = [
+            TestFixtures.makeTableInfo(name: "audit_log"),
+            TestFixtures.makeTableInfo(name: "orders")
+        ]
+        let provider = Self.provider(
+            tables: tables,
+            columns: [
+                "audit_log": [TestFixtures.makeColumnInfo(name: "message")],
+                "orders": [TestFixtures.makeColumnInfo(name: "total")]
+            ]
+        )
+        await provider.resetForDatabase(
+            "shop",
+            tables: tables,
+            driver: MockDatabaseDriver(),
+            connection: TestFixtures.makeConnection()
+        )
+        var settings = AISettings.default
+        settings.maxSchemaTables = 1
+        let columnList = (0..<500).map { "c\($0)" }.joined(separator: ", ")
+        let editorText = "SELECT \(columnList) FROM orders WHERE "
+
+        let context = try #require(await provider.buildSchemaContextForAI(
+            settings: settings,
+            editorText: editorText,
+            cursorOffset: (editorText as NSString).length
+        ))
+
+        #expect(Self.columnNamesByTableLine(in: context)["orders"] == ["total"])
+    }
+
     private static func schemaAwareProvider(
         columnsBySchema: [String: [ColumnInfo]],
         bulkColumns: [String: [ColumnInfo]] = [:]

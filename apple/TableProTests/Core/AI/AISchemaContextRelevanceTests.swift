@@ -110,6 +110,21 @@ struct AISchemaContextRelevanceTests {
         #expect(AISchemaContext.indices(of: references, in: tables) == [1])
     }
 
+    @Test("A bare name means the default schema's table")
+    func bareNameMeansDefaultSchema() {
+        let tables = [
+            TestFixtures.makeTableInfo(name: "orders", schema: "archive"),
+            TestFixtures.makeTableInfo(name: "orders", schema: "public")
+        ]
+        let references = AISchemaContext.referencedTables(in: "SELECT * FROM orders", grammar: Self.grammar)
+        #expect(AISchemaContext.indices(of: references, in: tables, defaultSchema: "public") == [1])
+    }
+
+    @Test("A query that ends in a comment still puts its tables first")
+    func queryEndingInCommentCounts() {
+        #expect(Self.names(question: "", query: "SELECT * FROM invoices -- unpaid ones") == ["invoices"])
+    }
+
     @Test("Tables past the budget are counted, not named")
     func hiddenTablesAreCounted() {
         let section = AISchemaContext.buildSchemaSection(
