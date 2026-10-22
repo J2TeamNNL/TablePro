@@ -91,13 +91,19 @@ struct AISchemaContextRelevanceTests {
         #expect(names == ["customers"])
     }
 
-    @Test("Every statement in the editor counts, and a CTE is not a table")
+    @Test("Every statement in the editor counts, and a CTE name matches no table")
     func everyStatementCounts() {
         let query = """
         WITH recent AS (SELECT * FROM orders) SELECT * FROM recent;
         UPDATE customers SET name = 'x';
         """
         #expect(Self.names(question: "", query: query) == ["orders", "customers"])
+    }
+
+    @Test("A CTE named like a table puts that table first")
+    func shadowingCommonTableExpression() {
+        let query = "WITH orders AS (SELECT * FROM orders WHERE total > 0) SELECT * FROM orders"
+        #expect(Self.names(question: "", query: query) == ["orders"])
     }
 
     @Test("A schema-qualified reference matches only a table in that schema")

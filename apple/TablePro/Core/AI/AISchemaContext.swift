@@ -196,11 +196,11 @@ struct AISchemaContext {
         return nsQuery.length > maxQueryLength ? nsQuery.substring(to: maxQueryLength) : query
     }
 
-    // A CTE or subquery has no table of its own, so it is left out.
+    // A CTE's name matches no table in the catalog, so `indices` drops it.
     static func referencedTables(in query: String, grammar: SQLLexicalGrammar) -> [TableReference] {
         let analyzer = SQLContextAnalyzer()
         return SQLStatementScanner.allStatements(in: query, grammar: grammar).flatMap { statement in
-            analyzer.tableReferences(in: statement, grammar: grammar).filter { $0.derivedColumns == nil }
+            analyzer.tableReferences(in: statement, grammar: grammar)
         }
     }
 

@@ -22,6 +22,15 @@ struct SQLContextAnalyzerTableReferenceTests {
         #expect(tables("SELECT * FROM orders WHERE note = 'open") == ["orders"])
     }
 
+    @Test("A CTE that shares a table's name still names the table its body reads")
+    func shadowingCommonTableExpression() {
+        let references = analyzer.tableReferences(
+            in: "WITH orders AS (SELECT * FROM orders WHERE active) SELECT * FROM orders",
+            grammar: .ansi
+        )
+        #expect(references.contains { $0.tableName == "orders" && $0.derivedColumns == nil })
+    }
+
     @Test("Joined, updated and altered tables are named")
     func everyClause() {
         #expect(tables("SELECT * FROM orders o JOIN customers c ON c.id = o.customer_id") == ["orders", "customers"])

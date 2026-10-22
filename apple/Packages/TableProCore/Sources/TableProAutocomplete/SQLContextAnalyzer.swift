@@ -289,16 +289,12 @@ public final class SQLContextAnalyzer {
     public init() {}
 
     // `analyze` reads no tables when its cursor sits in a comment or literal; this reads them wherever the statement
-    // ends, so `SELECT * FROM orders -- note` still names `orders`.
+    // ends, so `SELECT * FROM orders -- note` still names `orders`. A CTE's name comes back like a table's, since a
+    // CTE can share a table's name and still read that table in its own body.
     public func tableReferences(in statement: String, grammar: SQLLexicalGrammar) -> [TableReference] {
         let nsStatement = statement as NSString
         let text = Self.lex(nsStatement, cursor: nsStatement.length, grammar: grammar)
         var references = extractTableReferences(from: text.forReferences)
-        let tokens = Self.tokens(of: text, grammar: grammar)
-        mergeDerivedTables(
-            Self.derivedTableParser.visibleTables(in: tokens, cursor: nsStatement.length),
-            into: &references
-        )
         if let alterTableName = extractAlterTableName(from: text.forReferences),
            !references.contains(where: { $0.tableName == alterTableName }) {
             references.append(TableReference(tableName: alterTableName, alias: nil))

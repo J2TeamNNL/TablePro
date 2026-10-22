@@ -25,7 +25,9 @@ extension AIChatViewModel {
 
     func ensureColumnsLoaded(forTable tableName: String) async {
         dropSchemaCacheIfScopeChanged()
-        if let existing = columnsByTable[tableName], !existing.isEmpty { return }
+        // The ranking's bulk read fills columns without foreign keys, so each is checked on its own.
+        let needsColumns = (columnsByTable[tableName] ?? []).isEmpty
+        if !needsColumns, foreignKeysByTable[tableName] != nil { return }
         if let inFlight = inFlightColumnFetches[tableName] {
             await inFlight.value
             return
@@ -34,28 +36,32 @@ extension AIChatViewModel {
         let connId = connection.id
         let scope = schemaCacheScope
         let task: Task<Void, Never> = Task { [weak self] in
-            let columns: [ColumnInfo]
-            do {
-                columns = try await DatabaseManager.shared.withBrowseMetadataDriver(connectionId: connId) { driver in
-                    try await driver.fetchColumns(table: tableName)
+            var columns: [ColumnInfo]?
+            if needsColumns {
+                do {
+                    columns = try await DatabaseManager.shared.withBrowseMetadataDriver(connectionId: connId) { driver in
+                        try await driver.fetchColumns(table: tableName)
+                    }
+                } catch {
+                    Self.logger.warning("Column fetch failed for \(tableName, privacy: .private(mask: .hash)): \(error.publicLogShape, privacy: .public)")
+                    columns = []
                 }
-            } catch {
-                Self.logger.warning("Column fetch failed for \(tableName, privacy: .private(mask: .hash)): \(error.publicLogShape, privacy: .public)")
-                columns = []
             }
-            let fkMap: [String: [ForeignKeyInfo]]
+            let fkMap: [String: [ForeignKeyInfo]]?
             do {
                 fkMap = try await DatabaseManager.shared.withBrowseMetadataDriver(connectionId: connId) { driver in
                     try await driver.fetchForeignKeys(forTables: [tableName])
                 }
             } catch {
                 Self.logger.warning("Foreign key fetch failed for \(tableName, privacy: .private(mask: .hash)): \(error.publicLogShape, privacy: .public)")
-                fkMap = [:]
+                fkMap = nil
             }
             guard !Task.isCancelled, let self, self.schemaCacheScope == scope else { return }
-            self.columnsByTable[tableName] = columns
-            if let fks = fkMap[tableName] {
-                self.foreignKeysByTable[tableName] = fks
+            if let columns {
+                self.columnsByTable[tableName] = columns
+            }
+            if let fkMap {
+                self.foreignKeysByTable[tableName] = fkMap[tableName] ?? []
             }
             self.inFlightColumnFetches[tableName] = nil
         }
@@ -143,8 +149,8 @@ extension AIChatViewModel {
                 try await driver.fetchForeignKeys(forTables: tablesToFetch.map(\.name))
             }
             guard schemaCacheScope == scope else { return }
-            for (name, fks) in fkMap {
-                foreignKeysByTable[name] = fks
+            for table in tablesToFetch {
+                foreignKeysByTable[table.name] = fkMap[table.name] ?? []
             }
         } catch {
             Self.logger.warning("Foreign key bulk fetch failed: \(error.publicLogShape, privacy: .public)")
