@@ -1,11 +1,11 @@
 use std::time::Duration;
 
 use testcontainers::core::IntoContainerPort;
-use testcontainers::runners::AsyncRunner;
 use testcontainers::{ContainerAsync, ContainerRequest, GenericImage, ImageExt};
 use tokio::time::Instant;
 
 use crate::container_file::with_files;
+use crate::container_start::start_container;
 use crate::{
     ContainerFile, ExecOutput, FixtureCredentials, FixtureError, PkiFile, RedisVersion, ServerVersion, TestNetwork,
     TestPki,
@@ -64,17 +64,21 @@ impl RedisFixture {
         let pki = TestPki::generate()?;
         let password = FixtureCredentials::generate_password();
         let version = RedisVersion::selected()?;
-        let mut request: ContainerRequest<GenericImage> = version
-            .image()
-            .generic()
-            .with_exposed_port(PORT.tcp())
-            .with_exposed_port(CERTIFICATE_PORT.tcp())
-            .with_cmd(["sh".to_owned(), "-c".to_owned(), start_command(listening)]);
         let network_alias = network.map(|network| network.container_name(Self::NETWORK_ROLE));
-        if let (Some(network), Some(alias)) = (network, &network_alias) {
-            request = request.with_network(network.name()).with_container_name(alias);
-        }
-        let container = with_files(request, Self::files(&pki, &password)?).start().await?;
+        let files = Self::files(&pki, &password)?;
+        let container = start_container(|| {
+            let mut request: ContainerRequest<GenericImage> = version
+                .image()
+                .generic()
+                .with_exposed_port(PORT.tcp())
+                .with_exposed_port(CERTIFICATE_PORT.tcp())
+                .with_cmd(["sh".to_owned(), "-c".to_owned(), start_command(listening)]);
+            if let (Some(network), Some(alias)) = (network, &network_alias) {
+                request = request.with_network(network.name()).with_container_name(alias);
+            }
+            with_files(request, files.clone())
+        })
+        .await?;
         let host = container.get_host().await?.to_string();
         let port = container.get_host_port_ipv4(PORT).await?;
         let certificate_port = match listening {

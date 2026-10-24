@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use testcontainers::core::{IntoContainerPort, WaitFor};
-use testcontainers::runners::AsyncRunner;
 use testcontainers::{ContainerAsync, GenericImage, ImageExt};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
@@ -9,6 +8,7 @@ use tokio::time::Instant;
 use uuid::Uuid;
 
 use crate::container_file::with_files;
+use crate::container_start::start_container;
 use crate::{
     ContainerFile, ExecOutput, FixtureCredentials, FixtureError, HostCertificate, OpenSshOptions, OpenSshVersion,
     ServerVersion, SshAuthVariant, TestNetwork,
@@ -60,21 +60,6 @@ impl OpenSshFixture {
             | SshAuthVariant::UserCertificateAuthority(_)
             | SshAuthVariant::KeyboardInteractive => None,
         };
-        let mut request = options
-            .version
-            .image()
-            .generic()
-            .with_exposed_port(Self::CONTAINER_PORT.tcp())
-            .with_wait_for(WaitFor::message_on_stdout("[ls.io-init] done."))
-            .with_env_var("USER_NAME", USERNAME)
-            .with_env_var("USER_PASSWORD", &password)
-            .with_env_var(
-                "PASSWORD_ACCESS",
-                if variant.password_access() { "true" } else { "false" },
-            );
-        if let SshAuthVariant::PublicKey(key) = &variant {
-            request = request.with_env_var("PUBLIC_KEY", key.public_key());
-        }
         let mut files = vec![ContainerFile::readable(
             Self::DROP_IN,
             Self::drop_in(&variant, &options),
@@ -92,10 +77,28 @@ impl OpenSshFixture {
             let suffix = Uuid::new_v4().simple().to_string();
             network.container_name(&format!("sshd-{}", &suffix[..8]))
         });
-        if let (Some(network), Some(alias)) = (network, &network_alias) {
-            request = request.with_network(network.name()).with_container_name(alias);
-        }
-        let container = with_files(request, files).start().await?;
+        let container = start_container(|| {
+            let mut request = options
+                .version
+                .image()
+                .generic()
+                .with_exposed_port(Self::CONTAINER_PORT.tcp())
+                .with_wait_for(WaitFor::message_on_stdout("[ls.io-init] done."))
+                .with_env_var("USER_NAME", USERNAME)
+                .with_env_var("USER_PASSWORD", &password)
+                .with_env_var(
+                    "PASSWORD_ACCESS",
+                    if variant.password_access() { "true" } else { "false" },
+                );
+            if let SshAuthVariant::PublicKey(key) = &variant {
+                request = request.with_env_var("PUBLIC_KEY", key.public_key());
+            }
+            if let (Some(network), Some(alias)) = (network, &network_alias) {
+                request = request.with_network(network.name()).with_container_name(alias);
+            }
+            with_files(request, files.clone())
+        })
+        .await?;
         let host = container.get_host().await?.to_string();
         let port = container.get_host_port_ipv4(Self::CONTAINER_PORT).await?;
         wait_for_banner(&host, port).await?;

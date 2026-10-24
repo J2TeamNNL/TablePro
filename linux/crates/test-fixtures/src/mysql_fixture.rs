@@ -1,8 +1,8 @@
 use testcontainers::core::IntoContainerPort;
-use testcontainers::runners::AsyncRunner;
 use testcontainers::{ContainerAsync, GenericImage, ImageExt};
 
 use crate::container_file::with_files;
+use crate::container_start::start_container;
 use crate::{
     ContainerFile, ExecOutput, FixtureCredentials, FixtureError, MysqlFlavour, MysqlOptions, PkiFile, TestNetwork,
     TestPki,
@@ -51,19 +51,22 @@ impl MysqlFixture {
             .into_iter()
             .fold(release.generic(), GenericImage::with_wait_for)
             .with_exposed_port(Self::CONTAINER_PORT.tcp());
-        let mut request = image
-            .with_env_var(format!("{prefix}_ROOT_PASSWORD"), &root_password)
-            .with_env_var(format!("{prefix}_DATABASE"), DATABASE)
-            .with_env_var(format!("{prefix}_USER"), PASSWORD_USER)
-            .with_env_var(format!("{prefix}_PASSWORD"), &password)
-            .with_cmd(Self::server_arguments(&options));
         let network_alias = network.map(|network| network.container_name(Self::NETWORK_ROLE));
-        if let (Some(network), Some(alias)) = (network, &network_alias) {
-            request = request.with_network(network.name()).with_container_name(alias);
-        }
-        let container = with_files(request, Self::files(&pki, &options, &certificate_password)?)
-            .start()
-            .await?;
+        let files = Self::files(&pki, &options, &certificate_password)?;
+        let container = start_container(|| {
+            let mut request = image
+                .clone()
+                .with_env_var(format!("{prefix}_ROOT_PASSWORD"), &root_password)
+                .with_env_var(format!("{prefix}_DATABASE"), DATABASE)
+                .with_env_var(format!("{prefix}_USER"), PASSWORD_USER)
+                .with_env_var(format!("{prefix}_PASSWORD"), &password)
+                .with_cmd(Self::server_arguments(&options));
+            if let (Some(network), Some(alias)) = (network, &network_alias) {
+                request = request.with_network(network.name()).with_container_name(alias);
+            }
+            with_files(request, files.clone())
+        })
+        .await?;
         let host = container.get_host().await?.to_string();
         let port = container.get_host_port_ipv4(Self::CONTAINER_PORT).await?;
         Ok(Self {

@@ -1,10 +1,10 @@
 use std::num::NonZeroU32;
 
 use testcontainers::core::{IntoContainerPort, WaitFor};
-use testcontainers::runners::AsyncRunner;
 use testcontainers::{ContainerAsync, GenericImage, ImageExt};
 
 use crate::container_file::with_files;
+use crate::container_start::start_container;
 use crate::{
     ContainerFile, FixtureCredentials, FixtureError, FixtureImage, HbaMode, PoolMode, PostgresFixture, TestNetwork,
 };
@@ -44,13 +44,17 @@ impl PgBouncerFixture {
             upstream.database(),
             &upstream.password_credentials(),
         );
-        let request = FixtureImage::PGBOUNCER
-            .generic()
-            .with_exposed_port(CONTAINER_PORT.tcp())
-            .with_wait_for(WaitFor::message_on_either_std("process up"))
-            .with_network(network.name())
-            .with_container_name(network.container_name(NETWORK_ROLE));
-        let container = with_files(request, files).start().await?;
+        let container_name = network.container_name(NETWORK_ROLE);
+        let container = start_container(|| {
+            let request = FixtureImage::PGBOUNCER
+                .generic()
+                .with_exposed_port(CONTAINER_PORT.tcp())
+                .with_wait_for(WaitFor::message_on_either_std("process up"))
+                .with_network(network.name())
+                .with_container_name(&container_name);
+            with_files(request, files.clone())
+        })
+        .await?;
         let host = container.get_host().await?.to_string();
         let port = container.get_host_port_ipv4(CONTAINER_PORT).await?;
         Ok(Self {
