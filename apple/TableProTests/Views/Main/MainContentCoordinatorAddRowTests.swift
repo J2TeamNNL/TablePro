@@ -43,9 +43,7 @@ struct MainContentCoordinatorAddRowTests {
         return coordinator
     }
 
-    /// `addNewRow()` resolves its target through `GridSelectionOwner`, which answers `.none` in
-    /// Chart mode and `.schemaGrid` in Structure mode. Offering the command outside Data mode makes
-    /// it either inert or a column insert wearing a row's name.
+    // Outside Data mode `GridSelectionOwner` answers `.none` or `.schemaGrid`, making Add Row inert or a column insert.
     @Test("Only the data grid takes a row")
     func addRowFollowsTheResultMode() {
         #expect(makeCoordinator(viewMode: .data).canAddRow)
@@ -61,8 +59,7 @@ struct MainContentCoordinatorAddRowTests {
         #expect(!makeCoordinator(isView: true).canAddRow)
     }
 
-    /// A new row is pre-filled from the schema's account of which columns the server fills in, so
-    /// offering the command before that account arrives stages NULL into an identity column.
+    // Offered before the schema arrives, a new row stages NULL into an identity column.
     @Test("A row waits for the schema that says which columns the server fills in")
     func addRowWaitsForTheAuthoritativeSchema() {
         #expect(!makeCoordinator(hasAuthoritativeSchema: false).canAddRow)
@@ -78,6 +75,33 @@ struct MainContentCoordinatorAddRowTests {
         let unresolved = try makeQueryCoordinator(keysResolved: false)
         #expect(unresolved.activeResultEditRefusal == .keysUnresolved)
         #expect(!unresolved.canAddRow)
+    }
+
+    // The grid's text editor refuses bytes, so the caret on a BLOB column would open nothing.
+    @Test("Add Row and Duplicate Row put the caret past a BLOB column, on the first one that takes text")
+    func newRowSkipsABlobColumn() throws {
+        let fixture = fixtures.make()
+        var tab = QueryTab(title: "files", query: "SELECT * FROM files", tabType: .table)
+        tab.tableContext.tableName = "files"
+        tab.tableContext.isEditable = true
+        tab.display.resultsViewMode = .data
+        fixture.addTab(tab, rows: TableRows.from(
+            queryRows: [[.bytes(Data([0x01, 0x02])), .text("a")]],
+            columns: ["payload", "name"],
+            columnTypes: [.blob(rawType: "BYTEA"), .text(rawType: "TEXT")],
+            hasAuthoritativeSchema: true
+        ))
+        let coordinator = fixture.coordinator
+        let model = coordinator.gridModel(forTab: tab.id)
+
+        coordinator.addNewRow()
+        let added = try #require(model.selection.activeCell)
+        #expect(model.columns.column(at: added.displayColumn)?.name == "name")
+
+        coordinator.duplicateRow(.existing(0))
+        let duplicated = try #require(model.selection.activeCell)
+        #expect(duplicated.row != added.row)
+        #expect(model.columns.column(at: duplicated.displayColumn)?.name == "name")
     }
 
     private func makeQueryCoordinator(keysResolved: Bool) throws -> MainContentCoordinator {
@@ -133,7 +157,6 @@ struct MainContentCommandActionsResultViewTests {
         let actions = MainContentCommandActions(
             coordinator: coordinator,
             connection: connection,
-            selectionState: coordinator.selectionState,
             selectedTables: Binding(get: { selectedTables }, set: { selectedTables = $0 }),
             pendingTruncates: Binding(get: { pendingTruncates }, set: { pendingTruncates = $0 }),
             pendingDeletes: Binding(get: { pendingDeletes }, set: { pendingDeletes = $0 }),
@@ -162,8 +185,7 @@ struct MainContentCommandActionsResultViewTests {
         #expect(mode(coordinator, tabId) == .json)
     }
 
-    /// The menu lists every mode, so the command has to refuse the ones this tab cannot show rather
-    /// than leaving it on a mode with nothing to render.
+    // The menu lists every mode, so the command refuses ones this tab cannot show rather than render nothing.
     @Test("A mode the tab does not offer is refused")
     func refusesAnUnavailableMode() {
         let (actions, coordinator, tabId) = makeActions(tabType: .query, tableName: nil)
