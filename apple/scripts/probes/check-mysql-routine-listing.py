@@ -115,6 +115,20 @@ if CommandLine.arguments[1] == "queries" {
                 print(json.dumps({"round": iteration + 1, "old_seconds": round(durations["old"], 4),
                                   "two_reads_seconds": round(durations["routines"] + durations["parameters"], 4),
                                   "rows": len(merged), "swift_merge_matches": True}), flush=True)
+            if command(mysql, input="SELECT @@lower_case_table_names;").strip() == "0":
+                command(mysql, input="CREATE DATABASE Target; "
+                        "CREATE PROCEDURE Target.same(IN y VARCHAR(20)) SELECT y;")
+                case_rows = {}
+                for key in ["routines", "parameters"]:
+                    output = command(mysql, input=queries[key], timeout=60)
+                    case_rows[key] = [[None if cell == "NULL" else cell for cell in line.split("\t")]
+                                      for line in output.splitlines()]
+                merged = json.loads(command([str(binary), "merge"], input=json.dumps(case_rows)))
+                signatures = {(row[7], row[0], row[1]): row[8] for row in merged}
+                if (signatures.get(("target", "same", "PROCEDURE")) != "IN x int(11)"
+                        or signatures.get(("Target", "same", "PROCEDURE")) != "IN y varchar(20)"):
+                    raise RuntimeError("Case-distinct schemas shared or lost parameter signatures")
+                print("PASS: case-distinct schemas keep separate parameter signatures", flush=True)
             print("PASS: same metadata, no-argument routine and same-name procedure/function preserved")
         finally:
             if started:

@@ -215,6 +215,8 @@ public enum MySQLObjectQueries {
         """
     }
 
+    /// Catalog name comparisons ignore case even when the server holds distinct schemas by case.
+    /// Group the stored names as bytes so their parameter lists cannot be combined.
     public static func routineParameters(schema: String) -> String {
         """
         SELECT
@@ -228,7 +230,8 @@ public enum MySQLObjectQueries {
         FROM information_schema.PARAMETERS p
         WHERE p.SPECIFIC_SCHEMA = '\(escapeLiteral(schema))'
             AND p.ORDINAL_POSITION > 0
-        GROUP BY p.SPECIFIC_SCHEMA, p.SPECIFIC_NAME, p.ROUTINE_TYPE
+        GROUP BY CAST(p.SPECIFIC_SCHEMA AS BINARY), p.SPECIFIC_SCHEMA,
+            CAST(p.SPECIFIC_NAME AS BINARY), p.SPECIFIC_NAME, p.ROUTINE_TYPE
         """
     }
 

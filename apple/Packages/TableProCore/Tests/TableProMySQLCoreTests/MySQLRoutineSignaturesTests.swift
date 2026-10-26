@@ -17,6 +17,16 @@ struct MySQLRoutineSignaturesTests {
         #expect(signatures.parameterList(schema: "other", name: "same", kind: "PROCEDURE") == "IN other bigint(20)")
     }
 
+    @Test("Case-distinct schema names keep their own signatures")
+    func schemaIdentityPreservesCase() {
+        let signatures = MySQLRoutineSignatures(rows: [
+            ["target", "same", "PROCEDURE", "IN x int(11)"],
+            ["Target", "same", "PROCEDURE", "IN y varchar(20)"]
+        ])
+        #expect(signatures.parameterList(schema: "target", name: "same", kind: "PROCEDURE") == "IN x int(11)")
+        #expect(signatures.parameterList(schema: "Target", name: "same", kind: "PROCEDURE") == "IN y varchar(20)")
+    }
+
     @Test("A routine with no parameter rows keeps an empty argument list")
     func missingParametersAreEmpty() {
         let signatures = MySQLRoutineSignatures(rows: [["app", "with_args", "PROCEDURE", "IN x int(11)"]])
