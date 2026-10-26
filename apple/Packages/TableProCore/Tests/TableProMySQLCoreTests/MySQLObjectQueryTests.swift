@@ -20,7 +20,7 @@ struct MySQLObjectQueryTests {
 
     @Test("The parameter list excludes a function's return row")
     func parameterListSkipsOrdinalZero() {
-        let sql = MySQLObjectQueries.routineList(schema: "app")
+        let sql = MySQLObjectQueries.routineParameters(schema: "app")
         #expect(sql.contains("p.ORDINAL_POSITION > 0"))
         #expect(sql.contains("information_schema.PARAMETERS"))
     }
@@ -209,16 +209,21 @@ struct MySQLObjectQueryTests {
         )
     }
 
-    /// `information_schema.PARAMETERS` arrived in 5.5.3; 5.1.73 answers 1109.
-    @Test("Without the PARAMETERS catalog the routine list keeps its shape with a NULL parameter list")
-    func routineListWithoutParameters() {
-        let legacy = MySQLObjectQueries.routineList(schema: "app", includesParameters: false)
+    @Test("Routine discovery reads each catalog once without a join or correlated subquery")
+    func routineCatalogsAreSeparate() {
+        let routines = MySQLObjectQueries.routineList(schema: "it's")
+        let parameters = MySQLObjectQueries.routineParameters(schema: "it's")
 
-        #expect(legacy.contains("NULL AS PARAMETER_LIST"))
-        #expect(!legacy.contains("information_schema.PARAMETERS"))
-        #expect(legacy.contains("FROM information_schema.ROUTINES r"))
-        #expect(legacy.contains("WHERE r.ROUTINE_SCHEMA = 'app'"))
-        #expect(MySQLObjectQueries.routineList(schema: "app", includesParameters: true).contains("information_schema.PARAMETERS"))
+        #expect(routines.contains("FROM information_schema.ROUTINES r"))
+        #expect(routines.contains("WHERE r.ROUTINE_SCHEMA = 'it''s'"))
+        #expect(!routines.contains("information_schema.PARAMETERS"))
+        #expect(!routines.contains("ROUTINE_DEFINITION"))
+        #expect(!routines.uppercased().contains(" JOIN "))
+        #expect(parameters.contains("WHERE p.SPECIFIC_SCHEMA = 'it''s'"))
+        #expect(parameters.contains("GROUP BY p.SPECIFIC_SCHEMA, p.SPECIFIC_NAME, p.ROUTINE_TYPE"))
+        #expect(parameters.contains("ORDER BY p.ORDINAL_POSITION SEPARATOR ', '"))
+        #expect(!parameters.contains("information_schema.ROUTINES"))
+        #expect(!parameters.uppercased().contains(" JOIN "))
     }
 
     @Test("A routine's recorded mode is read by schema, name and type, with the name selected for an exact match")

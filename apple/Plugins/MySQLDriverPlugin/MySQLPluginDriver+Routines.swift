@@ -14,12 +14,21 @@ extension MySQLPluginDriver {
         guard !flavor.isDatabend, serverHasInformationSchema else { return [] }
         let resolvedSchema = routineSchema(schema)
         let includesParameters = holdsForServer(MySQLServerVersion.hasParametersCatalog(banner:flavor:))
-        let query = MySQLObjectQueries.routineList(schema: resolvedSchema, includesParameters: includesParameters)
+        let query = MySQLObjectQueries.routineList(schema: resolvedSchema)
         let result = try await execute(ownStatement: query)
+        guard !result.rows.isEmpty else { return [] }
+        var signatures = MySQLRoutineSignatures(rows: [])
+        if includesParameters {
+            let parameters = try await execute(ownStatement: MySQLObjectQueries.routineParameters(schema: resolvedSchema))
+            signatures = MySQLRoutineSignatures(rows: parameters.rows.map { $0.map(\.asText) })
+        }
         return result.rows.compactMap { row -> PluginRoutineInfo? in
             guard let name = row[safe: 0]?.asText else { return nil }
             let isProcedure = row[safe: 1]?.asText?.uppercased() == "PROCEDURE"
-            let signature = includesParameters ? "(\(row[safe: 8]?.asText ?? ""))" : nil
+            let schema = row[safe: 7]?.asText ?? resolvedSchema
+            let kind = isProcedure ? "PROCEDURE" : "FUNCTION"
+            let parameterList = signatures.parameterList(schema: schema, name: name, kind: kind)
+            let signature = includesParameters ? "(\(parameterList))" : nil
             var attributes: [PluginObjectAttribute] = []
             if let access = row[safe: 3]?.asText, !access.isEmpty {
                 attributes.append(PluginObjectAttribute(label: "Data Access", value: access))
@@ -36,7 +45,7 @@ extension MySQLPluginDriver {
             return PluginRoutineInfo(
                 name: name,
                 kind: isProcedure ? .procedure : .function,
-                schema: row[safe: 7]?.asText ?? resolvedSchema,
+                schema: schema,
                 returnType: isProcedure ? nil : row[safe: 2]?.asText,
                 language: "SQL",
                 argumentSignature: signature,

@@ -196,39 +196,40 @@ public enum MySQLObjectQueries {
         """
     }
 
-    /// The parameter list comes from information_schema.PARAMETERS, where ordinal 0 is a function's
-    /// return value rather than a parameter. A server before 5.5.3 has no such table, so the list
-    /// comes back as NULL there rather than failing the whole read.
-    public static func routineList(schema: String, includesParameters: Bool = true) -> String {
-        let schemaLiteral = escapeLiteral(schema)
-        let parameterList = includesParameters ? """
-                (
-                    SELECT GROUP_CONCAT(
-                        CONCAT_WS(' ', p.PARAMETER_MODE, p.PARAMETER_NAME, p.DTD_IDENTIFIER)
-                        ORDER BY p.ORDINAL_POSITION SEPARATOR ', '
-                    )
-                    FROM information_schema.PARAMETERS p
-                    WHERE p.SPECIFIC_SCHEMA = r.ROUTINE_SCHEMA
-                        AND p.SPECIFIC_NAME = r.ROUTINE_NAME
-                        AND p.ROUTINE_TYPE = r.ROUTINE_TYPE
-                        AND p.ORDINAL_POSITION > 0
-                ) AS PARAMETER_LIST
-            """ : "NULL AS PARAMETER_LIST"
-        return """
-            SELECT
-                r.ROUTINE_NAME,
-                r.ROUTINE_TYPE,
-                r.DTD_IDENTIFIER,
-                r.SQL_DATA_ACCESS,
-                r.IS_DETERMINISTIC,
-                r.SECURITY_TYPE,
-                r.DEFINER,
-                r.ROUTINE_SCHEMA,
-                \(parameterList)
-            FROM information_schema.ROUTINES r
-            WHERE r.ROUTINE_SCHEMA = '\(schemaLiteral)'
-            ORDER BY r.ROUTINE_TYPE, r.ROUTINE_NAME
-            """
+    /// A correlated PARAMETERS subquery rescans the catalog for every routine on MySQL 5.6.
+    /// Keep the reads separate: catalog joins also fail on proxies such as ShardingSphere.
+    public static func routineList(schema: String) -> String {
+        """
+        SELECT
+            r.ROUTINE_NAME,
+            r.ROUTINE_TYPE,
+            r.DTD_IDENTIFIER,
+            r.SQL_DATA_ACCESS,
+            r.IS_DETERMINISTIC,
+            r.SECURITY_TYPE,
+            r.DEFINER,
+            r.ROUTINE_SCHEMA
+        FROM information_schema.ROUTINES r
+        WHERE r.ROUTINE_SCHEMA = '\(escapeLiteral(schema))'
+        ORDER BY r.ROUTINE_TYPE, r.ROUTINE_NAME
+        """
+    }
+
+    public static func routineParameters(schema: String) -> String {
+        """
+        SELECT
+            p.SPECIFIC_SCHEMA,
+            p.SPECIFIC_NAME,
+            p.ROUTINE_TYPE,
+            GROUP_CONCAT(
+                CONCAT_WS(' ', p.PARAMETER_MODE, p.PARAMETER_NAME, p.DTD_IDENTIFIER)
+                ORDER BY p.ORDINAL_POSITION SEPARATOR ', '
+            ) AS PARAMETER_LIST
+        FROM information_schema.PARAMETERS p
+        WHERE p.SPECIFIC_SCHEMA = '\(escapeLiteral(schema))'
+            AND p.ORDINAL_POSITION > 0
+        GROUP BY p.SPECIFIC_SCHEMA, p.SPECIFIC_NAME, p.ROUTINE_TYPE
+        """
     }
 
     /// Qualified with the schema. Unqualified, the server resolves the name against the session
