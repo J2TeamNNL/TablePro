@@ -38,7 +38,7 @@ extension PluginMetadataRegistry {
             etcdCompletions, redisCompletions, redisColumnTypes, d1Dialect, d1ColumnTypes
         ) = registryDefaultIngredients()
 
-        return [
+        var defaults: [(typeId: String, snapshot: PluginMetadataSnapshot)] = [
             ("MongoDB", PluginMetadataSnapshot(
                 displayName: "MongoDB", iconName: "mongodb-icon", defaultPort: 27_017,
                 requiresAuthentication: false, supportsForeignKeys: false, supportsSchemaEditing: true,
@@ -1030,12 +1030,22 @@ extension PluginMetadataRegistry {
                     tagline: String(localized: "Distributed SQLite by Turso")
                 )
             )),
-        ] + tursoPluginDefaults(dialect: d1Dialect, columnTypes: d1ColumnTypes)
-            + duckdbPluginDefaults(dialect: duckdbDialect, columnTypes: duckdbColumnTypes)
-            + cloudPluginDefaults() + elasticsearchPluginDefaults() + surrealDBPluginDefaults()
-            + kafkaPluginDefaults() + typesensePluginDefaults() + r2SQLPluginDefaults()
-            + weaviatePluginDefaults() + hanaPluginDefaults() + firebasePluginDefaults() + bigtablePluginDefaults()
-            + trinoPluginDefaults() + kingbaseESPluginDefaults()
+        ]
+        defaults += tursoPluginDefaults(dialect: d1Dialect, columnTypes: d1ColumnTypes)
+        defaults += duckdbPluginDefaults(dialect: duckdbDialect, columnTypes: duckdbColumnTypes)
+        defaults += cloudPluginDefaults()
+        defaults += elasticsearchPluginDefaults()
+        defaults += surrealDBPluginDefaults()
+        defaults += kafkaPluginDefaults()
+        defaults += typesensePluginDefaults()
+        defaults += r2SQLPluginDefaults()
+        defaults += weaviatePluginDefaults()
+        defaults += hanaPluginDefaults()
+        defaults += firebasePluginDefaults()
+        defaults += bigtablePluginDefaults()
+        defaults += trinoPluginDefaults()
+        defaults += kingbaseESPluginDefaults()
+        return defaults
     }
     // swiftlint:enable function_body_length
 }

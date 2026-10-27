@@ -20,4 +20,14 @@ struct PluginMetadataRegistryKingbaseESTests {
         #expect(snapshot.capabilities.supportsSchemaSwitching)
         #expect(snapshot.connection.additionalConnectionFields.map(\.id) == ["usePgpass", "connectionOptions"])
     }
+    @Test("Both KingbaseES URL schemes keep credentials and route to the dedicated engine", arguments: ["kingbase", "kingbase8"])
+    func connectionURLs(scheme: String) throws {
+        let parsed = try ConnectionURLParser.parse("\(scheme)://system:pass@localhost:55432/test").get()
+        #expect(parsed.type == .kingbasees)
+        #expect(parsed.host == "localhost")
+        #expect(parsed.port == 55_432)
+        #expect(parsed.database == "test")
+        #expect(parsed.username == "system")
+        #expect(parsed.password == "pass")
+    }
 }
