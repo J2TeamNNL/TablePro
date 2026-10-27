@@ -9,13 +9,17 @@ final class KingbaseESPlugin: NSObject, TableProPlugin, DriverPlugin {
 
     static let databaseTypeId = "KingbaseES"
     static let databaseDisplayName = "KingbaseES"
-    static let iconName = "postgresql-icon"
+    static let iconName = "cylinder"
     static let defaultPort = 54_321
     static let isDownloadable = true
     static let urlSchemes = ["kingbase", "kingbase8"]
     static let brandColorHex = "#C9141E"
     static let systemDatabaseNames = PostgreSQLPlugin.systemDatabaseNames
-    static let systemSchemaNames = ["pg_catalog", "sys_catalog", "information_schema", "pg_toast"]
+    static let systemSchemaNames = [
+        "pg_catalog", "information_schema", "pg_toast", "sys_catalog", "sys", "anon", "dbms_job", "dbms_scheduler",
+        "dbms_sql", "kdb_schedule", "perf", "pg_bitmapindex", "src_restrict", "sys_hm", "sysaudit", "sysmac", "wmsys",
+        "xlog_record_read"
+    ]
 
     static let additionalConnectionFields: [ConnectionField] = [
         ConnectionField(

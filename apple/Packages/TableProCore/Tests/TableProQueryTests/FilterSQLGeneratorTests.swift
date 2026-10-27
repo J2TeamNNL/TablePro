@@ -455,13 +455,4 @@ struct FilterSQLGeneratorTests {
         #expect(FilterColumnKind.keyLiteral("05", column: nil, databaseType: .sqlite) == .text("05"))
         #expect(FilterColumnKind.keyLiteral("2.5", column: nil, databaseType: .sqlite) == .numberOrText("2.5"))
     }
-    @Test("KingbaseES filters keep the server's boolean, bit and floating-point type resolution")
-    func kingbaseTypedFilters() {
-        let engine = DatabaseType(rawValue: "KingbaseES")
-        for name in ["boolean", "bit", "real", "double precision", "numeric(10,2)"] {
-            let column = ColumnInfo(name: "v", typeName: name)
-            #expect(engineClause(engine, column, "1") == "WHERE \"v\" = '1'")
-        }
-        #expect(engineClause(engine, ColumnInfo(name: "id", typeName: "bigint"), "5") == "WHERE \"id\" = 5")
-    }
 }

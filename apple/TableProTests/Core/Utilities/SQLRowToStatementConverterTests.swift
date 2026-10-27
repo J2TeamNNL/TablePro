@@ -633,6 +633,7 @@ struct SQLRowToStatementConverterTests {
         )
         #expect(converter.generateUpdates(rows: plain([["a", "x"]])) == "UPDATE [Enterprise_App_Approved] SET [Shape] = N'x' WHERE [code] = N'a';")
     }
+
     @Test("KingbaseES copies binary INSERT and UPDATE values as bytea, including empty bytes")
     func kingbaseBinaryStatements() throws {
         let converter = try makeConverter(
@@ -647,4 +648,16 @@ struct SQLRowToStatementConverterTests {
         }
     }
 
+    // X'..' is a bit-string literal, which a bytea column refuses.
+    @Test("PGlite copies binary values as bytea, not as a bit string")
+    func pgliteBinaryStatements() throws {
+        let converter = try makeConverter(
+            tableName: "documents", columns: ["id", "payload"],
+            databaseType: .pglite, dialect: Self.postgresDialect
+        )
+        let rows = plain([[.text("1"), .bytes(Data([0xDE, 0xAD]))]])
+        #expect(converter.generateInserts(rows: rows).contains("'\\xDEAD'::bytea"))
+        #expect(converter.generateUpdates(rows: rows).contains("\"payload\" = '\\xDEAD'::bytea"))
+        #expect(!converter.generateInserts(rows: rows).contains("X'DEAD'"))
+    }
 }

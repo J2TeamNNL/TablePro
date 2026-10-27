@@ -28,8 +28,13 @@ enum SQLLexicalResolver {
     /// The grammar a script is split with for execution on `connectionId`, with the driver's session facts applied.
     @MainActor
     static func executionGrammar(for databaseType: DatabaseType, connectionId: UUID) -> SQLLexicalGrammar {
-        let session = DatabaseManager.shared.driver(for: connectionId)?.sessionLexicalState
-        return readings(for: databaseType, session: session).execution
+        readings(for: databaseType, session: sessionState(for: connectionId)).execution
+    }
+
+    /// What the connected driver read from its session, or `nil` while `connectionId` has none.
+    @MainActor
+    static func sessionState(for connectionId: UUID) -> PluginSessionLexicalState? {
+        DatabaseManager.shared.driver(for: connectionId)?.sessionLexicalState
     }
 
     private static func declaredGrammar(for databaseType: DatabaseType) -> SQLLexicalGrammar? {

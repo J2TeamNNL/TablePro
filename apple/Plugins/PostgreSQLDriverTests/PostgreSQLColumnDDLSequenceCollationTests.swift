@@ -51,12 +51,18 @@ struct PostgreSQLColumnDDLQuerySequenceCollationTests {
         ))
     }
 
-    @Test("The DDL builders' clause is the same collation behind a COLLATE keyword, or nothing")
+    @Test("The DDL builders' clause reads the same collation once, behind a COLLATE keyword, or nothing")
     func collateClauseWrapsTheSameCollation() {
-        #expect(
-            PostgreSQLSchemaQueries.columnCollateClause
-                == "CASE WHEN (\(PostgreSQLSchemaQueries.columnCollation)) IS NULL THEN '' ELSE ' COLLATE ' || \(PostgreSQLSchemaQueries.columnCollation) END"
-        )
+        let clause = PostgreSQLSchemaQueries.columnCollateClause
+        let name = PostgreSQLObjectQueries.collationName("a.attcollation")
+        #expect(clause.contains("a.attcollation <> 0"))
+        #expect(clause.contains(
+            "a.attcollation <> (SELECT ty.typcollation FROM pg_catalog.pg_type ty WHERE ty.oid = a.atttypid)"
+        ))
+        #expect(clause.contains("THEN ' COLLATE ' || \(name)"))
+        #expect(clause.contains("ELSE ''"))
+        #expect(clause.components(separatedBy: name).count - 1 == 1)
+        #expect(clause.components(separatedBy: "pg_catalog.pg_type ty").count - 1 == 1)
     }
 }
 

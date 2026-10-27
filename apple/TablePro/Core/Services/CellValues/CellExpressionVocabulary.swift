@@ -4,7 +4,6 @@
 //
 
 import Foundation
-import TableProPluginKit
 
 enum CellExpressionKind: Hashable, Sendable {
     case timestamp
@@ -60,7 +59,7 @@ struct CellExpression: Hashable, Sendable {
 enum CellExpressionVocabulary {
     static func expressions(for databaseType: DatabaseType) -> [CellExpression] {
         switch databaseType {
-        case .postgresql, .pglite: postgreSQL
+        case .postgresql, .pglite, .kingbasees: postgreSQL
         case .cockroachdb: cockroachDB
         case .redshift: redshift
         case .mysql, .mariadb, .tidb, .oceanbase: mySQL
@@ -78,7 +77,7 @@ enum CellExpressionVocabulary {
         case .bigQuery: bigQuery
         case .snowflake: snowflake
         case .trino, .presto: trino
-        default: SqlDialect.from(databaseTypeId: databaseType.rawValue) == .postgres ? postgreSQL : []
+        default: []
         }
     }
 

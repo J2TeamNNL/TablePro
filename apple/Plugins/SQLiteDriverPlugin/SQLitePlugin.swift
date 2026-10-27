@@ -187,12 +187,12 @@ final class SQLitePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         if !attachments.isEmpty, backend is SQLiteAgentBackend {
             throw AttachedDatabaseError.remoteSession
         }
-        let backend = self.backend
         try await withTaskCancellationHandler {
             try await backend.open(loading: extensions)
         } onCancel: {
             backend.abortConnect()
         }
+        let backend = self.backend
         let failures = await AttachedDatabaseAttacher.attach(attachments) { database in
             _ = try await backend.executeParameterizedQuery(
                 "ATTACH DATABASE ? AS ?",

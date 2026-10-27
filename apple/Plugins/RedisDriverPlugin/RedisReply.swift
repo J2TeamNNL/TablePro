@@ -12,7 +12,7 @@ import TableProPluginKit
 
 // MARK: - Reply Type
 
-enum RedisReply: Sendable {
+enum RedisReply {
     case string(String)
     case integer(Int64)
     case array([RedisReply])

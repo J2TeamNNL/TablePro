@@ -21,12 +21,7 @@ internal final class SourceFileDiskChangeMonitor {
     private var inFlight: Task<Void, Never>?
     private var needsAnotherPass = false
 
-    init(
-        tabManager: QueryTabManager,
-        readStamps: @escaping StampReader = { urls in
-            await SourceFileDiskChangeMonitor.readStampsOffMainActor(urls)
-        }
-    ) {
+    init(tabManager: QueryTabManager, readStamps: @escaping StampReader = SourceFileDiskChangeMonitor.readStampsOffMainActor) {
         self.tabManager = tabManager
         self.readStamps = readStamps
     }

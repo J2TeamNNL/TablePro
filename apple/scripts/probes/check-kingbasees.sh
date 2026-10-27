@@ -34,8 +34,6 @@ let package = Package(
             "CLibPQ",
             .product(name: "TableProPluginKit", package: "TableProCore"),
             .product(name: "TableProCoreTypes", package: "TableProCore"),
-            .product(name: "TableProQuery", package: "TableProCore"),
-            .product(name: "TableProModels", package: "TableProCore"),
             .product(name: "TableProKerberos", package: "TableProCore"),
             .product(name: "TableProPostgreSQLCore", package: "TableProCore"),
             .product(name: "TableProSQLVocabulary", package: "TableProCore"),

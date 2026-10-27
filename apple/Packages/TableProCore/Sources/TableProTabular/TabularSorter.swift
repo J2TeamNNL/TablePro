@@ -147,7 +147,7 @@ public enum TabularSorter {
 
     private static func sortPositions(count: Int, buffers: SortKeyBuffers) async throws -> [Int] {
         let chunks = TabularChunking.ranges(count: count)
-        var runs: [[Int]] = try await withThrowingTaskGroup(of: (Int, [Int]).self) { group in
+        var runs = try await withThrowingTaskGroup(of: (Int, [Int]).self) { group in
             for (index, chunk) in chunks.enumerated() {
                 group.addTask {
                     try Task.checkCancellation()
@@ -165,10 +165,8 @@ public enum TabularSorter {
         }
         while runs.count > 1 {
             try Task.checkCancellation()
-            let pairs: [([Int], [Int])] = stride(from: 0, to: runs.count, by: 2).map { index in
-                let left: [Int] = runs[index]
-                let right: [Int] = index + 1 < runs.count ? runs[index + 1] : []
-                return (left, right)
+            let pairs = stride(from: 0, to: runs.count, by: 2).map { index in
+                (runs[index], index + 1 < runs.count ? runs[index + 1] : [])
             }
             runs = try await withThrowingTaskGroup(of: (Int, [Int]).self) { group in
                 for (index, pair) in pairs.enumerated() {

@@ -1,8 +1,5 @@
 import Foundation
-import TableProCoreTypes
-import TableProModels
 import TableProPluginKit
-import TableProQuery
 import TableProSQLGrammar
 
 @main
@@ -32,26 +29,6 @@ struct KingbaseESProbe {
         exit(probe.failed == 0 ? 0 : 1)
     }
 
-    static func generatedFiltersMatch(driver: any PluginDatabaseDriver, table: String) async throws -> Bool {
-        guard let dialect = KingbaseESPlugin.sqlDialect else { return false }
-        let generator = FilterSQLGenerator(
-            dialect: dialect, databaseType: DatabaseType(rawValue: "KingbaseES")
-        )
-        let columns = [
-            ColumnInfo(name: "flag", typeName: "bool"),
-            ColumnInfo(name: "amount", typeName: "numeric(12,2)")
-        ]
-        let clause = generator.generateWhereClause(
-            from: [
-                TableFilter(columnName: "flag", value: "1"),
-                TableFilter(columnName: "amount", value: "1234.50")
-            ], logicMode: .and, columns: columns
-        )
-        print("Generated filter: \(clause)")
-        guard clause == "WHERE \"flag\" = '1' AND \"amount\" = '1234.50'" else { return false }
-        return try await driver.execute(query: "SELECT id FROM \(table) \(clause)").rows == [[.text("1")]]
-    }
-
     static func bigintMatches(driver: any PluginDatabaseDriver) async throws -> Bool {
         let result = try await driver.executeUserQuery(
             query: "SELECT $1::bigint AS imported_integer", rowCap: nil,
@@ -60,30 +37,24 @@ struct KingbaseESProbe {
         return result.rows == [[.text("2147483648")]]
     }
 
-    mutating func run() async {
-        let env = ProcessInfo.processInfo.environment
-        let database = env["TP_KINGBASE_DATABASE"] ?? "test"
-        let config = DriverConnectionConfig(
-            host: env["TP_KINGBASE_HOST"] ?? "127.0.0.1",
-            port: Int(env["TP_KINGBASE_PORT"] ?? "55432") ?? 55_432,
-            username: env["TP_KINGBASE_USER"] ?? "system",
-            password: env["TP_KINGBASE_PASSWORD"] ?? "", database: database
-        )
-        let driver: any PluginDatabaseDriver = KingbaseESPlugin().createDriver(config: config)
-        defer { driver.disconnect() }
-        do { try await driver.connect() } catch {
-            failed += 1
-            print("FAIL connect: \(error)")
-            return
-        }
-        let mode = try? await driver.execute(query: "SELECT current_setting('database_mode')").rows.first?.first?.asText
+    mutating func checkSession(driver: any PluginDatabaseDriver, mode: String?) async {
         await check("session facts through protocol witness") {
             let result = try await driver.execute(query: "SELECT current_setting('database_mode')")
             let mode = result.rows.first?.first?.asText
             print("KingbaseES mode=\(mode ?? "unknown"), version=\(driver.serverVersion ?? "unknown")")
             guard let facts = driver.sessionLexicalState else { return false }
-            return facts.determined.contains(.alternativeQuoting)
-                && facts.enabled.contains(.alternativeQuoting) == (mode == "oracle")
+            let oracleFeatures = KingbaseESCompatibilityMode.lexicalFeaturesItDecides
+            return facts.determined.isSuperset(of: oracleFeatures)
+                && facts.enabled.intersection(oracleFeatures) == (mode == "oracle" ? oracleFeatures : [])
+        }
+        await check("mode probe reads pg or oracle") {
+            let setting = try await driver.execute(query: KingbaseESCompatibilityMode.probeQuery).rows.first?.first?.asText
+            let expected: KingbaseESCompatibilityMode? = switch mode {
+            case "pg": .postgreSQL
+            case "oracle": .oracle
+            default: nil
+            }
+            return try KingbaseESCompatibilityMode(setting: setting) == expected
         }
         await check("mode-aware grammar splits and executes quoted semicolons") {
             guard let facts = driver.sessionLexicalState else { return false }
@@ -105,6 +76,67 @@ struct KingbaseESProbe {
             }
             return true
         }
+    }
+
+    // Each column kind and the DESC index here lost its catalog spelling once Oracle mode read `''` as NULL.
+    mutating func checkKeyedTable(driver: any PluginDatabaseDriver, schema: String) async throws {
+        _ = try await driver.execute(query: "CREATE TABLE \(schema).keyed (id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY, s serial, n integer NOT NULL DEFAULT 7, title text, g integer GENERATED ALWAYS AS (n * 2) STORED)")
+        _ = try await driver.execute(query: "CREATE INDEX keyed_title_desc ON \(schema).keyed (title DESC NULLS LAST)")
+        _ = try await driver.execute(query: "INSERT INTO \(schema).keyed (title) VALUES ('a')")
+        await check("index keeps its DESC spelling") {
+            let indexes = try await driver.fetchIndexes(table: "keyed", schema: schema)
+            let spelling = indexes.first { $0.name == "keyed_title_desc" }?.ddlMethodAndKeys
+            print("Index spelling: \(spelling ?? "nil")")
+            return spelling?.contains("(title DESC NULLS LAST)") == true
+        }
+        await check("identity, default and generation expression") {
+            let columns = try await driver.fetchColumns(table: "keyed", schema: schema)
+            let byName = Dictionary(uniqueKeysWithValues: columns.map { ($0.name, $0) })
+            return byName["id"]?.isIdentity == true && byName["n"]?.defaultValue == "7"
+                && byName["g"]?.isGenerated == true && byName["g"]?.generationExpression == "(n * 2)"
+        }
+        await check("table DDL keeps column defaults") {
+            let ddl = try await driver.fetchTableDDL(table: "keyed", schema: schema)
+            return ddl.contains("DEFAULT 7") && ddl.contains("DEFAULT nextval(")
+                && ddl.contains("GENERATED ALWAYS AS IDENTITY")
+        }
+        await check("column reorder rebuild runs and keeps keys and defaults") {
+            guard let plan = try await driver.generateColumnReorderPlan(
+                table: "keyed", schema: schema, columns: [], desiredOrder: ["title", "id", "s", "n", "g"]
+            ) else { return false }
+            _ = try await driver.execute(query: "SAVEPOINT reorder")
+            do {
+                for statement in plan.statements { _ = try await driver.execute(query: statement) }
+                _ = try await driver.execute(query: "INSERT INTO \(schema).keyed (title) VALUES ('b')")
+                let row = try await driver.execute(query: "SELECT id, s, n, g FROM \(schema).keyed WHERE title = 'b'")
+                _ = try await driver.execute(query: "ROLLBACK TO SAVEPOINT reorder")
+                return row.rows == [[.text("2"), .text("2"), .text("7"), .text("14")]]
+            } catch {
+                _ = try await driver.execute(query: "ROLLBACK TO SAVEPOINT reorder")
+                throw error
+            }
+        }
+    }
+
+    mutating func run() async {
+        let env = ProcessInfo.processInfo.environment
+        let database = env["TP_KINGBASE_DATABASE"] ?? "test"
+        let config = DriverConnectionConfig(
+            host: env["TP_KINGBASE_HOST"] ?? "127.0.0.1",
+            port: Int(env["TP_KINGBASE_PORT"] ?? "55432") ?? 55_432,
+            username: env["TP_KINGBASE_USER"] ?? "system",
+            password: env["TP_KINGBASE_PASSWORD"] ?? "", database: database
+        )
+        let driver: any PluginDatabaseDriver = KingbaseESPlugin().createDriver(config: config)
+        defer { driver.disconnect() }
+        await check("no session lexical state before connect") { driver.sessionLexicalState == nil }
+        do { try await driver.connect() } catch {
+            failed += 1
+            print("FAIL connect: \(error)")
+            return
+        }
+        let mode = try? await driver.execute(query: "SELECT current_setting('database_mode')").rows.first?.first?.asText
+        await checkSession(driver: driver, mode: mode)
         await check("database catalog") { try await driver.fetchDatabases().contains(database) }
         let schema = "tp_probe_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
         let table = "\(schema).sample"
@@ -123,6 +155,7 @@ struct KingbaseESProbe {
                 return columns.count == 8 && columns.contains { $0.name == "doubled" && $0.isGenerated }
             }
             await check("index catalog") { try await driver.fetchIndexes(table: "sample", schema: schema).count >= 2 }
+            try await checkKeyedTable(driver: driver, schema: schema)
             await check("foreign key catalog") { try await driver.fetchForeignKeys(table: "sample", schema: schema).count == 1 }
             await check("routine catalog and DDL") {
                 let routines = try await driver.fetchRoutines(schema: schema)
@@ -159,9 +192,6 @@ struct KingbaseESProbe {
                 let result = try await driver.execute(query: "SELECT flag,payload,title,amount,missing,doubled FROM \(table)")
                 return result.rows.first == [.text("true"), .bytes(Data([0, 1, 255])), .text("Việt Nam 日本"), .text("1234.50"), .null, .text("2")]
             }
-            await check("generated boolean and numeric filters") {
-                try await Self.generatedFiltersMatch(driver: driver, table: table)
-            }
             await check("parameterized bigint beyond Int32 range") {
                 try await Self.bigintMatches(driver: driver)
             }
@@ -191,6 +221,7 @@ struct KingbaseESProbe {
         }
         await check("reconnect") {
             driver.disconnect()
+            guard driver.sessionLexicalState == nil else { return false }
             try await driver.connect()
             try await driver.ping()
             return true

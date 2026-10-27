@@ -258,7 +258,10 @@ private extension QueryClassifier {
         options: []
     )
 
-    static let enginesWithSequencePseudoColumns: Set<DatabaseType> = [.oracle, .sapHana, .snowflake, .dameng, .mariadb]
+    // KingbaseES has it in Oracle mode only, and its type id cannot say which mode a server runs.
+    static let enginesWithSequencePseudoColumns: Set<DatabaseType> = [
+        .oracle, .sapHana, .snowflake, .dameng, .mariadb, .kingbasees,
+    ]
 
     static func advancesSequence(_ body: String, databaseType: DatabaseType) -> Bool {
         let range = NSRange(body.startIndex..., in: body)
