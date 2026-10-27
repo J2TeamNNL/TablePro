@@ -165,7 +165,8 @@ final class OraclePlugin: NSObject, TableProPlugin, DriverPlugin, PluginDiagnost
         caseSensitivityStyle: .caseFoldFunction,
         operators: SQLEngineVocabulary.oracle.operators.compactMap(SQLOperatorDescriptor.init(vocabulary:)),
         textCastTypeName: nil,
-        functionNamesAreCaseInsensitive: SQLEngineVocabulary.oracle.functionNamesAreCaseInsensitive
+        functionNamesAreCaseInsensitive: SQLEngineVocabulary.oracle.functionNamesAreCaseInsensitive,
+        typeNamesAreCaseInsensitive: true
     )
 
     func createDriver(config: DriverConnectionConfig) -> any PluginDatabaseDriver {
