@@ -12,6 +12,7 @@
 
 import Foundation
 import TableProPluginKit
+import TableProSQLGrammar
 
 /// One table's work: its DDL, and the read and write it will stream between.
 internal struct ObjectCopyTableStep: Identifiable, Sendable {
@@ -224,6 +225,8 @@ internal struct ObjectCopyPlan: Sendable {
     /// so the run may write that DDL under the target's write scope. A definition read as the
     /// session is runs as the session is, the way it did before scopes.
     internal let isStructureReadPinned: Bool
+    /// The target session's execution grammar, which the review script is written in.
+    internal let targetGrammar: SQLLexicalGrammar
 
     internal init(
         request: ObjectCopyRequest,
@@ -232,7 +235,8 @@ internal struct ObjectCopyPlan: Sendable {
         definitionSteps: [ObjectCopyDefinitionStep],
         schemaStatements: [SyncStatement] = [],
         skipped: [ObjectCopySkip] = [],
-        isStructureReadPinned: Bool = false
+        isStructureReadPinned: Bool = false,
+        targetGrammar: SQLLexicalGrammar? = nil
     ) {
         self.request = request
         self.createsDatabase = createsDatabase
@@ -241,6 +245,7 @@ internal struct ObjectCopyPlan: Sendable {
         self.schemaStatements = schemaStatements
         self.skipped = skipped
         self.isStructureReadPinned = isStructureReadPinned
+        self.targetGrammar = targetGrammar ?? request.target.databaseType.lexicalGrammar
     }
 
     /// Shown above the script, for the caveats the copy cannot do anything about: a key column the
@@ -386,7 +391,7 @@ internal struct ObjectCopyPlan: Sendable {
     /// filled, and a user reasoning about a cascade from what they were asked to approve reached
     /// the opposite conclusion from what the run would do.
     internal var scriptText: String {
-        let script = SQLScriptText(databaseType: request.target.databaseType)
+        let script = SQLScriptText(databaseType: request.target.databaseType, grammar: targetGrammar)
         var lines: [String] = []
         if case .newDatabase(_, let name, _) = request.destination {
             lines.append(String(format: String(localized: "-- Create database %@"), name))
