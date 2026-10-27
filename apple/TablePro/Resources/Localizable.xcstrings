@@ -84453,6 +84453,10 @@
         }
       }
     },
+    "Foreign key enforcement could not be put back while a transaction is open." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Foreign key must have at least one column, a referenced table, and a referenced column" : {
       "localizations" : {
         "fr" : {
@@ -152752,6 +152756,9 @@
           }
         }
       }
+    },
+    "Rows in %1$@ break the foreign key %2$@." : {
+
     },
     "Rows in %@ changed after they were compared. Compare again before generating the script." : {
       "localizations" : {
