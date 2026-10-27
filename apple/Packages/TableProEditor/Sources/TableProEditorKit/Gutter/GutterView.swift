@@ -142,6 +142,8 @@ public class GutterView: NSView {
 
     private var fontLineHeight = 1.0
 
+    private(set) var selectionObserver: NSObjectProtocol?
+
     private func updateFontLineHeight() {
         let string = NSAttributedString(string: "0", attributes: [.font: font])
         let typesetter = CTTypesetterCreateWithAttributedString(string)
@@ -265,9 +267,10 @@ public class GutterView: NSView {
         addSubview(foldingRibbon)
         addSubview(statementRunRibbon)
 
-        NotificationCenter.default.addObserver(
+        // A block observer is only removed through its token, and only this editor's selection moves its line band.
+        selectionObserver = NotificationCenter.default.addObserver(
             forName: TextSelectionManager.selectionChangedNotification,
-            object: nil,
+            object: controller.textView.selectionManager,
             queue: .main
         ) { [weak self] _ in
             self?.needsDisplay = true
@@ -504,7 +507,9 @@ public class GutterView: NSView {
     }
 
     deinit {
-        NotificationCenter.default.removeObserver(self)
+        if let selectionObserver {
+            NotificationCenter.default.removeObserver(selectionObserver)
+        }
         delegate = nil
         textView = nil
     }

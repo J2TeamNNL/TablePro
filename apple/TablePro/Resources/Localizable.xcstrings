@@ -25328,6 +25328,9 @@
     "And %lld more" : {
 
     },
+    "AND and OR:" : {
+
+    },
     "And one that will run after this session ends:\n\n%@" : {
 
     },
@@ -31641,6 +31644,12 @@
     "Bell" : {
       "extractionState" : "manual",
       "generatesSymbol" : false
+    },
+    "Below the keyword" : {
+
+    },
+    "Beside the keyword" : {
+
     },
     "Betas get new features first. Turning this off keeps the beta you have until a newer release ships." : {
 
@@ -39397,6 +39406,9 @@
           }
         }
       }
+    },
+    "Clause items:" : {
+
     },
     "Clear" : {
       "localizations" : {
@@ -54562,6 +54574,9 @@
     "Couldn't Duplicate the Theme" : {
 
     },
+    "Couldn't Export Formatter Rules" : {
+
+    },
     "Couldn't Export the Theme" : {
 
     },
@@ -58185,6 +58200,9 @@
       }
     },
     "Data type" : {
+
+    },
+    "Data type case:" : {
 
     },
     "data type negotiation" : {
@@ -71798,6 +71816,9 @@
       }
     },
     "Engines that match function names by exact case, such as ClickHouse, keep the case you typed." : {
+
+    },
+    "Engines that match type names by exact case, such as ClickHouse, keep the case you typed." : {
 
     },
     "Enter a _key for the new row. Bigtable has no generated keys." : {
@@ -188344,6 +188365,9 @@
         }
       }
     },
+    "The query is larger than %@, too large to format." : {
+
+    },
     "The query names its own output format, %@. Remove its FORMAT clause to read it as rows." : {
       "extractionState" : "manual",
       "generatesSymbol" : false
@@ -211458,6 +211482,9 @@
         }
       }
     },
+    "Where AND and OR go when a WHERE or HAVING condition breaks across lines." : {
+
+    },
     "WHERE clause" : {
       "localizations" : {
         "fr" : {
@@ -211497,6 +211524,9 @@
           }
         }
       }
+    },
+    "Where the items of a SELECT list, SET list, WITH list, or WHERE or HAVING condition start once it breaks across lines. A single item stays beside its keyword." : {
+
     },
     "Whether a session is open" : {
       "localizations" : {

@@ -192,7 +192,9 @@ final class QueryTabManager: ObservableObject {
         guard !strip.isEmpty else { return nil }
         let current = selectedTab.flatMap { tab in strip.firstIndex { $0.id == tab.id } } ?? 0
         let count = strip.count
-        return strip[((current + offset) % count + count) % count].id
+        // Reduced before it is added, so no offset can overflow.
+        let step = offset % count
+        return strip[((current + step) % count + count) % count].id
     }
 
     // MARK: - Recency
