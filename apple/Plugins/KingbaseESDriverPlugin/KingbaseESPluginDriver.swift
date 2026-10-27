@@ -14,15 +14,10 @@ final class KingbaseESPluginDriver: PostgreSQLPluginDriver, @unchecked Sendable 
         )
     }
 
-    override func connect() async throws {
-        try await super.connect()
-        do {
-            let result = try await execute(query: KingbaseESCompatibilityMode.probeQuery)
-            let detected = try KingbaseESCompatibilityMode(setting: result.rows.first?.first?.asText)
-            mode.withLock { $0 = detected }
-        } catch {
-            disconnect()
-            throw error
-        }
+    override func probeAfterConnect() async throws {
+        let result = try await execute(query: KingbaseESCompatibilityMode.probeQuery)
+        let detected = try KingbaseESCompatibilityMode(setting: result.rows.first?.first?.asText)
+        mode.withLock { $0 = detected }
+        try await super.probeAfterConnect()
     }
 }

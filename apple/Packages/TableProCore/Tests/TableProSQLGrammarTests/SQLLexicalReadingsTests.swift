@@ -143,4 +143,22 @@ struct SQLLexicalReadingsTests {
         #expect(readings.execution.contains(.plsqlBlocks))
         #expect(readings.all.contains { !$0.contains(.alternativeQuoting) })
     }
+
+    // Measured on KingbaseES V9R1C10 in Oracle mode: each of these creates its function, beside PL/SQL bodies.
+    @Test("Oracle-mode KingbaseES ends a quoted routine body at its semicolon and keeps a PL/SQL body whole")
+    func kingbaseOracleModeRoutineBodies() {
+        let oracle = SQLSessionLexicalFacts(
+            determined: [.alternativeQuoting, .plsqlBlocks, .slashLineTerminators, .dollarAndHashInIdentifiers],
+            enabled: [.alternativeQuoting, .plsqlBlocks, .slashLineTerminators, .dollarAndHashInIdentifiers]
+        )
+        let grammar = SQLLexicalReadings.resolve(databaseTypeId: "KingbaseES", declared: nil, session: oracle).execution
+        func sent(_ sql: String) -> [String] {
+            SQLStatementScanner.executableStatements(in: sql, grammar: grammar).map(\.sql)
+        }
+        #expect(sent("CREATE FUNCTION f() RETURNS integer LANGUAGE SQL AS 'SELECT 42'; SELECT 2;").count == 2)
+        #expect(sent("CREATE FUNCTION f() RETURNS integer AS $$ SELECT 1; $$ LANGUAGE sql; SELECT 2;").count == 2)
+        #expect(sent("CREATE FUNCTION f() RETURNS integer AS $b$ BEGIN RETURN 1; END; $b$ LANGUAGE plpgsql; SELECT 2;").count == 2)
+        #expect(sent("CREATE FUNCTION f RETURN NUMBER AS BEGIN RETURN 1; END;\n/\nSELECT 2;").count == 2)
+        #expect(sent("CREATE FUNCTION f RETURN NUMBER AS \"v\" NUMBER := 1; BEGIN RETURN \"v\"; END;\n/\nSELECT 2;").count == 2)
+    }
 }

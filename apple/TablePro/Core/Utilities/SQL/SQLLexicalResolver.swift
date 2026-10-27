@@ -31,6 +31,14 @@ enum SQLLexicalResolver {
         readings(for: databaseType, session: sessionState(for: connectionId)).execution
     }
 
+    /// The grammar for text bound to `scope`, read from the driver holding that database: a connection that keeps one
+    /// session per database can hold different session facts on each.
+    @MainActor
+    static func executionGrammar(for databaseType: DatabaseType, scope: DatabaseScope) -> SQLLexicalGrammar {
+        readings(for: databaseType, session: DatabaseManager.shared.sessionDriver(holding: scope)?.sessionLexicalState)
+            .execution
+    }
+
     /// What the connected driver read from its session, or `nil` while `connectionId` has none.
     @MainActor
     static func sessionState(for connectionId: UUID) -> PluginSessionLexicalState? {

@@ -303,6 +303,7 @@ private extension QueryClassifier {
     static let filesystemMarkers: [String] = [
         "INTO OUTFILE", "INTO DUMPFILE", "TO PROGRAM", "FROM PROGRAM", "VACUUM INTO",
         "LOAD_FILE(", "PG_READ_FILE(", "PG_READ_BINARY_FILE(", "PG_LS_DIR(",
+        "SYS_READ_FILE(", "SYS_READ_BINARY_FILE(", "SYS_LS_DIR(",
         "LO_IMPORT(", "LO_EXPORT(", "PG_FILE_WRITE(", "LOAD_EXTENSION(",
         "READFILE(", "WRITEFILE(", "FN_GET_AUDIT_FILE(", "XP_CMDSHELL", "SP_OACREATE"
     ]

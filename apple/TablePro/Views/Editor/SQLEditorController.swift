@@ -175,9 +175,14 @@ final class SQLEditorController {
     /// PostgreSQL with `standard_conforming_strings` off each split text differently from the engine's default.
     private func refreshSessionGrammar() {
         guard let databaseType = input.databaseType else { return }
-        let grammar = input.connectionId.map {
-            SQLLexicalResolver.executionGrammar(for: databaseType, connectionId: $0)
-        } ?? databaseType.lexicalGrammar
+        let grammar: SQLLexicalGrammar
+        if let scope = input.databaseScope {
+            grammar = SQLLexicalResolver.executionGrammar(for: databaseType, scope: scope)
+        } else if let connectionId = input.connectionId {
+            grammar = SQLLexicalResolver.executionGrammar(for: databaseType, connectionId: connectionId)
+        } else {
+            grammar = databaseType.lexicalGrammar
+        }
         guard grammar != coordinator.sessionGrammar else { return }
         coordinator.setSessionGrammar(grammar)
         (foldProvider as? SQLLineFoldProvider)?.grammar = grammar

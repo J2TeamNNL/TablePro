@@ -62,13 +62,18 @@ class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
 
     func connect() async throws {
         core.onPostConnect = { [weak self] in
-            await self?.probeSessionFacts()
-            await self?.probeCatalogPresence()
-            await self?.probePostgisOids()
-            await self?.probeEnumOids()
-            await self?.probeVectorTypes()
+            try await self?.probeAfterConnect()
         }
         try await core.connect()
+    }
+
+    /// Runs inside the connect's deadline and cancellation, before the connection is handed out.
+    func probeAfterConnect() async throws {
+        await probeSessionFacts()
+        await probeCatalogPresence()
+        await probePostgisOids()
+        await probeEnumOids()
+        await probeVectorTypes()
     }
 
     private func probeCatalogPresence() async {

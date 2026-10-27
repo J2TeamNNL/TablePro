@@ -3,7 +3,7 @@ import Foundation
 import TableProPluginKit
 import Testing
 
-struct CompareSyncEngineFamilyTests {
+struct CompareSyncSessionFamilyTests {
     private static let oracleMode = PluginSessionLexicalState(determined: [.plsqlBlocks], enabled: [.plsqlBlocks])
     private static let pgMode = PluginSessionLexicalState(determined: [.plsqlBlocks], enabled: [])
 
