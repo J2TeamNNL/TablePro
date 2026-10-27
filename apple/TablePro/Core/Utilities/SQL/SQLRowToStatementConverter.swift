@@ -232,9 +232,10 @@ internal struct SQLRowToStatementConverter {
         for byte in data {
             hex += String(format: "%02X", byte)
         }
-        switch databaseType {
-        case .postgresql, .redshift, .cockroachdb:
+        if SqlDialect.from(databaseTypeId: databaseType.rawValue) == .postgres {
             return "'\\x\(hex)'::bytea"
+        }
+        switch databaseType {
         case .mssql:
             return "0x\(hex)"
         default:

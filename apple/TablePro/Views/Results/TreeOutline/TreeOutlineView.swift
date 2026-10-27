@@ -43,8 +43,10 @@ internal final class TreeOutlineView: SidebarOutlineView {
     override internal func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         responderObservation = window?.observe(\.firstResponder, options: [.new]) { [weak self] _, _ in
-            MainActor.assumeIsolated { self?.reapplyRowEmphasis() }
-            Task { @MainActor [weak self] in self?.reapplyRowEmphasis() }
+            MainActor.assumeIsolated { [weak self] in
+                self?.reapplyRowEmphasis()
+                Task { @MainActor [weak self] in self?.reapplyRowEmphasis() }
+            }
         }
     }
 

@@ -173,7 +173,8 @@ final class TabularSaveTests {
         #expect(try save(table, source: source) == export.rows[0] + export.rows[1] + export.rows[3] + export.rows[4])
         var reordered = original
         reordered.replaceRowOrder(.explicit([4, 2, 3, 1]))
-        #expect(try save(reordered, source: source) == export.rows[0] + export.rows[4] + export.rows[2] + export.rows[3] + export.rows[1])
+        let expected: [UInt8] = [0, 4, 2, 3, 1].flatMap { export.rows[$0] }
+        #expect(try save(reordered, source: source) == expected)
     }
 
     @Test func testAnEditNearTheEndOfALargeShiftJISFileLeavesEveryOtherByte() async throws {

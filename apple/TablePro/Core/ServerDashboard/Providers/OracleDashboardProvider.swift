@@ -90,7 +90,10 @@ struct OracleDashboardProvider: ServerDashboardQueryProvider {
         var metrics: [DashboardMetric] = []
         var firstFailure: Error?
 
-        func attempt(_ id: String, _ body: () async throws -> Void) async throws {
+        nonisolated(nonsending) func attempt(
+            _ id: String,
+            _ body: nonisolated(nonsending) () async throws -> Void
+        ) async throws {
             do {
                 try await body()
             } catch is CancellationError {

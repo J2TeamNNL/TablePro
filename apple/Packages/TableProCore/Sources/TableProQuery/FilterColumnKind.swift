@@ -72,9 +72,10 @@ nonisolated public enum FilterColumnKind {
     // number: `bit = 101` and `boolean = 1` have no operator, and a `real` never equals the numeric 0.1.
     // DuckDB runs `bit = 101` and finds no row; `bit = '101'` finds it.
     private static func engineKind(_ kind: PluginColumnKind, typeName: String, databaseType: DatabaseType?) -> PluginColumnKind {
-        switch databaseType {
-        case .postgresql?, .redshift?:
+        if let databaseType, SqlDialect.from(databaseTypeId: databaseType.rawValue) == .postgres {
             return kind == .integer && !nonNumericIntegerNames.contains(typeName) ? .integer : .text
+        }
+        switch databaseType {
         case .duckdb?:
             return typeName == "bit" ? .text : kind
         default:

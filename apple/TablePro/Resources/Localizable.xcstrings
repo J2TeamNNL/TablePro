@@ -1,6 +1,10 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "This KingbaseES compatibility mode is not supported. Use PostgreSQL or Oracle mode." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "" : {
       "localizations" : {
         "ko" : {

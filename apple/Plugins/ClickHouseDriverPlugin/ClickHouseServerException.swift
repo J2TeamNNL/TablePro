@@ -79,7 +79,7 @@ nonisolated enum ClickHouseServerException {
     static func message(inFailureBody body: String) -> String {
         let bytes = Array(body.utf8)
         let text = framedMessage(in: bytes, tag: nil, header: nil)
-            ?? rawExceptionStart(in: bytes).map { text(of: bytes[$0...]) }
+            ?? rawExceptionStart(in: bytes).map { Self.text(of: bytes[$0...]) }
             ?? body
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }

@@ -21,6 +21,8 @@ class PostgreSQLPluginDriver: LibPQBackedDriver, @unchecked Sendable {
     let sessionFacts = OSAllocatedUnfairLock(initialState: PostgreSQLSessionFacts.unknown)
     private let listingDegradeReported = OSAllocatedUnfairLock(initialState: false)
 
+    var sessionLexicalState: PluginSessionLexicalState? { core.sessionLexicalState }
+
     var serverVersionNumber: Int32 {
         let reported = core.serverVersionNumber
         return sessionFacts.withLock { $0.resolvedServerVersion(reported: reported) }

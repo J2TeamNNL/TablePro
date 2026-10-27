@@ -633,4 +633,18 @@ struct SQLRowToStatementConverterTests {
         )
         #expect(converter.generateUpdates(rows: plain([["a", "x"]])) == "UPDATE [Enterprise_App_Approved] SET [Shape] = N'x' WHERE [code] = N'a';")
     }
+    @Test("KingbaseES copies binary INSERT and UPDATE values as bytea, including empty bytes")
+    func kingbaseBinaryStatements() throws {
+        let converter = try makeConverter(
+            tableName: "documents", columns: ["id", "payload"],
+            databaseType: .kingbasees, dialect: Self.postgresDialect
+        )
+        for data in [Data(), Data([0x00, 0xFF])] {
+            let rows = plain([[.text("1"), .bytes(data)]])
+            let hex = data.map { String(format: "%02X", $0) }.joined()
+            #expect(converter.generateInserts(rows: rows).contains("'\\x\(hex)'::bytea"))
+            #expect(converter.generateUpdates(rows: rows).contains("'\\x\(hex)'::bytea"))
+        }
+    }
+
 }

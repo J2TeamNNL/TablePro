@@ -55,7 +55,7 @@ struct PostgreSQLColumnDDLQuerySequenceCollationTests {
     func collateClauseWrapsTheSameCollation() {
         #expect(
             PostgreSQLSchemaQueries.columnCollateClause
-                == "COALESCE(' COLLATE ' || \(PostgreSQLSchemaQueries.columnCollation), '')"
+                == "CASE WHEN (\(PostgreSQLSchemaQueries.columnCollation)) IS NULL THEN '' ELSE ' COLLATE ' || \(PostgreSQLSchemaQueries.columnCollation) END"
         )
     }
 }

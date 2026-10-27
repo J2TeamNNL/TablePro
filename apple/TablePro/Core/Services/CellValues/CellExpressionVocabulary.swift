@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import TableProPluginKit
 
 enum CellExpressionKind: Hashable, Sendable {
     case timestamp
@@ -77,7 +78,7 @@ enum CellExpressionVocabulary {
         case .bigQuery: bigQuery
         case .snowflake: snowflake
         case .trino, .presto: trino
-        default: []
+        default: SqlDialect.from(databaseTypeId: databaseType.rawValue) == .postgres ? postgreSQL : []
         }
     }
 

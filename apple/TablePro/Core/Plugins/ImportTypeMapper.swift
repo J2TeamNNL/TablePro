@@ -12,14 +12,15 @@ enum ImportTypeMapper {
         databaseType: DatabaseType,
         serverVersion: String? = nil
     ) -> String {
-        switch databaseType {
-        case .postgresql, .redshift, .cockroachdb:
+        if SqlDialect.from(databaseTypeId: databaseType.rawValue) == .postgres {
             return postgresType(
                 type,
                 jsonColumnType: PostgreSQLServerVersion.jsonColumnType(
                     for: databaseType, serverVersion: serverVersion
                 )
             )
+        }
+        switch databaseType {
         case .mysql, .mariadb, .tidb, .oceanbase:
             return mysqlType(type)
         case .sqlite:

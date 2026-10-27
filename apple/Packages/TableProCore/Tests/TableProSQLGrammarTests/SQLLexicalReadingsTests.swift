@@ -7,7 +7,7 @@ struct SQLLexicalReadingsTests {
     @Test("Every SQL engine TablePro ships has a curated grammar")
     func curatedTableCoversShippedEngines() {
         let shipped = [
-            "MySQL", "MariaDB", "TiDB", "Databend", "OceanBase", "PostgreSQL", "Redshift", "CockroachDB", "PGlite",
+            "MySQL", "MariaDB", "TiDB", "Databend", "OceanBase", "PostgreSQL", "Redshift", "CockroachDB", "PGlite", "KingbaseES",
             "SQLite", "libSQL", "Turso", "Cloudflare D1", "DuckDB", "Oracle", "Dameng", "SQL Server", "ClickHouse",
             "Snowflake", "BigQuery", "Spanner", "Trino", "Presto", "Teradata", "SAP HANA", "Cassandra", "ScyllaDB", "DynamoDB",
             "SurrealDB", "Redis", "MongoDB", "etcd", "Elasticsearch", "Typesense", "Weaviate", "Kafka",
@@ -121,5 +121,18 @@ struct SQLLexicalReadingsTests {
             [], [.hashLineComments], [.nestedBlockComments], [.hashLineComments, .nestedBlockComments],
         ])
         #expect(profile.readings.first == .ansi)
+    }
+    @Test("KingbaseES retains both compatibility-mode readings before a session is known")
+    func kingbaseCompatibilityReadings() throws {
+        let profile = try #require(SQLLexicalProfile.curated(forDatabaseTypeId: "KingbaseES"))
+        #expect(profile.grammar.contains(.taggedDollarQuotes))
+        #expect(profile.readings.contains { $0.contains(.alternativeQuoting) && $0.contains(.plsqlBlocks) })
+        let oracle = SQLSessionLexicalFacts(
+            determined: [.alternativeQuoting, .plsqlBlocks], enabled: [.alternativeQuoting, .plsqlBlocks]
+        )
+        let readings = SQLLexicalReadings.resolve(databaseTypeId: "KingbaseES", declared: nil, session: oracle)
+        #expect(readings.execution.contains(.alternativeQuoting))
+        #expect(readings.execution.contains(.plsqlBlocks))
+        #expect(readings.all.contains { !$0.contains(.alternativeQuoting) })
     }
 }

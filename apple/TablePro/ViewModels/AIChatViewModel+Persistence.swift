@@ -20,7 +20,7 @@ extension AIChatViewModel {
         let wanted = pendingConversationToRestore
         Task.detached(priority: .utility) { [weak self] in
             let loaded = await storage.loadAll(connectionId: connectionId)
-            await MainActor.run {
+            await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.conversations = loaded
                 guard self.messages.isEmpty else { return }

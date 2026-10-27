@@ -338,7 +338,8 @@ enum PostgreSQLSchemaQueries {
 
     /// `columnCollation` as the text a column definition appends after its type: ` COLLATE <name>`, or
     /// an empty string.
-    static let columnCollateClause = "COALESCE(' COLLATE ' || \(columnCollation), '')"
+    // Oracle-compatible servers concatenate NULL as empty, so COALESCE after concatenation keeps a bare COLLATE.
+    static let columnCollateClause = "CASE WHEN (\(columnCollation)) IS NULL THEN '' ELSE ' COLLATE ' || \(columnCollation) END"
 
     /// One array over the sequences this column's default reads in the table's own schema, ordered by
     /// oid so the qualified and relative arrays pair element for element.
