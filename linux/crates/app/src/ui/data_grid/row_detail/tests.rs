@@ -620,6 +620,50 @@ fn a_picked_day_keeps_a_timestamp_time() {
     assert_eq!(day_of("2024-02-2é"), None, "a cut inside a character");
 }
 
+#[test]
+fn a_picked_day_keeps_the_time_of_any_timestamp_the_commit_reads() {
+    let day = NaiveDate::from_ymd_opt(2024, 3, 1).expect("a day");
+    let plus_two = chrono::FixedOffset::east_opt(2 * 3600).expect("an offset");
+    let pick = |text: &str| with_day(text, day, Some(&TemporalZone::Naive), plus_two);
+
+    assert_eq!(
+        pick("12024-01-05 10:00:00"),
+        "2024-03-01 10:00:00",
+        "PostgreSQL writes a far year in full"
+    );
+    assert_eq!(
+        pick("2024-1-5 10:00"),
+        "2024-03-01 10:00",
+        "SQLite keeps the text as typed"
+    );
+    assert_eq!(pick(" 2024-01-05 10:00"), " 2024-03-01 10:00");
+    assert_eq!(
+        pick("0044-03-15 12:00:00 BC"),
+        "2024-03-01 12:00:00",
+        "an AD day kept the BC era"
+    );
+    assert_eq!(pick("10:00"), "2024-03-01 10:00");
+    let zoned = |text: &str| with_day(text, day, Some(&TemporalZone::Offset), plus_two);
+    assert_eq!(
+        zoned("10:00"),
+        "2024-03-01 10:00+02:00",
+        "a zoned timestamp took no offset"
+    );
+    assert_eq!(zoned("10:00+05"), "2024-03-01 10:00+05");
+    assert_eq!(
+        with_day("2024-01-05 10:00", day, None, plus_two),
+        "2024-03-01 10:00",
+        "SQLite keeps a timestamp in a DATE column"
+    );
+    assert_eq!(day_of("2024-1-5 10:00"), NaiveDate::from_ymd_opt(2024, 1, 5));
+    assert_eq!(day_of(" 2024-01-05"), NaiveDate::from_ymd_opt(2024, 1, 5));
+    assert_eq!(
+        day_of("0044-03-15 12:00:00 BC"),
+        None,
+        "the calendar opened on an AD day"
+    );
+}
+
 /// A zone whose offset moves from `before` to `after` at `change`, in UTC.
 #[derive(Clone)]
 struct OneChange {
@@ -1074,6 +1118,30 @@ fn a_new_zoned_time_takes_the_offset_of_its_own_moment() {
         with_time("2026-10-04", a_time(9, 5, 0), ZONED, earlier, &sydney),
         "2026-10-04 09:05:00+11:00",
         "the offset was today's, not the value's day"
+    );
+}
+
+#[test]
+fn a_clock_on_the_first_day_chrono_holds_takes_an_offset() {
+    let first = NaiveDate::MIN.format("%Y-%m-%d").to_string();
+    let today = NaiveDate::from_ymd_opt(2026, 10, 29).expect("a day");
+    let plus_two = chrono::FixedOffset::east_opt(2 * 3600).expect("an offset");
+
+    assert_eq!(
+        with_time(&first, a_time(0, 30, 0), ZONED, today, &plus_two),
+        format!("{first} 00:30:00+02:00")
+    );
+}
+
+#[test]
+fn a_picker_replaces_a_part_out_of_range() {
+    let day = NaiveDate::from_ymd_opt(2024, 3, 1).expect("a day");
+    let plus_two = chrono::FixedOffset::east_opt(2 * 3600).expect("an offset");
+
+    assert_eq!(set_at_nine("2024-01-01 12:34:99", NAIVE), "2024-01-01 09:05:30");
+    assert_eq!(
+        with_day("2024-02-30 10:00", day, Some(&TemporalZone::Naive), plus_two),
+        "2024-03-01 10:00"
     );
 }
 
