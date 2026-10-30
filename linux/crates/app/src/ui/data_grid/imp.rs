@@ -16,6 +16,7 @@ use super::references::Armed;
 use super::reversed_list::ReversedList;
 use super::row_detail::RowDetailPane;
 use super::selection::Target;
+use super::selection_summary::SummaryState;
 use super::{GridConfig, GridStore};
 
 /// The grid's selection model, made with the grid and given its rows once
@@ -64,6 +65,7 @@ pub struct DataGrid {
     pub columns: RefCell<ColumnSet>,
     pub actions: gio::SimpleActionGroup,
     pub menus: OnceCell<GridMenus>,
+    pub summary: SummaryState,
     pub edit: EditController,
     pub find: FindState,
     /// What a menu was opened on, until it closes.
@@ -113,6 +115,9 @@ impl ObjectImpl for DataGrid {
     }
 
     fn dispose(&self) {
+        // A run still out on the task pool would go on over every row.
+        self.find.stop();
+        self.summary.stop();
         self.obj().stop_watching_focus();
         if let Some(menus) = self.menus.get() {
             menus.unparent();
