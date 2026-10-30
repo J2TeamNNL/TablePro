@@ -26,6 +26,7 @@ mod sidebar_policy;
 mod significant_tokens;
 mod sql_file;
 mod statement_cursor;
+mod tab_scope;
 #[cfg(test)]
 mod tests;
 mod transaction_dirty;
@@ -152,6 +153,7 @@ impl SqlEditor {
         editor.install_drop_target();
         editor.connect_buttons();
         editor.connect_grid();
+        editor.show_scope();
         editor
     }
 
@@ -689,6 +691,7 @@ impl SqlEditor {
             self.emit_by_name::<()>("transaction-changed", &[&dirty]);
         }
         self.record_history(entry, dialect);
+        self.show_scope();
         self.emit_by_name::<()>("run-finished", &[&outcome]);
         self.emit_by_name::<()>("run-state-changed", &[&false]);
     }
