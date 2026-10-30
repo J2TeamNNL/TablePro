@@ -5,9 +5,9 @@ crates/app/src/application/accelerators.rs
 crates/app/src/application/app_actions.rs
 crates/app/src/application/app_services.rs
 crates/app/src/application/app_window_host.rs
-crates/app/src/application/crash_notice.rs
 crates/app/src/application/debug_info.rs
 crates/app/src/application/imp.rs
+crates/app/src/application/launch_notice.rs
 crates/app/src/application/legal_section.rs
 crates/app/src/application/mcp_bridge.rs
 crates/app/src/application/metainfo_release.rs
@@ -461,9 +461,9 @@ crates/app/src/ui/session_window/connect_failure_view.rs
 crates/app/src/ui/session_window/connect_flow.rs
 crates/app/src/ui/session_window/connecting_page.rs
 crates/app/src/ui/session_window/connections.rs
-crates/app/src/ui/session_window/crash_notice.rs
 crates/app/src/ui/session_window/file_location_dialog.rs
 crates/app/src/ui/session_window/imp.rs
+crates/app/src/ui/session_window/launch_notice.rs
 crates/app/src/ui/session_window/locate_file.rs
 crates/app/src/ui/session_window/mod.rs
 crates/app/src/ui/session_window/notification_request.rs

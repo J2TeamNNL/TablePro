@@ -106,6 +106,7 @@ indexmap = "2.14"
 num-bigint.workspace = true
 # The assistant's replies are Markdown; the HTML writer stays off.
 pulldown-cmark = { version = "0.13", default-features = false }
+semver = "1"
 sqlformat = "0.5"
 
 [dev-dependencies]
