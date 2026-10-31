@@ -15,8 +15,8 @@ extension QueryClassifier {
             switch word.text {
             case "DROP", "DENY", "REVOKE":
                 result = result.escalated(to: .destructive)
-            case "CREATE", "MERGE", "SET", "REMOVE", "DELETE", "FOREACH", "ALTER", "GRANT", "RENAME",
-                 "TERMINATE", "START", "STOP":
+            case "CREATE", "INSERT", "MERGE", "SET", "REMOVE", "DELETE", "FOREACH", "ALTER", "GRANT", "RENAME",
+                 "TERMINATE", "START", "STOP", "ENABLE", "DEALLOCATE", "REALLOCATE":
                 result = result.escalated(to: .write)
             case "LOAD":
                 result = result.markingUnsafeSurface()

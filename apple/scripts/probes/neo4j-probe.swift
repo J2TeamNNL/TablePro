@@ -69,6 +69,32 @@ func run() async throws {
     let afterCap = try await driver.execute(query: "RETURN 3 AS ok")
     expect(text(afterCap) == [["3"]], "the next statement runs after a capped one")
 
+    let cappedWrite = try await driver.executeUserQuery(
+        query: "UNWIND range(1, 12) AS x CREATE (n:\(label) {seq: x}) RETURN n", rowCap: 10, parameters: nil
+    )
+    expect(cappedWrite.rows.count == 10 && cappedWrite.isTruncated, "a capped write returns the capped rows")
+    expect(cappedWrite.rowsAffected == 12, "a capped write counts every node it created: \(cappedWrite.rowsAffected)")
+    _ = try await driver.execute(query: "MATCH (n:\(label)) WHERE n.seq IS NOT NULL DELETE n")
+
+    let setOnly = try await driver.execute(query: "MATCH (n:\(label) {name: 'Ann'}) SET n.a = 1, n.b = 2")
+    expect(setOnly.rowsAffected == 0 && setOnly.statusMessage == "2 property value(s) set",
+           "a property update reports its counter: \(setOnly.rowsAffected), \(setOnly.statusMessage ?? "nil")")
+
+    let duration = try await driver.execute(query: "RETURN duration({seconds: 10000000000}) AS d")
+    expect(text(duration) == [["PT2777777H46M40S"]], "a long duration formats: \(text(duration))")
+
+    let path = try await driver.execute(
+        query: "MATCH p = (:\(label) {name: 'Bo'})<-[:\(label)_KNOWS]-(:\(label) {name: 'Ann'}) RETURN p"
+    )
+    let pathObject = try require(text(path).first?.first.flatMap { $0 }.flatMap {
+        try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]
+    })
+    let pathNodes = (pathObject["nodes"] as? [[String: Any]] ?? []).compactMap { $0["elementId"] as? String }
+    let pathStep = (pathObject["relationships"] as? [[String: Any]])?.first
+    expect(pathNodes.count == 2 && pathStep?["startElementId"] as? String == pathNodes.last
+               && pathStep?["endElementId"] as? String == pathNodes.first,
+           "a path walked against its relationship keeps the relationship's direction")
+
     try driver.cancelQuery()
     let afterIdleCancel = try await driver.execute(query: "RETURN 4 AS ok")
     expect(text(afterIdleCancel) == [["4"]], "a cancel with nothing running leaves the next statement alone")

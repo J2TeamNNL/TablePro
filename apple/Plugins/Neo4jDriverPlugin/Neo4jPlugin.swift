@@ -50,7 +50,7 @@ final class Neo4jPlugin: NSObject, TableProPlugin, DriverPlugin {
     static let defaultGroupName = "neo4j"
     static let defaultSchemaName = Neo4jEntityKind.node.schemaName
     static let systemDatabaseNames = ["system"]
-    static let tableEntityName = "Labels"
+    static let tableEntityName = "Types"
     static let containerEntityName = "Database"
     static let schemaEntityName = "Kind"
     static let defaultPrimaryKeyColumn: String? = Neo4jCypher.idColumn

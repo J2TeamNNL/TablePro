@@ -46,7 +46,7 @@ extension PluginMetadataRegistry {
                 schema: PluginMetadataSnapshot.SchemaInfo(
                     defaultSchemaName: "Labels",
                     defaultGroupName: "neo4j",
-                    tableEntityName: "Labels",
+                    tableEntityName: "Types",
                     containerEntityName: "Database",
                     schemaEntityName: "Kind",
                     defaultPrimaryKeyColumn: "<id>",

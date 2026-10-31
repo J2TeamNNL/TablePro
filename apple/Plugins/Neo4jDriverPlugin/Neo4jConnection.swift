@@ -343,21 +343,34 @@ actor Neo4jConnection {
 
     /// Writes the requests in one flush and waits for every reply. A failure leaves the server
     /// ignoring everything until a RESET, so the turn is not handed on before one is answered.
+    /// When the last reply has more records, the rest are discarded in the same turn and the
+    /// DISCARD reply is appended: it carries the statement's final summary.
     func send(_ requests: [BoltRequest]) async throws -> [BoltReply] {
         await claimTurn()
         defer { releaseTurn() }
         guard let channel, let handler, channel.isActive else { throw Neo4jError.notConnected }
         try Task.checkCancellation()
 
-        let replies = try await Self.exchange(requests, channel: channel, handler: handler)
-        if replies.contains(where: { if case .success = $0.outcome { false } else { true } }) {
+        var replies = try await Self.exchange(requests, channel: channel, handler: handler)
+        if !Self.allSucceeded(replies) {
             _ = try? await Self.exchange([.reset], channel: channel, handler: handler)
         } else if case .success(let summary) = replies.last?.outcome, summary["has_more"]?.boolValue == true {
-            // The rest of the stream is dropped before the turn passes on, or the next statement
-            // would meet a server still streaming this one.
-            _ = try? await Self.exchange([.discard], channel: channel, handler: handler)
+            do {
+                let discarded = try await Self.exchange([.discard], channel: channel, handler: handler)
+                replies += discarded
+                if !Self.allSucceeded(discarded) {
+                    _ = try? await Self.exchange([.reset], channel: channel, handler: handler)
+                }
+            } catch {
+                _ = try? await Self.exchange([.reset], channel: channel, handler: handler)
+                throw error
+            }
         }
         return replies
+    }
+
+    private static func allSucceeded(_ replies: [BoltReply]) -> Bool {
+        replies.allSatisfy { if case .success = $0.outcome { true } else { false } }
     }
 
     private static func exchange(

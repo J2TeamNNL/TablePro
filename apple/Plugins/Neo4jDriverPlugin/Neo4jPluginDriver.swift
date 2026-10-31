@@ -142,12 +142,13 @@ final class Neo4jPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
             .run(query: query, parameters: parameters, extra: extra),
             .pull(count: pullCount)
         ])
-        guard replies.count == 2 else { throw Neo4jError.notConnected }
-        if let error = Neo4jError(reply: replies[0]) ?? Neo4jError(reply: replies[1]) {
+        guard replies.count >= 2 else { throw Neo4jError.notConnected }
+        if let error = replies.lazy.compactMap(Neo4jError.init(reply:)).first {
             throw error
         }
         guard case .success(let header) = replies[0].outcome,
-              case .success(let summary) = replies[1].outcome else { throw Neo4jError.cancelled }
+              case .success(let summary) = replies[1].outcome,
+              case .success(let finalSummary) = replies[replies.count - 1].outcome else { throw Neo4jError.cancelled }
 
         var records = replies[1].records
         var isTruncated = false
@@ -159,7 +160,7 @@ final class Neo4jPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
             isTruncated = true
         }
         let keys = header["fields"]?.listValue?.compactMap(\.stringValue) ?? []
-        return Statement(keys: keys, records: records, summary: summary, isTruncated: isTruncated)
+        return Statement(keys: keys, records: records, summary: finalSummary, isTruncated: isTruncated)
     }
 
     func execute(query: String) async throws -> PluginQueryResult {
@@ -184,13 +185,15 @@ final class Neo4jPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         } else {
             table = Neo4jResultTable.records(keys: statement.keys, records: statement.records)
         }
+        let counts = Neo4jUpdateCounts(summary: statement.summary)
         return PluginQueryResult(
             columns: table.columns,
             columnTypeNames: table.typeNames,
             rows: table.rows.map { $0.map { $0.map(PluginCellValue.text) ?? .null } },
-            rowsAffected: Self.rowsAffected(statement.summary),
+            rowsAffected: counts.entitiesChanged,
             executionTime: Date().timeIntervalSince(started),
-            isTruncated: statement.isTruncated
+            isTruncated: statement.isTruncated,
+            statusMessage: Self.countersText(counts)
         )
     }
 
@@ -213,13 +216,30 @@ final class Neo4jPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         return parameters
     }
 
-    /// Entities created or deleted, or the properties set when a statement only changed values.
-    static func rowsAffected(_ summary: [String: PackStreamValue]) -> Int {
-        guard let stats = summary["stats"]?.mapValue else { return 0 }
-        func count(_ key: String) -> Int { Int(stats[key]?.intValue ?? 0) }
-        let entities = ["nodes-created", "nodes-deleted", "relationships-created", "relationships-deleted"]
-            .reduce(0) { $0 + count($1) }
-        return entities > 0 ? entities : count("properties-set")
+    /// Every counter Neo4j reported, so a statement that only set properties or labels says
+    /// what changed instead of a row count.
+    static func countersText(_ counts: Neo4jUpdateCounts) -> String? {
+        guard !counts.counters.isEmpty else { return nil }
+        return counts.counters.map { counter, count in
+            String(format: counterFormat(counter), Int64(count))
+        }.joined(separator: ", ")
+    }
+
+    private static func counterFormat(_ counter: Neo4jUpdateCounts.Counter) -> String {
+        switch counter {
+        case .nodesCreated: return String(localized: "%lld node(s) created")
+        case .nodesDeleted: return String(localized: "%lld node(s) deleted")
+        case .relationshipsCreated: return String(localized: "%lld relationship(s) created")
+        case .relationshipsDeleted: return String(localized: "%lld relationship(s) deleted")
+        case .propertiesSet: return String(localized: "%lld property value(s) set")
+        case .labelsAdded: return String(localized: "%lld label(s) added")
+        case .labelsRemoved: return String(localized: "%lld label(s) removed")
+        case .indexesAdded: return String(localized: "%lld index(es) added")
+        case .indexesRemoved: return String(localized: "%lld index(es) removed")
+        case .constraintsAdded: return String(localized: "%lld constraint(s) added")
+        case .constraintsRemoved: return String(localized: "%lld constraint(s) removed")
+        case .systemUpdates: return String(localized: "%lld system update(s)")
+        }
     }
 
     /// The label or type a browse query matches, read back from its MATCH line.

@@ -84,13 +84,52 @@ public enum Neo4jValueText {
                 ] as [String: Any]
             }
             if tag == Neo4jStructureTag.path, fields.count == 3 {
-                return [
+                return pathObject(fields) ?? [
                     "nodes": (fields[0].listValue ?? []).map(jsonObject),
                     "relationships": (fields[1].listValue ?? []).map(jsonObject)
                 ]
             }
             return structureText(tag: tag, fields: fields) ?? NSNull()
         }
+    }
+
+    /// Bolt sends a path's distinct nodes and relationships plus a sequence of (relationship, node)
+    /// index pairs. A positive relationship index walks it forward, a negative one backward, and
+    /// both are 1-based. The result lists every step in order, repeats included.
+    private static func pathObject(_ fields: [PackStreamValue]) -> [String: Any]? {
+        let nodes = (fields[0].listValue ?? []).compactMap(Neo4jEntity.init)
+        let relationships = fields[1].listValue ?? []
+        let sequence = (fields[2].listValue ?? []).compactMap(\.intValue)
+        guard let start = nodes.first, sequence.count.isMultiple(of: 2) else { return nil }
+
+        var orderedNodes = [entityObject(start)]
+        var orderedRelationships: [Any] = []
+        var current = start
+        for step in stride(from: 0, to: sequence.count, by: 2) {
+            let relationshipIndex = Int(sequence[step].magnitude) - 1
+            let nodeIndex = Int(sequence[step + 1])
+            guard sequence[step] != 0, relationships.indices.contains(relationshipIndex),
+                  nodes.indices.contains(nodeIndex),
+                  case .structure(_, let relationshipFields) = relationships[relationshipIndex],
+                  relationshipFields.count >= 3
+            else { return nil }
+            let next = nodes[nodeIndex]
+            let forward = sequence[step] > 0
+            orderedRelationships.append(entityObject(Neo4jEntity(
+                elementId: relationshipFields.count > 3
+                    ? relationshipFields[3].stringValue ?? ""
+                    : relationshipFields[0].intValue.map(String.init) ?? "",
+                kind: .relationship(
+                    type: relationshipFields[1].stringValue ?? "",
+                    startId: forward ? current.elementId : next.elementId,
+                    endId: forward ? next.elementId : current.elementId
+                ),
+                properties: relationshipFields[2].mapValue ?? [:]
+            )))
+            orderedNodes.append(entityObject(next))
+            current = next
+        }
+        return ["nodes": orderedNodes, "relationships": orderedRelationships]
     }
 
     private static func entityObject(_ entity: Neo4jEntity) -> [String: Any] {
@@ -217,16 +256,22 @@ public enum Neo4jValueText {
         if months / 12 != 0 { text += "\(months / 12)Y" }
         if months % 12 != 0 { text += "\(months % 12)M" }
         if days != 0 { text += "\(days)D" }
-        let totalNanos = seconds * 1_000_000_000 + nanos
-        if totalNanos != 0 {
-            let negative = totalNanos < 0
-            let magnitude = abs(totalNanos)
-            let wholeSeconds = magnitude / 1_000_000_000
+        // Seconds and nanoseconds stay apart: their product overflows Int64 for durations Neo4j accepts.
+        let carry = floorDivide(nanos, 1_000_000_000)
+        let (total, overflow) = seconds.addingReportingOverflow(carry)
+        let signedSeconds = overflow ? seconds : total
+        var fraction = nanos - carry * 1_000_000_000
+        if signedSeconds != 0 || fraction != 0 {
+            let negative = signedSeconds < 0
+            var wholeSeconds = signedSeconds.magnitude
+            if negative, fraction != 0 {
+                wholeSeconds -= 1
+                fraction = 1_000_000_000 - fraction
+            }
             var time = "T"
             if wholeSeconds / 3_600 != 0 { time += (negative ? "-" : "") + "\(wholeSeconds / 3_600)H" }
             if wholeSeconds / 60 % 60 != 0 { time += (negative ? "-" : "") + "\(wholeSeconds / 60 % 60)M" }
             let remainder = wholeSeconds % 60
-            let fraction = magnitude % 1_000_000_000
             if remainder != 0 || fraction != 0 {
                 time += (negative ? "-" : "") + "\(remainder)" + fractionText(fraction) + "S"
             }

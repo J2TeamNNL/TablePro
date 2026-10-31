@@ -10464,6 +10464,14 @@
         }
       }
     },
+    "%lld constraint(s) added" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "%lld constraint(s) removed" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "%lld dims" : {
 
     },
@@ -10491,6 +10499,14 @@
           }
         }
       }
+    },
+    "%lld index(es) added" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "%lld index(es) removed" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "%lld inside" : {
       "localizations" : {
@@ -10544,6 +10560,14 @@
     },
     "%lld keys" : {
 
+    },
+    "%lld label(s) added" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "%lld label(s) removed" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "%lld large object values were longer than 64 MiB and were cut short." : {
       "extractionState" : "manual",
@@ -10699,6 +10723,14 @@
     },
     "%lld new columns" : {
 
+    },
+    "%lld node(s) created" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "%lld node(s) deleted" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "%lld objects" : {
       "localizations" : {
@@ -11143,6 +11175,18 @@
     },
     "%lld properties" : {
 
+    },
+    "%lld property value(s) set" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "%lld relationship(s) created" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
+    "%lld relationship(s) deleted" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "%lld roles own database objects" : {
       "localizations" : {
@@ -11747,6 +11791,10 @@
           }
         }
       }
+    },
+    "%lld system update(s)" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
     },
     "%lld table%@ to export" : {
       "extractionState" : "stale",

@@ -29,6 +29,65 @@ struct Neo4jValueTextTests {
         #expect(Neo4jValueText.text(structure(0x45, [.int(0), .int(0), .int(0), .int(0)])) == "PT0S")
     }
 
+    @Test("Durations too long for Int64 nanoseconds still format")
+    func largeDurations() {
+        #expect(Neo4jValueText.text(structure(0x45, [.int(0), .int(0), .int(10_000_000_000), .int(0)]))
+            == "PT2777777H46M40S")
+        #expect(Neo4jValueText.text(structure(0x45, [.int(0), .int(0), .int(-10_000_000_000), .int(0)]))
+            == "PT-2777777H-46M-40S")
+        #expect(Neo4jValueText.text(structure(0x45, [.int(0), .int(0), .int(-2), .int(500_000_000)])) == "PT-1.5S")
+        #expect(Neo4jValueText.text(structure(0x45, [.int(0), .int(0), .int(.max), .int(999_999_999)]))
+            == "PT2562047788015215H30M7.999999999S")
+        #expect(Neo4jValueText.text(structure(0x45, [.int(0), .int(0), .int(.min), .int(0)]))
+            == "PT-2562047788015215H-30M-8S")
+    }
+
+    @Test("A path lists its steps in order, with each relationship pointing the way it was walked")
+    func pathSteps() throws {
+        let first = structure(0x4E, [.int(1), .list([.string("A")]), .map([:]), .string("n1")])
+        let second = structure(0x4E, [.int(2), .list([.string("B")]), .map([:]), .string("n2")])
+        let knows = structure(0x72, [.int(9), .string("KNOWS"), .map([:]), .string("r9")])
+        func steps(_ sequence: [Int64]) throws -> [[String: Any]] {
+            let path = structure(0x50, [.list([first, second]), .list([knows]), .list(sequence.map(PackStreamValue.int))])
+            let text = try #require(Neo4jValueText.text(path))
+            let object = try #require(try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+            let nodes = try #require(object["nodes"] as? [[String: Any]])
+            let relationships = try #require(object["relationships"] as? [[String: Any]])
+            #expect(nodes.count == relationships.count + 1)
+            return relationships
+        }
+
+        let forward = try steps([1, 1])
+        #expect(forward.map { $0["startElementId"] as? String } == ["n1"])
+        #expect(forward.map { $0["endElementId"] as? String } == ["n2"])
+
+        let outAndBack = try steps([1, 1, -1, 0])
+        #expect(outAndBack.count == 2)
+        #expect(outAndBack.map { $0["elementId"] as? String } == ["r9", "r9"])
+        #expect(outAndBack.map { $0["startElementId"] as? String } == ["n1", "n1"])
+
+        let backward = try steps([-1, 1])
+        #expect(backward.map { $0["startElementId"] as? String } == ["n2"])
+        #expect(backward.map { $0["endElementId"] as? String } == ["n1"])
+    }
+
+    @Test("Update counters keep only what changed, and only created or deleted entities count as affected")
+    func updateCounts() {
+        let setOnly = Neo4jUpdateCounts(summary: ["stats": .map(["properties-set": .int(2)])])
+        #expect(setOnly.entitiesChanged == 0)
+        #expect(setOnly.counters.map(\.counter) == [.propertiesSet])
+        #expect(setOnly.count(.propertiesSet) == 2)
+
+        let created = Neo4jUpdateCounts(summary: ["stats": .map([
+            "nodes-created": .int(1_002), "labels-added": .int(1_002), "relationships-created": .int(3),
+            "contains-updates": .bool(true)
+        ])])
+        #expect(created.entitiesChanged == 1_005)
+        #expect(created.counters.map(\.counter) == [.nodesCreated, .relationshipsCreated, .labelsAdded])
+
+        #expect(Neo4jUpdateCounts(summary: [:]).counters.isEmpty)
+    }
+
     @Test("Points name their SRID and coordinates")
     func points() {
         #expect(Neo4jValueText.text(structure(0x58, [.int(4_326), .float(1.5), .float(2)]))
