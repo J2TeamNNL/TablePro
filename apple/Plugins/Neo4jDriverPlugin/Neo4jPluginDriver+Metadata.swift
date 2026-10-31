@@ -75,13 +75,22 @@ extension Neo4jPluginDriver {
         return fixed + properties.map { PluginColumnInfo(name: $0.0, dataType: $0.1, isNullable: true) }
     }
 
+    /// Bolt 5 servers name an index's constraint in `owningConstraint`; 4.4 has only `uniqueness`.
     func fetchIndexes(table: String, schema: String?) async throws -> [PluginIndexInfo] {
+        let kind = Neo4jEntityKind(schemaName: schema ?? currentSchema) ?? .node
+        let unique = usesElementId ? "owningConstraint IS NOT NULL" : "uniqueness = 'UNIQUE'"
         let query = """
-        SHOW INDEXES YIELD name, type, labelsOrTypes, properties, owningConstraint
-        WHERE $name IN labelsOrTypes
-        RETURN name, type, properties, owningConstraint IS NOT NULL AS isUnique
+        SHOW INDEXES YIELD *
+        WHERE $name IN labelsOrTypes AND entityType = $entityType
+        RETURN name, type, properties, \(unique) AS isUnique
         """
-        guard let statement = try? await run(query, parameters: ["name": .string(table)]) else { return [] }
+        let statement: Statement
+        do {
+            statement = try await run(query, parameters: ["name": .string(table), "entityType": .string(Self.entityType(kind))])
+        } catch {
+            Self.logger.info("SHOW INDEXES failed: \(error.localizedDescription, privacy: .private)")
+            return []
+        }
         return statement.records.compactMap { record in
             guard record.count == 4, let name = record[0].stringValue else { return nil }
             return PluginIndexInfo(
@@ -94,14 +103,56 @@ extension Neo4jPluginDriver {
         }
     }
 
+    private static func entityType(_ kind: Neo4jEntityKind) -> String {
+        switch kind {
+        case .node: "NODE"
+        case .relationship: "RELATIONSHIP"
+        }
+    }
+
     func fetchForeignKeys(table: String, schema: String?) async throws -> [PluginForeignKeyInfo] {
         []
     }
 
     func fetchApproximateRowCount(table: String, schema: String?) async throws -> Int? {
+        try await rowCount(table: table, schema: schema, queryFilters: [], logicMode: "and")
+    }
+
+    func fetchFilteredRowCount(table: String, queryFilters: [PluginQueryFilter], logicMode: String) async throws -> Int? {
+        try await rowCount(table: table, schema: nil, queryFilters: queryFilters, logicMode: logicMode)
+    }
+
+    func fetchExactRowCount(
+        table: String,
+        schema: String?,
+        queryFilters: [PluginQueryFilter],
+        logicMode: String
+    ) async throws -> Int? {
+        try await rowCount(table: table, schema: schema, queryFilters: queryFilters, logicMode: logicMode)
+    }
+
+    private func rowCount(table: String, schema: String?, queryFilters: [PluginQueryFilter], logicMode: String) async throws -> Int? {
         let kind = Neo4jEntityKind(schemaName: schema ?? currentSchema) ?? .node
-        let statement = try await run(Neo4jCypher.countQuery(kind: kind, name: table))
-        return statement.records.first?.first?.intValue.map(Int.init)
+        let query = try Neo4jCypher.countQuery(
+            kind: kind,
+            name: table,
+            filters: Self.neo4jFilters(queryFilters),
+            matchesAll: logicMode.lowercased() != "or",
+            usesElementId: usesElementId
+        )
+        return try await run(query).records.first?.first?.intValue.map(Int.init)
+    }
+
+    static func neo4jFilters(_ queryFilters: [PluginQueryFilter]) -> [Neo4jFilter] {
+        queryFilters.map {
+            Neo4jFilter(
+                column: $0.column,
+                op: $0.op,
+                value: $0.value,
+                secondValue: $0.secondValue,
+                isCaseSensitive: $0.isCaseSensitive
+            )
+        }
     }
 
     func fetchTableDDL(table: String, schema: String?) async throws -> String {
@@ -176,19 +227,10 @@ extension Neo4jPluginDriver {
             guard columns.indices.contains(sort.columnIndex) else { return nil }
             return (columns[sort.columnIndex], sort.ascending)
         }
-        let filters = queryFilters.map {
-            Neo4jFilter(
-                column: $0.column,
-                op: $0.op,
-                value: $0.value,
-                secondValue: $0.secondValue,
-                isCaseSensitive: $0.isCaseSensitive
-            )
-        }
         return try? Neo4jCypher.browseQuery(
             kind: kind,
             name: table,
-            filters: filters,
+            filters: Self.neo4jFilters(queryFilters),
             matchesAll: logicMode.lowercased() != "or",
             sort: sort,
             limit: limit,

@@ -15,9 +15,14 @@ extension QueryClassifier {
             switch word.text {
             case "DROP", "DENY", "REVOKE":
                 result = result.escalated(to: .destructive)
-            case "CREATE", "INSERT", "MERGE", "SET", "REMOVE", "DELETE", "FOREACH", "ALTER", "GRANT", "RENAME",
-                 "TERMINATE", "START", "STOP", "ENABLE", "DEALLOCATE", "REALLOCATE":
+            case "CREATE", "INSERT", "MERGE", "SET", "REMOVE", "DELETE", "FOREACH", "GRANT":
                 result = result.escalated(to: .write)
+            case let admin where cypherAdminObjects[admin] != nil:
+                // These lead an administration command and are otherwise ordinary names, so a
+                // variable called `start` or `stop` stays a read.
+                if let next = cypherNextWord(in: code, after: word.end), cypherAdminObjects[admin]?.contains(next) == true {
+                    result = result.escalated(to: .write)
+                }
             case "LOAD":
                 result = result.markingUnsafeSurface()
             case "CALL":
@@ -33,6 +38,18 @@ extension QueryClassifier {
         }
         return result
     }
+
+    /// Administration commands that write, keyed by their leading word, with the words that may follow it.
+    static let cypherAdminObjects: [String: Set<String>] = [
+        "ALTER": ["USER", "CURRENT", "DATABASE", "SERVER", "ALIAS"],
+        "RENAME": ["USER", "ROLE", "SERVER"],
+        "START": ["DATABASE"],
+        "STOP": ["DATABASE"],
+        "TERMINATE": ["TRANSACTION", "TRANSACTIONS"],
+        "ENABLE": ["SERVER"],
+        "DEALLOCATE": ["DATABASE", "DATABASES"],
+        "REALLOCATE": ["DATABASE", "DATABASES"]
+    ]
 
     /// Procedures that only read, matched by prefix on the lowercased name.
     static let cypherReadProcedures: [String] = [
@@ -106,6 +123,12 @@ extension QueryClassifier {
             words.append((String(code[start ..< index]).uppercased(), index))
         }
         return words
+    }
+
+    private static func cypherNextWord(in code: [Character], after end: Int) -> String? {
+        guard let start = code[end...].firstIndex(where: { !$0.isWhitespace }) else { return nil }
+        let word = code[start...].prefix { $0.isLetter || $0.isNumber || $0 == "_" }
+        return word.isEmpty ? nil : String(word).uppercased()
     }
 
     /// The procedure a `CALL` names, or nil for a subquery.

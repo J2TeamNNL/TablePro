@@ -42,6 +42,7 @@ private final class BoltResponseHandler: ChannelInboundHandler, @unchecked Senda
     private var pending: [Pending] = []
     private var failure: Error?
     private var dechunker = BoltDechunker()
+    private var interrupted = false
 
     func expectHandshake(_ continuation: CheckedContinuation<[UInt8], Error>) {
         let resolved: Error? = lock.withLock {
@@ -84,10 +85,20 @@ private final class BoltResponseHandler: ChannelInboundHandler, @unchecked Senda
     func interruptInFlight(on channel: Channel) {
         lock.withLock {
             guard failure == nil, !pending.isEmpty else { return }
+            interrupted = true
             pending.append(Pending(expected: 1, continuation: nil))
             var buffer = channel.allocator.buffer(capacity: 8)
             buffer.writeBytes(BoltRequest.reset.framed)
             channel.writeAndFlush(buffer, promise: nil)
+        }
+    }
+
+    /// Whether a cancel sent RESET since the last call. Once that RESET is answered the server
+    /// is READY, where a DISCARD for the cancelled stream would fail.
+    func takeInterrupted() -> Bool {
+        lock.withLock {
+            defer { interrupted = false }
+            return interrupted
         }
     }
 
@@ -351,10 +362,12 @@ actor Neo4jConnection {
         guard let channel, let handler, channel.isActive else { throw Neo4jError.notConnected }
         try Task.checkCancellation()
 
+        _ = handler.takeInterrupted()
         var replies = try await Self.exchange(requests, channel: channel, handler: handler)
+        let cancelled = handler.takeInterrupted()
         if !Self.allSucceeded(replies) {
-            _ = try? await Self.exchange([.reset], channel: channel, handler: handler)
-        } else if case .success(let summary) = replies.last?.outcome, summary["has_more"]?.boolValue == true {
+            if !cancelled { _ = try? await Self.exchange([.reset], channel: channel, handler: handler) }
+        } else if !cancelled, case .success(let summary) = replies.last?.outcome, summary["has_more"]?.boolValue == true {
             do {
                 let discarded = try await Self.exchange([.discard], channel: channel, handler: handler)
                 replies += discarded

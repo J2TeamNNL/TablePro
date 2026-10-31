@@ -36,11 +36,14 @@ public struct Neo4jFilter: Sendable, Equatable {
 
 public enum Neo4jCypherError: Error, Equatable, Sendable, LocalizedError {
     case unsupportedOperator(String)
+    case unquotableName(String)
 
     public var errorDescription: String? {
         switch self {
         case .unsupportedOperator(let op):
             return String(format: String(localized: "The %@ filter is not available for Neo4j."), op)
+        case .unquotableName(let name):
+            return String(format: String(localized: "Neo4j cannot query the name %@ because it contains \\u."), name)
         }
     }
 }
@@ -56,8 +59,22 @@ public enum Neo4jCypher {
     /// into the editor still runs, and it tells the driver to spread the entity into columns.
     public static let browseMarker = "// TablePro browse: "
 
+    /// Neo4j decodes `\uXXXX` before it reads a query, inside backticks too, so a name holding
+    /// one could close its own quotes. No spelling survives that decoding: such a name becomes an
+    /// escape the server rejects, and the query builders refuse it up front.
     public static func quote(_ identifier: String) -> String {
-        "`" + identifier.replacingOccurrences(of: "`", with: "``") + "`"
+        let escaped = identifier
+            .replacingOccurrences(of: "\\u", with: "\\uZZZZ")
+            .replacingOccurrences(of: "`", with: "``")
+        return "`" + escaped + "`"
+    }
+
+    public static func isQuotable(_ name: String) -> Bool {
+        !name.contains("\\u")
+    }
+
+    static func requireQuotable(_ names: [String]) throws {
+        if let name = names.first(where: { !isQuotable($0) }) { throw Neo4jCypherError.unquotableName(name) }
     }
 
     public static func literal(_ text: String) -> String {
@@ -98,13 +115,10 @@ public enum Neo4jCypher {
         offset: Int,
         usesElementId: Bool = true
     ) throws -> String {
+        try requireQuotable([name] + sort.map(\.column))
         var lines = [browseMarker + kind.rawValue, pattern(for: kind, name: name)]
-        let clauses = try filters.map { try condition(for: $0, usesElementId: usesElementId) }
-        if !clauses.isEmpty {
-            let joined = clauses.count == 1
-                ? clauses[0]
-                : clauses.map { "(\($0))" }.joined(separator: matchesAll ? " AND " : " OR ")
-            lines.append("WHERE " + joined)
+        if let filter = try whereClause(filters, matchesAll: matchesAll, usesElementId: usesElementId) {
+            lines.append(filter)
         }
         lines.append("RETURN n")
         if !sort.isEmpty {
@@ -115,11 +129,29 @@ public enum Neo4jCypher {
         return lines.joined(separator: "\n")
     }
 
-    public static func countQuery(kind: Neo4jEntityKind, name: String) -> String {
-        switch kind {
-        case .node: "MATCH (n:\(quote(name))) RETURN count(n) AS count"
-        case .relationship: "MATCH ()-[n:\(quote(name))]->() RETURN count(n) AS count"
+    public static func countQuery(
+        kind: Neo4jEntityKind,
+        name: String,
+        filters: [Neo4jFilter] = [],
+        matchesAll: Bool = true,
+        usesElementId: Bool = true
+    ) throws -> String {
+        try requireQuotable([name])
+        var lines = [pattern(for: kind, name: name)]
+        if let filter = try whereClause(filters, matchesAll: matchesAll, usesElementId: usesElementId) {
+            lines.append(filter)
         }
+        lines.append("RETURN count(n) AS count")
+        return lines.joined(separator: "\n")
+    }
+
+    private static func whereClause(_ filters: [Neo4jFilter], matchesAll: Bool, usesElementId: Bool) throws -> String? {
+        let clauses = try filters.map { try condition(for: $0, usesElementId: usesElementId) }
+        guard !clauses.isEmpty else { return nil }
+        let joined = clauses.count == 1
+            ? clauses[0]
+            : clauses.map { "(\($0))" }.joined(separator: matchesAll ? " AND " : " OR ")
+        return "WHERE " + joined
     }
 
     /// Property keys and one sample value each, from the first `sampleSize` entities. Bounded so
@@ -143,16 +175,19 @@ public enum Neo4jCypher {
 
     static func condition(for filter: Neo4jFilter, usesElementId: Bool) throws -> String {
         if filter.column == rawFilterColumn { return filter.value }
+        try requireQuotable([filter.column])
         let target = expression(for: filter.column, usesElementId: usesElementId)
         let isIdentifier = [idColumn, startColumn, endColumn].contains(filter.column) && usesElementId
+        let ignoresCase = !filter.isCaseSensitive && !isIdentifier
         let value = filter.value
-        let text = filter.isCaseSensitive ? target : "toLower(\(target))"
-        let needle = filter.isCaseSensitive ? literal(value) : literal(value.lowercased())
+        let needle = literal(ignoresCase ? value.lowercased() : value)
 
         switch filter.op.uppercased() {
         case "=":
+            if ignoresCase { return foldedEquality(target, [value]) }
             return isIdentifier ? "\(target) = \(literal(value))" : equality(target, value)
         case "!=", "<>":
+            if ignoresCase { return "NOT (\(foldedEquality(target, [value])))" }
             return isIdentifier ? "\(target) <> \(literal(value))" : "NOT (\(equality(target, value)))"
         case ">", ">=", "<", "<=":
             return "\(target) \(filter.op) \(typedLiteral(value))"
@@ -160,13 +195,11 @@ public enum Neo4jCypher {
             let upper = filter.secondValue ?? ""
             return "\(target) >= \(typedLiteral(value)) AND \(target) <= \(typedLiteral(upper))"
         case "CONTAINS":
-            return "\(text) CONTAINS \(needle)"
+            return textMatch(filter.column, target, "CONTAINS", needle, ignoresCase: ignoresCase)
         case "NOT CONTAINS":
-            return "NOT (\(text) CONTAINS \(needle))"
-        case "STARTS WITH":
-            return "\(text) STARTS WITH \(needle)"
-        case "ENDS WITH":
-            return "\(text) ENDS WITH \(needle)"
+            return "NOT (\(textMatch(filter.column, target, "CONTAINS", needle, ignoresCase: ignoresCase)))"
+        case "STARTS WITH", "ENDS WITH":
+            return textMatch(filter.column, target, filter.op.uppercased(), needle, ignoresCase: ignoresCase)
         case "IS NULL":
             return "\(target) IS NULL"
         case "IS NOT NULL":
@@ -176,8 +209,14 @@ public enum Neo4jCypher {
         case "IS NOT EMPTY":
             return "(\(target) IS NOT NULL AND \(target) <> '')"
         case "IN", "NOT IN":
-            let items = value.split(separator: ",").map { typedLiteral($0.trimmingCharacters(in: .whitespaces)) }
-            let list = "\(target) IN [\(items.joined(separator: ", "))]"
+            let raw = value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            let list: String
+            if ignoresCase {
+                list = foldedEquality(target, raw)
+            } else {
+                let items = isIdentifier ? raw.map(literal) : raw.flatMap(spellings)
+                list = "\(target) IN [\(items.joined(separator: ", "))]"
+            }
             return filter.op.uppercased() == "IN" ? list : "NOT (\(list))"
         case "REGEX":
             return "\(target) =~ \(literal(filter.isCaseSensitive ? value : "(?i)" + value))"
@@ -186,17 +225,48 @@ public enum Neo4jCypher {
         }
     }
 
+    /// A property can hold any type, so the value is read as text first: a number, a list or a
+    /// point is then a non-match rather than a type error that fails the whole page. Labels match
+    /// when any one of them does.
+    private static func textMatch(_ column: String, _ target: String, _ op: String, _ needle: String, ignoresCase: Bool) -> String {
+        if column == labelsColumn {
+            let label = ignoresCase ? "toLower(label)" : "label"
+            return "any(label IN labels(n) WHERE \(label) \(op) \(needle))"
+        }
+        let text = "toStringOrNull(\(target))"
+        return "\((ignoresCase ? "toLower(\(text))" : text)) \(op) \(needle)"
+    }
+
+    /// Case folding applies to text only, so a typed number or boolean still compares as one:
+    /// `30.0` keeps matching `= 30`.
+    private static func foldedEquality(_ target: String, _ values: [String]) -> String {
+        let folded = "toLower(toStringOrNull(\(target))) IN [\(values.map { literal($0.lowercased()) }.joined(separator: ", "))]"
+        let typed = values.map(typedLiteral).filter { !$0.hasPrefix("'") }
+        guard !typed.isEmpty else { return folded }
+        return "(\(target) IN [\(typed.joined(separator: ", "))] OR \(folded))"
+    }
+
     /// A property has no declared type, so a value that reads as a number or a boolean also
     /// matches the same text stored as a string.
     private static func equality(_ target: String, _ value: String) -> String {
-        let typed = typedLiteral(value)
-        guard typed != literal(value) else { return "\(target) = \(typed)" }
-        return "(\(target) = \(typed) OR \(target) = \(literal(value)))"
+        let forms = spellings(value)
+        guard forms.count > 1 else { return "\(target) = \(forms[0])" }
+        return "(" + forms.map { "\(target) = \($0)" }.joined(separator: " OR ") + ")"
     }
 
+    private static func spellings(_ value: String) -> [String] {
+        let typed = typedLiteral(value)
+        return typed == literal(value) ? [typed] : [typed, literal(value)]
+    }
+
+    /// A number literal only in the form Cypher reads back as the same number: `012` would be
+    /// octal and a 20-digit integer overflows, so those stay text.
     static func typedLiteral(_ value: String) -> String {
-        if Int64(value) != nil { return value }
-        if let number = Double(value), number.isFinite, value.rangeOfCharacter(from: .letters) == nil { return value }
+        if let integer = Int64(value), String(integer) == value { return value }
+        if value.range(of: #"^-?(0|[1-9][0-9]*)\.[0-9]+([eE][+-]?[0-9]+)?$"#, options: .regularExpression) != nil,
+           let number = Double(value), number.isFinite {
+            return value
+        }
         switch value.lowercased() {
         case "true", "false": return value.lowercased()
         default: return literal(value)

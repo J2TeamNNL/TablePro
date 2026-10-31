@@ -112612,6 +112612,10 @@
         }
       }
     },
+    "Neo4j cannot query the name %@ because it contains \\u." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false
+    },
     "Neo4j has no views." : {
       "extractionState" : "manual",
       "generatesSymbol" : false

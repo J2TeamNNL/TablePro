@@ -1,4 +1,5 @@
 import Foundation
+import TableProNeo4jCore
 import TableProPluginKit
 
 // Run by check-neo4j.sh against a live server. Exits 1 on the first expectation that fails.
@@ -63,6 +64,40 @@ func run() async throws {
         table: "\(label)_KNOWS", schema: "Relationship Types", sortColumns: [], columns: [], limit: 200, offset: 0
     )))
     expect(relationships.columns == ["<id>", "<start>", "<end>", "since"], "relationship columns: \(relationships.columns)")
+
+    let ageFilter = [PluginQueryFilter(column: "age", op: "CONTAINS", value: "3", isCaseSensitive: false)]
+    let filtered = try await driver.execute(query: try require(driver.buildFilteredQuery(
+        table: label, schema: "Labels", queryFilters: ageFilter, logicMode: "and",
+        sortColumns: [], columns: columns, limit: 200, offset: 0, columnKinds: [:]
+    )))
+    expect(text(filtered).map { $0[nameIndex] } == ["Ann"], "a text filter on an integer property matches as text")
+    let filteredCount = try await driver.fetchFilteredRowCount(table: label, queryFilters: ageFilter, logicMode: "and")
+    expect(filteredCount == 1, "a filtered count: \(String(describing: filteredCount))")
+
+    let escapeColumn = #"x\u0060 IS NULL WITH n DETACH DELETE n WITH n WHERE n.\u0060x"#
+    do {
+        _ = try await driver.fetchFilteredRowCount(
+            table: label, queryFilters: [PluginQueryFilter(column: escapeColumn, op: "IS NULL", value: "")], logicMode: "and"
+        )
+        expect(false, "a column holding a unicode escape is refused")
+    } catch {
+        expect(true, "a column holding a unicode escape is refused")
+    }
+    do {
+        _ = try await driver.execute(query: "MATCH (n:\(label)) WHERE n.\(Neo4jCypher.quote(escapeColumn)) IS NULL RETURN count(n)")
+        expect(false, "a quoted unicode escape fails on the server")
+    } catch {
+        expect(true, "a quoted unicode escape fails on the server")
+    }
+    let afterEscape = try await driver.fetchApproximateRowCount(table: label, schema: "Labels")
+    expect(afterEscape == 2, "no node was deleted through a quoted name: \(String(describing: afterEscape))")
+
+    _ = try await driver.execute(query: "CREATE INDEX \(label)_name IF NOT EXISTS FOR (n:\(label)) ON (n.name)")
+    let indexes = try await driver.fetchIndexes(table: label, schema: "Labels").map(\.name)
+    expect(indexes == ["\(label)_name"], "the label's index is listed: \(indexes)")
+    let relationshipIndexes = try await driver.fetchIndexes(table: label, schema: "Relationship Types")
+    expect(relationshipIndexes.isEmpty, "a relationship type does not borrow a label's index")
+    _ = try await driver.execute(query: "DROP INDEX \(label)_name IF EXISTS")
 
     let capped = try await driver.executeUserQuery(query: "UNWIND range(1, 50) AS x RETURN x", rowCap: 10, parameters: nil)
     expect(capped.rows.count == 10 && capped.isTruncated, "a row cap truncates on the server")
